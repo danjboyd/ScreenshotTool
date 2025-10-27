@@ -1,0 +1,8 @@
+{
+  ApplicationDescription = "Screenshot annotation utility";
+  ApplicationName = ScreenshotTool;
+  ApplicationVersion = "0.1";
+  NSExecutable = ScreenshotTool;
+  NSPrincipalClass = NSApplication;
+  ApplicationIcon = "ScreenshotToolIcon.tiff";
+}
