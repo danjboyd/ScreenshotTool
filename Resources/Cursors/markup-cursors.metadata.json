@@ -1,0 +1,38 @@
+[
+  {
+    "tool": "pen",
+    "size": 32,
+    "file": "pen-cursor@1x",
+    "hotspot": [
+      7,
+      27
+    ]
+  },
+  {
+    "tool": "eraser",
+    "size": 32,
+    "file": "eraser-cursor@1x",
+    "hotspot": [
+      9,
+      8
+    ]
+  },
+  {
+    "tool": "marquee",
+    "size": 32,
+    "file": "marquee-cursor@1x",
+    "hotspot": [
+      6,
+      6
+    ]
+  },
+  {
+    "tool": "highlighter",
+    "size": 32,
+    "file": "highlighter-cursor@1x",
+    "hotspot": [
+      7,
+      27
+    ]
+  }
+]

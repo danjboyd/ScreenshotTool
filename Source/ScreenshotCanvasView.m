@@ -1,9 +1,63 @@
+/*
+ * ScreenshotCanvasView.m
+ * Copyright (C) 2025 Daniel Boyd
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ */
+
 #import "ScreenshotCanvasView.h"
 #import "MarkupStroke.h"
 #import "MarkupText.h"
+#import <AppKit/NSBitmapImageRep.h>
+#import <AppKit/NSGraphicsContext.h>
+#import <AppKit/NSColorSpace.h>
+#include <stdarg.h>
 #include <math.h>
 #include <string.h>
 #include <float.h>
+#include <stdlib.h>
+#if defined(GNUSTEP)
+#include <ft2build.h>
+#include FT_FREETYPE_H
+#include <fontconfig/fontconfig.h>
+#endif
+
+NSString * const ScreenshotCanvasViewDidRestoreStateNotification = @"ScreenshotCanvasViewDidRestoreStateNotification";
+extern BOOL ScreenshotUndoLoggingEnabled(void) __attribute__((weak));
+
+static BOOL ScreenshotCursorLoggingEnabled(void) {
+    static int initialized = 0;
+    static BOOL enabled = NO;
+    if (!initialized) {
+        const char *env = getenv("SCREENSHOT_CURSOR_DEBUG");
+        enabled = (env && env[0] != '\0');
+        initialized = 1;
+    }
+    return enabled;
+}
+
+static void ScreenshotCursorLog(NSString *format, ...) {
+    if (!ScreenshotCursorLoggingEnabled() || !format) {
+        return;
+    }
+    va_list args;
+    va_start(args, format);
+    NSLogv(format, args);
+    va_end(args);
+}
 
 typedef struct {
     unsigned char *data;
@@ -28,6 +82,16 @@ static inline unsigned char STRoundToByte(double value) {
         return 255;
     }
     return (unsigned char)lrint(value * 255.0);
+}
+
+static inline double STClamp01(double value) {
+    if (value <= 0.0) {
+        return 0.0;
+    }
+    if (value >= 1.0) {
+        return 1.0;
+    }
+    return value;
 }
 
 static BOOL STPrepareBitmapBuffer(NSBitmapImageRep *rep, STBitmapBuffer *buffer) {
@@ -159,6 +223,90 @@ static void STBlendDisk(STBitmapBuffer *buffer,
     }
 }
 
+static NSBitmapImageRep *STCreateDeviceRGBBitmapFromRep(NSBitmapImageRep *source) {
+    if (!source) {
+        return nil;
+    }
+    NSInteger width = source.pixelsWide;
+    NSInteger height = source.pixelsHigh;
+    if (width <= 0 || height <= 0) {
+        return nil;
+    }
+
+    NSBitmapImageRep *converted = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                                          pixelsWide:width
+                                                                          pixelsHigh:height
+                                                                       bitsPerSample:8
+                                                                     samplesPerPixel:4
+                                                                            hasAlpha:YES
+                                                                            isPlanar:NO
+                                                                      colorSpaceName:NSDeviceRGBColorSpace
+                                                                         bytesPerRow:0
+                                                                        bitsPerPixel:0];
+    if (!converted) {
+        return nil;
+    }
+
+    [converted setSize:source.size];
+
+    unsigned char *destination = [converted bitmapData];
+    if (!destination) {
+        return nil;
+    }
+    NSInteger destBytesPerRow = [converted bytesPerRow];
+
+    STBitmapBuffer sourceBuffer;
+    BOOL hasSourceBuffer = STPrepareBitmapBuffer(source, &sourceBuffer);
+    if (hasSourceBuffer && sourceBuffer.bytesPerPixel >= 3) {
+        for (NSInteger y = 0; y < height; y++) {
+            unsigned char *dstRow = destination + (y * destBytesPerRow);
+            NSInteger sourceRowIndex = sourceBuffer.height - 1 - y;
+            unsigned char *srcRow = sourceBuffer.data + (sourceBuffer.bytesPerRow * sourceRowIndex);
+            for (NSInteger x = 0; x < width; x++) {
+                unsigned char *dstPixel = dstRow + (x * 4);
+                unsigned char *srcPixel = srcRow + (x * sourceBuffer.bytesPerPixel);
+
+                double sr = srcPixel[sourceBuffer.rIndex] / 255.0;
+                double sg = srcPixel[sourceBuffer.gIndex] / 255.0;
+                double sb = srcPixel[sourceBuffer.bIndex] / 255.0;
+                double sa = sourceBuffer.hasAlpha ? (srcPixel[sourceBuffer.aIndex] / 255.0) : 1.0;
+
+                dstPixel[0] = STRoundToByte(sr);
+                dstPixel[1] = STRoundToByte(sg);
+                dstPixel[2] = STRoundToByte(sb);
+                dstPixel[3] = STRoundToByte(sa);
+            }
+        }
+    } else {
+        for (NSInteger y = 0; y < height; y++) {
+            unsigned char *dstRow = destination + (y * destBytesPerRow);
+            for (NSInteger x = 0; x < width; x++) {
+                unsigned char *dstPixel = dstRow + (x * 4);
+                NSColor *color = [source colorAtX:x y:y];
+                if (!color) {
+                    dstPixel[0] = 0;
+                    dstPixel[1] = 0;
+                    dstPixel[2] = 0;
+                    dstPixel[3] = 0;
+                    continue;
+                }
+                NSColor *deviceColor = [color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: color;
+                double r = 0.0;
+                double g = 0.0;
+                double b = 0.0;
+                double a = 1.0;
+                [deviceColor getRed:&r green:&g blue:&b alpha:&a];
+                dstPixel[0] = STRoundToByte(r);
+                dstPixel[1] = STRoundToByte(g);
+                dstPixel[2] = STRoundToByte(b);
+                dstPixel[3] = STRoundToByte(a);
+            }
+        }
+    }
+
+    return converted;
+}
+
 static void STRasterizeStrokeOntoBitmap(MarkupStroke *stroke,
                                         STBitmapBuffer *buffer,
                                         NSSize canvasSize) {
@@ -226,6 +374,241 @@ static void STRasterizeStrokeOntoBitmap(MarkupStroke *stroke,
     }
 }
 
+#if defined(GNUSTEP)
+static FT_Library STFTLibrary = NULL;
+static BOOL STFTLibraryInitialized = NO;
+static BOOL STFontConfigInitialized = NO;
+
+static BOOL STEnsureFreeTypeInitialized(void) {
+    if (!STFTLibraryInitialized) {
+        if (FT_Init_FreeType(&STFTLibrary) != 0) {
+            return NO;
+        }
+        STFTLibraryInitialized = YES;
+    }
+    if (!STFontConfigInitialized) {
+        STFontConfigInitialized = FcInit();
+    }
+    return STFTLibraryInitialized && STFontConfigInitialized;
+}
+
+static NSString *STFontFilePathForFont(NSFont *font) {
+    if (!font) {
+        return nil;
+    }
+    if (!STEnsureFreeTypeInitialized()) {
+        return nil;
+    }
+
+    NSString *family = font.familyName ?: font.fontName;
+    if (family.length == 0) {
+        return nil;
+    }
+
+    FcPattern *pattern = FcPatternCreate();
+    if (!pattern) {
+        return nil;
+    }
+
+    FcPatternAddString(pattern, FC_FAMILY, (const FcChar8 *)family.UTF8String);
+    FcPatternAddBool(pattern, FC_SCALABLE, FcTrue);
+    FcPatternAddDouble(pattern, FC_PIXEL_SIZE, font.pointSize);
+    FcConfigSubstitute(NULL, pattern, FcMatchPattern);
+    FcDefaultSubstitute(pattern);
+
+    FcResult result = FcResultNoMatch;
+    FcPattern *match = FcFontMatch(NULL, pattern, &result);
+    FcPatternDestroy(pattern);
+    if (!match) {
+        return nil;
+    }
+
+    FcChar8 *file = NULL;
+    if (FcPatternGetString(match, FC_FILE, 0, &file) != FcResultMatch) {
+        FcPatternDestroy(match);
+        return nil;
+    }
+
+    NSString *path = [NSString stringWithUTF8String:(const char *)file];
+    FcPatternDestroy(match);
+    return path;
+}
+
+static CGFloat STFTAdvanceForCharacter(FT_Face face, unichar character) {
+    if (!face) {
+        return 0.0f;
+    }
+    FT_UInt glyphIndex = FT_Get_Char_Index(face, character);
+    if (FT_Load_Glyph(face, glyphIndex, FT_LOAD_DEFAULT) != 0) {
+        return 0.0f;
+    }
+    return (CGFloat)(face->glyph->advance.x / 64.0);
+}
+
+static NSArray<NSString *> *STFTWrappedLinesForText(NSString *string,
+                                                    FT_Face face,
+                                                    CGFloat maxWidth) {
+    if (!string) {
+        return @[];
+    }
+    NSMutableArray<NSString *> *lines = [[NSMutableArray alloc] init];
+    NSUInteger length = string.length;
+    if (length == 0) {
+        [lines addObject:@""];
+        return lines;
+    }
+
+    NSUInteger lineStart = 0;
+    CGFloat lineWidth = 0.0f;
+    NSUInteger lastBreakIndex = NSNotFound;
+    NSCharacterSet *whitespace = [NSCharacterSet whitespaceCharacterSet];
+
+    for (NSUInteger idx = 0; idx < length; idx++) {
+        unichar ch = [string characterAtIndex:idx];
+        if (ch == '\n') {
+            NSRange range = NSMakeRange(lineStart, idx - lineStart);
+            [lines addObject:[string substringWithRange:range]];
+            lineStart = idx + 1;
+            lineWidth = 0.0f;
+            lastBreakIndex = NSNotFound;
+            continue;
+        }
+
+        CGFloat advance = STFTAdvanceForCharacter(face, ch);
+        if (maxWidth > 0.0f && lineWidth + advance > maxWidth && lineWidth > 0.0f) {
+            NSUInteger breakIndex = (lastBreakIndex != NSNotFound && lastBreakIndex >= lineStart)
+                ? lastBreakIndex + 1
+                : idx;
+            if (breakIndex <= lineStart) {
+                breakIndex = idx;
+            }
+            NSRange range = NSMakeRange(lineStart, breakIndex - lineStart);
+            [lines addObject:[string substringWithRange:range]];
+            lineStart = breakIndex;
+            idx = breakIndex - 1;
+            lineWidth = 0.0f;
+            lastBreakIndex = NSNotFound;
+            continue;
+        }
+
+        lineWidth += advance;
+        if ([whitespace characterIsMember:ch]) {
+            lastBreakIndex = idx;
+        }
+    }
+
+    if (lineStart <= length) {
+        NSRange range = NSMakeRange(lineStart, length - lineStart);
+        [lines addObject:[string substringWithRange:range]];
+    }
+
+    return lines;
+}
+
+static BOOL STRasterizeTextUsingFreeType(MarkupText *text,
+                                         STBitmapBuffer *buffer,
+                                         NSSize canvasSize) {
+    if (!text || !buffer || !buffer->data) {
+        return NO;
+    }
+    if (!STEnsureFreeTypeInitialized()) {
+        return NO;
+    }
+
+    NSString *fontPath = STFontFilePathForFont(text.font ?: [NSFont systemFontOfSize:18.0]);
+    if (fontPath.length == 0) {
+        return NO;
+    }
+
+    FT_Face face = NULL;
+    if (FT_New_Face(STFTLibrary, fontPath.fileSystemRepresentation, 0, &face) != 0) {
+        return NO;
+    }
+
+    CGFloat pointSize = MAX(text.font.pointSize, 1.0f);
+    FT_Set_Char_Size(face, 0, (FT_F26Dot6)lrint(pointSize * 64.0), 72, 72);
+
+    double ascent = face->size && face->size->metrics.ascender ? face->size->metrics.ascender / 64.0 : pointSize * 0.8;
+    double descent = face->size && face->size->metrics.descender ? fabs(face->size->metrics.descender / 64.0) : pointSize * 0.2;
+    double lineHeight = face->size && face->size->metrics.height ? face->size->metrics.height / 64.0 : (ascent + descent);
+    if (lineHeight < ascent + descent) {
+        lineHeight = ascent + descent;
+    }
+
+    NSArray<NSString *> *lines = STFTWrappedLinesForText(text.text ?: @"", face, text.boxSize.width);
+    if (lines.count == 0) {
+        FT_Done_Face(face);
+        return NO;
+    }
+
+    NSColor *color = [text.color colorUsingColorSpaceName:NSDeviceRGBColorSpace] ?: text.color ?: [NSColor whiteColor];
+    double sr = [color redComponent];
+    double sg = [color greenComponent];
+    double sb = [color blueComponent];
+
+    double maxHeight = text.boxSize.height;
+    double topY = text.origin.y;
+    double baselineOffset = ascent;
+
+    BOOL painted = NO;
+
+    for (NSUInteger lineIndex = 0; lineIndex < lines.count; lineIndex++) {
+        double lineTop = topY + lineHeight * lineIndex;
+        if (maxHeight > 0.0 && (lineTop - topY) >= maxHeight) {
+            break;
+        }
+
+        NSString *line = lines[lineIndex];
+        double baselineImageY = lineTop + baselineOffset;
+        double destBaseline = canvasSize.height - baselineImageY;
+        double penX = text.origin.x;
+
+        for (NSUInteger charIndex = 0; charIndex < line.length; charIndex++) {
+            unichar ch = [line characterAtIndex:charIndex];
+            FT_UInt glyphIndex = FT_Get_Char_Index(face, ch);
+            if (FT_Load_Glyph(face, glyphIndex, FT_LOAD_DEFAULT) != 0) {
+                continue;
+            }
+            if (FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL) != 0) {
+                penX += face->glyph->advance.x / 64.0;
+                continue;
+            }
+
+            FT_GlyphSlot slot = face->glyph;
+            FT_Bitmap *bitmap = &slot->bitmap;
+            int glyphTop = slot->bitmap_top;
+            int glyphLeft = slot->bitmap_left;
+
+            for (int row = 0; row < bitmap->rows; row++) {
+                int destY = (int)floor(destBaseline + glyphTop - row - 1);
+                if (destY < 0 || destY >= buffer->height) {
+                    continue;
+                }
+                unsigned char *srcRow = bitmap->buffer + (row * bitmap->pitch);
+                for (int col = 0; col < bitmap->width; col++) {
+                    int destX = (int)floor(penX + glyphLeft + col);
+                    if (destX < 0 || destX >= buffer->width) {
+                        continue;
+                    }
+                    unsigned char coverage = srcRow[col];
+                    if (coverage == 0) {
+                        continue;
+                    }
+                    double alpha = coverage / 255.0;
+                    STBlendPixel(buffer, destX, destY, sr, sg, sb, alpha);
+                    painted = YES;
+                }
+            }
+
+            penX += slot->advance.x / 64.0;
+        }
+    }
+
+    FT_Done_Face(face);
+    return painted;
+}
+#endif
+
 static void STRasterizeTextOntoBitmap(MarkupText *text,
                                       STBitmapBuffer *buffer,
                                       NSSize canvasSize) {
@@ -241,6 +624,12 @@ static void STRasterizeTextOntoBitmap(MarkupText *text,
     if (width <= 0 || height <= 0) {
         return;
     }
+
+#if defined(GNUSTEP)
+    if (STRasterizeTextUsingFreeType(text, buffer, canvasSize)) {
+        return;
+    }
+#endif
 
     NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
                                                                     pixelsWide:width
@@ -281,11 +670,29 @@ static void STRasterizeTextOntoBitmap(MarkupText *text,
     NSInteger bIndex = 2;
     NSInteger aIndex = 3;
 
+    if (rep.hasAlpha) {
+        NSBitmapFormat format = rep.bitmapFormat;
+        BOOL alphaFirst = ((format & NSAlphaFirstBitmapFormat) == NSAlphaFirstBitmapFormat);
+        if (alphaFirst) {
+            aIndex = 0;
+            rIndex = MIN(bytesPerPixel - 1, 1);
+            gIndex = MIN(bytesPerPixel - 1, 2);
+            bIndex = MIN(bytesPerPixel - 1, 3);
+        } else {
+            aIndex = MIN(bytesPerPixel - 1, 3);
+            rIndex = MIN(bytesPerPixel - 1, 0);
+            gIndex = MIN(bytesPerPixel - 1, 1);
+            bIndex = MIN(bytesPerPixel - 1, 2);
+        }
+    } else {
+        aIndex = -1;
+    }
+
     double destBaseX = text.origin.x;
-    double destBaseY = canvasSize.height - text.origin.y - text.boxSize.height;
+    double destTopY = canvasSize.height - text.origin.y;
 
     for (NSInteger row = 0; row < height; row++) {
-        NSInteger destY = (NSInteger)floor(destBaseY + row);
+        NSInteger destY = (NSInteger)floor(destTopY - 1.0 - row);
         if (destY < 0 || destY >= buffer->height) {
             continue;
         }
@@ -296,7 +703,7 @@ static void STRasterizeTextOntoBitmap(MarkupText *text,
                 continue;
             }
             unsigned char *srcPixel = srcRow + col * bytesPerPixel;
-            double alpha = srcPixel[aIndex] / 255.0;
+            double alpha = (aIndex >= 0) ? (srcPixel[aIndex] / 255.0) : 1.0;
             if (alpha <= 0.0) {
                 continue;
             }
@@ -371,13 +778,13 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
     NSInteger srcBytesPerRow = source.bytesPerRow;
     NSInteger dstBytesPerRow = dest.bytesPerRow;
 
-    NSInteger bottomStartRow = srcHeight - originYTop - clipHeight;
-    if (bottomStartRow < 0) {
-        bottomStartRow = 0;
+    NSInteger topStartRow = originYTop;
+    if (topStartRow < 0) {
+        topStartRow = 0;
     }
 
     for (NSInteger row = 0; row < clipHeight; row++) {
-        unsigned char *srcRow = srcData + ((bottomStartRow + row) * srcBytesPerRow) + originX * bytesPerPixel;
+        unsigned char *srcRow = srcData + ((topStartRow + row) * srcBytesPerRow) + originX * bytesPerPixel;
         unsigned char *dstRow = dstData + (row * dstBytesPerRow);
         memcpy(dstRow, srcRow, (size_t)clipWidth * (size_t)bytesPerPixel);
     }
@@ -397,6 +804,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) NSPoint textDragStartImagePoint;
 @property (nonatomic, assign) NSPoint textResizeStartImagePoint;
 @property (nonatomic, assign) NSSize textResizeStartBoxSize;
+@property (nonatomic, strong, nullable) MarkupText *editingTextSnapshot;
 @property (nonatomic, assign) BOOL hasSelectionRect;
 @property (nonatomic, assign) NSRect selectionRect;
 @property (nonatomic, assign) BOOL isCreatingSelection;
@@ -406,6 +814,8 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) NSRect selectionStartRect;
 @property (nonatomic, strong, nullable) NSTimer *selectionDashTimer;
 @property (nonatomic, assign) CGFloat selectionDashPhase;
+@property (nonatomic, assign) NSTrackingRectTag cursorTrackingTag;
+@property (nonatomic, assign) BOOL mouseInsideCanvas;
 @end
 
 @implementation ScreenshotCanvasView
@@ -427,11 +837,189 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
         _isResizingTextBox = NO;
         _pendingTextRect = NSZeroRect;
         _selectionDashPhase = 0.0f;
+        _cursorTrackingTag = 0;
+        _mouseInsideCanvas = NO;
         [self setPostsFrameChangedNotifications:YES];
     }
     return self;
 }
 
+- (NSUndoManager *)undoManager {
+    NSWindow *window = self.window;
+    NSUndoManager *manager = window.undoManager;
+    if (!manager && [window.delegate respondsToSelector:@selector(activeUndoManager)]) {
+        manager = [window.delegate performSelector:@selector(activeUndoManager)];
+    }
+    return manager ?: [super undoManager];
+}
+
+- (void)insertStroke:(MarkupStroke *)stroke
+             atIndex:(NSUInteger)index
+    registeringUndo:(BOOL)registerUndo
+          actionName:(NSString *)actionName {
+    if (!stroke) {
+        return;
+    }
+    if (index > self.strokes.count) {
+        index = self.strokes.count;
+    }
+    [self.strokes insertObject:stroke atIndex:index];
+    [self setNeedsDisplay:YES];
+
+    if (registerUndo) {
+        NSUndoManager *undo = [self undoManager];
+        [[undo prepareWithInvocationTarget:self] removeStrokeAtIndex:index registeringUndo:YES actionName:actionName];
+        if (actionName.length > 0) {
+            [undo setActionName:actionName];
+        }
+    }
+}
+
+- (void)removeStrokeAtIndex:(NSUInteger)index
+           registeringUndo:(BOOL)registerUndo
+                actionName:(NSString *)actionName {
+    if (index >= self.strokes.count) {
+        return;
+    }
+    MarkupStroke *stroke = self.strokes[index];
+    [self.strokes removeObjectAtIndex:index];
+    [self setNeedsDisplay:YES];
+
+    if (registerUndo) {
+        NSUndoManager *undo = [self undoManager];
+        [[undo prepareWithInvocationTarget:self] insertStroke:stroke atIndex:index registeringUndo:YES actionName:actionName];
+        if (actionName.length > 0) {
+            [undo setActionName:actionName];
+        }
+    }
+}
+
+- (void)insertText:(MarkupText *)text
+            atIndex:(NSUInteger)index
+   registeringUndo:(BOOL)registerUndo
+         actionName:(NSString *)actionName {
+    if (!text) {
+        return;
+    }
+    if (index > self.texts.count) {
+        index = self.texts.count;
+    }
+    [self.texts insertObject:text atIndex:index];
+    [self setNeedsDisplay:YES];
+
+    if (registerUndo) {
+        NSUndoManager *undo = [self undoManager];
+        [[undo prepareWithInvocationTarget:self] removeTextAtIndex:index registeringUndo:YES actionName:actionName];
+        if (actionName.length > 0) {
+            [undo setActionName:actionName];
+        }
+    }
+}
+
+- (void)removeTextAtIndex:(NSUInteger)index
+          registeringUndo:(BOOL)registerUndo
+               actionName:(NSString *)actionName {
+    if (index >= self.texts.count) {
+        return;
+    }
+    MarkupText *text = self.texts[index];
+    [self.texts removeObjectAtIndex:index];
+    [self setNeedsDisplay:YES];
+
+    if (registerUndo) {
+        NSUndoManager *undo = [self undoManager];
+        [[undo prepareWithInvocationTarget:self] insertText:text atIndex:index registeringUndo:YES actionName:actionName];
+        if (actionName.length > 0) {
+            [undo setActionName:actionName];
+        }
+    }
+}
+
+- (void)applyTextSnapshot:(MarkupText *)snapshot
+                   toIndex:(NSUInteger)index
+           registeringUndo:(BOOL)registerUndo {
+    if (!snapshot || index >= self.texts.count) {
+        return;
+    }
+
+    MarkupText *target = self.texts[index];
+    MarkupText *previous = [target copy];
+
+    target.text = snapshot.text;
+    target.color = snapshot.color;
+    target.font = snapshot.font;
+    target.origin = snapshot.origin;
+    target.boxSize = snapshot.boxSize;
+    [target updateMeasuredSize];
+
+    [self setNeedsDisplay:YES];
+
+    if (registerUndo) {
+        NSUndoManager *undo = [self undoManager];
+        [[undo prepareWithInvocationTarget:self] applyTextSnapshot:previous toIndex:index registeringUndo:YES];
+        [undo setActionName:@"Edit Text"];
+    }
+}
+
+- (NSDictionary *)snapshotCanvasState {
+    NSMutableArray<MarkupStroke *> *strokeCopies = [[NSMutableArray alloc] initWithCapacity:self.strokes.count];
+    for (MarkupStroke *stroke in self.strokes) {
+        [strokeCopies addObject:[stroke copy]];
+    }
+
+    NSMutableArray<MarkupText *> *textCopies = [[NSMutableArray alloc] initWithCapacity:self.texts.count];
+    for (MarkupText *text in self.texts) {
+        [textCopies addObject:[text copy]];
+    }
+
+    id imageObject = self.image ? [self.image copy] : [NSNull null];
+    NSValue *selectionValue = [NSValue valueWithRect:self.selectionRect];
+
+    return @{ @"image": imageObject,
+              @"strokes": strokeCopies,
+              @"texts": textCopies,
+              @"hasSelection": @(self.hasSelectionRect),
+              @"selectionRect": selectionValue };
+}
+
+- (void)restoreCanvasStateFromSnapshot:(NSDictionary *)snapshot
+                       registeringUndo:(BOOL)registerUndo {
+    if (!snapshot) {
+        return;
+    }
+
+    NSDictionary *currentSnapshot = registerUndo ? [self snapshotCanvasState] : nil;
+
+    id imageObject = snapshot[@"image"];
+    if ([imageObject isKindOfClass:[NSImage class]]) {
+        self.image = [imageObject copy];
+    } else {
+        self.image = nil;
+    }
+
+    self.strokes = [snapshot[@"strokes"] mutableCopy] ?: [[NSMutableArray alloc] init];
+    self.texts = [snapshot[@"texts"] mutableCopy] ?: [[NSMutableArray alloc] init];
+
+    BOOL hasSelection = [snapshot[@"hasSelection"] boolValue];
+    NSRect selection = hasSelection ? [snapshot[@"selectionRect"] rectValue] : NSZeroRect;
+    self.hasSelectionRect = hasSelection;
+    self.selectionRect = selection;
+
+    [self cancelActiveTextEntry];
+    self.currentStroke = nil;
+
+    [self updateFrameSize];
+    [self updateForEnclosingBoundsChange];
+    [self updateSelectionAnimationState];
+    [self setNeedsDisplay:YES];
+    [self updateCursorForActiveTool];
+    [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewDidRestoreStateNotification object:self];
+
+    if (registerUndo && currentSnapshot) {
+        NSUndoManager *undo = [self undoManager];
+        [[undo prepareWithInvocationTarget:self] restoreCanvasStateFromSnapshot:currentSnapshot registeringUndo:YES];
+    }
+}
 static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) {
     if (!image) {
         return nil;
@@ -482,6 +1070,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     return YES;
 }
 
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    [self updateCursorForActiveTool];
+}
+
 - (void)setHostScrollView:(NSScrollView *)hostScrollView {
     if (_hostScrollView == hostScrollView) {
         return;
@@ -523,13 +1116,443 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
     [self updateSelectionAnimationState];
     [self setNeedsDisplay:YES];
+    [self updateCursorForActiveTool];
 }
+
+- (NSCursor *)cursorForActiveTool {
+    switch (self.activeTool) {
+        case ScreenshotCanvasToolHighlighter:
+            return [[self class] tintedCursorForToolKey:@"highlighter" color:self.highlighterColor fallback:[NSCursor crosshairCursor]];
+        case ScreenshotCanvasToolPen:
+            return [[self class] tintedCursorForToolKey:@"pen" color:self.penColor fallback:[NSCursor crosshairCursor]];
+        case ScreenshotCanvasToolEraser: {
+            NSCursor *cursor = [[self class] customCursorForToolKey:@"eraser" fallback:[NSCursor pointingHandCursor]];
+            return cursor ?: [NSCursor pointingHandCursor];
+        }
+        case ScreenshotCanvasToolSelect:
+            return [NSCursor crosshairCursor];
+        case ScreenshotCanvasToolText:
+            return [NSCursor IBeamCursor];
+        default:
+            return [NSCursor arrowCursor];
+    }
+}
+
+- (BOOL)shouldShowCanvasCursor {
+    return self.mouseInsideCanvas;
+}
+
+- (void)updateCursorForActiveTool {
+    if (self.window) {
+        [self.window invalidateCursorRectsForView:self];
+    }
+    ScreenshotCursorLog(@"[Cursor] updateCursorForActiveTool mouseInside=%d", self.mouseInsideCanvas);
+    NSCursor *cursor = [self shouldShowCanvasCursor] ? [self cursorForActiveTool] : [NSCursor arrowCursor];
+    [cursor set];
+}
+
+- (void)resetCursorRects {
+    [super resetCursorRects];
+    BOOL currentlyInside = self.mouseInsideCanvas;
+    if (self.window) {
+        NSPoint mouseLocation = [self.window mouseLocationOutsideOfEventStream];
+        NSPoint localPoint = [self convertPoint:mouseLocation fromView:nil];
+        currentlyInside = NSMouseInRect(localPoint, self.bounds, self.isFlipped);
+        ScreenshotCursorLog(@"[Cursor] resetCursorRects point=%@ bounds=%@ flipped=%d -> inside=%d",
+                             NSStringFromPoint(localPoint),
+                             NSStringFromRect(self.bounds),
+                             self.isFlipped,
+                             currentlyInside);
+    }
+    self.mouseInsideCanvas = currentlyInside;
+    NSCursor *rectCursor = [self shouldShowCanvasCursor] ? [self cursorForActiveTool] : [NSCursor arrowCursor];
+    [self addCursorRect:self.bounds cursor:rectCursor];
+    if (self.cursorTrackingTag != 0) {
+        [self removeTrackingRect:self.cursorTrackingTag];
+        self.cursorTrackingTag = 0;
+    }
+    self.cursorTrackingTag = [self addTrackingRect:self.bounds
+                                             owner:self
+                                          userData:NULL
+                                      assumeInside:self.mouseInsideCanvas];
+    ScreenshotCursorLog(@"[Cursor] resetCursorRects trackingTag=%ld assumeInside=%d",
+                        (long)self.cursorTrackingTag,
+                        self.mouseInsideCanvas);
+}
+
+- (void)mouseEntered:(NSEvent *)event {
+    [super mouseEntered:event];
+    self.mouseInsideCanvas = YES;
+    ScreenshotCursorLog(@"[Cursor] mouseEntered point=%@", NSStringFromPoint(event.locationInWindow));
+    [self updateCursorForActiveTool];
+}
+
+- (void)mouseExited:(NSEvent *)event {
+    [super mouseExited:event];
+    self.mouseInsideCanvas = NO;
+    ScreenshotCursorLog(@"[Cursor] mouseExited point=%@", NSStringFromPoint(event.locationInWindow));
+    [self updateCursorForActiveTool];
+}
+
+- (void)refreshCursor {
+    ScreenshotCursorLog(@"[Cursor] refreshCursor mouseInside=%d", self.mouseInsideCanvas);
+    [self updateCursorForActiveTool];
+}
+
++ (NSCursor *)tintedCursorForToolKey:(NSString *)toolKey color:(NSColor *)color fallback:(NSCursor *)fallback {
+    if (toolKey.length == 0) {
+        return fallback;
+    }
+    NSColor *resolvedColor = color ?: [NSColor whiteColor];
+    NSColor *deviceColor = [resolvedColor colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: resolvedColor;
+    CGFloat tr = 0.0, tg = 0.0, tb = 0.0, ta = 1.0;
+    [deviceColor getRed:&tr green:&tg blue:&tb alpha:&ta];
+    NSString *cacheKey = [NSString stringWithFormat:@"%@:%0.4f:%0.4f:%0.4f:%0.4f", toolKey, tr, tg, tb, ta];
+    static NSMutableDictionary<NSString *, NSCursor *> *tintedCache = nil;
+    if (!tintedCache) {
+        tintedCache = [[NSMutableDictionary alloc] init];
+    }
+    NSCursor *cached = tintedCache[cacheKey];
+    if (cached) {
+        return cached;
+    }
+
+    NSDictionary *info = [self cursorMetadata][toolKey];
+    if (!info) {
+        return fallback;
+    }
+    NSString *file1x = info[@"file1x"] ?: info[@"file"];
+    NSNumber *sizeNumber = info[@"size1x"];
+    NSValue *hotspotValue = info[@"hotspot"];
+    NSPoint hotspot = hotspotValue ? hotspotValue.pointValue : NSMakePoint(0.0, 0.0);
+
+    NSBitmapImageRep *source = [self cursorBitmapNamed:file1x];
+    if (!source) {
+        return fallback;
+    }
+    NSBitmapImageRep *mutableRep = [source copy];
+    if (!mutableRep) {
+        mutableRep = source;
+    }
+
+    STBitmapBuffer buffer;
+    if (!STPrepareBitmapBuffer(mutableRep, &buffer)) {
+        return fallback;
+    }
+    if (!buffer.data || buffer.bytesPerPixel < 3) {
+        return fallback;
+    }
+
+    NSArray<NSColor *> *templateColors = [self templateColorsForToolKey:toolKey];
+    NSMutableArray<NSColor *> *deviceTemplates = [[NSMutableArray alloc] initWithCapacity:templateColors.count];
+    for (NSColor *templateColor in templateColors) {
+        NSColor *deviceTemplate = [templateColor colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: templateColor;
+        [deviceTemplates addObject:deviceTemplate];
+    }
+
+    NSUInteger templateCount = deviceTemplates.count;
+    typedef struct {
+        double r;
+        double g;
+        double b;
+        double a;
+    } STColorComponents;
+    STColorComponents *templateComponents = NULL;
+    if (templateCount > 0) {
+        templateComponents = calloc(templateCount, sizeof(STColorComponents));
+        if (!templateComponents) {
+            return fallback;
+        }
+        for (NSUInteger idx = 0; idx < templateCount; idx++) {
+            NSColor *templateColor = deviceTemplates[idx];
+            double cr = 0.0, cg = 0.0, cb = 0.0, ca = 1.0;
+            [templateColor getRed:&cr green:&cg blue:&cb alpha:&ca];
+            templateComponents[idx].r = cr;
+            templateComponents[idx].g = cg;
+            templateComponents[idx].b = cb;
+            templateComponents[idx].a = ca;
+        }
+    }
+
+    const double tolerance = 0.35;
+    const double toleranceSquared = tolerance * tolerance;
+
+    for (NSInteger y = 0; y < buffer.height; y++) {
+        unsigned char *row = buffer.data + (y * buffer.bytesPerRow);
+        for (NSInteger x = 0; x < buffer.width; x++) {
+            unsigned char *pixel = row + (x * buffer.bytesPerPixel);
+            double alpha = buffer.hasAlpha ? (pixel[buffer.aIndex] / 255.0) : 1.0;
+            if (alpha <= 0.05) {
+                continue;
+            }
+            double pr = pixel[buffer.rIndex] / 255.0;
+            double pg = pixel[buffer.gIndex] / 255.0;
+            double pb = pixel[buffer.bIndex] / 255.0;
+
+            if (templateCount == 0) {
+                pixel[buffer.rIndex] = STRoundToByte(tr);
+                pixel[buffer.gIndex] = STRoundToByte(tg);
+                pixel[buffer.bIndex] = STRoundToByte(tb);
+                continue;
+            }
+
+            NSInteger bestIndex = -1;
+            double bestDistance = toleranceSquared;
+            for (NSUInteger idx = 0; idx < templateCount; idx++) {
+                STColorComponents comps = templateComponents[idx];
+                double dr = pr - comps.r;
+                double dg = pg - comps.g;
+                double db = pb - comps.b;
+                double distance = (dr * dr) + (dg * dg) + (db * db);
+                if (distance <= bestDistance) {
+                    bestDistance = distance;
+                    bestIndex = (NSInteger)idx;
+                }
+            }
+
+            if (bestIndex >= 0) {
+                STColorComponents comps = templateComponents[bestIndex];
+                double newR = STClamp01(tr + (pr - comps.r));
+                double newG = STClamp01(tg + (pg - comps.g));
+                double newB = STClamp01(tb + (pb - comps.b));
+                pixel[buffer.rIndex] = STRoundToByte(newR);
+                pixel[buffer.gIndex] = STRoundToByte(newG);
+                pixel[buffer.bIndex] = STRoundToByte(newB);
+            }
+        }
+    }
+
+    if (templateComponents) {
+        free(templateComponents);
+    }
+
+    CGFloat sizeInPoints = sizeNumber ? sizeNumber.doubleValue : mutableRep.size.width;
+    if (sizeInPoints <= 0.0) {
+        sizeInPoints = mutableRep.pixelsWide > 0 ? mutableRep.pixelsWide : 24.0;
+    }
+    NSSize targetSize = NSMakeSize(sizeInPoints, sizeInPoints);
+    [mutableRep setSize:targetSize];
+    NSImage *cursorImage = [[NSImage alloc] initWithSize:targetSize];
+    [cursorImage addRepresentation:mutableRep];
+
+    NSCursor *cursor = [[NSCursor alloc] initWithImage:cursorImage hotSpot:hotspot];
+    if (cursor) {
+        tintedCache[cacheKey] = cursor;
+        return cursor;
+    }
+    return fallback ?: [NSCursor arrowCursor];
+}
+
++ (NSBitmapImageRep *)cursorBitmapNamed:(NSString *)name {
+    if (name.length == 0) {
+        return nil;
+    }
+    static NSMutableDictionary<NSString *, NSBitmapImageRep *> *bitmapCache = nil;
+    if (!bitmapCache) {
+        bitmapCache = [[NSMutableDictionary alloc] init];
+    }
+    NSBitmapImageRep *cached = bitmapCache[name];
+    if (cached) {
+        return [cached copy];
+    }
+
+    NSBundle *bundle = [NSBundle mainBundle];
+    NSString *path = [bundle pathForResource:name ofType:@"tiff" inDirectory:@"Cursors"];
+    if (!path) {
+        path = [bundle pathForResource:name ofType:@"png" inDirectory:@"Cursors"];
+    }
+    if (!path) {
+        path = [bundle pathForResource:name ofType:@"tiff"];
+    }
+    if (!path) {
+        path = [bundle pathForResource:name ofType:@"png"];
+    }
+    if (!path) {
+        return nil;
+    }
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    if (!data) {
+        return nil;
+    }
+
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithData:data];
+    if (!rep) {
+        NSArray *candidates = [NSBitmapImageRep imageRepsWithData:data];
+        for (NSImageRep *candidate in candidates) {
+            if ([candidate isKindOfClass:[NSBitmapImageRep class]]) {
+                rep = [(NSBitmapImageRep *)candidate copy];
+                break;
+            }
+        }
+    }
+    if (!rep) {
+        NSImage *image = [[NSImage alloc] initWithData:data];
+        if (image) {
+            NSRect rect = NSMakeRect(0.0, 0.0, image.size.width, image.size.height);
+            [image lockFocus];
+            rep = [[NSBitmapImageRep alloc] initWithFocusedViewRect:rect];
+            [image unlockFocus];
+        }
+    }
+    if (!rep) {
+        return nil;
+    }
+
+    NSBitmapImageRep *standardized = STCreateDeviceRGBBitmapFromRep(rep);
+    if (!standardized) {
+        return nil;
+    }
+    bitmapCache[name] = standardized;
+    return [standardized copy];
+}
+
++ (NSArray<NSColor *> *)templateColorsForToolKey:(NSString *)toolKey {
+    static NSDictionary<NSString *, NSArray<NSColor *> *> *templates = nil;
+    if (!templates) {
+        templates = @{
+            @"pen": @[[NSColor colorWithCalibratedRed:33.0/255.0 green:150.0/255.0 blue:243.0/255.0 alpha:1.0],
+                       [NSColor colorWithCalibratedRed:25.0/255.0 green:118.0/255.0 blue:210.0/255.0 alpha:1.0]],
+            @"highlighter": @[[NSColor colorWithCalibratedRed:255.0/255.0 green:235.0/255.0 blue:59.0/255.0 alpha:1.0]]
+        };
+    }
+    NSArray<NSColor *> *colors = templates[toolKey];
+    return colors ?: @[];
+}
+
+
+
++ (NSCursor *)customCursorForToolKey:(NSString *)toolKey fallback:(NSCursor *)fallback {
+    if (toolKey.length == 0) {
+        return fallback;
+    }
+    static NSMutableDictionary<NSString *, NSCursor *> *cache = nil;
+    if (!cache) {
+        cache = [[NSMutableDictionary alloc] init];
+    }
+
+    NSCursor *cached = cache[toolKey];
+    if (cached) {
+        return cached;
+    }
+
+    NSDictionary *info = [self cursorMetadata][toolKey];
+    if (!info) {
+        return fallback;
+    }
+
+    NSString *file1x = info[@"file1x"];
+    NSNumber *size1xNumber = info[@"size1x"];
+    NSValue *hotspotValue = info[@"hotspot"];
+    NSPoint hotspot = hotspotValue ? hotspotValue.pointValue : NSMakePoint(0.0, 0.0);
+
+    NSBitmapImageRep *rep = [self cursorBitmapNamed:file1x];
+    if (!rep) {
+        return fallback;
+    }
+
+    CGFloat sizeInPoints = size1xNumber ? size1xNumber.doubleValue : rep.size.width;
+    if (sizeInPoints <= 0.0) {
+        sizeInPoints = rep.pixelsWide > 0 ? rep.pixelsWide : 24.0;
+    }
+    NSSize targetSize = NSMakeSize(sizeInPoints, sizeInPoints);
+    [rep setSize:targetSize];
+    NSImage *cursorImage = [[NSImage alloc] initWithSize:targetSize];
+    [cursorImage addRepresentation:rep];
+
+    NSCursor *cursor = [[NSCursor alloc] initWithImage:cursorImage hotSpot:hotspot];
+    if (cursor) {
+        cache[toolKey] = cursor;
+        return cursor;
+    }
+    return fallback ?: [NSCursor arrowCursor];
+}
+
+
+
++ (NSImage *)loadCursorImageNamed:(NSString *)name {
+    if (name.length == 0) {
+        return nil;
+    }
+    NSBundle *bundle = [NSBundle mainBundle];
+    NSString *path = [bundle pathForResource:name ofType:@"tiff" inDirectory:@"Cursors"];
+    if (!path) {
+        path = [bundle pathForResource:name ofType:@"png" inDirectory:@"Cursors"];
+    }
+    if (!path) {
+        path = [bundle pathForResource:name ofType:@"tiff"];
+    }
+    if (!path) {
+        path = [bundle pathForResource:name ofType:@"png"];
+    }
+    if (!path) {
+        return nil;
+    }
+    return [[NSImage alloc] initWithContentsOfFile:path];
+}
+
++ (NSDictionary<NSString *, NSDictionary *> *)cursorMetadata {
+    static NSDictionary<NSString *, NSDictionary *> *metadata = nil;
+    static BOOL attemptedLoad = NO;
+    if (!metadata && !attemptedLoad) {
+        attemptedLoad = YES;
+        NSBundle *bundle = [NSBundle mainBundle];
+        NSString *path = [bundle pathForResource:@"markup-cursors.metadata" ofType:@"json" inDirectory:@"Cursors"];
+        if (!path) {
+            path = [bundle pathForResource:@"markup-cursors.metadata" ofType:@"json"];
+        }
+        if (path) {
+            NSData *data = [NSData dataWithContentsOfFile:path];
+            if (data) {
+                NSError *error = nil;
+                id json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&error];
+                if ([json isKindOfClass:[NSArray class]]) {
+                    NSMutableDictionary<NSString *, NSMutableDictionary *> *mutable = [[NSMutableDictionary alloc] init];
+                    for (NSDictionary *entry in (NSArray *)json) {
+                        NSString *tool = entry[@"tool"];
+                        NSNumber *size = entry[@"size"];
+                        NSString *file = entry[@"file"];
+                        NSArray *hotspotArray = entry[@"hotspot"];
+                        if (![tool isKindOfClass:[NSString class]] || ![size isKindOfClass:[NSNumber class]] || ![file isKindOfClass:[NSString class]]) {
+                            continue;
+                        }
+
+                        NSMutableDictionary *toolInfo = mutable[tool];
+                        if (!toolInfo) {
+                            toolInfo = [[NSMutableDictionary alloc] init];
+                            mutable[tool] = toolInfo;
+                        }
+
+                        if ([size integerValue] <= 32 || !toolInfo[@"file1x"]) {
+                            toolInfo[@"file1x"] = file;
+                            if ([hotspotArray isKindOfClass:[NSArray class]] && hotspotArray.count >= 2) {
+                                CGFloat x = [hotspotArray[0] doubleValue];
+                                CGFloat y = [hotspotArray[1] doubleValue];
+                                toolInfo[@"hotspot"] = [NSValue valueWithPoint:NSMakePoint(x, y)];
+                            }
+                            toolInfo[@"size1x"] = size;
+                        }
+                    }
+
+                    metadata = [[NSDictionary alloc] initWithDictionary:mutable copyItems:YES];
+                }
+            }
+        }
+        if (!metadata) {
+            metadata = @{};
+        }
+    }
+    return metadata ?: @{};
+}
+
 
 - (void)clipViewBoundsDidChange:(NSNotification *)notification {
     [self updateForEnclosingBoundsChange];
 }
 
 - (void)loadImage:(NSImage *)image {
+    [[self undoManager] removeAllActions];
+    [self cancelActiveTextEntry];
+    self.editingTextSnapshot = nil;
     self.image = image;
     [self clearMarkup];
     [self clearSelection];
@@ -613,6 +1636,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [self.activeTextView removeFromSuperview];
     self.activeTextView = nil;
     self.currentTextEntry = nil;
+    self.editingTextSnapshot = nil;
     self.isResizingTextBox = NO;
     self.pendingTextRect = NSZeroRect;
     [self updateSelectionAnimationState];
@@ -625,19 +1649,32 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     NSString *submitted = self.activeTextView.string ?: @"";
     NSString *trimmed = [submitted stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    MarkupText *entry = self.currentTextEntry;
+    NSUInteger existingIndex = [self.texts indexOfObjectIdenticalTo:entry];
+
     if (trimmed.length > 0) {
-        self.currentTextEntry.text = submitted;
-        self.currentTextEntry.color = self.textColor ?: [NSColor whiteColor];
+        entry.text = submitted;
+        entry.color = self.textColor ?: [NSColor whiteColor];
         NSRect viewFrame = self.activeTextView.frame;
-        self.currentTextEntry.origin = NSMakePoint(viewFrame.origin.x / self.zoomScale,
-                                                   viewFrame.origin.y / self.zoomScale);
-        self.currentTextEntry.boxSize = NSMakeSize(viewFrame.size.width / self.zoomScale,
-                                                   viewFrame.size.height / self.zoomScale);
-        [self.currentTextEntry updateMeasuredSize];
-        [self.texts addObject:self.currentTextEntry];
-        [self setNeedsDisplay:YES];
+        entry.origin = NSMakePoint(viewFrame.origin.x / self.zoomScale,
+                                   viewFrame.origin.y / self.zoomScale);
+        entry.boxSize = NSMakeSize(viewFrame.size.width / self.zoomScale,
+                                   viewFrame.size.height / self.zoomScale);
+        [entry updateMeasuredSize];
+
+        if (existingIndex == NSNotFound) {
+            [self insertText:entry atIndex:self.texts.count registeringUndo:YES actionName:@"Insert Text"];
+        } else {
+            [self setNeedsDisplay:YES];
+            if (self.editingTextSnapshot) {
+                NSUndoManager *undo = [self undoManager];
+                [[undo prepareWithInvocationTarget:self] applyTextSnapshot:self.editingTextSnapshot toIndex:existingIndex registeringUndo:YES];
+                [undo setActionName:@"Edit Text"];
+            }
+        }
     }
 
+    self.editingTextSnapshot = nil;
     [self cancelActiveTextEntry];
 }
 
@@ -812,6 +1849,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
 
     self.currentTextEntry = entry;
+    if (existingText) {
+        self.editingTextSnapshot = [existingText copy];
+    } else {
+        self.editingTextSnapshot = nil;
+    }
     [self.currentTextEntry updateMeasuredSize];
     self.pendingTextRect = NSZeroRect;
 
@@ -893,7 +1935,6 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     CGFloat height = round(imageSize.height * self.zoomScale);
     NSSize targetSize = NSMakeSize(MAX(width, 1.0f), MAX(height, 1.0f));
     [self setFrameSize:targetSize];
-    [self updateScrollerVisibility];
     [self updateActiveTextViewFrame];
 }
 
@@ -915,23 +1956,12 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (fabs(scaleX - scaleY) < 0.0005f) {
         newScale = scaleX;
     }
+    newScale = MIN(newScale, 1.0);
     newScale = MAX(0.05, MIN(newScale, 8.0));
     _zoomScale = newScale;
     [self updateFrameSize];
     [self setNeedsDisplay:YES];
     [self updateActiveTextViewFrame];
-}
-
-- (void)updateScrollerVisibility {
-    if (!self.hostScrollView) {
-        return;
-    }
-    BOOL shouldScroll = !self.fitToWindow;
-    [self.hostScrollView setHasHorizontalScroller:shouldScroll];
-    [self.hostScrollView setHasVerticalScroller:shouldScroll];
-    if (!shouldScroll) {
-        [self.hostScrollView flashScrollers];
-    }
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
@@ -1071,39 +2101,20 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [self commitActiveTextIfNeeded];
 
     CGFloat tolerance = 10.0 / self.zoomScale;
-    BOOL removedStroke = NO;
-    NSEnumerator<MarkupStroke *> *enumerator = [self.strokes reverseObjectEnumerator];
-    MarkupStroke *stroke = nil;
-    NSMutableArray<MarkupStroke *> *remaining = [[NSMutableArray alloc] init];
-
-    while ((stroke = [enumerator nextObject])) {
-        if (!removedStroke && [stroke containsPoint:point tolerance:tolerance]) {
-            removedStroke = YES;
-            continue;
-        }
-        [remaining insertObject:stroke atIndex:0];
-    }
-
-    BOOL removedText = NO;
-    if (!removedStroke) {
-        for (NSInteger idx = (NSInteger)self.texts.count - 1; idx >= 0; idx--) {
-            MarkupText *text = self.texts[(NSUInteger)idx];
-            if ([text containsPoint:point]) {
-                [self.texts removeObjectAtIndex:(NSUInteger)idx];
-                removedText = YES;
-                break;
-            }
+    for (NSInteger idx = (NSInteger)self.strokes.count - 1; idx >= 0; idx--) {
+        MarkupStroke *stroke = self.strokes[(NSUInteger)idx];
+        if ([stroke containsPoint:point tolerance:tolerance]) {
+            [self removeStrokeAtIndex:(NSUInteger)idx registeringUndo:YES actionName:@"Erase Stroke"];
+            return;
         }
     }
 
-    if (removedStroke) {
-        self.strokes = remaining;
-        [self setNeedsDisplay:YES];
-        return;
-    }
-
-    if (removedText) {
-        [self setNeedsDisplay:YES];
+    for (NSInteger idx = (NSInteger)self.texts.count - 1; idx >= 0; idx--) {
+        MarkupText *text = self.texts[(NSUInteger)idx];
+        if ([text containsPoint:point]) {
+            [self removeTextAtIndex:(NSUInteger)idx registeringUndo:YES actionName:@"Delete Text"];
+            return;
+        }
     }
 }
 
@@ -1144,7 +2155,6 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
         MarkupText *hitText = [self textOverlayContainingImagePoint:imagePoint];
         if (hitText) {
-            [self.texts removeObject:hitText];
             [self beginTextEntryWithImageRect:[hitText bounds] existingText:hitText];
             return;
         }
@@ -1386,9 +2396,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     NSPoint imagePoint = [self imagePointForEvent:event];
     [self.currentStroke addPoint:imagePoint];
-    [self.strokes addObject:self.currentStroke];
+    MarkupStroke *finalStroke = self.currentStroke;
     self.currentStroke = nil;
-    [self setNeedsDisplay:YES];
+    [self insertStroke:finalStroke atIndex:self.strokes.count registeringUndo:YES actionName:@"Draw Stroke"];
 }
 
 - (NSImage *)flattenedImageWithinRect:(NSRect)clipRect {
@@ -1457,20 +2467,28 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     STBitmapBuffer buffer;
     BOOL canRasterizeDirectly = STPrepareBitmapBuffer(bitmap, &buffer);
+#if defined(GNUSTEP)
+    BOOL rasterizeTextDirectly = canRasterizeDirectly;
+#else
+    BOOL rasterizeTextDirectly = NO;
+#endif
     BOOL needsContextDrawing = !canRasterizeDirectly;
 
     if (needsContextDrawing) {
         [NSGraphicsContext saveGraphicsState];
         [NSGraphicsContext setCurrentContext:bitmapContext];
 
-        for (MarkupText *text in self.texts) {
-            [text renderInContext:bitmapContext canvasSize:size];
-        }
         for (MarkupStroke *stroke in self.strokes) {
             [stroke renderInContext:bitmapContext canvasSize:size];
         }
         if (self.currentStroke) {
             [self.currentStroke renderInContext:bitmapContext canvasSize:size];
+        }
+        for (MarkupText *text in self.texts) {
+            [text renderInContext:bitmapContext canvasSize:size];
+        }
+        if (self.currentTextEntry) {
+            [self.currentTextEntry renderInContext:bitmapContext canvasSize:size];
         }
 
         [NSGraphicsContext restoreGraphicsState];
@@ -1481,8 +2499,23 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         if (self.currentStroke) {
             STRasterizeStrokeOntoBitmap(self.currentStroke, &buffer, size);
         }
-        for (MarkupText *text in self.texts) {
-            STRasterizeTextOntoBitmap(text, &buffer, size);
+        if (rasterizeTextDirectly) {
+            for (MarkupText *text in self.texts) {
+                STRasterizeTextOntoBitmap(text, &buffer, size);
+            }
+            if (self.currentTextEntry) {
+                STRasterizeTextOntoBitmap(self.currentTextEntry, &buffer, size);
+            }
+        } else {
+            [NSGraphicsContext saveGraphicsState];
+            [NSGraphicsContext setCurrentContext:bitmapContext];
+            for (MarkupText *text in self.texts) {
+                [text renderInContext:bitmapContext canvasSize:size];
+            }
+            if (self.currentTextEntry) {
+                [self.currentTextEntry renderInContext:bitmapContext canvasSize:size];
+            }
+            [NSGraphicsContext restoreGraphicsState];
         }
     }
 
@@ -1551,6 +2584,8 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     [self commitActiveTextIfNeeded];
 
+    NSDictionary *snapshot = [self snapshotCanvasState];
+
     NSImage *croppedImage = [self croppedBaseImageWithRect:clipRect];
     if (!croppedImage) {
         return NO;
@@ -1582,7 +2617,26 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [self updateFrameSize];
     [self updateForEnclosingBoundsChange];
     [self setNeedsDisplay:YES];
+
+    NSUndoManager *undo = [self undoManager];
+    if (ScreenshotUndoLoggingEnabled && ScreenshotUndoLoggingEnabled()) {
+        NSLog(@"[Undo Debug] crop view=%p window=%p undo=%p", self, self.window, undo);
+    }
+    if (undo && snapshot) {
+        if (ScreenshotUndoLoggingEnabled && ScreenshotUndoLoggingEnabled()) {
+            NSLog(@"[Undo Debug] register undo manager=%p grouping=%ld", undo, (long)[undo groupingLevel]);
+        }
+        [undo registerUndoWithTarget:self selector:@selector(restoreSnapshotForUndo:) object:snapshot];
+        [undo setActionName:@"Crop"];
+        if (ScreenshotUndoLoggingEnabled && ScreenshotUndoLoggingEnabled()) {
+            NSLog(@"[Undo Debug] canUndo after register=%d", [undo canUndo]);
+        }
+    }
     return YES;
+}
+
+- (void)restoreSnapshotForUndo:(NSDictionary *)snapshot {
+    [self restoreCanvasStateFromSnapshot:snapshot registeringUndo:YES];
 }
 
 @end

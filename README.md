@@ -1,21 +1,31 @@
-# ScreenshotTool Development Notes
+# ScreenshotTool Developer Notes
 
-## Current Status
-- **Toolbar Icons**: Highlighter, Pen, and Copy icons render correctly. Color pickers show the labeled color wells, and the generated eraser icon is present (placeholder art for now).
-- **Tool State Feedback**: Active tool buttons swap to their `*-active` variants via `refreshToolButtonIcons`, providing pressed-state visuals.
-- **Zoom Control**: Uses an `NSPopUpButton` positioned with a trailing space item; drop-down works and stays inset from the window edge.
-- **Copy Workflow**: `copy:` now flattens the screenshot with `lockFocus` and writes PNG/TIFF data to the pasteboard to avoid transparent pastes.
+## Highlights
+- **Status Bar Controls**: The bottom bar now exposes a shared width slider for the pen and highlighter. It shows the active tool name, a live pixel readout, and hyperlink actions for *Reset* and *Set as Default*.
+- **Tool Popovers**: Double‑click a toolbar button to open a mini settings sheet.
+  - Pen & highlighter popovers surface width sliders, quick preset buttons, color pickers, and default/reset affordances.
+  - The text popover lets you pick the default text color and font (launches the standard font panel).
+- **Color Feedback**: Pen, highlighter, and text toolbar icons render a live colour badge so users always see the currently configured colours.
+- **Preferences Window**: A dedicated window (App menu ▸ Preferences… or toolbar button) centralises defaults:
+  - Sliders + colour wells for pen/highlighter defaults, quick width presets, and text defaults (colour + font).
+  - Default save directory chooser (applies to Open/Save panels) and a global “Show status bar” toggle.
+  - “Restore Defaults” resets everything to factory settings.
+- **Workspace Defaults**: The default save directory persists between launches. Open/Save panels fall back to this directory when no image has been loaded yet.
+- **Copy Workflow**: `copy:` flattens the canvas to PNG/TIFF formats to preserve transparency in downstream editors.
+- **Zoom Control**: We keep the GNUstep-friendly `NSPopUpButton` with preset zoom options plus Fit-to-Window.
 
-## Outstanding Todos
-- **Clipboard Verification**: Paste an annotated image into GIMP/other editors to confirm transparency issues are resolved.
-- **Icon Polish**: Replace the auto-generated eraser and pressed-state icons with final artwork when available.
-- **Color Picker UX**: Revisit showing picker icons alongside the wells once a livelier presentation is ready.
-- **Icon Loader**: Active icon logic currently only affects tool buttons; re-enable for other items once assets exist.
+## Preferences & Environment
+- Cursor debug logging is disabled by default. Set `SCREENSHOT_CURSOR_DEBUG=1` before launching the app to stream cursor transition logs to the console.
+- Runtime logs (non-cursor) continue to append to `~/git/ScreenshotTool/screenshottool.log` unless `SCREENSHOT_TOOL_LOG_PATH` overrides the path.
 
-## Handy References
-- Debug log: `~/git/ScreenshotTool/screenshottool.log`
-- Generated icons: `Resources/*.png` and matching `*.tiff`
-- Flattening logic: `Source/ScreenshotCanvasView.m`
-- Toolbar behavior: `Source/AppDelegate.m`
+## Code Map
+- **AppDelegate**: Window management, toolbar wiring, status bar, preference plumbing, and persistence helpers.
+- **ScreenshotToolSettings**: Centralises defaults and `NSUserDefaults` keys shared across controllers.
+- **ToolSettingsPopoverController / TextToolPopoverController**: Popovers for brush/text configuration.
+- **PreferencesWindowController**: Builds the preferences UI and relays user actions back to `AppDelegate`.
+- **ScreenshotCanvasView**: Rendering pipeline, zoom handling, and cursor lifecycle.
 
-Next session: validate copy→GIMP, refine toolbar art, and continue UI polish.
+## Daily Dev Reminders
+- `make -j$(nproc)` rebuilds the GNUstep target.
+- Default resources sit in `Resources/`; the preferences toolbar icon ships as `Preferences.png`.
+- Manual QA checklist: status bar slider updates both tools, popovers stay in sync after preference edits, default save directory drives Open/Save, and hiding the status bar reflows the scroll view correctly.

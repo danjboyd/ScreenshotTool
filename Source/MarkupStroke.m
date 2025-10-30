@@ -1,3 +1,23 @@
+/*
+ * MarkupStroke.m
+ * Copyright (C) 2025 Daniel Boyd
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 51 Franklin Street, Fifth Floor,
+ * Boston, MA 02110-1301 USA.
+ */
+
 #import "MarkupStroke.h"
 
 static inline CGFloat sqr(CGFloat value) {
@@ -159,6 +179,15 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     } else {
         [path stroke];
     }
+}
+
+- (id)copyWithZone:(NSZone *)zone {
+    MarkupStroke *copy = [[[self class] allocWithZone:zone] initWithType:self.type
+                                                                  color:[self.color copy]
+                                                               lineWidth:self.lineWidth];
+    copy.mutablePoints = [[NSMutableArray alloc] initWithArray:self.mutablePoints];
+    copy.mutablePath = [self.mutablePath copy];
+    return copy;
 }
 
 - (void)translateByOffset:(NSPoint)offset clampToSize:(NSSize)size {

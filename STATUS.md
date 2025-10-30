@@ -1,33 +1,26 @@
-# ScreenshotTool Status — 2025-10-27
+# ScreenshotTool Status — 2025-10-29
 
-## Clipboard Flattening
-- Rebuilt the flattening pipeline to render into an explicit `NSBitmapImageRep` context so GNUstep preserves off-screen strokes (see `Source/ScreenshotCanvasView.m:953`).
-- Explicitly clone the source screenshot pixels via `TIFFRepresentation` before drawing markup to work around GNUstep dropping `NSImage` draws into bitmap contexts (`Source/ScreenshotCanvasView.m:974`).
-- Added a CPU-side rasterizer for strokes that paints straight into the bitmap data to bypass GNUstep’s `NSBezierPath` off-screen bug, while leaving the standard path as a fallback (`Source/ScreenshotCanvasView.m:146`).
-- Skipped `-flushGraphics` on the bitmap context to stop GNUstep from dereferencing a null draw target after copy, with inline notes about the macOS path (`Source/ScreenshotCanvasView.m:880`).
-- Documented the GNUstep-only device color normalization inside `MarkupStroke.renderInContext:canvasSize:` to keep highlighter/pen output visible (`Source/MarkupStroke.m:108`).
-- Remaining work: manually validate the generated PNG/TIFF data includes markup in a few scenarios and capture a minimal repro for a GNUstep bug report; the macOS build can eventually revert to the simpler `-lockFocus` approach once the upstream issue is fixed.
+## Tool Controls & Popovers
+- Status bar exposes a unified width slider + readout, along with `Reset`/`Set as Default` links that sync with stored defaults. The bar can be hidden via Preferences; layout reflows when it’s off.
+- Double-clicking Pen/Highlighter launches popovers with width presets, colour wells, and default management; double-clicking Text opens a popover with live colour preview and defers to the Font Panel for face/size changes.
+- Toolbar icons render colour badges for Pen/Highlighter/Text so users get instant visual feedback even when the status bar is hidden.
 
-## Text Overlays
-- Text tool now mirrors MSPaint: drag to create a dotted text box, edit inline, and resize the box live while typing (`Source/ScreenshotCanvasView.m:506`).
-- Text rendering flattens into the clipboard bitmap via `MarkupText.renderInContext:canvasSize:` and inherits the GNUstep flattening workarounds (`Source/MarkupText.m:45`).
-- Toolbar wiring reuses the pen colour well so text colour stays in sync until a dedicated control ships (`Source/AppDelegate.m:401`).
+## Preferences & Persistence
+- Preferences window now hosts drawing defaults (sliders + quick presets), text defaults (colour + Font Panel button with live summary), interface options, and default save directory. “Restore Defaults” resets the full set.
+- Default save directory drives both Open/Save panels when no image is loaded; path is created on demand and persisted via `NSUserDefaults`.
+- Status bar visibility toggle persists; all sliders/colours remain in sync across status bar, popovers, and preferences.
 
-## Selection & Cropping
-- Added a marquee selection tool with resize and move handles; the dashed overlay persists across tools for clarity (`Source/ScreenshotCanvasView.m:694`).
-- `Copy` now respects the active selection and exports only the marquee contents when present (`Source/AppDelegate.m:744`).
-- Introduced `Crop Image` (File ▸ Crop Image / ⌘K) to trim the canvas without flattening strokes/text—markup is translated into the cropped coordinate space so editing can continue (`Source/AppDelegate.m:769`).
-- Toolbar icons now use `AddText.png` and `MarqueeTool.png` so the text/select tools match the new workflow (`Source/AppDelegate.m:347`).
+## Menu & Navigation
+- App menu exposes Preferences (⌘,) and the File menu shortcut is now case-insensitive (`Ctrl+s`/`Ctrl+S`). Edit ▸ Crop to Selection (⌘K / Ctrl+K) replaces the redundant File entry.
+- Toolbar gained a Preferences item with the new `Preferences.png` asset.
 
-## Window/Layout & Menu
-- Status bar anchors at the bottom while the scroll view fills the central strip.
-- Fit-to-window remains the default with scrollers hidden when not needed.
-- `main.m` now follows the nibless guidance: the app warms `NSUserDefaults`, sets the delegate, and drives the run loop with `[NSApp run]` so GNUstep can manage menu windows directly (`Source/main.m:6`).
-- When GNUstep runs in `NSWindows95InterfaceStyle`, the main menu is explicitly attached to the content window so the bar embeds in-window without extra reveal workarounds (`Source/AppDelegate.m:316`).
-- Window still leaves right-edge slack; needs further tightening once clipboard/selection QA stabilises.
+## Clipboard & Rendering
+- Clipboard pipeline still rasterises via `NSBitmapImageRep` + CPU strokes to dodge GNUstep off-screen bugs; needs revalidation after today’s UI changes.
+- Cursor tinting honours active tool colours; debug logging stays gated via `SCREENSHOT_CURSOR_DEBUG=1`.
 
-## Action Items
-1. QA copy/save output for strokes, text, and marquee selections to confirm pixels survive and watch for colour/alpha artifacts.
-2. Verify the nibless menu behaviour on GNUstep (both global and Windows95 styles) now that the menu attaches automatically; capture screenshots for the eventual bug report.
-3. Distill the failing `-lockFocus` scenario into a GNUstep bug report and keep the workaround gated for macOS parity.
-4. Tighten the window width slack and polish selection UX (e.g., ESC-to-clear) once clipboard work is confirmed.
+## Open Questions / Follow-Ups
+1. Regression sweep on GNUstep: ensure popovers, status bar slider, and Preferences stay in sync (including restored defaults) with the new Font Panel integration.
+2. QA hiding/showing status bar, zoom/fitting, and toolbar colour badges to catch layout or refresh issues.
+3. Verify default save directory behaviour on GNOME (permissions, network shares) now that the path auto-creates and drives Open/Save.
+4. Clipboard QA: copy/paste annotated images into target editors to confirm no transparency regressions after today’s merges.
+5. Cursor hotspot polishing for pen/highlighter still outstanding; revisit `markup-cursors.metadata.json` once asset tweaks land.
