@@ -3,3 +3,4 @@ obj/
 *.dSYM/
 .DS_Store
 screenshottool.log
+debug.log
