@@ -15,7 +15,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)textToolPopoverDidRequestSetDefault:(TextToolPopoverController *)controller;
 @end
 
-@interface TextToolPopoverController : NSObject
+@interface TextToolPopoverController : NSObject <NSTextFieldDelegate, NSTextViewDelegate>
 
 @property (nonatomic, weak) id<TextToolPopoverControllerDelegate> delegate;
 

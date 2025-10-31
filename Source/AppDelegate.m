@@ -24,7 +24,7 @@ static NSString *ScreenshotToolLogFilePath(void) {
     return logPath;
 }
 
-static void ScreenshotToolAppendLog(NSString *message) {
+void ScreenshotToolAppendLog(NSString *message) {
     if (message.length == 0) {
         return;
     }
@@ -49,6 +49,54 @@ static void ScreenshotToolAppendLog(NSString *message) {
     [handle seekToEndOfFile];
     [handle writeData:data];
     [handle closeFile];
+}
+
+static NSString *STDebugToolName(ScreenshotCanvasTool tool) {
+    switch (tool) {
+        case ScreenshotCanvasToolHighlighter:
+            return @"Highlighter";
+        case ScreenshotCanvasToolPen:
+            return @"Pen";
+        case ScreenshotCanvasToolEraser:
+            return @"Eraser";
+        case ScreenshotCanvasToolText:
+            return @"Text";
+        case ScreenshotCanvasToolSelect:
+            return @"Select";
+    }
+    return @"Unknown";
+}
+
+static NSString *STDebugDescriptionForEvent(NSEvent *event) {
+    if (!event) {
+        return @"<no NSEvent>";
+    }
+    NSEventType type = event.type;
+    NSInteger clickCount = event.clickCount;
+    NSInteger buttonNumber = event.buttonNumber;
+    unsigned long modifiers = (unsigned long)event.modifierFlags;
+    NSPoint location = event.locationInWindow;
+    NSTimeInterval timestamp = event.timestamp;
+    return [NSString stringWithFormat:@"type=%ld button=%ld clickCount=%ld modifiers=0x%lx location=(%.1f, %.1f) timestamp=%.3f",
+                                      (long)type,
+                                      (long)buttonNumber,
+                                      (long)clickCount,
+                                      modifiers,
+                                      location.x,
+                                      location.y,
+                                      timestamp];
+}
+
+static NSString *STDebugDescriptionForSender(id sender) {
+    if (!sender) {
+        return @"<nil sender>";
+    }
+    if ([sender isKindOfClass:[NSToolbarItem class]]) {
+        NSToolbarItem *item = (NSToolbarItem *)sender;
+        NSString *identifier = item.itemIdentifier ?: @"<no identifier>";
+        return [NSString stringWithFormat:@"NSToolbarItem(%@)", identifier];
+    }
+    return NSStringFromClass([sender class]);
 }
 
 
@@ -99,6 +147,36 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
 @implementation AppDelegate
 
+- (void)applyToolTipToToolbarItem:(NSToolbarItem *)item source:(NSString *)source {
+    if (!item) {
+        return;
+    }
+    NSString *identifier = item.itemIdentifier;
+    NSString *tip = [self toolTipForIdentifier:identifier];
+    if (!tip) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"applyToolTip skipped %@ (source=%@)", identifier ?: @"<nil>", source ?: @"<nil>"]);
+        return;
+    }
+    item.toolTip = tip;
+    if (item.view) {
+        [item.view setToolTip:tip];
+    }
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"applyToolTip %@ -> %@ (source=%@)", identifier, tip, source ?: @"<nil>"]);
+}
+
+- (NSString *)toolTipForIdentifier:(NSToolbarItemIdentifier)identifier {
+    if ([identifier isEqualToString:ToolbarItemHighlighter]) {
+        return @"Highlighter Tool — double-click to configure";
+    }
+    if ([identifier isEqualToString:ToolbarItemPen]) {
+        return @"Pen Tool — double-click to configure";
+    }
+    if ([identifier isEqualToString:ToolbarItemText]) {
+        return @"Text Tool — double-click to configure";
+    }
+    return nil;
+}
+
 - (void)applicationWillFinishLaunching:(NSNotification *)notification {
     ScreenshotToolAppendLog(@"ScreenshotTool will finish launching");
     [self setupMenus];
@@ -117,15 +195,27 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     [self reflectZoomSelection];
 
     if (self.pendingOpenPath.length > 0) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: attempting deferred open for %@",
+                                 self.pendingOpenPath]);
         [self openImageAtURL:[NSURL fileURLWithPath:self.pendingOpenPath]];
         self.pendingOpenPath = nil;
     } else {
         NSArray<NSString *> *arguments = [[NSProcessInfo processInfo] arguments];
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: argc=%lu",
+                                 (unsigned long)arguments.count]);
         if (arguments.count > 1) {
             for (NSUInteger idx = 1; idx < arguments.count; idx++) {
                 NSString *candidate = arguments[idx];
+                ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: CLI arg[%lu]=%@",
+                                         (unsigned long)idx,
+                                         candidate]);
                 if ([self openImageAtURL:[NSURL fileURLWithPath:candidate]]) {
+                    ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: opened CLI arg[%lu]",
+                                             (unsigned long)idx]);
                     break;
+                } else {
+                    ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: failed to open CLI arg[%lu]",
+                                             (unsigned long)idx]);
                 }
             }
         }
@@ -134,11 +224,16 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 }
 
 - (BOOL)application:(NSApplication *)sender openFile:(NSString *)filename {
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"application:openFile: received %@", filename ?: @"<nil>"]);
     if (!self.canvasView) {
         self.pendingOpenPath = filename;
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Canvas not ready; deferring open for %@", filename ?: @"<nil>"]);
         return YES;
     }
-    return [self openImageAtURL:[NSURL fileURLWithPath:filename]];
+    BOOL opened = [self openImageAtURL:[NSURL fileURLWithPath:filename]];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"application:openFile: %@ %@", opened ? @"opened" : @"failed",
+                             filename ?: @"<nil>"]);
+    return opened;
 }
 
 - (BOOL)applicationShouldHandleReopen:(NSApplication *)theApplication hasVisibleWindows:(BOOL)flag {
@@ -363,6 +458,11 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     self.toolbar.sizeMode = NSToolbarSizeModeRegular;
     self.toolbar.displayMode = NSToolbarDisplayModeIconAndLabel;
 
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                         selector:@selector(toolbarWillAddItemNotification:)
+                                             name:NSToolbarWillAddItemNotification
+                                           object:self.toolbar];
+
     [self.window setToolbar:self.toolbar];
     [self.toolbar setSelectedItemIdentifier:ToolbarItemHighlighter];
     [self refreshToolButtonIcons];
@@ -430,11 +530,22 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
 #pragma mark - NSToolbarDelegate
 
+- (NSString *)debugDescriptionForColor:(NSColor *)color {
+    if (!color) {
+        return @"<nil>";
+    }
+    NSColor *device = [color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: color;
+    return [NSString stringWithFormat:@"(r=%.3f g=%.3f b=%.3f a=%.3f)", device.redComponent, device.greenComponent, device.blueComponent, device.alphaComponent];
+}
+
 - (void)refreshToolButtonIcons {
     if (!self.toolbar) {
+        ScreenshotToolAppendLog(@"refreshToolButtonIcons: toolbar unavailable");
         return;
     }
     NSToolbarItemIdentifier activeIdentifier = [self identifierForTool:self.canvasView.activeTool];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"refreshToolButtonIcons: active=%@", activeIdentifier]);
+
     NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[
         ToolbarItemSelect,
         ToolbarItemHighlighter,
@@ -445,16 +556,31 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     for (NSToolbarItemIdentifier identifier in toolIdentifiers) {
         NSToolbarItem *item = [self toolbarItemForIdentifier:identifier];
         if (!item) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ missing", identifier]);
             continue;
         }
+
+        NSString *toolTip = [self toolTipForIdentifier:identifier];
+        if (toolTip) {
+            item.toolTip = toolTip;
+            if (item.view) {
+                [item.view setToolTip:toolTip];
+            }
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ tooltip set -> %@", identifier, toolTip]);
+        } else {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ tooltip not updated", identifier]);
+        }
+
         BOOL isActive = (activeIdentifier && [identifier isEqualToString:activeIdentifier]);
         NSString *iconName = [self iconNameForToolbarIdentifier:identifier active:isActive];
         if (!iconName && isActive) {
             iconName = [self iconNameForToolbarIdentifier:identifier active:NO];
         }
         if (!iconName) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ has no icon name (active=%@)", identifier, isActive ? @"YES" : @"NO"]);
             continue;
         }
+
         NSImage *icon = [self imageNamed:iconName];
         NSString *resolvedName = iconName;
         if (!icon && isActive) {
@@ -465,15 +591,40 @@ static const CGFloat ToolbarIconDimension = 32.0f;
                 ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ active icon missing, fell back to %@", identifier, resolvedName]);
             }
         }
+
         if (icon) {
-            [icon setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
-            item.image = icon;
+            NSImage *rendered = [icon copy];
+            NSColor *badgeColor = nil;
+            if ([identifier isEqualToString:ToolbarItemPen]) {
+                badgeColor = self.canvasView.penColor;
+            } else if ([identifier isEqualToString:ToolbarItemHighlighter]) {
+                badgeColor = self.canvasView.highlighterColor;
+            } else if ([identifier isEqualToString:ToolbarItemText]) {
+                badgeColor = self.canvasView.textColor;
+            }
+            if (badgeColor) {
+                rendered = [self imageByAddingColorBadgeToImage:rendered color:badgeColor];
+                ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ badge color %@", identifier, [self debugDescriptionForColor:badgeColor]]);
+            }
+            [rendered setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
+            item.image = rendered;
+            if (item.view && [item.view respondsToSelector:@selector(setImage:)]) {
+                id buttonView = item.view;
+                if ([buttonView respondsToSelector:@selector(setImage:)]) {
+                    [buttonView setImage:rendered];
+                }
+            }
             NSString *state = isActive ? @"active" : @"inactive";
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ set to %@ icon %@", identifier, state, resolvedName]);
         } else {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ missing icon %@", identifier, resolvedName]);
         }
     }
+}
+
+- (void)toolbarWillAddItemNotification:(NSNotification *)notification {
+    NSToolbarItem *item = notification.userInfo[@"item"];
+    [self applyToolTipToToolbarItem:item source:@"willAdd"];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
@@ -550,9 +701,12 @@ static const CGFloat ToolbarIconDimension = 32.0f;
                                                label:(NSString *)label
                                               action:(SEL)selector {
     NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:identifier];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Standard item build %@", identifier]);
     item.label = label;
     item.paletteLabel = label;
-    item.toolTip = label;
+    NSString *initialTip = [self toolTipForIdentifier:identifier] ?: label;
+    item.toolTip = initialTip;
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Set initial tooltip for %@ -> %@", identifier, initialTip]);
     item.target = self;
     item.action = selector;
     NSToolbarItemIdentifier activeIdentifier = [self identifierForTool:self.canvasView.activeTool];
@@ -1220,6 +1374,13 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 }
 
 - (void)closeActivePopovers {
+    BOOL penWasShown = self.penPopoverController.isShown;
+    BOOL highlighterWasShown = self.highlighterPopoverController.isShown;
+    BOOL textWasShown = self.textPopoverController.isShown;
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"closeActivePopovers called (penShown=%@ highlighterShown=%@ textShown=%@)",
+                             penWasShown ? @"YES" : @"NO",
+                             highlighterWasShown ? @"YES" : @"NO",
+                             textWasShown ? @"YES" : @"NO"]);
     [self.penPopoverController close];
     [self.highlighterPopoverController close];
     [self.textPopoverController close];
@@ -1231,12 +1392,14 @@ static const CGFloat ToolbarIconDimension = 32.0f;
             if (!self.penPopoverController) {
                 self.penPopoverController = [[ToolSettingsPopoverController alloc] initWithTool:ScreenshotCanvasToolPen];
                 self.penPopoverController.delegate = self;
+                ScreenshotToolAppendLog(@"Created Pen ToolSettingsPopoverController");
             }
             return self.penPopoverController;
         case ScreenshotCanvasToolHighlighter:
             if (!self.highlighterPopoverController) {
                 self.highlighterPopoverController = [[ToolSettingsPopoverController alloc] initWithTool:ScreenshotCanvasToolHighlighter];
                 self.highlighterPopoverController.delegate = self;
+                ScreenshotToolAppendLog(@"Created Highlighter ToolSettingsPopoverController");
             }
             return self.highlighterPopoverController;
         default:
@@ -1248,6 +1411,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     if (!self.textPopoverController) {
         self.textPopoverController = [[TextToolPopoverController alloc] init];
         self.textPopoverController.delegate = self;
+        ScreenshotToolAppendLog(@"Created TextToolPopoverController");
     }
     return self.textPopoverController;
 }
@@ -1264,27 +1428,66 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
 - (BOOL)isDoubleClickEvent:(NSEvent *)event {
     if (!event) {
+        ScreenshotToolAppendLog(@"isDoubleClickEvent: nil NSEvent encountered");
         return NO;
     }
     NSEventType type = event.type;
     if (type != NSEventTypeLeftMouseDown && type != NSEventTypeLeftMouseUp) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"isDoubleClickEvent: ignored event type %ld (clickCount=%ld)",
+                                 (long)type,
+                                 (long)event.clickCount]);
         return NO;
     }
-    return event.clickCount >= 2;
+    BOOL result = event.clickCount >= 2;
+    if (!result) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"isDoubleClickEvent: clickCount %ld below threshold",
+                                 (long)event.clickCount]);
+    } else {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"isDoubleClickEvent: detected double-click with clickCount=%ld",
+                                 (long)event.clickCount]);
+    }
+    return result;
 }
 
 - (void)showToolSettingsPopoverForTool:(ScreenshotCanvasTool)tool event:(NSEvent *)event {
     NSView *anchorView = self.window.contentView;
     if (!anchorView) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Skipping popover for %@: missing content view",
+                                 STDebugToolName(tool)]);
         return;
     }
     NSRect anchor = [self anchorRectForEvent:event inView:anchorView];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Requesting %@ popover (anchorView=%@ rect=%@ event=%@)",
+                             STDebugToolName(tool),
+                             NSStringFromClass([anchorView class]),
+                             NSStringFromRect(anchor),
+                             STDebugDescriptionForEvent(event)]);
     if (tool == ScreenshotCanvasToolPen || tool == ScreenshotCanvasToolHighlighter) {
         ToolSettingsPopoverController *controller = [self popoverControllerForTool:tool];
-        [controller showRelativeToRect:anchor ofView:anchorView preferredEdge:NSMinYEdge];
+        if (!controller) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Popover controller unavailable for %@",
+                                     STDebugToolName(tool)]);
+            return;
+        }
+        BOOL wasShown = controller.isShown;
+        [controller showRelativeToRect:anchor ofView:anchorView preferredEdge:NSMaxYEdge];
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ popover show invoked (wasShown=%@ nowShown=%@)",
+                                 STDebugToolName(tool),
+                                 wasShown ? @"YES" : @"NO",
+                                 controller.isShown ? @"YES" : @"NO"]);
     } else if (tool == ScreenshotCanvasToolText) {
         TextToolPopoverController *controller = [self textSettingsPopoverController];
-        [controller showRelativeToRect:anchor ofView:anchorView preferredEdge:NSMinYEdge];
+        if (!controller) {
+            ScreenshotToolAppendLog(@"Popover controller unavailable for Text tool");
+            return;
+        }
+        BOOL wasShown = controller.isShown;
+        [controller showRelativeToRect:anchor ofView:anchorView preferredEdge:NSMaxYEdge];
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Text popover show invoked (wasShown=%@ nowShown=%@)",
+                                 wasShown ? @"YES" : @"NO",
+                                 controller.isShown ? @"YES" : @"NO"]);
+    } else {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"No popover registered for %@", STDebugToolName(tool)]);
     }
 }
 
@@ -1867,22 +2070,42 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 }
 
 - (void)activateHighlighter:(id)sender {
-    (void)sender;
     NSEvent *event = [NSApp currentEvent];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action fired (sender=%@, event=%@)",
+                             STDebugToolName(ScreenshotCanvasToolHighlighter),
+                             STDebugDescriptionForSender(sender),
+                             STDebugDescriptionForEvent(event)]);
     BOOL openPopover = [self isDoubleClickEvent:event];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action doubleClick=%@ (clickCount=%ld)",
+                             STDebugToolName(ScreenshotCanvasToolHighlighter),
+                             openPopover ? @"YES" : @"NO",
+                             (long)(event ? event.clickCount : 0)]);
     [self selectTool:ScreenshotCanvasToolHighlighter];
     if (openPopover) {
+        ScreenshotToolAppendLog(@"Opening Highlighter popover after double-click toolbar activation");
         [self showToolSettingsPopoverForTool:ScreenshotCanvasToolHighlighter event:event];
+    } else {
+        ScreenshotToolAppendLog(@"Highlighter popover not opened (no double-click detected)");
     }
 }
 
 - (void)activatePen:(id)sender {
-    (void)sender;
     NSEvent *event = [NSApp currentEvent];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action fired (sender=%@, event=%@)",
+                             STDebugToolName(ScreenshotCanvasToolPen),
+                             STDebugDescriptionForSender(sender),
+                             STDebugDescriptionForEvent(event)]);
     BOOL openPopover = [self isDoubleClickEvent:event];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action doubleClick=%@ (clickCount=%ld)",
+                             STDebugToolName(ScreenshotCanvasToolPen),
+                             openPopover ? @"YES" : @"NO",
+                             (long)(event ? event.clickCount : 0)]);
     [self selectTool:ScreenshotCanvasToolPen];
     if (openPopover) {
+        ScreenshotToolAppendLog(@"Opening Pen popover after double-click toolbar activation");
         [self showToolSettingsPopoverForTool:ScreenshotCanvasToolPen event:event];
+    } else {
+        ScreenshotToolAppendLog(@"Pen popover not opened (no double-click detected)");
     }
 }
 
@@ -1891,12 +2114,22 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 }
 
 - (void)activateText:(id)sender {
-    (void)sender;
     NSEvent *event = [NSApp currentEvent];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action fired (sender=%@, event=%@)",
+                             STDebugToolName(ScreenshotCanvasToolText),
+                             STDebugDescriptionForSender(sender),
+                             STDebugDescriptionForEvent(event)]);
     BOOL openPopover = [self isDoubleClickEvent:event];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action doubleClick=%@ (clickCount=%ld)",
+                             STDebugToolName(ScreenshotCanvasToolText),
+                             openPopover ? @"YES" : @"NO",
+                             (long)(event ? event.clickCount : 0)]);
     [self selectTool:ScreenshotCanvasToolText];
     if (openPopover) {
+        ScreenshotToolAppendLog(@"Opening Text popover after double-click toolbar activation");
         [self showToolSettingsPopoverForTool:ScreenshotCanvasToolText event:event];
+    } else {
+        ScreenshotToolAppendLog(@"Text popover not opened (no double-click detected)");
     }
 }
 
@@ -2074,11 +2307,23 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
 - (BOOL)openImageAtURL:(NSURL *)url {
     if (!url) {
+        ScreenshotToolAppendLog(@"openImageAtURL invoked with nil URL");
         return NO;
     }
 
-    NSImage *image = [[NSImage alloc] initWithContentsOfURL:url];
+    NSImage *image = nil;
+    @try {
+        image = [[NSImage alloc] initWithContentsOfURL:url];
+    } @catch (NSException *exception) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"openImageAtURL exception for %@ (%@ - %@)",
+                                 url.path ?: url.absoluteString ?: @"<unknown>",
+                                 exception.name ?: @"<no name>",
+                                 exception.reason ?: @"<no reason>"]);
+        image = nil;
+    }
     if (!image) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"openImageAtURL failed to load image at %@",
+                                 url.path ?: url.absoluteString ?: @"<unknown>"]);
         NSAlert *alert = [[NSAlert alloc] init];
         alert.messageText = @"Unable to Open Image";
         alert.informativeText = url.path;
@@ -2087,6 +2332,11 @@ static const CGFloat ToolbarIconDimension = 32.0f;
         return NO;
     }
 
+    NSSize size = image.size;
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"openImageAtURL loaded %@ (%.0fx%.0f)",
+                             url.path ?: url.absoluteString ?: @"<unknown>",
+                             size.width,
+                             size.height]);
     self.currentImageURL = url;
     [self.canvasView loadImage:image];
     [self.window setTitleWithRepresentedFilename:url.path];

@@ -1,10 +1,12 @@
 #import "ToolSettingsPopoverController.h"
+#import "AppDelegate.h"
+#import "STFloatingPopover.h"
 #import "STHyperlinkButton.h"
 #import "ScreenshotToolSettings.h"
 #include <math.h>
 
-@interface ToolSettingsPopoverController () <NSPopoverDelegate>
-@property (nonatomic, strong) NSPopover *popover;
+@interface ToolSettingsPopoverController ()
+@property (nonatomic, strong) STFloatingPopover *popover;
 @property (nonatomic, strong) NSView *contentView;
 @property (nonatomic, strong) NSTextField *titleLabel;
 @property (nonatomic, strong) NSTextField *widthLabel;
@@ -26,7 +28,7 @@
 }
 
 - (void)dealloc {
-    [self.popover setDelegate:nil];
+    [self.popover close];
 }
 
 - (void)showRelativeToRect:(NSRect)rect ofView:(NSView *)view preferredEdge:(NSRectEdge)edge {
@@ -34,13 +36,40 @@
         [self buildPopover];
     }
     [self refresh];
-    if (!self.popover.isShown) {
-        [self.popover showRelativeToRect:rect ofView:view preferredEdge:edge];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"ToolSettingsPopoverController(%@) showRelativeToRect entry (popover=%@ isShown=%@)",
+                             [self titleText],
+                             self.popover ? @"YES" : @"NO",
+                             self.popover.isShown ? @"YES" : @"NO"]);
+    if (self.popover.isShown) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"ToolSettingsPopoverController(%@) showRelativeToRect skipped because popover already shown",
+                                 [self titleText]]);
+        return;
     }
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"ToolSettingsPopoverController(%@) showRelativeToRect requested (view=%@ rect=%@ edge=%ld)",
+                             [self titleText],
+                             NSStringFromClass([view class]),
+                             NSStringFromRect(rect),
+                             (long)edge]);
+    [self.popover showRelativeToRect:rect ofView:view preferredEdge:edge];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"ToolSettingsPopoverController(%@) showRelativeToRect invoked (visible=%@)",
+                             [self titleText],
+                             self.popover.isShown ? @"YES" : @"NO"]);
 }
 
 - (void)close {
+    if (!self.popover) {
+        return;
+    }
+    BOOL wasShown = self.popover.isShown;
+    if (!wasShown) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"ToolSettingsPopoverController(%@) close skipped (popover not shown)",
+                                 [self titleText]]);
+        return;
+    }
     [self.popover close];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"ToolSettingsPopoverController(%@) close invoked (wasShown=YES nowShown=%@)",
+                             [self titleText],
+                             self.popover.isShown ? @"YES" : @"NO"]);
 }
 
 - (BOOL)isShown {
@@ -76,16 +105,12 @@
 #pragma mark - Private
 
 - (void)buildPopover {
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"ToolSettingsPopoverController(%@) buildPopover begin", [self titleText]]);
     self.contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 260, 180)];
-
-    NSPopover *popover = [[NSPopover alloc] init];
-    popover.behavior = NSPopoverBehaviorTransient;
-    popover.animates = YES;
-    popover.contentSize = self.contentView.frame.size;
-    popover.contentViewController = [[NSViewController alloc] init];
-    popover.contentViewController.view = self.contentView;
-    popover.delegate = self;
-    self.popover = popover;
+    self.popover = [[STFloatingPopover alloc] initWithContentView:self.contentView];
+    self.popover.contentSize = self.contentView.bounds.size;
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"ToolSettingsPopoverController(%@) floating popover created",
+                             [self titleText]]);
 
     CGFloat padding = 12.0f;
     CGFloat contentWidth = self.contentView.bounds.size.width - (padding * 2.0f);
@@ -239,12 +264,6 @@
 - (void)defaultPressed:(id)sender {
     [self.delegate toolSettingsPopoverDidRequestSetDefault:self forTool:self.tool];
     [self refresh];
-}
-
-#pragma mark - NSPopoverDelegate
-
-- (void)popoverDidClose:(NSNotification *)notification {
-    (void)notification;
 }
 
 @end

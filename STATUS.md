@@ -18,6 +18,10 @@
 - Clipboard pipeline still rasterises via `NSBitmapImageRep` + CPU strokes to dodge GNUstep off-screen bugs; needs revalidation after today’s UI changes.
 - Cursor tinting honours active tool colours; debug logging stays gated via `SCREENSHOT_CURSOR_DEBUG=1`.
 
+## Toolbar QA
+- Tooltips on Highlighter/Pen/Text still disappear after first hover on GNUstep; added logging but needs deeper follow-up next week.
+- Toolbar icons still show original colours despite badge overlay refresh; verify image update path and GNUstep caching.
+
 ## Open Questions / Follow-Ups
 1. Regression sweep on GNUstep: ensure popovers, status bar slider, and Preferences stay in sync (including restored defaults) with the new Font Panel integration.
 2. QA hiding/showing status bar, zoom/fitting, and toolbar colour badges to catch layout or refresh issues.

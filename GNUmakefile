@@ -38,6 +38,10 @@ ScreenshotTool_HEADERS = Source/AppDelegate.h \
 	Source/ScreenshotCanvasView.h \
 	Source/MarkupStroke.h \
 	Source/MarkupText.h \
+	Source/STFloatingPopover.h \
+	Source/STFloatingPopoverWindow.h \
+	Source/STFloatingPopoverBackgroundView.h \
+	Source/STFloatingResizablePopover.h \
 	Source/STHyperlinkButton.h \
 	Source/ScreenshotToolSettings.h \
 	Source/ToolSettingsPopoverController.h \
@@ -49,6 +53,10 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/ScreenshotCanvasView.m \
 	Source/MarkupStroke.m \
 	Source/MarkupText.m \
+	Source/STFloatingPopover.m \
+	Source/STFloatingPopoverWindow.m \
+	Source/STFloatingPopoverBackgroundView.m \
+	Source/STFloatingResizablePopover.m \
 	Source/STHyperlinkButton.m \
 	Source/ScreenshotToolSettings.m \
 	Source/ToolSettingsPopoverController.m \
