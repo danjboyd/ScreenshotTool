@@ -1,4 +1,10 @@
-# ScreenshotTool Status — 2025-10-29
+# ScreenshotTool Status — 2025-11-03
+
+## Recent Progress (2025-11-03)
+- Restored custom GNUstep toolbar tooltips with a rounded panel, dynamic text wrapping, and proper show/hide cycles so hover feedback now persists beyond the first item.
+- Disabled native GNUstep tooltips while keeping Cocoa builds unchanged, and gated all tooltip diagnostics behind `SCREENSHOT_TOOL_DEBUG_TOOLTIPS` to keep default logs quiet.
+- Rebuilt ScreenshotTool after the tooltip refactor; `openapp ./ScreenshotTool.app/ … 2>&1 | tee ./debug.log` validated minimal startup noise without the env var set.
+- Follow-up: ensure the Highlighter, Pen, and Text toolbar icons reliably render the active colour badges (GNUstep caching still appears to hold onto stale artwork).
 
 ## Tool Controls & Popovers
 - Status bar exposes a unified width slider + readout, along with `Reset`/`Set as Default` links that sync with stored defaults. The bar can be hidden via Preferences; layout reflows when it’s off.
@@ -19,8 +25,8 @@
 - Cursor tinting honours active tool colours; debug logging stays gated via `SCREENSHOT_CURSOR_DEBUG=1`.
 
 ## Toolbar QA
-- Tooltips on Highlighter/Pen/Text still disappear after first hover on GNUstep; added logging but needs deeper follow-up next week.
-- Toolbar icons still show original colours despite badge overlay refresh; verify image update path and GNUstep caching.
+- Custom tooltip window now replaces native GNUstep hints; confirm no regressions when switching tools rapidly or moving the window between monitors.
+- Toolbar icons still show original colours despite badge overlay refresh; need to trace GNUstep caching or re-render workflow so Highlighter/Pen/Text artwork always reflects the selected colour.
 
 ## Open Questions / Follow-Ups
 1. Regression sweep on GNUstep: ensure popovers, status bar slider, and Preferences stay in sync (including restored defaults) with the new Font Panel integration.
