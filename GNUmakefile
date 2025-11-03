@@ -66,7 +66,6 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 CC = clang
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
 ScreenshotTool_CPPFLAGS += -I/usr/include/freetype2
-ADDITIONAL_LIBS += -ldispatch
 ADDITIONAL_LDFLAGS += -lfontconfig -lfreetype
 
 include $(GNUSTEP_MAKEFILES)/application.make
