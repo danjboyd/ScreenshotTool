@@ -1,6 +1,9 @@
 # ScreenshotTool Status — 2025-11-03
 
 ## Recent Progress (2025-11-03)
+- Crop-to-selection now registers a proper undo snapshot and the window size re-expands when undo restores the original image.
+- Status bar messages no longer contaminate the shared undo stack; the delegate now suppresses undo registration while touching the status text field.
+- Added headless probes (`make tests`) to lock in crop/undo and window-resize behaviour; wiring is in place pending further clean-up of GNUstep defaults warnings.
 - Restored custom GNUstep toolbar tooltips with a rounded panel, dynamic text wrapping, and proper show/hide cycles so hover feedback now persists beyond the first item.
 - Disabled native GNUstep tooltips while keeping Cocoa builds unchanged, and gated all tooltip diagnostics behind `SCREENSHOT_TOOL_DEBUG_TOOLTIPS` to keep default logs quiet.
 - Rebuilt ScreenshotTool after the tooltip refactor; `openapp ./ScreenshotTool.app/ … 2>&1 | tee ./debug.log` validated minimal startup noise without the env var set.
@@ -34,3 +37,5 @@
 3. Verify default save directory behaviour on GNOME (permissions, network shares) now that the path auto-creates and drives Open/Save.
 4. Clipboard QA: copy/paste annotated images into target editors to confirm no transparency regressions after today’s merges.
 5. Cursor hotspot polishing for pen/highlighter still outstanding; revisit `markup-cursors.metadata.json` once asset tweaks land.
+6. Regression (toolbar colour badges): Pen/Highlighter/Text buttons no longer display the coloured indicator dots; re-enable badge rendering after the async refresh refactor.
+7. Regression (custom tooltips): GNUstep default tooltips are showing again; reinstate the custom tooltip window and ensure it overrides the native implementation.

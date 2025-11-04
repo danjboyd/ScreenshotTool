@@ -5,20 +5,9 @@
 #import "ToolSettingsPopoverController.h"
 #import "TextToolPopoverController.h"
 #import "PreferencesWindowController.h"
-#import <AppKit/NSPanel.h>
 #import <AppKit/NSInterfaceStyle.h>
-#import <AppKit/NSBezierPath.h>
-#import <AppKit/NSAttributedString.h>
-#import <AppKit/NSScreen.h>
-#include <stdio.h>
 #include <math.h>
 #include <stdlib.h>
-
-#if defined(__APPLE__) && !defined(GNUSTEP)
-#define ST_SUPPORTS_NATIVE_TOOLTIPS 1
-#else
-#define ST_SUPPORTS_NATIVE_TOOLTIPS 0
-#endif
 
 static NSString *ScreenshotToolLogFilePath(void) {
     static NSString *logPath = nil;
@@ -35,41 +24,9 @@ static NSString *ScreenshotToolLogFilePath(void) {
     return logPath;
 }
 
-static const NSTimeInterval ToolbarTooltipDelay = 0.50;
-
-@interface STToolbarTooltipBackgroundView : NSView
-@end
-
-@implementation STToolbarTooltipBackgroundView
-
-- (BOOL)isOpaque {
-    return NO;
-}
-
-- (BOOL)isFlipped {
-    return YES;
-}
-
-- (void)drawRect:(NSRect)dirtyRect {
-    [[NSColor clearColor] setFill];
-    NSRectFill(dirtyRect);
-
-    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, 0.5, 0.5)
-                                                         xRadius:8.0
-                                                         yRadius:8.0];
-    [[NSColor colorWithCalibratedWhite:0 alpha:0.85] setFill];
-    [path fill];
-}
-
-@end
-
 void ScreenshotToolAppendLog(NSString *message) {
     if (message.length == 0) {
         return;
-    }
-    const char *utf8 = [message UTF8String];
-    if (utf8) {
-        fprintf(stderr, "%s\n", utf8);
     }
     unichar newline = 0x000A;
     NSString *line = [message stringByAppendingFormat:@"%C", newline];
@@ -156,6 +113,17 @@ static NSString * const ToolbarItemPreferences = @"com.screenshottool.toolbar.pr
 static const CGFloat StatusBarHeight = 24.0f;
 static const CGFloat ToolbarIconDimension = 32.0f;
 
+@interface STStatusTextField : NSTextField
+@end
+
+@implementation STStatusTextField
+
+- (NSUndoManager *)undoManager {
+    return nil;
+}
+
+@end
+
 @interface AppDelegate () <NSToolbarDelegate, ToolSettingsPopoverControllerDelegate, TextToolPopoverControllerDelegate, PreferencesWindowControllerDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NSScrollView *scrollView;
@@ -186,37 +154,10 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 @property (nonatomic, assign) BOOL statusBarVisiblePreference;
 @property (nonatomic, copy) NSString *pendingOpenPath;
 @property (nonatomic, strong) NSURL *currentImageURL;
-@property (nonatomic, strong) NSPanel *toolbarTooltipWindow;
-@property (nonatomic, strong) NSTextField *toolbarTooltipLabel;
-@property (nonatomic, copy) NSToolbarItemIdentifier currentTooltipIdentifier;
-@property (nonatomic, weak) NSToolbarItem *pendingTooltipItem;
-@property (nonatomic, weak) NSView *pendingTooltipView;
-@property (nonatomic, copy) NSString *pendingTooltipText;
-@property (nonatomic, strong) NSTimer *toolbarTooltipDelayTimer;
-@property (nonatomic, strong) NSTimer *mouseTrackingProbeTimer;
-@property (nonatomic, strong) NSMutableDictionary<NSToolbarItemIdentifier, NSNumber *> *toolbarTooltipTrackingTags;
-@property (nonatomic, strong) NSMutableDictionary<NSToolbarItemIdentifier, NSView *> *toolbarTooltipTrackingViews;
-@property (nonatomic, assign) BOOL debugTooltipsEnabled;
+@property (nonatomic, strong) NSUndoManager *undoManager;
 @end
 
 @implementation AppDelegate
-
-- (instancetype)init {
-    self = [super init];
-    if (self) {
-        NSDictionary *environment = [[NSProcessInfo processInfo] environment];
-        NSString *debugEnv = environment[@"SCREENSHOT_TOOL_DEBUG_TOOLTIPS"];
-        self.debugTooltipsEnabled = (debugEnv.length > 0);
-    }
-    return self;
-}
-
-- (void)appendTooltipLog:(NSString *)message {
-    if (!self.debugTooltipsEnabled || message.length == 0) {
-        return;
-    }
-    ScreenshotToolAppendLog(message);
-}
 
 - (void)applyToolTipToToolbarItem:(NSToolbarItem *)item source:(NSString *)source {
     if (!item) {
@@ -225,27 +166,14 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     NSString *identifier = item.itemIdentifier;
     NSString *tip = [self toolTipForIdentifier:identifier];
     if (!tip) {
-#if ST_SUPPORTS_NATIVE_TOOLTIPS
-        item.toolTip = nil;
-        if (item.view) {
-            [item.view setToolTip:nil];
-        }
-#endif
-        [self appendTooltipLog:[NSString stringWithFormat:@"applyToolTip skipped %@ (source=%@)", identifier ?: @"<nil>", source ?: @"<nil>"]];
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"applyToolTip skipped %@ (source=%@)", identifier ?: @"<nil>", source ?: @"<nil>"]);
         return;
     }
-#if ST_SUPPORTS_NATIVE_TOOLTIPS
     item.toolTip = tip;
     if (item.view) {
         [item.view setToolTip:tip];
     }
-#else
-    item.toolTip = nil;
-    if (item.view) {
-        [item.view setToolTip:nil];
-    }
-#endif
-    [self appendTooltipLog:[NSString stringWithFormat:@"applyToolTip %@ -> %@ (source=%@)", identifier ?: @"<nil>", tip, source ?: @"<nil>"]];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"applyToolTip %@ -> %@ (source=%@)", identifier, tip, source ?: @"<nil>"]);
 }
 
 - (NSString *)toolTipForIdentifier:(NSToolbarItemIdentifier)identifier {
@@ -261,343 +189,6 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     return nil;
 }
 
-- (void)setupCustomTooltipForToolbarItem:(NSToolbarItem *)item {
-    if (!item) {
-        return;
-    }
-#if ST_SUPPORTS_NATIVE_TOOLTIPS
-    // On macOS we rely on native tooltips and skip custom tracking.
-    return;
-#else
-    NSToolbarItemIdentifier identifier = item.itemIdentifier;
-    if (identifier.length == 0) {
-        return;
-    }
-    NSView *view = item.view;
-    if (!view) {
-        @try {
-            view = [item valueForKey:@"_backView"];
-        } @catch (NSException *exception) {
-            (void)exception;
-            view = nil;
-        }
-    }
-    if (!view) {
-        return;
-    }
-    if (!self.toolbarTooltipTrackingTags) {
-        self.toolbarTooltipTrackingTags = [NSMutableDictionary dictionary];
-    }
-    if (!self.toolbarTooltipTrackingViews) {
-        self.toolbarTooltipTrackingViews = [NSMutableDictionary dictionary];
-    }
-    NSNumber *existingTag = self.toolbarTooltipTrackingTags[identifier];
-    NSView *existingView = self.toolbarTooltipTrackingViews[identifier];
-    if (existingTag && existingView) {
-        @try {
-            [existingView removeTrackingRect:existingTag.integerValue];
-            [self appendTooltipLog:[NSString stringWithFormat:@"Removed tracking rect %@ for %@", existingTag, identifier]];
-        } @catch (NSException *exception) {
-            [self appendTooltipLog:[NSString stringWithFormat:@"Failed to remove tracking rect %@ for %@ (%@)",
-                                                             existingTag,
-                                                             identifier,
-                                                             exception.reason ?: @"unknown error"]];
-        }
-    }
-    NSTrackingRectTag tag = [view addTrackingRect:view.bounds owner:self userData:(__bridge void *)item assumeInside:NO];
-    self.toolbarTooltipTrackingTags[identifier] = @(tag);
-    self.toolbarTooltipTrackingViews[identifier] = view;
-    [self appendTooltipLog:[NSString stringWithFormat:@"Added tracking rect %ld for %@", (long)tag, identifier]];
-#endif
-}
-
-- (NSPanel *)ensureToolbarTooltipWindow {
-    if (!self.toolbarTooltipWindow) {
-        NSRect frame = NSMakeRect(0, 0, 200, 32);
-        NSPanel *panel = [[NSPanel alloc] initWithContentRect:frame
-                                                   styleMask:NSWindowStyleMaskBorderless
-                                                     backing:NSBackingStoreBuffered
-                                                       defer:NO];
-        [panel setOpaque:NO];
-        [panel setBackgroundColor:[NSColor clearColor]];
-        [panel setLevel:NSStatusWindowLevel];
-        [panel setHasShadow:YES];
-        [panel setIgnoresMouseEvents:YES];
-
-        STToolbarTooltipBackgroundView *background = [[STToolbarTooltipBackgroundView alloc] initWithFrame:frame];
-        [background setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
-
-        NSTextField *label = [[NSTextField alloc] initWithFrame:NSInsetRect(frame, 12.0, 8.0)];
-        [label setEditable:NO];
-        [label setBordered:NO];
-        [label setBezeled:NO];
-        [label setDrawsBackground:NO];
-        [label setTextColor:[NSColor whiteColor]];
-        [label setFont:[NSFont systemFontOfSize:13.0]];
-        [label setAlignment:NSTextAlignmentCenter];
-        id labelCell = [label cell];
-        if ([labelCell respondsToSelector:@selector(setWraps:)]) {
-            [labelCell setWraps:YES];
-        }
-        if ([labelCell respondsToSelector:@selector(setLineBreakMode:)]) {
-            [labelCell setLineBreakMode:NSLineBreakByWordWrapping];
-        }
-        if ([labelCell respondsToSelector:@selector(setScrollable:)]) {
-            [labelCell setScrollable:NO];
-        }
-        if ([labelCell respondsToSelector:@selector(setUsesSingleLineMode:)]) {
-            [labelCell setUsesSingleLineMode:NO];
-        }
-
-        [background addSubview:label];
-        [panel setContentView:background];
-        self.toolbarTooltipLabel = label;
-        self.toolbarTooltipWindow = panel;
-    }
-    return self.toolbarTooltipWindow;
-}
-
-- (void)showToolbarTooltipWithText:(NSString *)text
-                     forIdentifier:(NSToolbarItemIdentifier)identifier
-                       relativeToView:(NSView *)view {
-    if (text.length == 0 || !view) {
-        return;
-    }
-    NSWindow *hostWindow = view.window ?: self.window;
-    if (!hostWindow) {
-        return;
-    }
-
-    NSPanel *panel = [self ensureToolbarTooltipWindow];
-    [self.toolbarTooltipLabel setStringValue:text];
-    CGFloat maxWidth = 260.0;
-    CGFloat paddingX = 12.0;
-    CGFloat paddingY = 8.0;
-    CGFloat textMaxWidth = maxWidth - paddingX * 2.0;
-    NSDictionary *attributes = @{ NSFontAttributeName : self.toolbarTooltipLabel.font ?: [NSFont systemFontOfSize:13.0] };
-    NSAttributedString *attributed = [[NSAttributedString alloc] initWithString:text attributes:attributes];
-    NSStringDrawingOptions options = (NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading);
-    NSRect bounding = [attributed boundingRectWithSize:NSMakeSize(textMaxWidth, CGFLOAT_MAX) options:options];
-    CGFloat textWidth = ceil(NSWidth(bounding));
-    CGFloat textHeight = ceil(NSHeight(bounding));
-    CGFloat contentWidth = MIN(maxWidth, MAX(textWidth + paddingX * 2.0, 120.0));
-    CGFloat contentHeight = textHeight + paddingY * 2.0;
-    NSSize contentSize = NSMakeSize(contentWidth, contentHeight);
-    [panel setContentSize:contentSize];
-    NSView *content = [panel contentView];
-    if (!content) {
-        content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, contentSize.width, contentSize.height)];
-        [panel setContentView:content];
-    }
-    [content setFrame:NSMakeRect(0, 0, contentSize.width, contentSize.height)];
-    [self.toolbarTooltipLabel setFrame:NSMakeRect(paddingX,
-                                                 paddingY,
-                                                 contentSize.width - paddingX * 2.0,
-                                                 textHeight)];
-
-    NSRect localRect = [view convertRect:view.bounds toView:nil];
-    NSRect screenRect = [hostWindow convertRectToScreen:localRect];
-    NSScreen *screen = hostWindow.screen ?: [NSScreen mainScreen];
-    NSRect screenFrame = screen.visibleFrame;
-    CGFloat verticalOffset = 10.0;
-    NSPoint origin = NSMakePoint(NSMidX(screenRect) - contentSize.width / 2.0,
-                                 NSMaxY(screenRect) + verticalOffset);
-    if (origin.y + contentSize.height > NSMaxY(screenFrame)) {
-        origin.y = NSMinY(screenRect) - contentSize.height - verticalOffset;
-    }
-    if (origin.y < NSMinY(screenFrame)) {
-        origin.y = NSMinY(screenFrame) + 10.0;
-    }
-    if (origin.x < NSMinX(screenFrame)) {
-        origin.x = NSMinX(screenFrame) + 10.0;
-    }
-    if (origin.x + contentSize.width > NSMaxX(screenFrame)) {
-        origin.x = NSMaxX(screenFrame) - contentSize.width - 10.0;
-    }
-    [panel setFrame:NSMakeRect(origin.x, origin.y, contentSize.width, contentSize.height) display:NO];
-    [panel orderFront:nil];
-    self.currentTooltipIdentifier = identifier;
-}
-
-- (void)hideToolbarTooltip {
-    if (self.toolbarTooltipWindow) {
-        [self.toolbarTooltipWindow orderOut:nil];
-    }
-    self.currentTooltipIdentifier = nil;
-}
-
-- (void)cancelPendingToolbarTooltip {
-    if (self.toolbarTooltipDelayTimer) {
-        [self.toolbarTooltipDelayTimer invalidate];
-        self.toolbarTooltipDelayTimer = nil;
-    }
-    self.pendingTooltipItem = nil;
-    self.pendingTooltipView = nil;
-    self.pendingTooltipText = nil;
-}
-
-- (void)fireToolbarTooltip:(NSTimer *)timer {
-    (void)timer;
-    NSToolbarItem *item = self.pendingTooltipItem;
-    NSView *view = self.pendingTooltipView;
-    NSString *text = self.pendingTooltipText;
-    [self cancelPendingToolbarTooltip];
-    if (!item || !view) {
-        return;
-    }
-    NSToolbarItemIdentifier identifier = item.itemIdentifier;
-    if (identifier.length == 0) {
-        return;
-    }
-    [self appendTooltipLog:[NSString stringWithFormat:@"ToolbarTooltip mouseEntered %@", identifier]];
-    [self showToolbarTooltipWithText:text forIdentifier:identifier relativeToView:view];
-}
-
-- (void)mouseEntered:(NSEvent *)event {
-    NSToolbarItem *item = (__bridge NSToolbarItem *)event.userData;
-    if (!item) {
-        return;
-    }
-    NSToolbarItemIdentifier identifier = item.itemIdentifier;
-    if (identifier.length == 0) {
-        return;
-    }
-    NSView *view = item.view;
-    if (!view) {
-        @try {
-            view = [item valueForKey:@"_backView"];
-        } @catch (NSException *exception) {
-            (void)exception;
-            view = nil;
-        }
-    }
-    if (!view) {
-        return;
-    }
-    NSString *text = [self toolTipForIdentifier:identifier] ?: item.label;
-    [self cancelPendingToolbarTooltip];
-    self.pendingTooltipItem = item;
-    self.pendingTooltipView = view;
-    self.pendingTooltipText = text;
-    NSTimeInterval delay = ToolbarTooltipDelay;
-#if ST_SUPPORTS_NATIVE_TOOLTIPS
-    delay = 0.5;
-#endif
-    self.toolbarTooltipDelayTimer = [NSTimer scheduledTimerWithTimeInterval:delay
-                                                                     target:self
-                                                                   selector:@selector(fireToolbarTooltip:)
-                                                                   userInfo:nil
-                                                                    repeats:NO];
-    [[NSRunLoop mainRunLoop] addTimer:self.toolbarTooltipDelayTimer forMode:NSRunLoopCommonModes];
-    [[NSRunLoop mainRunLoop] addTimer:self.toolbarTooltipDelayTimer forMode:NSEventTrackingRunLoopMode];
-}
-
-- (void)mouseExited:(NSEvent *)event {
-    NSToolbarItem *item = (__bridge NSToolbarItem *)event.userData;
-    if (!item) {
-        return;
-    }
-    NSToolbarItemIdentifier identifier = item.itemIdentifier;
-    if (identifier && [identifier isEqualToString:self.currentTooltipIdentifier]) {
-        [self appendTooltipLog:[NSString stringWithFormat:@"ToolbarTooltip mouseExited %@", identifier]];
-        [self hideToolbarTooltip];
-    }
-    [self cancelPendingToolbarTooltip];
-#if !ST_SUPPORTS_NATIVE_TOOLTIPS
-    [self setupCustomTooltipForToolbarItem:item];
-#endif
-}
-
-- (void)logMouseTrackingState:(NSString *)context {
-    if (!self.debugTooltipsEnabled) {
-        return;
-    }
-    BOOL accepts = [self.window acceptsMouseMovedEvents];
-    [self appendTooltipLog:[NSString stringWithFormat:@"MouseMoveTracking[%@] acceptsMouseMovedEvents=%@", context ?: @"<nil>", accepts ? @"YES" : @"NO"]];
-}
-
-- (void)startMouseTrackingDiagnostics {
-    if (!self.debugTooltipsEnabled) {
-        return;
-    }
-    if (self.mouseTrackingProbeTimer) {
-        [self.mouseTrackingProbeTimer invalidate];
-        self.mouseTrackingProbeTimer = nil;
-    }
-    NSTimer *timer = [NSTimer scheduledTimerWithTimeInterval:2.0
-                                                      target:self
-                                                    selector:@selector(mouseTrackingProbeFired:)
-                                                    userInfo:nil
-                                                     repeats:YES];
-    self.mouseTrackingProbeTimer = timer;
-    [[NSRunLoop mainRunLoop] addTimer:timer forMode:NSRunLoopCommonModes];
-    [[NSRunLoop mainRunLoop] addTimer:timer forMode:NSEventTrackingRunLoopMode];
-    [self logMouseTrackingState:@"startDiagnostics"];
-    [self mouseTrackingProbeFired:nil];
-}
-
-- (void)mouseTrackingProbeFired:(NSTimer *)timer {
-    (void)timer;
-    if (!self.debugTooltipsEnabled) {
-        return;
-    }
-    [self logMouseTrackingState:@"probe"];
-    NSArray<NSToolbarItem *> *items = self.toolbar.items ?: @[];
-    for (NSToolbarItem *item in items) {
-        if (!item) {
-            continue;
-        }
-        NSView *backView = nil;
-        @try {
-            backView = [item valueForKey:@"_backView"];
-        } @catch (NSException *exception) {
-            [self appendTooltipLog:[NSString stringWithFormat:@"TooltipProbe[%@] unable to fetch _backView (%@)", item.itemIdentifier ?: @"<nil>", exception.reason ?: @"unknown error"]];
-        }
-        NSUInteger trackingRectCount = 0;
-        NSMutableArray<NSString *> *trackingSummaries = [NSMutableArray array];
-        if (backView) {
-            @try {
-                id rects = [backView valueForKey:@"_tracking_rects"];
-                if ([rects respondsToSelector:@selector(count)]) {
-                    trackingRectCount = [(NSArray *)rects count];
-                    for (id rectObj in (NSArray *)rects) {
-                        @autoreleasepool {
-                            NSString *summary = @"<unavailable>";
-                            @try {
-                                NSValue *rectValue = [rectObj valueForKey:@"rectangle"];
-                                NSRect rect = rectValue ? [rectValue rectValue] : NSZeroRect;
-                                id owner = [rectObj valueForKey:@"owner"];
-                                NSNumber *inside = [rectObj valueForKey:@"inside"];
-                                NSNumber *valid = [rectObj valueForKey:@"isValid"];
-                                summary = [NSString stringWithFormat:@"rect={%.1f,%.1f,%.1f,%.1f} inside=%@ valid=%@ owner=%@",
-                                           rect.origin.x,
-                                           rect.origin.y,
-                                           rect.size.width,
-                                           rect.size.height,
-                                           inside ? ([inside boolValue] ? @"YES" : @"NO") : @"<nil>",
-                                           valid ? ([valid boolValue] ? @"YES" : @"NO") : @"<nil>",
-                                           owner ?: @"<nil>"];
-                            } @catch (NSException *exception) {
-                                summary = [NSString stringWithFormat:@"<inspect failed: %@>", exception.reason ?: @"unknown"];
-                            }
-                            [trackingSummaries addObject:summary];
-                        }
-                    }
-                }
-            } @catch (NSException *exception) {
-                [self appendTooltipLog:[NSString stringWithFormat:@"TooltipProbe[%@] unable to inspect tracking rects (%@)", item.itemIdentifier ?: @"<nil>", exception.reason ?: @"unknown error"]];
-            }
-        }
-        NSString *toolTip = item.toolTip;
-        NSString *trackingDetails = trackingSummaries.count > 0 ? [trackingSummaries componentsJoinedByString:@"; "] : @"<none>";
-        [self appendTooltipLog:[NSString stringWithFormat:@"TooltipProbe[%@] toolTipSet=%@ trackingRects=%lu details=[%@]",
-                                item.itemIdentifier ?: @"<nil>",
-                                toolTip.length > 0 ? @"YES" : @"NO",
-                                (unsigned long)trackingRectCount,
-                                trackingDetails]];
-    }
-}
-
 - (void)applicationWillFinishLaunching:(NSNotification *)notification {
     ScreenshotToolAppendLog(@"ScreenshotTool will finish launching");
     [self setupMenus];
@@ -610,9 +201,6 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     self.lastWidthTool = ScreenshotCanvasToolHighlighter;
     [self loadToolSettingsFromDefaults];
     [self.window makeKeyAndOrderFront:nil];
-    [self.window setAcceptsMouseMovedEvents:YES];
-    [self logMouseTrackingState:@"applicationDidFinishLaunching"];
-    [self startMouseTrackingDiagnostics];
     [NSApp activateIgnoringOtherApps:YES];
 
     [self selectTool:ScreenshotCanvasToolHighlighter];
@@ -667,14 +255,6 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     return YES;
 }
 
-- (void)applicationWillTerminate:(NSNotification *)notification {
-    if (self.mouseTrackingProbeTimer) {
-        [self.mouseTrackingProbeTimer invalidate];
-        self.mouseTrackingProbeTimer = nil;
-    }
-    [self logMouseTrackingState:@"applicationWillTerminate"];
-}
-
 - (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
     SEL action = menuItem.action;
     if (action == @selector(saveDocumentAs:) || action == @selector(copy:) ||
@@ -683,6 +263,14 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     }
     if (action == @selector(cropImage:)) {
         return [self.canvasView hasSelection];
+    }
+    if (action == @selector(undo:)) {
+        NSUndoManager *undo = self.window.undoManager;
+        return (undo && [undo canUndo]);
+    }
+    if (action == @selector(redo:)) {
+        NSUndoManager *undo = self.window.undoManager;
+        return (undo && [undo canRedo]);
     }
     return YES;
 }
@@ -765,6 +353,22 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
     // Edit menu
     NSMenu *editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+
+    NSMenuItem *undoItem = [[NSMenuItem alloc] initWithTitle:@"Undo"
+                                                     action:@selector(undo:)
+                                              keyEquivalent:@"z"];
+    [undoItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
+    [undoItem setTarget:self];
+    [editMenu addItem:undoItem];
+
+    NSMenuItem *redoItem = [[NSMenuItem alloc] initWithTitle:@"Redo"
+                                                     action:@selector(redo:)
+                                              keyEquivalent:@"Z"];
+    [redoItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
+    [redoItem setTarget:self];
+    [editMenu addItem:redoItem];
+
+    [editMenu addItem:[NSMenuItem separatorItem]];
     NSMenuItem *copyItem = [[NSMenuItem alloc] initWithTitle:@"Copy"
                                                       action:@selector(copy:)
                                                keyEquivalent:@"c"];
@@ -816,14 +420,15 @@ static const CGFloat ToolbarIconDimension = 32.0f;
                             NSWindowStyleMaskResizable);
 
     self.window = [[NSWindow alloc] initWithContentRect:frame
-                                               styleMask:styleMask
-                                                 backing:NSBackingStoreBuffered
-                                                   defer:NO];
+                                              styleMask:styleMask
+                                                backing:NSBackingStoreBuffered
+                                                  defer:NO];
     [self.window setTitle:@"ScreenshotTool"];
     [self.window center];
     [self.window setDelegate:self];
     [self.window setAcceptsMouseMovedEvents:YES];
-    [self logMouseTrackingState:@"setupWindowAndContent"];
+    self.undoManager = [[NSUndoManager alloc] init];
+    self.undoManager.levelsOfUndo = 50;
 
     NSRect contentBounds = [[self.window contentView] bounds];
     NSView *container = [[NSView alloc] initWithFrame:contentBounds];
@@ -847,6 +452,10 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     self.canvasView.autoresizingMask = NSViewNotSizable;
     self.canvasView.activeTool = ScreenshotCanvasToolHighlighter;
     self.canvasView.textColor = self.canvasView.penColor;
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(canvasViewDidRestoreState:)
+                                                 name:ScreenshotCanvasViewDidRestoreStateNotification
+                                               object:self.canvasView];
 
     [self.scrollView setDocumentView:self.canvasView];
     [container addSubview:self.scrollView];
@@ -856,7 +465,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     self.statusBarView = statusBar;
     [container addSubview:statusBar];
 
-    NSTextField *statusField = [[NSTextField alloc] initWithFrame:NSInsetRect(statusBar.bounds, 8.0f, 4.0f)];
+    STStatusTextField *statusField = [[STStatusTextField alloc] initWithFrame:NSInsetRect(statusBar.bounds, 8.0f, 4.0f)];
     [statusField setEditable:NO];
     [statusField setBezeled:NO];
     [statusField setBordered:NO];
@@ -896,7 +505,6 @@ static const CGFloat ToolbarIconDimension = 32.0f;
                                          selector:@selector(toolbarWillAddItemNotification:)
                                              name:NSToolbarWillAddItemNotification
                                            object:self.toolbar];
-
     [self.window setToolbar:self.toolbar];
     [self.toolbar setSelectedItemIdentifier:ToolbarItemHighlighter];
     [self refreshToolButtonIcons];
@@ -974,15 +582,11 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
 - (void)refreshToolButtonIcons {
     if (!self.toolbar) {
-        if (self.debugTooltipsEnabled) {
-            ScreenshotToolAppendLog(@"refreshToolButtonIcons: toolbar unavailable");
-        }
+        ScreenshotToolAppendLog(@"refreshToolButtonIcons: toolbar unavailable");
         return;
     }
     NSToolbarItemIdentifier activeIdentifier = [self identifierForTool:self.canvasView.activeTool];
-    if (self.debugTooltipsEnabled) {
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"refreshToolButtonIcons: active=%@", activeIdentifier]);
-    }
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"refreshToolButtonIcons: active=%@", activeIdentifier]);
 
     NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[
         ToolbarItemSelect,
@@ -994,12 +598,20 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     for (NSToolbarItemIdentifier identifier in toolIdentifiers) {
         NSToolbarItem *item = [self toolbarItemForIdentifier:identifier];
         if (!item) {
-            if (self.debugTooltipsEnabled) {
-                ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ missing", identifier]);
-            }
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ missing", identifier]);
             continue;
         }
-        [self applyToolTipToToolbarItem:item source:@"refreshIcons"];
+
+        NSString *toolTip = [self toolTipForIdentifier:identifier];
+        if (toolTip) {
+            item.toolTip = toolTip;
+            if (item.view) {
+                [item.view setToolTip:toolTip];
+            }
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ tooltip set -> %@", identifier, toolTip]);
+        } else {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ tooltip not updated", identifier]);
+        }
 
         BOOL isActive = (activeIdentifier && [identifier isEqualToString:activeIdentifier]);
         NSString *iconName = [self iconNameForToolbarIdentifier:identifier active:isActive];
@@ -1007,9 +619,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
             iconName = [self iconNameForToolbarIdentifier:identifier active:NO];
         }
         if (!iconName) {
-            if (self.debugTooltipsEnabled) {
-                ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ has no icon name (active=%@)", identifier, isActive ? @"YES" : @"NO"]);
-            }
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ has no icon name (active=%@)", identifier, isActive ? @"YES" : @"NO"]);
             continue;
         }
 
@@ -1020,9 +630,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
             icon = [self imageNamed:fallbackName];
             resolvedName = fallbackName ?: iconName;
             if (icon) {
-                if (self.debugTooltipsEnabled) {
-                    ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ active icon missing, fell back to %@", identifier, resolvedName]);
-                }
+                ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ active icon missing, fell back to %@", identifier, resolvedName]);
             }
         }
 
@@ -1038,9 +646,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
             }
             if (badgeColor) {
                 rendered = [self imageByAddingColorBadgeToImage:rendered color:badgeColor];
-                if (self.debugTooltipsEnabled) {
-                    ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ badge color %@", identifier, [self debugDescriptionForColor:badgeColor]]);
-                }
+                ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ badge color %@", identifier, [self debugDescriptionForColor:badgeColor]]);
             }
             [rendered setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
             item.image = rendered;
@@ -1051,13 +657,9 @@ static const CGFloat ToolbarIconDimension = 32.0f;
                 }
             }
             NSString *state = isActive ? @"active" : @"inactive";
-            if (self.debugTooltipsEnabled) {
-                ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ set to %@ icon %@", identifier, state, resolvedName]);
-            }
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ set to %@ icon %@", identifier, state, resolvedName]);
         } else {
-            if (self.debugTooltipsEnabled) {
-                ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ missing icon %@", identifier, resolvedName]);
-            }
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ missing icon %@", identifier, resolvedName]);
         }
     }
 }
@@ -1065,7 +667,9 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 - (void)toolbarWillAddItemNotification:(NSNotification *)notification {
     NSToolbarItem *item = notification.userInfo[@"item"];
     [self applyToolTipToToolbarItem:item source:@"willAdd"];
-    [self setupCustomTooltipForToolbarItem:item];
+    [self performSelector:@selector(refreshToolButtonIcons)
+               withObject:nil
+               afterDelay:0.0];
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
@@ -1142,19 +746,12 @@ static const CGFloat ToolbarIconDimension = 32.0f;
                                                label:(NSString *)label
                                               action:(SEL)selector {
     NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:identifier];
-    if (self.debugTooltipsEnabled) {
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"Standard item build %@", identifier]);
-    }
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Standard item build %@", identifier]);
     item.label = label;
     item.paletteLabel = label;
-#if ST_SUPPORTS_NATIVE_TOOLTIPS
     NSString *initialTip = [self toolTipForIdentifier:identifier] ?: label;
     item.toolTip = initialTip;
-    [self appendTooltipLog:[NSString stringWithFormat:@"Set native tooltip for %@ -> %@", identifier, initialTip]];
-#else
-    item.toolTip = nil;
-    [self appendTooltipLog:[NSString stringWithFormat:@"Suppressed native tooltip for %@", identifier]];
-#endif
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Set initial tooltip for %@ -> %@", identifier, initialTip]);
     item.target = self;
     item.action = selector;
     NSToolbarItemIdentifier activeIdentifier = [self identifierForTool:self.canvasView.activeTool];
@@ -1180,7 +777,6 @@ static const CGFloat ToolbarIconDimension = 32.0f;
             item.image = icon;
         }
     }
-    [self setupCustomTooltipForToolbarItem:item];
     return item;
 }
 - (NSToolbarItem *)toolbarItemForZoomControl {
@@ -1826,10 +1422,10 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     BOOL penWasShown = self.penPopoverController.isShown;
     BOOL highlighterWasShown = self.highlighterPopoverController.isShown;
     BOOL textWasShown = self.textPopoverController.isShown;
-    [self appendTooltipLog:[NSString stringWithFormat:@"closeActivePopovers called (penShown=%@ highlighterShown=%@ textShown=%@)",
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"closeActivePopovers called (penShown=%@ highlighterShown=%@ textShown=%@)",
                              penWasShown ? @"YES" : @"NO",
                              highlighterWasShown ? @"YES" : @"NO",
-                             textWasShown ? @"YES" : @"NO"]];
+                             textWasShown ? @"YES" : @"NO"]);
     [self.penPopoverController close];
     [self.highlighterPopoverController close];
     [self.textPopoverController close];
@@ -1841,14 +1437,14 @@ static const CGFloat ToolbarIconDimension = 32.0f;
             if (!self.penPopoverController) {
                 self.penPopoverController = [[ToolSettingsPopoverController alloc] initWithTool:ScreenshotCanvasToolPen];
                 self.penPopoverController.delegate = self;
-                [self appendTooltipLog:@"Created Pen ToolSettingsPopoverController"];
+                ScreenshotToolAppendLog(@"Created Pen ToolSettingsPopoverController");
             }
             return self.penPopoverController;
         case ScreenshotCanvasToolHighlighter:
             if (!self.highlighterPopoverController) {
                 self.highlighterPopoverController = [[ToolSettingsPopoverController alloc] initWithTool:ScreenshotCanvasToolHighlighter];
                 self.highlighterPopoverController.delegate = self;
-                [self appendTooltipLog:@"Created Highlighter ToolSettingsPopoverController"];
+                ScreenshotToolAppendLog(@"Created Highlighter ToolSettingsPopoverController");
             }
             return self.highlighterPopoverController;
         default:
@@ -1860,7 +1456,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     if (!self.textPopoverController) {
         self.textPopoverController = [[TextToolPopoverController alloc] init];
         self.textPopoverController.delegate = self;
-        [self appendTooltipLog:@"Created TextToolPopoverController"];
+        ScreenshotToolAppendLog(@"Created TextToolPopoverController");
     }
     return self.textPopoverController;
 }
@@ -1877,23 +1473,23 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
 - (BOOL)isDoubleClickEvent:(NSEvent *)event {
     if (!event) {
-        [self appendTooltipLog:@"isDoubleClickEvent: nil NSEvent encountered"];
+        ScreenshotToolAppendLog(@"isDoubleClickEvent: nil NSEvent encountered");
         return NO;
     }
     NSEventType type = event.type;
     if (type != NSEventTypeLeftMouseDown && type != NSEventTypeLeftMouseUp) {
-        [self appendTooltipLog:[NSString stringWithFormat:@"isDoubleClickEvent: ignored event type %ld (clickCount=%ld)",
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"isDoubleClickEvent: ignored event type %ld (clickCount=%ld)",
                                  (long)type,
-                                 (long)event.clickCount]];
+                                 (long)event.clickCount]);
         return NO;
     }
     BOOL result = event.clickCount >= 2;
     if (!result) {
-        [self appendTooltipLog:[NSString stringWithFormat:@"isDoubleClickEvent: clickCount %ld below threshold",
-                                 (long)event.clickCount]];
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"isDoubleClickEvent: clickCount %ld below threshold",
+                                 (long)event.clickCount]);
     } else {
-        [self appendTooltipLog:[NSString stringWithFormat:@"isDoubleClickEvent: detected double-click with clickCount=%ld",
-                                 (long)event.clickCount]];
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"isDoubleClickEvent: detected double-click with clickCount=%ld",
+                                 (long)event.clickCount]);
     }
     return result;
 }
@@ -1906,11 +1502,11 @@ static const CGFloat ToolbarIconDimension = 32.0f;
         return;
     }
     NSRect anchor = [self anchorRectForEvent:event inView:anchorView];
-    [self appendTooltipLog:[NSString stringWithFormat:@"Requesting %@ popover (anchorView=%@ rect=%@ event=%@)",
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Requesting %@ popover (anchorView=%@ rect=%@ event=%@)",
                              STDebugToolName(tool),
                              NSStringFromClass([anchorView class]),
                              NSStringFromRect(anchor),
-                             STDebugDescriptionForEvent(event)]];
+                             STDebugDescriptionForEvent(event)]);
     if (tool == ScreenshotCanvasToolPen || tool == ScreenshotCanvasToolHighlighter) {
         ToolSettingsPopoverController *controller = [self popoverControllerForTool:tool];
         if (!controller) {
@@ -1920,10 +1516,10 @@ static const CGFloat ToolbarIconDimension = 32.0f;
         }
         BOOL wasShown = controller.isShown;
         [controller showRelativeToRect:anchor ofView:anchorView preferredEdge:NSMaxYEdge];
-        [self appendTooltipLog:[NSString stringWithFormat:@"%@ popover show invoked (wasShown=%@ nowShown=%@)",
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ popover show invoked (wasShown=%@ nowShown=%@)",
                                  STDebugToolName(tool),
                                  wasShown ? @"YES" : @"NO",
-                                 controller.isShown ? @"YES" : @"NO"]];
+                                 controller.isShown ? @"YES" : @"NO"]);
     } else if (tool == ScreenshotCanvasToolText) {
         TextToolPopoverController *controller = [self textSettingsPopoverController];
         if (!controller) {
@@ -1932,11 +1528,11 @@ static const CGFloat ToolbarIconDimension = 32.0f;
         }
         BOOL wasShown = controller.isShown;
         [controller showRelativeToRect:anchor ofView:anchorView preferredEdge:NSMaxYEdge];
-        [self appendTooltipLog:[NSString stringWithFormat:@"Text popover show invoked (wasShown=%@ nowShown=%@)",
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Text popover show invoked (wasShown=%@ nowShown=%@)",
                                  wasShown ? @"YES" : @"NO",
-                                 controller.isShown ? @"YES" : @"NO"]];
+                                 controller.isShown ? @"YES" : @"NO"]);
     } else {
-        [self appendTooltipLog:[NSString stringWithFormat:@"No popover registered for %@", STDebugToolName(tool)]];
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"No popover registered for %@", STDebugToolName(tool)]);
     }
 }
 
@@ -2167,7 +1763,18 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     self.statusClearTimer = nil;
 
     NSString *text = message.length > 0 ? message : @"";
+
+    NSUndoManager *undo = self.undoManager;
+    BOOL undoWasEnabled = (undo && undo.isUndoRegistrationEnabled);
+    if (undoWasEnabled) {
+        [undo disableUndoRegistration];
+    }
+
     [self.statusTextField setStringValue:text];
+
+    if (undoWasEnabled) {
+        [undo enableUndoRegistration];
+    }
 
     if (duration > 0.0) {
         self.statusClearTimer = [NSTimer scheduledTimerWithTimeInterval:duration
@@ -2182,7 +1789,17 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     [self.statusClearTimer invalidate];
     self.statusClearTimer = nil;
     if (self.statusTextField) {
+        NSUndoManager *undo = self.undoManager;
+        BOOL undoWasEnabled = (undo && undo.isUndoRegistrationEnabled);
+        if (undoWasEnabled) {
+            [undo disableUndoRegistration];
+        }
+
         [self.statusTextField setStringValue:@""];
+
+        if (undoWasEnabled) {
+            [undo enableUndoRegistration];
+        }
     }
 }
 
@@ -2377,12 +1994,22 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     if ([self.canvasView hasImage]) {
         [self resizeWindowToImageSize:self.canvasView.image.size];
     }
+    [self.window makeFirstResponder:self.canvasView];
     [self showStatusMessage:@"Cropped image" duration:2.0];
+}
+
+- (void)canvasViewDidRestoreState:(NSNotification *)notification {
+    if (notification.object != self.canvasView) {
+        return;
+    }
+    if ([self.canvasView hasImage]) {
+        [self resizeWindowToImageSize:self.canvasView.image.size];
+    }
 }
 
 
 - (void)zoomPopUpAction:(id)sender {
-    [self appendTooltipLog:@"ScreenshotTool: zoom pop-up action invoked"];
+    ScreenshotToolAppendLog(@"ScreenshotTool: zoom pop-up action invoked");
     [self zoomSelectionChanged:self.zoomPopUpButton];
 }
 
@@ -2520,41 +2147,41 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
 - (void)activateHighlighter:(id)sender {
     NSEvent *event = [NSApp currentEvent];
-    [self appendTooltipLog:[NSString stringWithFormat:@"%@ toolbar action fired (sender=%@, event=%@)",
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action fired (sender=%@, event=%@)",
                              STDebugToolName(ScreenshotCanvasToolHighlighter),
                              STDebugDescriptionForSender(sender),
-                             STDebugDescriptionForEvent(event)]];
+                             STDebugDescriptionForEvent(event)]);
     BOOL openPopover = [self isDoubleClickEvent:event];
-    [self appendTooltipLog:[NSString stringWithFormat:@"%@ toolbar action doubleClick=%@ (clickCount=%ld)",
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action doubleClick=%@ (clickCount=%ld)",
                              STDebugToolName(ScreenshotCanvasToolHighlighter),
                              openPopover ? @"YES" : @"NO",
-                             (long)(event ? event.clickCount : 0)]];
+                             (long)(event ? event.clickCount : 0)]);
     [self selectTool:ScreenshotCanvasToolHighlighter];
     if (openPopover) {
-        [self appendTooltipLog:@"Opening Highlighter popover after double-click toolbar activation"];
+        ScreenshotToolAppendLog(@"Opening Highlighter popover after double-click toolbar activation");
         [self showToolSettingsPopoverForTool:ScreenshotCanvasToolHighlighter event:event];
     } else {
-        [self appendTooltipLog:@"Highlighter popover not opened (no double-click detected)"];
+        ScreenshotToolAppendLog(@"Highlighter popover not opened (no double-click detected)");
     }
 }
 
 - (void)activatePen:(id)sender {
     NSEvent *event = [NSApp currentEvent];
-    [self appendTooltipLog:[NSString stringWithFormat:@"%@ toolbar action fired (sender=%@, event=%@)",
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action fired (sender=%@, event=%@)",
                              STDebugToolName(ScreenshotCanvasToolPen),
                              STDebugDescriptionForSender(sender),
-                             STDebugDescriptionForEvent(event)]];
+                             STDebugDescriptionForEvent(event)]);
     BOOL openPopover = [self isDoubleClickEvent:event];
-    [self appendTooltipLog:[NSString stringWithFormat:@"%@ toolbar action doubleClick=%@ (clickCount=%ld)",
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action doubleClick=%@ (clickCount=%ld)",
                              STDebugToolName(ScreenshotCanvasToolPen),
                              openPopover ? @"YES" : @"NO",
-                             (long)(event ? event.clickCount : 0)]];
+                             (long)(event ? event.clickCount : 0)]);
     [self selectTool:ScreenshotCanvasToolPen];
     if (openPopover) {
-        [self appendTooltipLog:@"Opening Pen popover after double-click toolbar activation"];
+        ScreenshotToolAppendLog(@"Opening Pen popover after double-click toolbar activation");
         [self showToolSettingsPopoverForTool:ScreenshotCanvasToolPen event:event];
     } else {
-        [self appendTooltipLog:@"Pen popover not opened (no double-click detected)"];
+        ScreenshotToolAppendLog(@"Pen popover not opened (no double-click detected)");
     }
 }
 
@@ -2564,21 +2191,21 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
 - (void)activateText:(id)sender {
     NSEvent *event = [NSApp currentEvent];
-    [self appendTooltipLog:[NSString stringWithFormat:@"%@ toolbar action fired (sender=%@, event=%@)",
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action fired (sender=%@, event=%@)",
                              STDebugToolName(ScreenshotCanvasToolText),
                              STDebugDescriptionForSender(sender),
-                             STDebugDescriptionForEvent(event)]];
+                             STDebugDescriptionForEvent(event)]);
     BOOL openPopover = [self isDoubleClickEvent:event];
-    [self appendTooltipLog:[NSString stringWithFormat:@"%@ toolbar action doubleClick=%@ (clickCount=%ld)",
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action doubleClick=%@ (clickCount=%ld)",
                              STDebugToolName(ScreenshotCanvasToolText),
                              openPopover ? @"YES" : @"NO",
-                             (long)(event ? event.clickCount : 0)]];
+                             (long)(event ? event.clickCount : 0)]);
     [self selectTool:ScreenshotCanvasToolText];
     if (openPopover) {
-        [self appendTooltipLog:@"Opening Text popover after double-click toolbar activation"];
+        ScreenshotToolAppendLog(@"Opening Text popover after double-click toolbar activation");
         [self showToolSettingsPopoverForTool:ScreenshotCanvasToolText event:event];
     } else {
-        [self appendTooltipLog:@"Text popover not opened (no double-click detected)"];
+        ScreenshotToolAppendLog(@"Text popover not opened (no double-click detected)");
     }
 }
 
@@ -2606,9 +2233,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
             icon = [base copy];
             [icon setSize:NSMakeSize(32.0, 32.0)];
             toolbarCache[filename] = icon;
-            if (self.debugTooltipsEnabled) {
-                ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: loaded toolbar icon %@", filename]);
-            }
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: loaded toolbar icon %@", filename]);
         } else {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: toolbar icon %@ missing base image", filename]);
         }
@@ -2637,9 +2262,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     for (NSString *ext in extensions) {
         path = [bundle pathForResource:filename ofType:ext];
         if (path) {
-            if (self.debugTooltipsEnabled) {
-                ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: attempting to load image %@", path]);
-            }
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: attempting to load image %@", path]);
             break;
         }
     }
@@ -2651,9 +2274,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     NSImage *image = [[NSImage alloc] initWithContentsOfFile:path];
     if (image) {
         cache[filename] = image;
-        if (self.debugTooltipsEnabled) {
-            ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: loaded image %@", path]);
-        }
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: loaded image %@", path]);
     } else {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: failed to load image %@", path]);
     }
@@ -2816,6 +2437,35 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     }
 
     return [bitmapRep representationUsingType:NSPNGFileType properties:@{}];
+}
+
+- (NSUndoManager *)windowWillReturnUndoManager:(NSWindow *)window {
+    (void)window;
+    return self.undoManager;
+}
+
+- (NSUndoManager *)activeUndoManager {
+    return self.undoManager;
+}
+
+- (void)undo:(id)sender {
+    (void)sender;
+    if ([self.undoManager canUndo]) {
+        [self.undoManager undo];
+    }
+}
+
+- (void)redo:(id)sender {
+    (void)sender;
+    if ([self.undoManager canRedo]) {
+        [self.undoManager redo];
+    }
+}
+
+#pragma mark - Cleanup
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 #pragma mark - NSWindowDelegate

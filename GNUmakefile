@@ -68,4 +68,51 @@ ADDITIONAL_OBJCFLAGS += -fobjc-arc
 ScreenshotTool_CPPFLAGS += -I/usr/include/freetype2
 ADDITIONAL_LDFLAGS += -lfontconfig -lfreetype
 
+TEST_SUPPORT_OBJC = Source/AppDelegate.m \
+	Source/ScreenshotCanvasView.m \
+	Source/MarkupStroke.m \
+	Source/MarkupText.m \
+	Source/STFloatingPopover.m \
+	Source/STFloatingPopoverWindow.m \
+	Source/STFloatingPopoverBackgroundView.m \
+	Source/STFloatingResizablePopover.m \
+	Source/STHyperlinkButton.m \
+	Source/ScreenshotToolSettings.m \
+	Source/ToolSettingsPopoverController.m \
+	Source/TextToolPopoverController.m \
+	Source/PreferencesWindowController.m
+
+TEST_OUTPUT_DIR = Tests/bin
+TESTS = CropUndoProbe CropUndoWindowProbe
+TEST_CLANG ?= clang
+TEST_OBJCFLAGS := -fobjc-arc -ISource -I/usr/include/freetype2 $(shell gnustep-config --objc-flags)
+TEST_LDFLAGS := $(shell gnustep-config --gui-libs) -lfontconfig -lfreetype
+
 include $(GNUSTEP_MAKEFILES)/application.make
+
+.PHONY: tests tests-only clean-tests
+
+tests: $(TESTS:%=$(TEST_OUTPUT_DIR)/%)
+	@mkdir -p $(HOME)/GNUstep/Defaults/.lck
+	@set -e; \
+	for tool in $(TESTS); do \
+		echo "Running $$tool..."; \
+		$(TEST_OUTPUT_DIR)/$$tool || exit 1; \
+	done
+
+tests-only:
+	@$(MAKE) tests
+
+$(TEST_OUTPUT_DIR):
+	@mkdir -p $(TEST_OUTPUT_DIR)
+
+$(TEST_OUTPUT_DIR)/CropUndoProbe: Tests/CropUndoProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
+	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
+
+$(TEST_OUTPUT_DIR)/CropUndoWindowProbe: Tests/CropUndoWindowProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
+	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
+
+clean-tests:
+	@rm -rf $(TEST_OUTPUT_DIR)
+
+clean:: clean-tests

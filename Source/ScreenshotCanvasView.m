@@ -24,6 +24,7 @@
 #import <AppKit/NSBitmapImageRep.h>
 #import <AppKit/NSGraphicsContext.h>
 #import <AppKit/NSColorSpace.h>
+#import <AppKit/NSMenuItem.h>
 #include <stdarg.h>
 #include <math.h>
 #include <string.h>
@@ -819,6 +820,22 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @end
 
 @implementation ScreenshotCanvasView
+
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
+    SEL action = menuItem.action;
+    if (action == @selector(undo:)) {
+        NSUndoManager *undo = [self undoManager];
+        return (undo && [undo canUndo]);
+    }
+    if (action == @selector(redo:)) {
+        NSUndoManager *undo = [self undoManager];
+        return (undo && [undo canRedo]);
+    }
+    if (action == @selector(cropImage:)) {
+        return self.hasSelectionRect;
+    }
+    return [super validateMenuItem:menuItem];
+}
 
 - (instancetype)initWithFrame:(NSRect)frameRect {
     self = [super initWithFrame:frameRect];
@@ -2473,6 +2490,21 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     BOOL rasterizeTextDirectly = NO;
 #endif
     BOOL needsContextDrawing = !canRasterizeDirectly;
+    if (!needsContextDrawing) {
+        BOOL hasHighlighter = NO;
+        for (MarkupStroke *stroke in self.strokes) {
+            if (stroke.type == MarkupStrokeTypeHighlighter) {
+                hasHighlighter = YES;
+                break;
+            }
+        }
+        if (!hasHighlighter && self.currentStroke && self.currentStroke.type == MarkupStrokeTypeHighlighter) {
+            hasHighlighter = YES;
+        }
+        if (hasHighlighter) {
+            needsContextDrawing = YES;
+        }
+    }
 
     if (needsContextDrawing) {
         [NSGraphicsContext saveGraphicsState];
