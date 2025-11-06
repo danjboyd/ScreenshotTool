@@ -40,6 +40,7 @@
 ## Toolbar QA
 - Custom tooltip window now replaces native GNUstep hints; confirm no regressions when switching tools rapidly or moving the window between monitors.
 - Toolbar icons still show original colours despite badge overlay refresh; need to trace GNUstep caching or re-render workflow so Highlighter/Pen/Text artwork always reflects the selected colour.
+- Today’s work: generated light/dark PNGs for every toolbar tool, added theme-aware icon selection, normalized NSImage rendering, and introduced `ToolbarIconThemeProbe` (currently failing) so the test suite now matches the “blank toolbar” bug we see in Sombre. Next up is fixing GNUstep to respect the custom container image + label colours so the probe and app both pass.
 
 ## Open Questions / Follow-Ups
 1. Regression sweep on GNUstep: ensure popovers, status bar slider, and Preferences stay in sync (including restored defaults) with the new Font Panel integration.

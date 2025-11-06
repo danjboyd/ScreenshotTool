@@ -20,6 +20,7 @@
 
 #import <AppKit/AppKit.h>
 #import <Foundation/Foundation.h>
+#import <objc/runtime.h>
 #import "AppDelegate.h"
 #if defined(GNUSTEP)
 #import <AppKit/NSApplication.h>
@@ -36,24 +37,13 @@
 
 @end
 
-@interface STFakeToolbar : NSToolbar
-@property (nonatomic, strong) NSArray<NSToolbarItem *> *mockItems;
-@end
-
-@implementation STFakeToolbar
-
-- (NSArray *)items {
-    return self.mockItems ?: [super items];
-}
-
-@end
-
 @interface AppDelegate (TooltipPrivate)
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
     itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier
  willBeInsertedIntoToolbar:(BOOL)flag;
 - (NSString *)toolTipForIdentifier:(NSToolbarItemIdentifier)identifier;
 - (void)refreshToolButtonIcons;
+- (void)applyToolTipToToolbarItem:(NSToolbarItem *)item source:(NSString *)source;
 @end
 
 #endif
@@ -118,7 +108,7 @@ int main(int argc, const char * argv[]) {
         }
 
         [delegate applicationWillFinishLaunching:nil];
-        [delegate applicationDidFinishLaunching:nil];
+       [delegate applicationDidFinishLaunching:nil];
 
         STToolbarTooltipController *controller = [delegate valueForKey:@"tooltipController"];
         if (!controller) {
@@ -134,6 +124,10 @@ int main(int argc, const char * argv[]) {
         ];
 
         NSMutableArray<NSToolbarItem *> *toolbarItems = [[NSMutableArray alloc] init];
+        NSMutableDictionary<NSValue *, NSView *> *containersByView = [[NSMutableDictionary alloc] init];
+        NSMutableDictionary<NSValue *, NSString *> *expectedTooltipsByView = [[NSMutableDictionary alloc] init];
+        NSUInteger expectedRegisteredCount = 0;
+
         for (NSToolbarItemIdentifier identifier in toolIdentifiers) {
             NSToolbarItem *item = [delegate toolbar:nil
                                 itemForItemIdentifier:identifier
@@ -141,55 +135,119 @@ int main(int argc, const char * argv[]) {
             if (!item) {
                 FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: missing toolbar item for %@", identifier]);
             }
-            if (!item.view) {
+            NSView *view = item.view;
+            if (!view) {
                 FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: toolbar item %@ missing custom view", identifier]);
+            }
+
+            NSRect containerFrame = NSIsEmptyRect(view.bounds) ? NSMakeRect(0, 0, 32, 32) : view.bounds;
+            NSView *nativeContainer = [[NSView alloc] initWithFrame:containerFrame];
+            [nativeContainer setToolTip:@"native-tooltip"];
+            if ([nativeContainer respondsToSelector:@selector(addToolTipRect:owner:userData:)]) {
+                [nativeContainer addToolTipRect:nativeContainer.bounds owner:@"native-owner" userData:NULL];
+            }
+            [nativeContainer addSubview:view];
+
+            [delegate applyToolTipToToolbarItem:item source:@"probe-native-container"];
+
+            if (item.toolTip != nil) {
+                FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: toolbar item exposes native tooltip after suppression (%@)", identifier]);
+            }
+            if (view.toolTip != nil) {
+                FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: toolbar view exposes native tooltip after suppression (%@)", identifier]);
+            }
+            if (nativeContainer.toolTip != nil) {
+                FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: container view retained native tooltip (%@)", identifier]);
+            }
+            if ([nativeContainer respondsToSelector:NSSelectorFromString(@"_toolTips")]) {
+                id stored = nil;
+                @try {
+                    stored = [nativeContainer valueForKey:@"_toolTips"];
+                } @catch (NSException *exception) {
+                    stored = [NSString stringWithFormat:@"<error:%@>", exception.reason ?: @"unknown"];
+                }
+                if ([stored respondsToSelector:@selector(count)] && [stored count] > 0) {
+                    FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: container still has registered tooltips (%@)", identifier]);
+                }
+                if (stored && ![stored respondsToSelector:@selector(count)]) {
+                    FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: container tooltip storage unexpected type (%@ -> %@)",
+                                                             identifier,
+                                                             stored]);
+                }
+            }
+
+            containersByView[[NSValue valueWithNonretainedObject:view]] = nativeContainer;
+            NSString *expectedTip = [delegate toolTipForIdentifier:item.itemIdentifier] ?: @"";
+            expectedTooltipsByView[[NSValue valueWithNonretainedObject:view]] = expectedTip;
+            if (expectedTip.length > 0) {
+                expectedRegisteredCount++;
             }
             [toolbarItems addObject:item];
         }
 
         NSDictionary *trackingTags = [controller registeredTrackingSnapshot];
-        if (trackingTags.count == 0) {
-            FailAndExit(@"TooltipsSuppressedProbe: custom controller did not register tracking rects");
+        if (trackingTags.count != expectedRegisteredCount) {
+            FailAndExit(@"TooltipsSuppressedProbe: controller tracking rect mismatch after suppression");
         }
-
         NSDictionary *registeredTooltips = [controller registeredTooltipsSnapshot];
-        if (registeredTooltips.count == 0) {
-            FailAndExit(@"TooltipsSuppressedProbe: custom controller did not capture tooltip strings");
-        }
-
-        STFakeToolbar *fakeToolbar = [[STFakeToolbar alloc] initWithIdentifier:@"ProbeToolbar"];
-        fakeToolbar.mockItems = toolbarItems;
-        [delegate setValue:fakeToolbar forKey:@"toolbar"];
-        [delegate refreshToolButtonIcons];
-
-        trackingTags = [controller registeredTrackingSnapshot];
-        if (trackingTags.count < toolbarItems.count) {
-            FailAndExit(@"TooltipsSuppressedProbe: controller tracking rect count too low after refresh");
-        }
-        registeredTooltips = [controller registeredTooltipsSnapshot];
-        if (registeredTooltips.count < toolbarItems.count) {
-            FailAndExit(@"TooltipsSuppressedProbe: controller tooltip count too low after refresh");
+        if (registeredTooltips.count != expectedRegisteredCount) {
+            FailAndExit(@"TooltipsSuppressedProbe: controller tooltip count mismatch after suppression");
         }
 
         for (NSToolbarItem *item in toolbarItems) {
             NSView *view = item.view;
-            if (!view) {
-                FailAndExit(@"TooltipsSuppressedProbe: toolbar item lost custom view after refresh");
+            NSView *container = containersByView[[NSValue valueWithNonretainedObject:view]];
+            if (!container) {
+                FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: missing container mapping for %@", item.itemIdentifier]);
+            }
+            if (container.toolTip != nil) {
+                FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: container regained native tooltip (%@)", item.itemIdentifier]);
+            }
+            NSValue *viewKey = [NSValue valueWithNonretainedObject:view];
+            NSString *expected = expectedTooltipsByView[viewKey] ?: @"";
+            NSString *registered = registeredTooltips[viewKey];
+            NSNumber *tracking = trackingTags[viewKey];
+            if (expected.length > 0) {
+                if (!registered || ![registered isEqualToString:expected]) {
+                    FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: controller registered '%@' but expected '%@' (%@)",
+                                                             registered ?: @"<nil>", expected, item.itemIdentifier]);
+                }
+                if (!tracking) {
+                    FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: tracking rect missing for %@", item.itemIdentifier]);
+                }
+            } else {
+                if (registered) {
+                    FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: controller retained tooltip for identifier without custom string (%@ -> %@)",
+                                                             item.itemIdentifier,
+                                                             registered]);
+                }
+                if (tracking) {
+                    FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: tracking rect retained for identifier without custom string (%@)", item.itemIdentifier]);
+                }
+            }
+        }
+#else
+        NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[
+            @"com.screenshottool.toolbar.highlighter",
+            @"com.screenshottool.toolbar.pen",
+            @"com.screenshottool.toolbar.text",
+            @"com.screenshottool.toolbar.select",
+            @"com.screenshottool.toolbar.eraser"
+        ];
+
+        for (NSToolbarItemIdentifier identifier in toolIdentifiers) {
+            NSToolbarItem *item = [delegate toolbar:nil
+                                itemForItemIdentifier:identifier
+                             willBeInsertedIntoToolbar:YES];
+            if (!item) {
+                FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: missing toolbar item for %@", identifier]);
             }
             if (item.toolTip != nil) {
-                FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: toolbar item exposes native tooltip (%@)", item.itemIdentifier]);
-            }
-            if (view.toolTip != nil) {
-                FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: toolbar view exposes native tooltip (%@)", item.itemIdentifier]);
-            }
-            NSString *expected = [delegate toolTipForIdentifier:item.itemIdentifier] ?: @"";
-            NSString *registered = registeredTooltips[[NSValue valueWithNonretainedObject:view]];
-            if (expected.length > 0 && (!registered || ![registered isEqualToString:expected])) {
-                FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: controller registered '%@' but expected '%@' (%@)",
-                                                         registered ?: @"<nil>", expected, item.itemIdentifier]);
+                FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: toolbar item exposes native tooltip (%@)", identifier]);
             }
         }
 #endif
+        objc_retain(delegate);
     }
     return EXIT_SUCCESS;
 }

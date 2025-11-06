@@ -42,6 +42,19 @@
 - GDB backtrace highlighting the scroller recursion.
 - Minimal test case: lightweight app that draws text into `NSBitmapImageRep` and inspects the pixels.
 
+## Issue 3 — Toolbar Containers Reattach Native Tooltips
+- **Symptom:** Even after setting `NSToolbarItem.toolTip = nil`, clearing the custom view’s tooltip, and removing all tracking rects, GNUstep reinstates native tooltips on the container view (`GSToolbarBackView`). Hovering over toolbar buttons shows the native yellow bubble instead of the app’s custom tooltip window.
+- **Repro:**
+  1. Create a toolbar item with a custom `NSButton` view.
+  2. Call `removeAllToolTips` + `setToolTip:nil` on the button and its immediate/super-super view.
+  3. Register the custom view with a tracking-based controller (no native tooltip strings).
+  4. Launch under GNUstep: hovering still triggers the native tooltip bubble.
+- **Diagnostics:**
+  - `GSToolbarBackView` retains a tooltip entry even after `removeAllToolTips`.
+  - Regression probe (`TooltipsSuppressedProbe`) constructs a “native” container and confirms `setToolTip:nil` leaves the container with a tooltip string.
+- **Workaround Implemented:** Before registering custom tooltips we now scrub `removeAllToolTips` / `setToolTip:nil` on the custom view and the first two ancestor views; the regression probe asserts those containers end up tooltip-free.
+- **Action:** Report that GNUstep toolbar container views silently restore native tooltips after clients clear them, preventing custom tooltip controllers from taking over.
+
 ## Follow-Up
 - Once GNUstep resolves the text rendering bug, we can remove the FreeType/fontconfig path and revert to the simpler `NSAttributedString` flattening.
 - After the scroll-view issue is addressed upstream, consider reintroducing optional scroller hiding logic if needed.

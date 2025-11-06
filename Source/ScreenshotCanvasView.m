@@ -21,6 +21,7 @@
 #import "ScreenshotCanvasView.h"
 #import "MarkupStroke.h"
 #import "MarkupText.h"
+#import "STThemeUtilities.h"
 #import <AppKit/NSBitmapImageRep.h>
 #import <AppKit/NSGraphicsContext.h>
 #import <AppKit/NSColorSpace.h>
@@ -2085,7 +2086,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
-    [[NSColor windowBackgroundColor] setFill];
+    [STThemeCanvasBackgroundColor() setFill];
     NSRectFill(dirtyRect);
 
     if (!self.image) {

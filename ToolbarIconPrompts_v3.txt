@@ -1,0 +1,43 @@
+# Modern toolbar icon prompts (light and dark themes)
+
+Select Tool — Light Theme:
+"Please generate an image with this description: Minimal flat selection marquee toolbar icon for a modern screenshot app. Use a deep charcoal (#1D1F24) rounded rectangle outline with subtle corner handles in bright teal (#1DD6C2). Include a crisp white crosshair pointer centered at the lower-right corner. Render as a vector-style graphic with clean edges on a fully transparent PNG background sized for a 44×44 toolbar cell (square aspect), no gradients, no drop shadows."
+
+Select Tool — Dark Theme:
+"Please generate an image with this description: Minimal flat selection marquee toolbar icon designed for a dark UI. Use a soft off-white (#EEF5FF) rounded rectangle outline with luminous teal (#4BE8D6) corner handles and a matching off-white crosshair pointer. Keep the style sharp and flat, export as a transparent-background PNG sized for a 44×44 toolbar cell, with zero shading."
+
+Highlighter Tool — Light Theme:
+"Please generate an image with this description: Contemporary highlighter pen toolbar icon for a light theme. Depict a chisel-tip marker in matte charcoal (#24272D) with a vivid amber tip (#FFB84D) and a small swipe accent below in translucent amber. Keep everything flat, geometric, and centered on a transparent PNG sized 44×44, no gradients or shadows."
+
+Highlighter Tool — Dark Theme:
+"Please generate an image with this description: Contemporary highlighter pen toolbar icon optimized for a dark interface. Show a sleek barrel in soft graphite (#5A5F6B) with a glowing amber tip (#FFC970) and a faint amber swipe accent. Lines should be crisp, simplified, flat, and exported on a fully transparent PNG (44×44), without lighting effects."
+
+Pen Tool — Light Theme:
+"Please generate an image with this description: Flat vector fountain pen toolbar icon for a modern light UI. Use a charcoal body (#1F242A) with a single electric blue accent ring (#1EC8FF) and a metallic nib silhouette. Keep the illustration minimal, sharp, and centered on a transparent PNG sized for a 44×44 toolbar cell, no gradients."
+
+Pen Tool — Dark Theme:
+"Please generate an image with this description: Flat vector fountain pen toolbar icon tailored for a dark UI. Use a soft silver body (#D7DEE8) with a cyan accent ring (#4BE8D6) and a simplified nib outline. Preserve crisp geometry and render on a transparent PNG (44×44), no shading or glow."
+
+Text Tool — Light Theme:
+"Please generate an image with this description: Modern capital letter 'T' toolbar icon for text mode, intended for a light interface. Use a bold charcoal glyph (#1A1D22) with a thin violet underline (#885BF6). Keep the typography geometric, flat, centered, and export as a transparent PNG sized 44×44."
+
+Text Tool — Dark Theme:
+"Please generate an image with this description: Modern capital letter 'T' toolbar icon for a dark interface. Use a luminous soft-white glyph (#F2F7FF) with a vibrant violet underline (#A68CFF). Keep the shapes flat, balanced, and on a fully transparent 44×44 PNG."
+
+Eraser Tool — Light Theme:
+"Please generate an image with this description: Minimalist flat eraser toolbar icon for a light UI. Show an angled white body with a coral end cap (#FF6F61) and a thin charcoal outline (#23252A). Style should be geometric, with no shading, on a transparent PNG sized 44×44."
+
+Eraser Tool — Dark Theme:
+"Please generate an image with this description: Minimalist flat eraser toolbar icon for a dark UI. Use a soft-light body (#F8F9FC) with a coral end cap (#FF8574) and a subtle graphite outline (#50535B). Keep it angled, flat, and export on a transparent PNG (44×44)."
+
+Copy Tool — Light Theme:
+"Please generate an image with this description: Clipboard copy toolbar icon for a light interface. Use a charcoal outline clipboard (#1F242A) with rounded corners and a teal forward-arrow overlay (#1DD6C2) at the lower-right. Keep the design flat, with clean lines, on a transparent 44×44 PNG."
+
+Copy Tool — Dark Theme:
+"Please generate an image with this description: Clipboard copy toolbar icon for a dark interface. Use a soft-white clipboard outline (#F0F6FF) with a teal forward-arrow overlay (#4BE8D6) at the lower-right. Maintain a flat, geometric silhouette on a transparent PNG sized 44×44."
+
+Preferences Tool — Light Theme:
+"Please generate an image with this description: Premium-style settings gear toolbar icon for a light UI. Draw a 12-tooth gear outline in charcoal (#1E2127) with a centered teal dot (#1DD6C2). Keep stroke weights consistent, flat, and export on a transparent PNG (44×44)."
+
+Preferences Tool — Dark Theme:
+"Please generate an image with this description: Premium-style settings gear toolbar icon for a dark UI. Draw a 12-tooth gear outline in soft white (#ECF3FF) with a centered teal dot (#4BE8D6). Maintain uniform stroke weights, flat style, and export on a transparent PNG sized 44×44."

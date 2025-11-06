@@ -5,6 +5,7 @@
 #import "ToolSettingsPopoverController.h"
 #import "TextToolPopoverController.h"
 #import "PreferencesWindowController.h"
+#import "STThemeUtilities.h"
 #if defined(GNUSTEP)
 #import "STToolbarTooltipController.h"
 @interface STToolbarButton : NSButton
@@ -15,6 +16,280 @@
 - (void)setToolTip:(NSString *)string {
     (void)string;
     [super setToolTip:nil];
+}
+
+@end
+#endif
+#if defined(GNUSTEP)
+static const CGFloat ToolbarIconDimension = 32.0f;
+#endif
+static NSString * const ToolbarIdentifier = @"com.screenshottool.toolbar";
+static NSString * const ToolbarItemHighlighter = @"com.screenshottool.toolbar.highlighter";
+static NSString * const ToolbarItemPen = @"com.screenshottool.toolbar.pen";
+static NSString * const ToolbarItemEraser = @"com.screenshottool.toolbar.eraser";
+static NSString * const ToolbarItemText = @"com.screenshottool.toolbar.text";
+static NSString * const ToolbarItemSelect = @"com.screenshottool.toolbar.select";
+static NSString * const ToolbarItemZoom = @"com.screenshottool.toolbar.zoom";
+static NSString * const ToolbarItemCopy = @"com.screenshottool.toolbar.copy";
+static NSString * const ToolbarItemPreferences = @"com.screenshottool.toolbar.preferences";
+static const CGFloat StatusBarHeight = 24.0f;
+#if !defined(GNUSTEP)
+static const CGFloat ToolbarIconDimension = 32.0f;
+#endif
+
+static NSImage *STRenderToolbarIcon(NSImage *source) {
+    if (!source) {
+        return nil;
+    }
+    NSSize targetSize = NSMakeSize(ToolbarIconDimension, ToolbarIconDimension);
+    NSInteger pixelsWide = (NSInteger)ceil(targetSize.width);
+    NSInteger pixelsHigh = (NSInteger)ceil(targetSize.height);
+    if (pixelsWide <= 0 || pixelsHigh <= 0) {
+        return nil;
+    }
+
+    NSBitmapImageRep *bitmap = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                                       pixelsWide:pixelsWide
+                                                                       pixelsHigh:pixelsHigh
+                                                                    bitsPerSample:8
+                                                                  samplesPerPixel:4
+                                                                         hasAlpha:YES
+                                                                         isPlanar:NO
+                                                                   colorSpaceName:NSCalibratedRGBColorSpace
+                                                                      bytesPerRow:0
+                                                                     bitsPerPixel:0];
+    if (!bitmap) {
+        return nil;
+    }
+    NSGraphicsContext *context = [NSGraphicsContext graphicsContextWithBitmapImageRep:bitmap];
+    if (!context) {
+        return nil;
+    }
+
+    NSGraphicsContext *previousContext = [NSGraphicsContext currentContext];
+    [NSGraphicsContext setCurrentContext:context];
+    [[NSColor clearColor] setFill];
+    NSRectFill(NSMakeRect(0.0f, 0.0f, targetSize.width, targetSize.height));
+    [source drawInRect:NSMakeRect(0.0f, 0.0f, targetSize.width, targetSize.height)
+             fromRect:NSZeroRect
+            operation:NSCompositeSourceOver
+             fraction:1.0f
+       respectFlipped:YES
+                hints:nil];
+    [NSGraphicsContext setCurrentContext:previousContext];
+
+    [bitmap setSize:targetSize];
+    NSData *tiffData = [bitmap TIFFRepresentation];
+    if (!tiffData) {
+        return nil;
+    }
+    NSImage *normalized = [[NSImage alloc] initWithData:tiffData];
+    if (!normalized) {
+        return nil;
+    }
+    [normalized setSize:targetSize];
+    if (normalized.representations.count == 0) {
+        ScreenshotToolAppendLog(@"ScreenshotTool: normalized icon missing representations");
+    }
+    return normalized;
+}
+
+static NSString *STPathForToolbarResource(NSString *filename, NSString *extension) {
+    NSMutableArray<NSString *> *bundleCandidates = [[NSMutableArray alloc] init];
+    NSString *mainResource = [[NSBundle mainBundle] resourcePath];
+    if (mainResource.length > 0) {
+        [bundleCandidates addObject:mainResource];
+    }
+    NSBundle *classBundle = [NSBundle bundleForClass:[AppDelegate class]];
+    NSString *classResource = [classBundle resourcePath];
+    if (classResource.length > 0 && ![bundleCandidates containsObject:classResource]) {
+        [bundleCandidates addObject:classResource];
+    }
+
+    for (NSString *resourcePath in bundleCandidates) {
+        NSString *path = [resourcePath stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.%@", filename, extension]];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:path]) {
+            return path;
+        }
+    }
+
+    NSMutableArray<NSString *> *fallbackBases = [[NSMutableArray alloc] init];
+    NSString *mainBundleBase = [[NSBundle mainBundle] bundlePath];
+    if (mainBundleBase.length > 0) {
+        [fallbackBases addObject:[mainBundleBase stringByAppendingPathComponent:@"Resources"]];
+    }
+    NSString *classBundleBase = [classBundle bundlePath];
+    if (classBundleBase.length > 0) {
+        [fallbackBases addObject:[classBundleBase stringByAppendingPathComponent:@"Resources"]];
+        NSString *parent = [classBundleBase stringByDeletingLastPathComponent];
+        NSString *grandParent = [parent stringByDeletingLastPathComponent];
+        NSString *repoRoot = [grandParent stringByDeletingLastPathComponent];
+        if (repoRoot.length > 0) {
+            [fallbackBases addObject:[repoRoot stringByAppendingPathComponent:@"Resources"]];
+        }
+    }
+    NSString *cwd = [[NSFileManager defaultManager] currentDirectoryPath];
+    if (cwd.length > 0) {
+        [fallbackBases addObject:[cwd stringByAppendingPathComponent:@"Resources"]];
+    }
+
+    for (NSString *base in fallbackBases) {
+        if (base.length == 0) {
+            continue;
+        }
+        NSString *candidate = [base stringByAppendingPathComponent:[NSString stringWithFormat:@"%@.%@", filename, extension]];
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: probing resource path %@", candidate]);
+        if ([[NSFileManager defaultManager] fileExistsAtPath:candidate]) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: fallback resource path %@", candidate]);
+            return candidate;
+        }
+    }
+    return nil;
+}
+
+#if defined(GNUSTEP)
+@interface STToolbarItemContainer : NSView
+@property (nonatomic, strong) STToolbarButton *button;
+@property (nonatomic, strong) NSTextField *labelField;
+- (instancetype)initWithLabel:(NSString *)label target:(id)target action:(SEL)action;
+- (void)updateWithImage:(NSImage *)image label:(NSString *)label;
+- (NSView *)tooltipTargetView;
+- (void)updateTrackingArea;
+- (void)refreshLabelAppearance;
+@end
+
+@implementation STToolbarItemContainer
+
+- (instancetype)initWithLabel:(NSString *)label target:(id)target action:(SEL)action {
+    const CGFloat width = 60.0f;
+    const CGFloat height = ToolbarIconDimension + 18.0f;
+    self = [super initWithFrame:NSMakeRect(0.0f, 0.0f, width, height)];
+    if (!self) {
+        return nil;
+    }
+
+    _button = [[STToolbarButton alloc] initWithFrame:NSMakeRect((width - ToolbarIconDimension) * 0.5f,
+                                                                2.0f,
+                                                                ToolbarIconDimension,
+                                                                ToolbarIconDimension)];
+    [_button setButtonType:NSMomentaryChangeButton];
+    [_button setBordered:NO];
+    [_button setImagePosition:NSImageOnly];
+    if ([(id)_button respondsToSelector:@selector(setImageScaling:)]) {
+        [(id)_button setImageScaling:NSImageScaleProportionallyUpOrDown];
+    }
+    [_button setTarget:target];
+    [_button setAction:action];
+    [_button setImage:nil];
+    [self addSubview:_button];
+
+    _labelField = [[NSTextField alloc] initWithFrame:NSMakeRect(0.0f,
+                                                                ToolbarIconDimension + 4.0f,
+                                                                width,
+                                                                14.0f)];
+    [_labelField setEditable:NO];
+    [_labelField setBezeled:NO];
+    [_labelField setBordered:NO];
+    [_labelField setDrawsBackground:NO];
+    [_labelField setAlignment:NSTextAlignmentCenter];
+    [_labelField setSelectable:NO];
+    [_labelField setFocusRingType:NSFocusRingTypeNone];
+    [_labelField setFont:[NSFont systemFontOfSize:10.0f]];
+    [_labelField setStringValue:label ?: @""];
+    [self refreshLabelAppearance];
+    [self addSubview:_labelField];
+
+    [self updateTrackingArea];
+
+    return self;
+}
+
+- (void)updateWithImage:(NSImage *)image label:(NSString *)label {
+    if (image) {
+        [_button setImage:image];
+    }
+    if (label.length > 0) {
+        [_labelField setStringValue:label];
+    } else {
+        [_labelField setStringValue:@""];
+    }
+    [self refreshLabelAppearance];
+}
+
+- (NSView *)tooltipTargetView {
+    return self;
+}
+
+- (void)updateTrackingArea {
+    [self removeAllToolTips];
+    NSString *tip = self.toolTip;
+    if (tip.length > 0) {
+        [self addToolTipRect:self.bounds owner:self userData:NULL];
+    }
+}
+
+- (void)setToolTip:(NSString *)string {
+    [super setToolTip:string];
+    [self updateTrackingArea];
+}
+
+- (void)refreshLabelAppearance {
+    NSColor *labelColor = STThemeToolbarLabelColor();
+    if (labelColor) {
+        [_labelField setTextColor:labelColor];
+        if ([[_labelField cell] respondsToSelector:@selector(setTextColor:)]) {
+            [[_labelField cell] setTextColor:labelColor];
+        }
+    }
+    [_labelField setNeedsDisplay:YES];
+    [self setNeedsDisplay:YES];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    [super drawRect:dirtyRect];
+    [self refreshLabelAppearance];
+}
+
+- (void)resetCursorRects {
+    [self addCursorRect:self.button.frame cursor:[NSCursor arrowCursor]];
+}
+
+- (void)viewDidMoveToSuperview {
+    [super viewDidMoveToSuperview];
+}
+
+@end
+#endif
+#if defined(GNUSTEP)
+@interface STStatusBarBackgroundView : NSView
+@property (nonatomic, strong) NSColor *fillColor;
+@property (nonatomic, strong) NSColor *topBorderColor;
+@end
+
+@implementation STStatusBarBackgroundView
+
+- (void)setFillColor:(NSColor *)fillColor {
+    _fillColor = fillColor;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setTopBorderColor:(NSColor *)topBorderColor {
+    _topBorderColor = topBorderColor;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    NSColor *fill = self.fillColor ?: [NSColor windowBackgroundColor];
+    [fill setFill];
+    NSRectFill(dirtyRect);
+    if (self.topBorderColor) {
+        NSRect border = NSMakeRect(dirtyRect.origin.x,
+                                   dirtyRect.size.height - 1.0f,
+                                   dirtyRect.size.width,
+                                   1.0f);
+        [self.topBorderColor setFill];
+        NSRectFill(border);
+    }
 }
 
 @end
@@ -113,19 +388,20 @@ static NSString *STDebugDescriptionForSender(id sender) {
     return NSStringFromClass([sender class]);
 }
 
+static void STApplyAccessibilityLabel(id object, NSString *label) {
+    if (!object || label.length == 0) {
+        return;
+    }
+    SEL selector = NSSelectorFromString(@"setAccessibilityLabel:");
+    if ([object respondsToSelector:selector]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+        [object performSelector:selector withObject:label];
+#pragma clang diagnostic pop
+    }
+}
 
 
-static NSString * const ToolbarIdentifier = @"com.screenshottool.toolbar";
-static NSString * const ToolbarItemHighlighter = @"com.screenshottool.toolbar.highlighter";
-static NSString * const ToolbarItemPen = @"com.screenshottool.toolbar.pen";
-static NSString * const ToolbarItemEraser = @"com.screenshottool.toolbar.eraser";
-static NSString * const ToolbarItemText = @"com.screenshottool.toolbar.text";
-static NSString * const ToolbarItemSelect = @"com.screenshottool.toolbar.select";
-static NSString * const ToolbarItemZoom = @"com.screenshottool.toolbar.zoom";
-static NSString * const ToolbarItemCopy = @"com.screenshottool.toolbar.copy";
-static NSString * const ToolbarItemPreferences = @"com.screenshottool.toolbar.preferences";
-static const CGFloat StatusBarHeight = 24.0f;
-static const CGFloat ToolbarIconDimension = 32.0f;
 
 @interface STStatusTextField : NSTextField
 @end
@@ -152,8 +428,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 @property (nonatomic, strong) NSTextField *toolWidthTitleLabel;
 @property (nonatomic, strong) NSSlider *toolWidthSlider;
 @property (nonatomic, strong) NSTextField *toolWidthValueLabel;
-@property (nonatomic, strong) STHyperlinkButton *toolWidthResetButton;
-@property (nonatomic, strong) STHyperlinkButton *toolWidthSetDefaultButton;
+@property (nonatomic, strong) NSButton *toolWidthOptionsButton;
 @property (nonatomic, assign) CGFloat penDefaultWidth;
 @property (nonatomic, assign) CGFloat highlighterDefaultWidth;
 @property (nonatomic, strong) NSColor *penDefaultColor;
@@ -170,6 +445,8 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 @property (nonatomic, copy) NSString *pendingOpenPath;
 @property (nonatomic, strong) NSURL *currentImageURL;
 @property (nonatomic, strong) NSUndoManager *undoManager;
+@property (nonatomic, assign) BOOL usesDarkTheme;
+@property (nonatomic, assign) BOOL toolWidthMenuCanReset;
 #if defined(GNUSTEP)
 @property (nonatomic, strong) STToolbarTooltipController *tooltipController;
 #endif
@@ -195,22 +472,64 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     }
     NSString *identifier = item.itemIdentifier;
     NSString *tip = [self toolTipForIdentifier:identifier];
-    if (!tip) {
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"applyToolTip skipped %@ (source=%@)", identifier ?: @"<nil>", source ?: @"<nil>"]);
-        return;
-    }
+    BOOL hasCustomTip = (tip.length > 0);
 #if defined(GNUSTEP)
     item.toolTip = nil;
-    if (item.view) {
-        [self.tooltipController registerView:item.view withTooltip:tip];
+    STToolbarItemContainer *containerView = nil;
+    NSView *view = item.view;
+    if ([view isKindOfClass:[STToolbarItemContainer class]]) {
+        containerView = (STToolbarItemContainer *)view;
+        view = [containerView tooltipTargetView];
+    }
+    if (view) {
+        if ([view respondsToSelector:@selector(removeAllToolTips)]) {
+            [view removeAllToolTips];
+        }
+        if ([view respondsToSelector:@selector(setToolTip:)]) {
+            [view setToolTip:nil];
+        }
+
+        NSView *superview = view.superview;
+        NSView *superSuperView = superview ? superview.superview : nil;
+        NSView *candidates[2] = { superview, superSuperView };
+        for (NSUInteger idx = 0; idx < 2; idx++) {
+            NSView *candidate = candidates[idx];
+            if (!candidate) {
+                continue;
+            }
+            if ([candidate respondsToSelector:@selector(removeAllToolTips)]) {
+                [candidate removeAllToolTips];
+            }
+            if ([candidate respondsToSelector:@selector(setToolTip:)]) {
+                [candidate setToolTip:nil];
+            }
+        }
+
+        if (hasCustomTip) {
+            if (self.tooltipController) {
+                [self.tooltipController registerView:view withTooltip:tip];
+            } else if (containerView) {
+                [containerView setToolTip:tip];
+            }
+        }
+    } else if (containerView && hasCustomTip) {
+        [containerView setToolTip:tip];
     }
 #else
-    item.toolTip = tip;
+    if (hasCustomTip) {
+        item.toolTip = tip;
+    } else {
+        item.toolTip = nil;
+    }
     if (item.view) {
-        [item.view setToolTip:tip];
+        [item.view setToolTip:(hasCustomTip ? tip : nil)];
     }
 #endif
-    ScreenshotToolAppendLog([NSString stringWithFormat:@"applyToolTip %@ -> %@ (source=%@)", identifier, tip, source ?: @"<nil>"]);
+    if (hasCustomTip) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"applyToolTip %@ -> %@ (source=%@)", identifier, tip, source ?: @"<nil>"]);
+    } else {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"applyToolTip %@ suppressed native tooltip (source=%@)", identifier, source ?: @"<nil>"]);
+    }
 }
 
 - (NSString *)toolTipForIdentifier:(NSToolbarItemIdentifier)identifier {
@@ -239,6 +558,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
         self.tooltipController = [[STToolbarTooltipController alloc] init];
     }
 #endif
+    self.usesDarkTheme = STThemeIsDark();
     [self setupWindowAndContent];
     [self setupToolbar];
     self.lastWidthTool = ScreenshotCanvasToolHighlighter;
@@ -248,6 +568,12 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
     [self selectTool:ScreenshotCanvasToolHighlighter];
     [self reflectZoomSelection];
+
+#if defined(GNUSTEP)
+    for (NSToolbarItem *item in self.toolbar.items) {
+        [self applyToolTipToToolbarItem:item source:@"launch"];
+    }
+#endif
 
     if (self.pendingOpenPath.length > 0) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: attempting deferred open for %@",
@@ -503,7 +829,13 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     [self.scrollView setDocumentView:self.canvasView];
     [container addSubview:self.scrollView];
 
+#if defined(GNUSTEP)
+    STStatusBarBackgroundView *statusBar = [[STStatusBarBackgroundView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, contentBounds.size.width, StatusBarHeight)];
+    statusBar.fillColor = STThemeStatusBarBackgroundColor();
+    statusBar.topBorderColor = STThemeStatusBarBorderColor();
+#else
     NSView *statusBar = [[NSView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, contentBounds.size.width, StatusBarHeight)];
+#endif
     [statusBar setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
     self.statusBarView = statusBar;
     [container addSubview:statusBar];
@@ -513,12 +845,13 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     [statusField setBezeled:NO];
     [statusField setBordered:NO];
     [statusField setDrawsBackground:NO];
-    [statusField setTextColor:[NSColor secondaryLabelColor]];
+    [statusField setTextColor:STThemeStatusPrimaryTextColor()];
     [statusField setFont:[NSFont systemFontOfSize:12.0f]];
     [statusField setAlignment:NSTextAlignmentLeft];
     statusField.autoresizingMask = (NSViewWidthSizable | NSViewHeightSizable);
     [statusField setStringValue:@""];
     self.statusTextField = statusField;
+    STApplyAccessibilityLabel(statusField, @"Status messages");
     [statusBar addSubview:statusField];
     [self setupStatusControls];
 
@@ -610,21 +943,21 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     return nil;
 }
 
-- (NSString *)iconNameForToolbarIdentifier:(NSToolbarItemIdentifier)identifier active:(BOOL)active {
+- (NSString *)baseIconStemForToolbarIdentifier:(NSToolbarItemIdentifier)identifier {
     if ([identifier isEqualToString:ToolbarItemHighlighter]) {
-        return active ? @"Highligher-active" : @"Highligher";
+        return @"Highligher";
     }
     if ([identifier isEqualToString:ToolbarItemPen]) {
-        return active ? @"PenTool-active" : @"PenTool";
+        return @"PenTool";
     }
     if ([identifier isEqualToString:ToolbarItemEraser]) {
-        return active ? @"Eraser-active" : @"Eraser";
+        return @"Eraser";
     }
     if ([identifier isEqualToString:ToolbarItemText]) {
-        return active ? @"AddText-active" : @"AddText";
+        return @"AddText";
     }
     if ([identifier isEqualToString:ToolbarItemSelect]) {
-        return active ? @"MarqueeTool-active" : @"MarqueeTool";
+        return @"MarqueeTool";
     }
     if ([identifier isEqualToString:ToolbarItemCopy]) {
         return @"CopyImage";
@@ -633,6 +966,63 @@ static const CGFloat ToolbarIconDimension = 32.0f;
         return @"Preferences";
     }
     return nil;
+}
+
+- (NSString *)legacyActiveIconNameForIdentifier:(NSToolbarItemIdentifier)identifier {
+    if ([identifier isEqualToString:ToolbarItemHighlighter]) {
+        return @"Highligher-active";
+    }
+    if ([identifier isEqualToString:ToolbarItemPen]) {
+        return @"PenTool-active";
+    }
+    if ([identifier isEqualToString:ToolbarItemEraser]) {
+        return @"Eraser-active";
+    }
+    if ([identifier isEqualToString:ToolbarItemText]) {
+        return @"AddText-active";
+    }
+    if ([identifier isEqualToString:ToolbarItemSelect]) {
+        return @"MarqueeTool-active";
+    }
+    return nil;
+}
+
+- (NSArray<NSString *> *)iconNameCandidatesForToolbarIdentifier:(NSToolbarItemIdentifier)identifier active:(BOOL)active {
+    NSString *stem = [self baseIconStemForToolbarIdentifier:identifier];
+    if (!stem) {
+        return @[];
+    }
+
+    NSMutableArray<NSString *> *ordered = [[NSMutableArray alloc] init];
+    void (^appendUnique)(NSString *) = ^(NSString *candidate) {
+        if (candidate.length == 0) {
+            return;
+        }
+        if (![ordered containsObject:candidate]) {
+            [ordered addObject:candidate];
+        }
+    };
+    BOOL darkTheme = self.usesDarkTheme;
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"icon candidates %@ dark=%@ active=%@",
+                             identifier,
+                             darkTheme ? @"YES" : @"NO",
+                             active ? @"YES" : @"NO"]);
+    if (darkTheme) {
+        appendUnique([stem stringByAppendingString:@"-dark"]);
+    } else {
+        appendUnique([stem stringByAppendingString:@"-light"]);
+    }
+
+    if (active) {
+        NSString *legacyActive = [self legacyActiveIconNameForIdentifier:identifier];
+        if (legacyActive.length > 0) {
+            appendUnique(legacyActive);
+        }
+    }
+
+    appendUnique(stem);
+
+    return [ordered copy];
 }
 
 
@@ -674,9 +1064,14 @@ static const CGFloat ToolbarIconDimension = 32.0f;
         NSString *toolTip = [self toolTipForIdentifier:identifier];
         if (toolTip) {
 #if defined(GNUSTEP)
-            item.toolTip = nil;
-            if (item.view) {
-                [item.view setToolTip:nil];
+            STToolbarItemContainer *containerView = ([item.view isKindOfClass:[STToolbarItemContainer class]]) ? (STToolbarItemContainer *)item.view : nil;
+            if (containerView) {
+                [containerView setToolTip:toolTip];
+                if (self.tooltipController) {
+                    [self.tooltipController registerView:[containerView tooltipTargetView] withTooltip:toolTip];
+                }
+            } else {
+                item.toolTip = toolTip;
             }
 #else
             item.toolTip = toolTip;
@@ -686,6 +1081,12 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 #endif
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ tooltip set -> %@", identifier, toolTip]);
         } else {
+#if defined(GNUSTEP)
+            if ([item.view isKindOfClass:[STToolbarItemContainer class]]) {
+                STToolbarItemContainer *containerView = (STToolbarItemContainer *)item.view;
+                [containerView setToolTip:nil];
+            }
+#endif
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ tooltip not updated", identifier]);
         }
 
@@ -702,12 +1103,24 @@ static const CGFloat ToolbarIconDimension = 32.0f;
         }
 
         item.image = icon;
+#if defined(GNUSTEP)
+        if ([item.view isKindOfClass:[STToolbarItemContainer class]]) {
+            STToolbarItemContainer *containerView = (STToolbarItemContainer *)item.view;
+            [containerView updateWithImage:icon label:item.label ?: identifier];
+        } else if (item.view && [item.view respondsToSelector:@selector(setImage:)]) {
+            id buttonView = item.view;
+            if ([buttonView respondsToSelector:@selector(setImage:)]) {
+                [buttonView setImage:icon];
+            }
+        }
+#else
         if (item.view && [item.view respondsToSelector:@selector(setImage:)]) {
             id buttonView = item.view;
             if ([buttonView respondsToSelector:@selector(setImage:)]) {
                 [buttonView setImage:icon];
             }
         }
+#endif
         NSString *state = isActive ? @"active" : @"inactive";
         ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ updated (%@)", identifier, state]);
     }
@@ -813,6 +1226,9 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     if (!baseIcon) {
         return nil;
     }
+    if (self.usesDarkTheme) {
+        baseIcon = [self darkThemeToolbarImageFromImage:baseIcon active:active];
+    }
     NSImage *rendered = [baseIcon copy];
     NSColor *badgeColor = [self badgeColorForToolbarIdentifier:identifier];
     if (badgeColor) {
@@ -822,12 +1238,49 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     return rendered;
 }
 
+#if defined(GNUSTEP)
+- (NSImage *)darkThemeToolbarImageFromImage:(NSImage *)image active:(BOOL)active {
+    if (!image) {
+        return nil;
+    }
+    NSSize size = image.size;
+    if (size.width <= 0.0f || size.height <= 0.0f) {
+        return image;
+    }
+    NSImage *composed = [[NSImage alloc] initWithSize:size];
+    [composed lockFocus];
+    NSRect rect = NSMakeRect(0.0f, 0.0f, size.width, size.height);
+    NSBezierPath *backgroundPath = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(rect, 0.5f, 0.5f)
+                                                                   xRadius:6.0f
+                                                                   yRadius:6.0f];
+    [[STThemeToolbarBackgroundColor(active) colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] setFill];
+    [backgroundPath fill];
+
+    NSRect imageRect = NSInsetRect(rect, 4.0f, 4.0f);
+    CGFloat fraction = STThemeToolbarIconFraction(active);
+    [image drawInRect:imageRect
+             fromRect:NSZeroRect
+            operation:NSCompositeSourceOver
+             fraction:fraction];
+
+    NSColor *strokeColor = STThemeToolbarBorderColor(active);
+    if (strokeColor) {
+        [[strokeColor colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] setStroke];
+        [backgroundPath setLineWidth:1.0f];
+        [backgroundPath stroke];
+    }
+
+    [composed unlockFocus];
+    return composed;
+}
+#endif
+
 - (NSToolbarItem *)standardToolbarItemWithIdentifier:(NSToolbarItemIdentifier)identifier
                                                label:(NSString *)label
                                               action:(SEL)selector {
     NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:identifier];
     ScreenshotToolAppendLog([NSString stringWithFormat:@"Standard item build %@", identifier]);
-    item.label = label;
+    item.label = label ?: @"";
     item.paletteLabel = label;
     NSString *initialTip = [self toolTipForIdentifier:identifier] ?: label;
     BOOL routeTooltipViaController = NO;
@@ -852,24 +1305,27 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     NSToolbarItemIdentifier activeIdentifier = [self identifierForTool:self.canvasView.activeTool];
     BOOL isActive = (activeIdentifier && [identifier isEqualToString:activeIdentifier]);
     NSImage *icon = [self toolbarImageForIdentifier:identifier active:isActive];
-    if (icon) {
-        item.image = icon;
-    }
 #if defined(GNUSTEP)
+    STToolbarItemContainer *container = [[STToolbarItemContainer alloc] initWithLabel:label target:item.target action:item.action];
+    [container updateWithImage:icon label:label];
+    item.view = container;
+    item.image = nil;
+    NSSize size = container.frame.size;
+    item.minSize = size;
+    item.maxSize = size;
     if (routeTooltipViaController) {
-        STToolbarButton *button = [[STToolbarButton alloc] initWithFrame:NSMakeRect(0, 0, ToolbarIconDimension, ToolbarIconDimension)];
-        button.translatesAutoresizingMaskIntoConstraints = NO;
-        [button setButtonType:NSMomentaryChangeButton];
-        [button setBordered:NO];
-        [button setImage:icon];
-        [button setTarget:item.target];
-        [button setAction:item.action];
-        item.view = button;
         if (self.tooltipController) {
-            NSString *tooltipText = initialTip ?: item.label ?: @"";
-            [self.tooltipController registerView:button withTooltip:tooltipText];
+            NSString *tooltipText = [self toolTipForIdentifier:identifier];
+            if (tooltipText.length > 0) {
+                [self.tooltipController registerView:[container tooltipTargetView] withTooltip:tooltipText];
+            } else {
+                [self.tooltipController unregisterView:[container tooltipTargetView]];
+            }
         }
+    } else if (initialTip.length > 0) {
+        container.button.toolTip = initialTip;
     }
+    STApplyAccessibilityLabel(container.button, label ?: identifier ?: @"Toolbar Button");
 #endif
     if (item.itemIdentifier) {
 #if !defined(GNUSTEP)
@@ -921,6 +1377,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     [titleLabel setDrawsBackground:NO];
     [titleLabel setAlignment:NSTextAlignmentRight];
     [titleLabel setFont:[NSFont boldSystemFontOfSize:12.0f]];
+    [titleLabel setTextColor:STThemeStatusValueTextColor()];
     self.toolWidthTitleLabel = titleLabel;
     [container addSubview:titleLabel];
 
@@ -934,30 +1391,41 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     slider.target = self;
     slider.action = @selector(toolWidthSliderChanged:);
     self.toolWidthSlider = slider;
+    STApplyAccessibilityLabel(slider, @"Adjust tool width");
     [container addSubview:slider];
 
     NSTextField *valueLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
     [valueLabel setEditable:NO];
     [valueLabel setBezeled:NO];
     [valueLabel setBordered:NO];
-    [valueLabel setDrawsBackground:NO];
+    [valueLabel setDrawsBackground:YES];
+    [valueLabel setBackgroundColor:STThemeStatusValueBackgroundColor()];
     [valueLabel setAlignment:NSTextAlignmentRight];
     [valueLabel setFont:[NSFont systemFontOfSize:12.0f]];
+    [valueLabel setTextColor:STThemeStatusValueTextColor()];
     [valueLabel setStringValue:@"0 px"];
     self.toolWidthValueLabel = valueLabel;
+    STApplyAccessibilityLabel(valueLabel, @"Current tool width");
     [container addSubview:valueLabel];
 
-    STHyperlinkButton *resetButton = [STHyperlinkButton hyperlinkButtonWithTitle:@"Reset"
-                                                                           target:self
-                                                                           action:@selector(resetActiveToolWidth:)];
-    self.toolWidthResetButton = resetButton;
-    [container addSubview:resetButton];
-
-    STHyperlinkButton *defaultButton = [STHyperlinkButton hyperlinkButtonWithTitle:@"Set as Default"
-                                                                            target:self
-                                                                            action:@selector(setActiveToolWidthAsDefault:)];
-    self.toolWidthSetDefaultButton = defaultButton;
-    [container addSubview:defaultButton];
+    NSButton *optionsButton = [[NSButton alloc] initWithFrame:NSZeroRect];
+    optionsButton.title = @"⋯";
+#ifdef NSRoundedBezelStyle
+    [optionsButton setBezelStyle:NSRoundedBezelStyle];
+#else
+    [optionsButton setBezelStyle:NSRecessedBezelStyle];
+#endif
+#ifdef NSFontWeightSemibold
+    optionsButton.font = [NSFont systemFontOfSize:13.0f weight:NSFontWeightSemibold];
+#else
+    optionsButton.font = [NSFont boldSystemFontOfSize:13.0f];
+#endif
+    optionsButton.target = self;
+    optionsButton.action = @selector(toolWidthOptionsButtonClicked:);
+    optionsButton.toolTip = @"More width options";
+    self.toolWidthOptionsButton = optionsButton;
+    STApplyAccessibilityLabel(optionsButton, @"Tool width options");
+    [container addSubview:optionsButton];
 
     container.hidden = NO;
     [self updateToolWidthControls];
@@ -975,24 +1443,23 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
     CGFloat controlsWidth = 0.0f;
     if (self.statusControlsContainer && !self.statusControlsContainer.isHidden) {
-        [self.toolWidthResetButton sizeToFit];
-        [self.toolWidthSetDefaultButton sizeToFit];
-
         NSSize titleSize = self.toolWidthTitleLabel ? [[self.toolWidthTitleLabel cell] cellSize] : NSZeroSize;
         NSSize valueSize = self.toolWidthValueLabel ? [[self.toolWidthValueLabel cell] cellSize] : NSZeroSize;
-        NSSize resetSize = self.toolWidthResetButton.frame.size;
-        NSSize defaultSize = self.toolWidthSetDefaultButton.frame.size;
+        if (self.toolWidthOptionsButton) {
+            [self.toolWidthOptionsButton sizeToFit];
+        }
 
-        CGFloat labelWidth = MAX(100.0f, titleSize.width + 6.0f);
-        CGFloat valueWidth = MAX(52.0f, valueSize.width + 10.0f);
-        CGFloat sliderWidth = MIN(280.0f, MAX(220.0f, bounds.size.width * 0.30f));
+        CGFloat labelWidth = MAX(120.0f, titleSize.width + 10.0f);
+        CGFloat valueWidth = MAX(60.0f, valueSize.width + 14.0f);
+        CGFloat sliderWidth = MIN(320.0f, MAX(220.0f, bounds.size.width * 0.32f));
+        CGFloat optionsWidth = self.toolWidthOptionsButton ? MAX(28.0f, self.toolWidthOptionsButton.frame.size.width) : 0.0f;
         CGFloat spacing = 6.0f;
-        controlsWidth = labelWidth + sliderWidth + valueWidth + resetSize.width + defaultSize.width + (spacing * 4.0f);
+        controlsWidth = labelWidth + sliderWidth + valueWidth + optionsWidth + (spacing * 3.0f);
 
         CGFloat maxControlsWidth = bounds.size.width - (padding * 2.0f);
         if (controlsWidth > maxControlsWidth) {
-            sliderWidth = MAX(140.0f, maxControlsWidth - (labelWidth + valueWidth + resetSize.width + defaultSize.width + (spacing * 4.0f)));
-            controlsWidth = labelWidth + sliderWidth + valueWidth + resetSize.width + defaultSize.width + (spacing * 4.0f);
+            sliderWidth = MAX(160.0f, maxControlsWidth - (labelWidth + valueWidth + optionsWidth + (spacing * 3.0f)));
+            controlsWidth = labelWidth + sliderWidth + valueWidth + optionsWidth + (spacing * 3.0f);
         }
 
         CGFloat containerX = bounds.size.width - padding - controlsWidth;
@@ -1029,18 +1496,13 @@ static const CGFloat ToolbarIconDimension = 32.0f;
         }
         x += valueWidth + spacing;
 
-        CGFloat resetHeight = MIN(controlHeight, resetSize.height);
-        self.toolWidthResetButton.frame = NSMakeRect(x,
-                                                     (containerFrame.size.height - resetHeight) / 2.0f,
-                                                     resetSize.width,
-                                                     resetHeight);
-        x += resetSize.width + spacing;
-
-        CGFloat defaultHeight = MIN(controlHeight, defaultSize.height);
-        self.toolWidthSetDefaultButton.frame = NSMakeRect(x,
-                                                          (containerFrame.size.height - defaultHeight) / 2.0f,
-                                                          defaultSize.width,
-                                                          defaultHeight);
+        if (self.toolWidthOptionsButton) {
+            CGFloat buttonHeight = MIN(controlHeight + 2.0f, self.toolWidthOptionsButton.frame.size.height);
+            self.toolWidthOptionsButton.frame = NSMakeRect(x,
+                                                           (containerFrame.size.height - buttonHeight) / 2.0f,
+                                                           optionsWidth,
+                                                           buttonHeight);
+        }
     } else if (self.statusControlsContainer) {
         self.statusControlsContainer.frame = NSMakeRect(bounds.size.width - padding,
                                                         verticalInset,
@@ -1190,9 +1652,46 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     [self.toolWidthSlider setDoubleValue:currentWidth];
     [self updateToolWidthValueLabelWithWidth:currentWidth];
     BOOL canReset = fabs(currentWidth - defaultWidth) > 0.01f;
-    [self.toolWidthResetButton setEnabled:canReset];
-    [self.toolWidthSetDefaultButton setEnabled:canReset];
+    self.toolWidthMenuCanReset = canReset;
+    if (self.toolWidthOptionsButton) {
+        [self.toolWidthOptionsButton setEnabled:YES];
+    }
+    if (self.toolWidthValueLabel) {
+        [self.toolWidthValueLabel setBackgroundColor:STThemeStatusValueBackgroundColor()];
+        [self.toolWidthValueLabel setTextColor:STThemeStatusValueTextColor()];
+    }
     [self layoutStatusControls];
+}
+
+- (void)toolWidthOptionsButtonClicked:(id)sender {
+    NSMenu *menu = [self toolWidthOptionsMenu];
+    if (!menu) {
+        return;
+    }
+    NSButton *button = self.toolWidthOptionsButton;
+    if (!button) {
+        return;
+    }
+    NSPoint location = NSMakePoint(0.0f, NSHeight(button.bounds));
+    [menu popUpMenuPositioningItem:nil atLocation:location inView:button];
+}
+
+- (NSMenu *)toolWidthOptionsMenu {
+    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Width Options"];
+    NSMenuItem *resetItem = [[NSMenuItem alloc] initWithTitle:@"Reset Width"
+                                                       action:@selector(resetActiveToolWidth:)
+                                                keyEquivalent:@""];
+    [resetItem setTarget:self];
+    [resetItem setEnabled:self.toolWidthMenuCanReset];
+    [menu addItem:resetItem];
+
+    NSMenuItem *defaultItem = [[NSMenuItem alloc] initWithTitle:@"Set as Default"
+                                                         action:@selector(setActiveToolWidthAsDefault:)
+                                                  keyEquivalent:@""];
+    [defaultItem setTarget:self];
+    [defaultItem setEnabled:self.toolWidthMenuCanReset];
+    [menu addItem:defaultItem];
+    return menu;
 }
 
 - (ScreenshotCanvasTool)widthTargetTool {
@@ -2318,8 +2817,8 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 #pragma mark - Helpers
 
 - (NSImage *)imageForToolbarIdentifier:(NSToolbarItemIdentifier)identifier active:(BOOL)active {
-    NSString *filename = [self iconNameForToolbarIdentifier:identifier active:active];
-    if (!filename) {
+    NSArray<NSString *> *candidates = [self iconNameCandidatesForToolbarIdentifier:identifier active:active];
+    if (candidates.count == 0) {
         return nil;
     }
 
@@ -2328,19 +2827,26 @@ static const CGFloat ToolbarIconDimension = 32.0f;
         toolbarCache = [[NSMutableDictionary alloc] init];
     }
 
-    NSImage *icon = toolbarCache[filename];
-    if (!icon) {
-        NSImage *base = [self imageNamed:filename];
-        if (base) {
-            icon = [base copy];
-            [icon setSize:NSMakeSize(32.0, 32.0)];
-            toolbarCache[filename] = icon;
-            ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: loaded toolbar icon %@", filename]);
-        } else {
-            ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: toolbar icon %@ missing base image", filename]);
+    for (NSString *candidate in candidates) {
+        if (candidate.length == 0) {
+            continue;
+        }
+        NSImage *icon = toolbarCache[candidate];
+        if (!icon) {
+            NSImage *base = [self imageNamed:candidate];
+            if (base) {
+                icon = STRenderToolbarIcon(base);
+                toolbarCache[candidate] = icon;
+                ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: loaded toolbar icon %@", candidate]);
+            } else {
+                ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: toolbar icon %@ missing base image", candidate]);
+            }
+        }
+        if (icon) {
+            return icon;
         }
     }
-    return icon;
+    return nil;
 }
 
 - (NSImage *)imageNamed:(NSString *)filename {
@@ -2359,11 +2865,10 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     }
 
     NSArray<NSString *> *extensions = @[@"png", @"tiff", @"tif", @"bmp"];
-    NSBundle *bundle = [NSBundle mainBundle];
     NSString *path = nil;
     for (NSString *ext in extensions) {
-        path = [bundle pathForResource:filename ofType:ext];
-        if (path) {
+        path = STPathForToolbarResource(filename, ext);
+        if (path.length > 0) {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: attempting to load image %@", path]);
             break;
         }

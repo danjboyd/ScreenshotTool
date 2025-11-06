@@ -129,11 +129,12 @@
 }
 
 - (void)unregisterAll {
-    for (NSValue *key in self.trackingTags) {
-        NSTrackingRectTag tag = (NSTrackingRectTag)self.trackingTags[key].integerValue;
+    NSArray<NSValue *> *keys = [self.trackingTags allKeys];
+    for (NSValue *key in keys) {
+        NSNumber *tagNumber = self.trackingTags[key];
         NSView *view = [key nonretainedObjectValue];
-        if (view) {
-            [view removeTrackingRect:tag];
+        if (view && tagNumber) {
+            [view removeTrackingRect:(NSTrackingRectTag)tagNumber.integerValue];
             if ([view respondsToSelector:@selector(removeAllToolTips)]) {
                 [view removeAllToolTips];
             }
@@ -152,6 +153,9 @@
     if (!view) {
         return;
     }
+#ifdef SCREENSHOT_TOOL_DEBUG_TOOLTIPS
+    NSLog(@"[tooltip-controller] mouseEntered view=%@", view);
+#endif
     NSString *tooltip = self.tooltips[[NSValue valueWithNonretainedObject:view]];
     if (tooltip.length == 0) {
         return;

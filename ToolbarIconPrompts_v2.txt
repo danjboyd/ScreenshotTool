@@ -1,0 +1,23 @@
+Prompt 1 – Selection Tool:
+“Please generate an image with this description: Flat-vector toolbar icon of a screenshot marquee cursor. Use a dark graphite outline for a rounded-square selection with teal corner handles and include a subtle crosshair pointer. Render it on a fully transparent background (PNG with alpha) sized for a 44×44 canvas, with no gradients or drop shadows.”
+
+Prompt 2 – Highlighter Tool:
+“Please generate an image with this description: Minimalist UI highlighter pen icon featuring a chisel-tip barrel in cool charcoal with a vivid amber felt tip and matching swipe accent. Keep the style flat with crisp edges, centered on a transparent PNG (alpha) sized for a 44×44 toolbar cell.”
+
+Prompt 3 – Pen Tool:
+“Please generate an image with this description: Modern fountain pen drawing tool icon with a matte charcoal body and a single electric blue accent ring near the nib. Use a simple silhouette with no shading on a transparent background PNG optimized for a 44×44 toolbar.”
+
+Prompt 4 – Text Tool:
+“Please generate an image with this description: Geometric capital ‘T’ toolbar icon with balanced stroke weight and a slim purple underline to imply typography controls. Keep the lines flat and monochrome, export as a transparent background PNG at 44×44 pixels.”
+
+Prompt 5 – Eraser Tool:
+“Please generate an image with this description: Material-inspired eraser icon showing an angled white trapezoid body with a coral corner cap, clean outline, and no shadows. Render it as a flat vector on a 44×44 transparent background PNG.”
+
+Prompt 6 – Copy Tool:
+“Please generate an image with this description: Clipboard duplication icon for a design app, using a graphite outline clipboard with clipped top corners and a teal forward-arrow overlay to indicate copy. Keep a flat monochrome palette plus teal accent, and export as a transparent PNG sized 44×44.”
+
+Prompt 7 – Preferences Gear:
+“Please generate an image with this description: Premium settings gear icon with a 12-tooth thin-line gear in soft grey and a centered teal dot. Maintain uniform stroke weight, avoid gradients, and deliver on a transparent PNG sized for a 44×44 toolbar cell.”
+
+Prompt 8 – Zoom Control:
+“Please generate an image with this description: Magnifying glass toolbar icon with interchangeable plus/minus badges—circular graphite lens, slender handle, teal plus symbol inside the lens, and a faint minus badge offset to imply zoom control. Produce a flat vector on a transparent PNG (44×44).”

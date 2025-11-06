@@ -5,13 +5,25 @@ ScreenshotTool_APPLICATION_ICON =
 
 ScreenshotTool_RESOURCE_DIRS = Resources
 ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
+	Resources/CopyImage-light.png \
+	Resources/CopyImage-dark.png \
 	Resources/Highligher.png \
+	Resources/Highligher-light.png \
+	Resources/Highligher-dark.png \
 	Resources/HighligherChangeColor.png \
 	Resources/PenTool.png \
+	Resources/PenTool-light.png \
+	Resources/PenTool-dark.png \
 	Resources/PenChangeColor.png \
 	Resources/Eraser.png \
+	Resources/Eraser-light.png \
+	Resources/Eraser-dark.png \
 	Resources/AddText.png \
+	Resources/AddText-light.png \
+	Resources/AddText-dark.png \
 	Resources/MarqueeTool.png \
+	Resources/MarqueeTool-light.png \
+	Resources/MarqueeTool-dark.png \
 	Resources/Highligher-active.png \
 	Resources/PenTool-active.png \
 	Resources/Eraser-active.png \
@@ -32,7 +44,9 @@ ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
 	Resources/PenTool-active.tiff \
 	Resources/Eraser-active.tiff \
 	Resources/CopyImage-active.tiff \
-	Resources/Preferences.png
+	Resources/Preferences.png \
+	Resources/Preferences-light.png \
+	Resources/Preferences-dark.png
 
 ScreenshotTool_HEADERS = Source/AppDelegate.h \
 	Source/ScreenshotCanvasView.h \
@@ -47,7 +61,8 @@ ScreenshotTool_HEADERS = Source/AppDelegate.h \
 	Source/ToolSettingsPopoverController.h \
 	Source/TextToolPopoverController.h \
 	Source/PreferencesWindowController.h \
-	Source/STToolbarTooltipController.h
+	Source/STToolbarTooltipController.h \
+	Source/STThemeUtilities.h
 
 ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/AppDelegate.m \
@@ -63,7 +78,8 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/ToolSettingsPopoverController.m \
 	Source/TextToolPopoverController.m \
 	Source/PreferencesWindowController.m \
-	Source/STToolbarTooltipController.m
+	Source/STToolbarTooltipController.m \
+	Source/STThemeUtilities.m
 
 CC = clang
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
@@ -83,10 +99,11 @@ TEST_SUPPORT_OBJC = Source/AppDelegate.m \
 	Source/ToolSettingsPopoverController.m \
 	Source/TextToolPopoverController.m \
 	Source/PreferencesWindowController.m \
-	Source/STToolbarTooltipController.m
+	Source/STToolbarTooltipController.m \
+	Source/STThemeUtilities.m
 
 TEST_OUTPUT_DIR = Tests/bin
-TESTS = CropUndoProbe CropUndoWindowProbe ClipboardHighlighterProbe ClipboardHighlighterOpacityProbe ToolbarBadgeRefreshProbe TooltipsSuppressedProbe
+TESTS = CropUndoProbe CropUndoWindowProbe ClipboardHighlighterProbe ClipboardHighlighterOpacityProbe ToolbarBadgeRefreshProbe TooltipsSuppressedProbe ToolbarIconThemeProbe
 TEST_CLANG ?= clang
 TEST_OBJCFLAGS := -fobjc-arc -ISource -I/usr/include/freetype2 $(shell gnustep-config --objc-flags)
 TEST_LDFLAGS := $(shell gnustep-config --gui-libs) -lfontconfig -lfreetype
@@ -125,6 +142,9 @@ $(TEST_OUTPUT_DIR)/ToolbarBadgeRefreshProbe: Tests/ToolbarBadgeRefreshProbe.m $(
 	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
 
 $(TEST_OUTPUT_DIR)/TooltipsSuppressedProbe: Tests/TooltipsSuppressedProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
+	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
+
+$(TEST_OUTPUT_DIR)/ToolbarIconThemeProbe: Tests/ToolbarIconThemeProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
 	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
 
 clean-tests:

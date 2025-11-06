@@ -38,3 +38,12 @@
 - Daily Status: `STATUS.md` captures in-flight initiatives and end-of-day notes so we always know where to pick up next session.
 - Regression Guardrails: whenever we close a bug or finish a feature, I look for opportunities to add or extend tests to lock behaviour in and prevent future regressions.
 - Test Harness: run `Tools/run_tests.sh [optional-log-path]` to build the probes and capture the suite output (stdout + stderr) in `tests.log` for Codex review.
+
+## Daily Wrap-Up Procedure
+1. Append a brief progress summary (completed work + next steps) to `STATUS.md`.
+2. Ensure every unresolved task is captured in `OpenIssues.md` with:
+   - a synopsis of experiments attempted so far, and
+   - the current “theory of the case” describing what we believe the fix will involve.
+3. Run `Tools/run_tests.sh` so `tests.log` reflects the latest pass/fail state.
+4. Stage and commit all changes with an informative message, then push to the remote GitHub repository.
+5. If any visual changes were part of the work, capture the relevant screenshots/logs referenced in `STATUS.md` or the issues list so the next session has full context.

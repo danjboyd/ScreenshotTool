@@ -1,0 +1,23 @@
+Prompt 1:
+“Ultra high resolution vector icon of a precision screenshot selection tool: sleek rounded square cursor with subtle teal accent handles, flat minimal style, soft ambient lighting, white transparent background.”
+
+Prompt 2:
+“Modern digital highlighter pen icon for UI toolbar, glassy barrel with gradient amber tip stroke, flat design with slight depth, consistent 44x44 canvas, transparent background.”
+
+Prompt 3:
+“Contemporary fountain pen drawing tool icon, matte charcoal body with electric blue accent ring, minimalist, no drop shadow, export-ready PNG with transparent background.”
+
+Prompt 4:
+“Clean text tool icon: capital ‘T’ formed by geometric lines, balanced weight, slight purple accent underline, flat UI style, optimized for dark or light toolbar, transparent background.”
+
+Prompt 5:
+“Eraser tool icon in modern material design: soft white trapezoid eraser with coral corner cap, subtle inner shadow, high contrast, vector look, transparent background.”
+
+Prompt 6:
+“Copy to clipboard icon for professional design app: clipboard outline with symmetrical clipped corners, centered arrow indicating duplication, monochrome graphite palette with teal accent, flat aesthetic, transparent background.”
+
+Prompt 7:
+“Preferences/settings gear icon rendered in premium macOS style: thin-line gear with 12 teeth, cool grey metal, inner teal dot, no gradients beyond subtle lighting, exported on transparent background.”
+
+Prompt 8:
+“Zoom dropdown icon: magnifying glass with interchangeable plus/minus badges, minimalist circular handle, fine-line style in neutral graphite with blue highlight, 44x44 canvas, transparent background.”
