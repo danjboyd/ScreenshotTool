@@ -46,7 +46,8 @@ ScreenshotTool_HEADERS = Source/AppDelegate.h \
 	Source/ScreenshotToolSettings.h \
 	Source/ToolSettingsPopoverController.h \
 	Source/TextToolPopoverController.h \
-	Source/PreferencesWindowController.h
+	Source/PreferencesWindowController.h \
+	Source/STToolbarTooltipController.h
 
 ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/AppDelegate.m \
@@ -61,7 +62,8 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/ScreenshotToolSettings.m \
 	Source/ToolSettingsPopoverController.m \
 	Source/TextToolPopoverController.m \
-	Source/PreferencesWindowController.m
+	Source/PreferencesWindowController.m \
+	Source/STToolbarTooltipController.m
 
 CC = clang
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
@@ -80,10 +82,11 @@ TEST_SUPPORT_OBJC = Source/AppDelegate.m \
 	Source/ScreenshotToolSettings.m \
 	Source/ToolSettingsPopoverController.m \
 	Source/TextToolPopoverController.m \
-	Source/PreferencesWindowController.m
+	Source/PreferencesWindowController.m \
+	Source/STToolbarTooltipController.m
 
 TEST_OUTPUT_DIR = Tests/bin
-TESTS = CropUndoProbe CropUndoWindowProbe
+TESTS = CropUndoProbe CropUndoWindowProbe ClipboardHighlighterProbe ClipboardHighlighterOpacityProbe ToolbarBadgeRefreshProbe TooltipsSuppressedProbe
 TEST_CLANG ?= clang
 TEST_OBJCFLAGS := -fobjc-arc -ISource -I/usr/include/freetype2 $(shell gnustep-config --objc-flags)
 TEST_LDFLAGS := $(shell gnustep-config --gui-libs) -lfontconfig -lfreetype
@@ -110,6 +113,18 @@ $(TEST_OUTPUT_DIR)/CropUndoProbe: Tests/CropUndoProbe.m $(TEST_SUPPORT_OBJC) | $
 	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
 
 $(TEST_OUTPUT_DIR)/CropUndoWindowProbe: Tests/CropUndoWindowProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
+	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
+
+$(TEST_OUTPUT_DIR)/ClipboardHighlighterProbe: Tests/ClipboardHighlighterProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
+	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
+
+$(TEST_OUTPUT_DIR)/ClipboardHighlighterOpacityProbe: Tests/ClipboardHighlighterOpacityProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
+	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
+
+$(TEST_OUTPUT_DIR)/ToolbarBadgeRefreshProbe: Tests/ToolbarBadgeRefreshProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
+	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
+
+$(TEST_OUTPUT_DIR)/TooltipsSuppressedProbe: Tests/TooltipsSuppressedProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
 	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
 
 clean-tests:

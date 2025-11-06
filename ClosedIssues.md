@@ -1,0 +1,6 @@
+# Closed Issues
+
+- Copying an annotated image dropped highlighter strokes from the clipboard output on GNUstep. Resolved on 2025-11-05 by keeping stroke rasterisation in the CPU path for GNUstep builds so highlighter overlays survive flattening. Guarded by `ClipboardHighlighterProbe`. _(Opened 2025-11-04 — Closed 2025-11-05)_
+- Clipboard highlighter opacity stacked too aggressively in clipboard exports, obscuring underlying content. Resolved on 2025-11-05 by de-duplicating per-stroke raster stamps and guarding with `ClipboardHighlighterOpacityProbe` so repeated passes stay translucent. _(Opened 2025-11-05 — Closed 2025-11-05)_
+- Toolbar badges stopped reflecting colour changes after the async refresh refactor. Resolved on 2025-11-05 by regenerating toolbar images from fresh base glyphs, caching items safely, and guarding the helper with `ToolbarBadgeRefreshProbe`. _(Opened 2025-11-03 — Closed 2025-11-05)_
+- GNUstep native tooltips resurfaced after the refactor. Resolved on 2025-11-05 by restoring a custom tooltip controller, suppressing the native manager via persistent defaults, and guarding the behaviour with `TooltipsSuppressedProbe`, which now verifies controller registration against a test-only toolbar harness. _(Opened 2025-11-03 — Closed 2025-11-05)_

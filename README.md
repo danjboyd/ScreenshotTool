@@ -29,3 +29,12 @@
 - `make -j$(nproc)` rebuilds the GNUstep target.
 - Default resources sit in `Resources/`; the preferences toolbar icon ships as `Preferences.png`.
 - Manual QA checklist: status bar slider updates both tools, popovers stay in sync after preference edits, default save directory drives Open/Save, and hiding the status bar reflows the scroll view correctly.
+
+## Development Process
+- Roles: I serve as lead developer while you act as architect, driving design direction and final validation.
+- Handoffs: when a feature or fix is ready for review, I rebuild with `make -j$(nproc)`, run the full test suite, and truncate `./debug.log` so you can launch the fresh build and pipe stdout/stderr into that log for inspection.
+- Issue Tracking: active bugs live in `./OpenIssues.md`; once resolved they move to `./ClosedIssues.md`. I keep both files current throughout debugging.
+- Feature Tracking: any new feature request you raise is recorded here in the README alongside roadmap notes so this document remains the authoritative product overview.
+- Daily Status: `STATUS.md` captures in-flight initiatives and end-of-day notes so we always know where to pick up next session.
+- Regression Guardrails: whenever we close a bug or finish a feature, I look for opportunities to add or extend tests to lock behaviour in and prevent future regressions.
+- Test Harness: run `Tools/run_tests.sh [optional-log-path]` to build the probes and capture the suite output (stdout + stderr) in `tests.log` for Codex review.

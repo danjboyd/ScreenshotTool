@@ -5,6 +5,20 @@
 #import "ToolSettingsPopoverController.h"
 #import "TextToolPopoverController.h"
 #import "PreferencesWindowController.h"
+#if defined(GNUSTEP)
+#import "STToolbarTooltipController.h"
+@interface STToolbarButton : NSButton
+@end
+
+@implementation STToolbarButton
+
+- (void)setToolTip:(NSString *)string {
+    (void)string;
+    [super setToolTip:nil];
+}
+
+@end
+#endif
 #import <AppKit/NSInterfaceStyle.h>
 #include <math.h>
 #include <stdlib.h>
@@ -129,6 +143,7 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 @property (nonatomic, strong) NSScrollView *scrollView;
 @property (nonatomic, strong) ScreenshotCanvasView *canvasView;
 @property (nonatomic, strong) NSToolbar *toolbar;
+@property (nonatomic, strong) NSMutableDictionary<NSToolbarItemIdentifier, NSToolbarItem *> *toolbarItemsByIdentifier;
 @property (nonatomic, strong) NSPopUpButton *zoomPopUpButton;
 @property (nonatomic, strong) NSView *statusBarView;
 @property (nonatomic, strong) NSTextField *statusTextField;
@@ -155,9 +170,24 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 @property (nonatomic, copy) NSString *pendingOpenPath;
 @property (nonatomic, strong) NSURL *currentImageURL;
 @property (nonatomic, strong) NSUndoManager *undoManager;
+#if defined(GNUSTEP)
+@property (nonatomic, strong) STToolbarTooltipController *tooltipController;
+#endif
 @end
 
 @implementation AppDelegate
+
+- (void)configureTooltipSuppressionDefaults {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults setBool:NO forKey:@"GSShowToolTips"];
+    NSMutableDictionary *domain = [[defaults persistentDomainForName:NSGlobalDomain] mutableCopy];
+    if (!domain) {
+        domain = [[NSMutableDictionary alloc] init];
+    }
+    domain[@"GSShowToolTips"] = @NO;
+    [defaults setPersistentDomain:domain forName:NSGlobalDomain];
+    [defaults synchronize];
+}
 
 - (void)applyToolTipToToolbarItem:(NSToolbarItem *)item source:(NSString *)source {
     if (!item) {
@@ -169,10 +199,17 @@ static const CGFloat ToolbarIconDimension = 32.0f;
         ScreenshotToolAppendLog([NSString stringWithFormat:@"applyToolTip skipped %@ (source=%@)", identifier ?: @"<nil>", source ?: @"<nil>"]);
         return;
     }
+#if defined(GNUSTEP)
+    item.toolTip = nil;
+    if (item.view) {
+        [self.tooltipController registerView:item.view withTooltip:tip];
+    }
+#else
     item.toolTip = tip;
     if (item.view) {
         [item.view setToolTip:tip];
     }
+#endif
     ScreenshotToolAppendLog([NSString stringWithFormat:@"applyToolTip %@ -> %@ (source=%@)", identifier, tip, source ?: @"<nil>"]);
 }
 
@@ -191,11 +228,17 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
 - (void)applicationWillFinishLaunching:(NSNotification *)notification {
     ScreenshotToolAppendLog(@"ScreenshotTool will finish launching");
+    [self configureTooltipSuppressionDefaults];
     [self setupMenus];
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     ScreenshotToolAppendLog(@"ScreenshotTool launched");
+#if defined(GNUSTEP)
+    if (!self.tooltipController) {
+        self.tooltipController = [[STToolbarTooltipController alloc] init];
+    }
+#endif
     [self setupWindowAndContent];
     [self setupToolbar];
     self.lastWidthTool = ScreenshotCanvasToolHighlighter;
@@ -494,6 +537,11 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 }
 
 - (void)setupToolbar {
+    if (!self.toolbarItemsByIdentifier) {
+        self.toolbarItemsByIdentifier = [[NSMutableDictionary alloc] init];
+    } else {
+        [self.toolbarItemsByIdentifier removeAllObjects];
+    }
     self.toolbar = [[NSToolbar alloc] initWithIdentifier:ToolbarIdentifier];
     self.toolbar.delegate = self;
     self.toolbar.allowsUserCustomization = NO;
@@ -506,8 +554,8 @@ static const CGFloat ToolbarIconDimension = 32.0f;
                                              name:NSToolbarWillAddItemNotification
                                            object:self.toolbar];
     [self.window setToolbar:self.toolbar];
-    [self.toolbar setSelectedItemIdentifier:ToolbarItemHighlighter];
-    [self refreshToolButtonIcons];
+    //[self.toolbar setSelectedItemIdentifier:ToolbarItemHighlighter];
+    //[self refreshToolButtonIcons];
     (void)[self imageNamed:@"CopyImage-active"];
 }
 
@@ -533,10 +581,31 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 }
 
 - (NSToolbarItem *)toolbarItemForIdentifier:(NSToolbarItemIdentifier)identifier {
+    if (!identifier) {
+        return nil;
+    }
+#if !defined(GNUSTEP)
+    NSToolbarItem *cached = self.toolbarItemsByIdentifier[identifier];
+    if (cached) {
+        return cached;
+    }
+#endif
     for (NSToolbarItem *item in self.toolbar.items) {
         if ([item.itemIdentifier isEqualToString:identifier]) {
+#if !defined(GNUSTEP)
+            self.toolbarItemsByIdentifier[identifier] = item;
+#endif
             return item;
         }
+    }
+    NSToolbarItem *generated = [self toolbar:self.toolbar
+                       itemForItemIdentifier:identifier
+                    willBeInsertedIntoToolbar:NO];
+    if (generated) {
+#if !defined(GNUSTEP)
+        self.toolbarItemsByIdentifier[identifier] = generated;
+#endif
+        return generated;
     }
     return nil;
 }
@@ -604,64 +673,48 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
         NSString *toolTip = [self toolTipForIdentifier:identifier];
         if (toolTip) {
+#if defined(GNUSTEP)
+            item.toolTip = nil;
+            if (item.view) {
+                [item.view setToolTip:nil];
+            }
+#else
             item.toolTip = toolTip;
             if (item.view) {
                 [item.view setToolTip:toolTip];
             }
+#endif
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ tooltip set -> %@", identifier, toolTip]);
         } else {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ tooltip not updated", identifier]);
         }
 
         BOOL isActive = (activeIdentifier && [identifier isEqualToString:activeIdentifier]);
-        NSString *iconName = [self iconNameForToolbarIdentifier:identifier active:isActive];
-        if (!iconName && isActive) {
-            iconName = [self iconNameForToolbarIdentifier:identifier active:NO];
-        }
-        if (!iconName) {
-            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ has no icon name (active=%@)", identifier, isActive ? @"YES" : @"NO"]);
+        NSImage *icon = [self toolbarImageForIdentifier:identifier active:isActive];
+        if (!icon) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ missing icon (active=%@)", identifier, isActive ? @"YES" : @"NO"]);
             continue;
         }
 
-        NSImage *icon = [self imageNamed:iconName];
-        NSString *resolvedName = iconName;
-        if (!icon && isActive) {
-            NSString *fallbackName = [self iconNameForToolbarIdentifier:identifier active:NO];
-            icon = [self imageNamed:fallbackName];
-            resolvedName = fallbackName ?: iconName;
-            if (icon) {
-                ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ active icon missing, fell back to %@", identifier, resolvedName]);
-            }
+        NSColor *badgeColor = [self badgeColorForToolbarIdentifier:identifier];
+        if (badgeColor) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ badge color %@", identifier, [self debugDescriptionForColor:badgeColor]]);
         }
 
-        if (icon) {
-            NSImage *rendered = [icon copy];
-            NSColor *badgeColor = nil;
-            if ([identifier isEqualToString:ToolbarItemPen]) {
-                badgeColor = self.canvasView.penColor;
-            } else if ([identifier isEqualToString:ToolbarItemHighlighter]) {
-                badgeColor = self.canvasView.highlighterColor;
-            } else if ([identifier isEqualToString:ToolbarItemText]) {
-                badgeColor = self.canvasView.textColor;
+        item.image = icon;
+        if (item.view && [item.view respondsToSelector:@selector(setImage:)]) {
+            id buttonView = item.view;
+            if ([buttonView respondsToSelector:@selector(setImage:)]) {
+                [buttonView setImage:icon];
             }
-            if (badgeColor) {
-                rendered = [self imageByAddingColorBadgeToImage:rendered color:badgeColor];
-                ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ badge color %@", identifier, [self debugDescriptionForColor:badgeColor]]);
-            }
-            [rendered setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
-            item.image = rendered;
-            if (item.view && [item.view respondsToSelector:@selector(setImage:)]) {
-                id buttonView = item.view;
-                if ([buttonView respondsToSelector:@selector(setImage:)]) {
-                    [buttonView setImage:rendered];
-                }
-            }
-            NSString *state = isActive ? @"active" : @"inactive";
-            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ set to %@ icon %@", identifier, state, resolvedName]);
-        } else {
-            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ missing icon %@", identifier, resolvedName]);
         }
+        NSString *state = isActive ? @"active" : @"inactive";
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ updated (%@)", identifier, state]);
     }
+}
+
+- (void)rebuildToolbarBadges {
+    [self refreshToolButtonIcons];
 }
 
 - (void)toolbarWillAddItemNotification:(NSNotification *)notification {
@@ -742,6 +795,33 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     return nil;
 }
 
+- (NSColor *)badgeColorForToolbarIdentifier:(NSToolbarItemIdentifier)identifier {
+    if ([identifier isEqualToString:ToolbarItemPen]) {
+        return self.canvasView.penColor;
+    }
+    if ([identifier isEqualToString:ToolbarItemHighlighter]) {
+        return self.canvasView.highlighterColor;
+    }
+    if ([identifier isEqualToString:ToolbarItemText]) {
+        return self.canvasView.textColor;
+    }
+    return nil;
+}
+
+- (NSImage *)toolbarImageForIdentifier:(NSToolbarItemIdentifier)identifier active:(BOOL)active {
+    NSImage *baseIcon = [self imageForToolbarIdentifier:identifier active:active];
+    if (!baseIcon) {
+        return nil;
+    }
+    NSImage *rendered = [baseIcon copy];
+    NSColor *badgeColor = [self badgeColorForToolbarIdentifier:identifier];
+    if (badgeColor) {
+        rendered = [self imageByAddingColorBadgeToImage:rendered color:badgeColor];
+    }
+    [rendered setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
+    return rendered;
+}
+
 - (NSToolbarItem *)standardToolbarItemWithIdentifier:(NSToolbarItemIdentifier)identifier
                                                label:(NSString *)label
                                               action:(SEL)selector {
@@ -750,32 +830,54 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     item.label = label;
     item.paletteLabel = label;
     NSString *initialTip = [self toolTipForIdentifier:identifier] ?: label;
-    item.toolTip = initialTip;
-    ScreenshotToolAppendLog([NSString stringWithFormat:@"Set initial tooltip for %@ -> %@", identifier, initialTip]);
+    BOOL routeTooltipViaController = NO;
+#if defined(GNUSTEP)
+    if ([identifier isEqualToString:ToolbarItemHighlighter] ||
+        [identifier isEqualToString:ToolbarItemPen] ||
+        [identifier isEqualToString:ToolbarItemText] ||
+        [identifier isEqualToString:ToolbarItemSelect] ||
+        [identifier isEqualToString:ToolbarItemEraser]) {
+        routeTooltipViaController = YES;
+    }
+#endif
+    if (!routeTooltipViaController) {
+        item.toolTip = initialTip;
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Set native tooltip for %@ -> %@", identifier, initialTip]);
+    } else {
+        item.toolTip = nil;
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Routing tooltip for %@ via controller -> %@", identifier, initialTip]);
+    }
     item.target = self;
     item.action = selector;
     NSToolbarItemIdentifier activeIdentifier = [self identifierForTool:self.canvasView.activeTool];
     BOOL isActive = (activeIdentifier && [identifier isEqualToString:activeIdentifier]);
-    NSString *iconName = [self iconNameForToolbarIdentifier:identifier active:isActive];
-    if (!iconName) {
-        iconName = [self iconNameForToolbarIdentifier:identifier active:NO];
+    NSImage *icon = [self toolbarImageForIdentifier:identifier active:isActive];
+    if (icon) {
+        item.image = icon;
     }
-    if (iconName) {
-        NSImage *icon = [self imageNamed:iconName];
-        if (!icon && isActive) {
-            icon = [self imageNamed:[self iconNameForToolbarIdentifier:identifier active:NO]];
+#if defined(GNUSTEP)
+    if (routeTooltipViaController) {
+        STToolbarButton *button = [[STToolbarButton alloc] initWithFrame:NSMakeRect(0, 0, ToolbarIconDimension, ToolbarIconDimension)];
+        button.translatesAutoresizingMaskIntoConstraints = NO;
+        [button setButtonType:NSMomentaryChangeButton];
+        [button setBordered:NO];
+        [button setImage:icon];
+        [button setTarget:item.target];
+        [button setAction:item.action];
+        item.view = button;
+        if (self.tooltipController) {
+            NSString *tooltipText = initialTip ?: item.label ?: @"";
+            [self.tooltipController registerView:button withTooltip:tooltipText];
         }
-        if (icon) {
-            if ([identifier isEqualToString:ToolbarItemPen]) {
-                icon = [self imageByAddingColorBadgeToImage:icon color:self.canvasView.penColor];
-            } else if ([identifier isEqualToString:ToolbarItemHighlighter]) {
-                icon = [self imageByAddingColorBadgeToImage:icon color:self.canvasView.highlighterColor];
-            } else if ([identifier isEqualToString:ToolbarItemText]) {
-                icon = [self imageByAddingColorBadgeToImage:icon color:self.canvasView.textColor];
-            }
-            [icon setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
-            item.image = icon;
+    }
+#endif
+    if (item.itemIdentifier) {
+#if !defined(GNUSTEP)
+        if (!self.toolbarItemsByIdentifier) {
+            self.toolbarItemsByIdentifier = [[NSMutableDictionary alloc] init];
         }
+        self.toolbarItemsByIdentifier[item.itemIdentifier] = item;
+#endif
     }
     return item;
 }
@@ -2268,7 +2370,17 @@ static const CGFloat ToolbarIconDimension = 32.0f;
     }
     if (!path) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: missing resource %@", filename]);
-        return nil;
+        NSImage *placeholder = [[NSImage alloc] initWithSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
+        if (placeholder) {
+            [placeholder lockFocus];
+            [[NSColor colorWithCalibratedWhite:0.85f alpha:1.0f] setFill];
+            NSRectFill(NSMakeRect(0.0f, 0.0f, ToolbarIconDimension, ToolbarIconDimension));
+            [[NSColor colorWithCalibratedWhite:0.35f alpha:1.0f] setStroke];
+            NSFrameRectWithWidth(NSMakeRect(0.5f, 0.5f, ToolbarIconDimension - 1.0f, ToolbarIconDimension - 1.0f), 1.0f);
+            [placeholder unlockFocus];
+            cache[filename] = placeholder;
+        }
+        return placeholder;
     }
 
     NSImage *image = [[NSImage alloc] initWithContentsOfFile:path];
@@ -2286,15 +2398,20 @@ static const CGFloat ToolbarIconDimension = 32.0f;
         return image;
     }
     NSColor *deviceColor = [color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: color;
-    NSImage *composed = [image copy];
-    NSSize size = composed.size;
-    if (size.width <= 0.0f || size.height <= 0.0f) {
-        size = NSMakeSize(ToolbarIconDimension, ToolbarIconDimension);
-        [composed setSize:size];
+    NSSize baseSize = image.size;
+    if (baseSize.width <= 0.0f || baseSize.height <= 0.0f) {
+        baseSize = NSMakeSize(ToolbarIconDimension, ToolbarIconDimension);
     }
+    NSImage *composed = [[NSImage alloc] initWithSize:baseSize];
     [composed lockFocus];
+    [image drawInRect:NSMakeRect(0.0f, 0.0f, baseSize.width, baseSize.height)
+             fromRect:NSZeroRect
+            operation:NSCompositeSourceOver
+             fraction:1.0f
+       respectFlipped:YES
+               hints:nil];
     CGFloat badgeSize = 10.0f;
-    NSRect badgeRect = NSMakeRect(size.width - badgeSize - 2.0f,
+    NSRect badgeRect = NSMakeRect(baseSize.width - badgeSize - 2.0f,
                                   2.0f,
                                   badgeSize,
                                   badgeSize);
@@ -2466,6 +2583,9 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
+#if defined(GNUSTEP)
+    [self.tooltipController unregisterAll];
+#endif
 }
 
 #pragma mark - NSWindowDelegate

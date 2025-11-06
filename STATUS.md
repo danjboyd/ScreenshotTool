@@ -1,13 +1,23 @@
 # ScreenshotTool Status — 2025-11-03
 
+## Progress (2025-11-05)
+- Hardened GNUstep tooltip flow: AppDelegate now routes Pen/Highlighter/Text/Select/Eraser buttons through custom `STToolbarButton` views so native hints stay nil while Cocoa builds retain default tooltips.
+- Added snapshot accessors to `STToolbarTooltipController` and tightened registration logic; controller updates no longer rely on KVC into private dictionaries.
+- Reworked `TooltipsSuppressedProbe` with a probe-only delegate and fake toolbar so the suite asserts tracking rect registration, verifies controller strings, and fails immediately if native tooltips return (without provoking the GNUstep toolbar crash).
+- Full test suite passes via `Tools/run_tests.sh`; all clipboard/highlighter and toolbar badge probes still green.
+
 ## Recent Progress (2025-11-03)
 - Crop-to-selection now registers a proper undo snapshot and the window size re-expands when undo restores the original image.
 - Status bar messages no longer contaminate the shared undo stack; the delegate now suppresses undo registration while touching the status text field.
 - Added headless probes (`make tests`) to lock in crop/undo and window-resize behaviour; wiring is in place pending further clean-up of GNUstep defaults warnings.
 - Restored custom GNUstep toolbar tooltips with a rounded panel, dynamic text wrapping, and proper show/hide cycles so hover feedback now persists beyond the first item.
 - Disabled native GNUstep tooltips while keeping Cocoa builds unchanged, and gated all tooltip diagnostics behind `SCREENSHOT_TOOL_DEBUG_TOOLTIPS` to keep default logs quiet.
+- Added `TooltipsSuppressedProbe` so the test suite asserts GNUstep keeps native tooltips disabled and the custom controller owns toolbar hover hints.
+- Hardened `TooltipsSuppressedProbe` with a test-only toolbar harness so we assert controller registration plus nil tooltips on both the `NSToolbarItem` and its custom view.
 - Rebuilt ScreenshotTool after the tooltip refactor; `openapp ./ScreenshotTool.app/ … 2>&1 | tee ./debug.log` validated minimal startup noise without the env var set.
 - Follow-up: ensure the Highlighter, Pen, and Text toolbar icons reliably render the active colour badges (GNUstep caching still appears to hold onto stale artwork).
+- Clipboard flattening on GNUstep now keeps highlighter strokes when copying; the direct bitmap raster path handles translucent overlays and the new `ClipboardHighlighterProbe` passes.
+- Added `ClipboardHighlighterOpacityProbe` to capture the stacking-opacity regression, and updated GNUstep rasterisation so repeated strokes stay translucent; the probe now matches the on-screen blend.
 
 ## Tool Controls & Popovers
 - Status bar exposes a unified width slider + readout, along with `Reset`/`Set as Default` links that sync with stored defaults. The bar can be hidden via Preferences; layout reflows when it’s off.
@@ -24,7 +34,7 @@
 - Toolbar gained a Preferences item with the new `Preferences.png` asset.
 
 ## Clipboard & Rendering
-- Clipboard pipeline still rasterises via `NSBitmapImageRep` + CPU strokes to dodge GNUstep off-screen bugs; needs revalidation after today’s UI changes.
+- Clipboard pipeline still rasterises via `NSBitmapImageRep` + CPU strokes to dodge GNUstep off-screen bugs; highlighter overlays now match on-canvas translucency and both clipboard probes (`ClipboardHighlighterProbe`, `ClipboardHighlighterOpacityProbe`) pass.
 - Cursor tinting honours active tool colours; debug logging stays gated via `SCREENSHOT_CURSOR_DEBUG=1`.
 
 ## Toolbar QA
@@ -35,7 +45,6 @@
 1. Regression sweep on GNUstep: ensure popovers, status bar slider, and Preferences stay in sync (including restored defaults) with the new Font Panel integration.
 2. QA hiding/showing status bar, zoom/fitting, and toolbar colour badges to catch layout or refresh issues.
 3. Verify default save directory behaviour on GNOME (permissions, network shares) now that the path auto-creates and drives Open/Save.
-4. Clipboard QA: copy/paste annotated images into target editors to confirm no transparency regressions after today’s merges.
+4. Clipboard QA: copy/paste annotated images into target editors to confirm no transparency regressions after today’s merges (including the restored highlighter overlay).
 5. Cursor hotspot polishing for pen/highlighter still outstanding; revisit `markup-cursors.metadata.json` once asset tweaks land.
 6. Regression (toolbar colour badges): Pen/Highlighter/Text buttons no longer display the coloured indicator dots; re-enable badge rendering after the async refresh refactor.
-7. Regression (custom tooltips): GNUstep default tooltips are showing again; reinstate the custom tooltip window and ensure it overrides the native implementation.

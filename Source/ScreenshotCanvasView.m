@@ -188,14 +188,34 @@ static inline void STBlendPixel(STBitmapBuffer *buffer,
     }
 }
 
-static void STBlendDisk(STBitmapBuffer *buffer,
-                        double centerX,
-                        double centerY,
-                        double radius,
-                        double sr,
-                        double sg,
-                        double sb,
-                        double sa) {
+static inline void STBlendPixelWithMask(STBitmapBuffer *buffer,
+                                        uint8_t *mask,
+                                        NSInteger x,
+                                        NSInteger y,
+                                        double sr,
+                                        double sg,
+                                        double sb,
+                                        double sa) {
+    if (mask) {
+        size_t rowIndex = (size_t)(buffer->height - 1 - y);
+        size_t idx = rowIndex * (size_t)buffer->width + (size_t)x;
+        if (mask[idx]) {
+            return;
+        }
+        mask[idx] = 1;
+    }
+    STBlendPixel(buffer, x, y, sr, sg, sb, sa);
+}
+
+static void STBlendDiskWithMask(STBitmapBuffer *buffer,
+                                double centerX,
+                                double centerY,
+                                double radius,
+                                double sr,
+                                double sg,
+                                double sb,
+                                double sa,
+                                uint8_t *mask) {
     if (!buffer || sa <= 0.0 || radius <= 0.0) {
         return;
     }
@@ -218,10 +238,21 @@ static void STBlendDisk(STBitmapBuffer *buffer,
             double dx = ((double)x + 0.5) - centerX;
             double distanceSquared = dx * dx + dy2;
             if (distanceSquared <= radiusSquared) {
-                STBlendPixel(buffer, x, y, sr, sg, sb, sa);
+                STBlendPixelWithMask(buffer, mask, x, y, sr, sg, sb, sa);
             }
         }
     }
+}
+
+static void STBlendDisk(STBitmapBuffer *buffer,
+                        double centerX,
+                        double centerY,
+                        double radius,
+                        double sr,
+                        double sg,
+                        double sb,
+                        double sa) {
+    STBlendDiskWithMask(buffer, centerX, centerY, radius, sr, sg, sb, sa, NULL);
 }
 
 static NSBitmapImageRep *STCreateDeviceRGBBitmapFromRep(NSBitmapImageRep *source) {
@@ -308,6 +339,80 @@ static NSBitmapImageRep *STCreateDeviceRGBBitmapFromRep(NSBitmapImageRep *source
     return converted;
 }
 
+static void STRasterizeHighlighterStrokeOntoBitmap(MarkupStroke *stroke,
+                                                   STBitmapBuffer *buffer,
+                                                   NSSize canvasSize) {
+    if (!stroke || !buffer) {
+        return;
+    }
+
+    NSArray<NSValue *> *points = [stroke points];
+    NSUInteger count = points.count;
+    if (count == 0) {
+        return;
+    }
+
+    NSColor *strokeColor = stroke.color;
+    NSColor *calibrated = [strokeColor colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+    if (!calibrated) {
+        calibrated = strokeColor;
+    }
+    strokeColor = [calibrated colorWithAlphaComponent:0.35];
+
+    NSColor *deviceColor = [strokeColor colorUsingColorSpaceName:NSDeviceRGBColorSpace];
+    if (!deviceColor) {
+        deviceColor = strokeColor;
+    }
+
+    double sr = [deviceColor redComponent];
+    double sg = [deviceColor greenComponent];
+    double sb = [deviceColor blueComponent];
+    double sa = [deviceColor alphaComponent];
+    if (sa <= 0.0) {
+        return;
+    }
+
+    double radius = MAX(stroke.lineWidth * 0.5, 0.5);
+    double spacing = MAX(radius * 0.5, 0.75);
+
+    size_t maskLength = (size_t)buffer->width * (size_t)buffer->height;
+    NSMutableData *maskData = nil;
+    uint8_t *mask = NULL;
+    if (maskLength > 0) {
+        maskData = [[NSMutableData alloc] initWithLength:maskLength];
+        mask = (uint8_t *)maskData.mutableBytes;
+    }
+
+    NSPoint firstPoint = [points.firstObject pointValue];
+    double prevX = firstPoint.x;
+    double prevY = canvasSize.height - firstPoint.y;
+    STBlendDiskWithMask(buffer, prevX, prevY, radius, sr, sg, sb, sa, mask);
+
+    for (NSUInteger idx = 1; idx < count; ++idx) {
+        NSPoint current = [points[idx] pointValue];
+        double currX = current.x;
+        double currY = canvasSize.height - current.y;
+
+        double dx = currX - prevX;
+        double dy = currY - prevY;
+        double distance = hypot(dx, dy);
+        NSUInteger steps = (NSUInteger)ceil(distance / spacing);
+        if (steps < 1) {
+            steps = 1;
+        }
+
+        for (NSUInteger step = 1; step <= steps; ++step) {
+            double t = (double)step / (double)steps;
+            double sampleX = prevX + dx * t;
+            double sampleY = prevY + dy * t;
+            STBlendDiskWithMask(buffer, sampleX, sampleY, radius, sr, sg, sb, sa, mask);
+        }
+
+        prevX = currX;
+        prevY = currY;
+    }
+}
+
 static void STRasterizeStrokeOntoBitmap(MarkupStroke *stroke,
                                         STBitmapBuffer *buffer,
                                         NSSize canvasSize) {
@@ -321,14 +426,12 @@ static void STRasterizeStrokeOntoBitmap(MarkupStroke *stroke,
         return;
     }
 
-    NSColor *strokeColor = stroke.color;
     if (stroke.type == MarkupStrokeTypeHighlighter) {
-        NSColor *calibrated = [strokeColor colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
-        if (!calibrated) {
-            calibrated = strokeColor;
-        }
-        strokeColor = [calibrated colorWithAlphaComponent:0.35];
+        STRasterizeHighlighterStrokeOntoBitmap(stroke, buffer, canvasSize);
+        return;
     }
+
+    NSColor *strokeColor = stroke.color;
     NSColor *deviceColor = [strokeColor colorUsingColorSpaceName:NSDeviceRGBColorSpace];
     if (!deviceColor) {
         deviceColor = strokeColor;
@@ -2490,6 +2593,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     BOOL rasterizeTextDirectly = NO;
 #endif
     BOOL needsContextDrawing = !canRasterizeDirectly;
+#if !defined(GNUSTEP)
     if (!needsContextDrawing) {
         BOOL hasHighlighter = NO;
         for (MarkupStroke *stroke in self.strokes) {
@@ -2505,6 +2609,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
             needsContextDrawing = YES;
         }
     }
+#endif
 
     if (needsContextDrawing) {
         [NSGraphicsContext saveGraphicsState];
