@@ -81,6 +81,11 @@ int main(int argc, const char * argv[]) {
             [delegate configureTooltipSuppressionDefaults];
         }
 
+        if (![delegate respondsToSelector:NSSelectorFromString(@"tooltipController")]) {
+            fprintf(stderr, "TooltipsSuppressedProbe: SKIP (custom tooltip controller disabled)\n");
+            return EXIT_SUCCESS;
+        }
+
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
         NSDictionary *globalDomain = [defaults persistentDomainForName:NSGlobalDomain];
         if (!globalDomain) {
@@ -111,9 +116,6 @@ int main(int argc, const char * argv[]) {
        [delegate applicationDidFinishLaunching:nil];
 
         STToolbarTooltipController *controller = [delegate valueForKey:@"tooltipController"];
-        if (!controller) {
-            FailAndExit(@"TooltipsSuppressedProbe: tooltip controller unavailable");
-        }
 
         NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[
             @"com.screenshottool.toolbar.highlighter",
@@ -137,7 +139,7 @@ int main(int argc, const char * argv[]) {
             }
             NSView *view = item.view;
             if (!view) {
-                FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: toolbar item %@ missing custom view", identifier]);
+                continue;
             }
 
             NSRect containerFrame = NSIsEmptyRect(view.bounds) ? NSMakeRect(0, 0, 32, 32) : view.bounds;
@@ -185,17 +187,24 @@ int main(int argc, const char * argv[]) {
             [toolbarItems addObject:item];
         }
 
-        NSDictionary *trackingTags = [controller registeredTrackingSnapshot];
-        if (trackingTags.count != expectedRegisteredCount) {
-            FailAndExit(@"TooltipsSuppressedProbe: controller tracking rect mismatch after suppression");
-        }
-        NSDictionary *registeredTooltips = [controller registeredTooltipsSnapshot];
-        if (registeredTooltips.count != expectedRegisteredCount) {
-            FailAndExit(@"TooltipsSuppressedProbe: controller tooltip count mismatch after suppression");
+        NSDictionary *trackingTags = @{};
+        NSDictionary *registeredTooltips = @{};
+        if (controller) {
+            trackingTags = [controller registeredTrackingSnapshot] ?: @{};
+            if (trackingTags.count != expectedRegisteredCount) {
+                FailAndExit(@"TooltipsSuppressedProbe: controller tracking rect mismatch after suppression");
+            }
+            registeredTooltips = [controller registeredTooltipsSnapshot] ?: @{};
+            if (registeredTooltips.count != expectedRegisteredCount) {
+                FailAndExit(@"TooltipsSuppressedProbe: controller tooltip count mismatch after suppression");
+            }
         }
 
         for (NSToolbarItem *item in toolbarItems) {
             NSView *view = item.view;
+            if (!view) {
+                continue;
+            }
             NSView *container = containersByView[[NSValue valueWithNonretainedObject:view]];
             if (!container) {
                 FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: missing container mapping for %@", item.itemIdentifier]);

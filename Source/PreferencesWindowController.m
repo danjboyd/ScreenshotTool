@@ -27,6 +27,7 @@ static const CGFloat STPreferencesHeight = 470.0f;
 @property (nonatomic, strong) NSButton *chooseDirectoryButton;
 
 @property (nonatomic, strong) NSButton *statusBarCheckbox;
+@property (nonatomic, strong) NSPopUpButton *interfaceThemePopUp;
 @property (nonatomic, strong) NSButton *restoreDefaultsButton;
 @property (nonatomic, strong) NSButton *closeButton;
 @end
@@ -188,6 +189,31 @@ static const CGFloat STPreferencesHeight = 470.0f;
     [self.statusBarCheckbox setTarget:self];
     [self.statusBarCheckbox setAction:@selector(statusBarToggled:)];
     [content addSubview:self.statusBarCheckbox];
+
+    y -= (controlSpacing + 6.0f);
+
+    NSTextField *themeLabel = [self fieldLabelWithString:@"Toolbar Theme"
+                                                  frame:NSMakeRect(padding,
+                                                                   y,
+                                                                   labelWidth + 60.0f,
+                                                                   20.0f)];
+    [content addSubview:themeLabel];
+
+    self.interfaceThemePopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(padding + labelWidth + 70.0f,
+                                                                               y - 2.0f,
+                                                                               180.0f,
+                                                                               26.0f)
+                                                          pullsDown:NO];
+    [self.interfaceThemePopUp setTarget:self];
+    [self.interfaceThemePopUp setAction:@selector(interfaceThemeSelectionChanged:)];
+    [self.interfaceThemePopUp removeAllItems];
+    [self.interfaceThemePopUp addItemWithTitle:@"Light"];
+    [[self.interfaceThemePopUp itemAtIndex:0] setTag:0];
+    [self.interfaceThemePopUp addItemWithTitle:@"Dark"];
+    [[self.interfaceThemePopUp itemAtIndex:1] setTag:1];
+    [content addSubview:self.interfaceThemePopUp];
+
+    y -= sectionSpacing;
 
     y = padding + 60.0f;
 
@@ -395,6 +421,12 @@ static const CGFloat STPreferencesHeight = 470.0f;
 
     BOOL showStatusBar = [delegate preferencesControllerShouldShowStatusBar:self];
     [self.statusBarCheckbox setState:showStatusBar ? NSControlStateValueOn : NSControlStateValueOff];
+
+    BOOL prefersDark = [delegate preferencesControllerPrefersDarkInterface:self];
+    NSInteger themeTag = prefersDark ? 1 : 0;
+    if ([self.interfaceThemePopUp indexOfItemWithTag:themeTag] != -1) {
+        [self.interfaceThemePopUp selectItemWithTag:themeTag];
+    }
 }
 
 - (NSString *)displayStringForWidth:(CGFloat)width {
@@ -541,6 +573,12 @@ static const CGFloat STPreferencesHeight = 470.0f;
 - (void)statusBarToggled:(NSButton *)sender {
     BOOL show = (sender.state == NSControlStateValueOn);
     [self.delegate preferencesController:self didToggleStatusBar:show];
+}
+
+- (void)interfaceThemeSelectionChanged:(NSPopUpButton *)sender {
+    NSInteger tag = sender.selectedTag;
+    BOOL prefersDark = (tag == 1);
+    [self.delegate preferencesController:self didChangePrefersDarkInterface:prefersDark];
 }
 
 - (void)restoreDefaultsPressed:(id)sender {

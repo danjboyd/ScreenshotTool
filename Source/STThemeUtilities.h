@@ -3,6 +3,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 BOOL STThemeIsDark(void);
+BOOL STDefaultInterfaceThemeIsDark(void);
 
 NSColor *STThemeCanvasBackgroundColor(void);
 NSColor *STThemeStatusBarBackgroundColor(void);

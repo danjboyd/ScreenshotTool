@@ -7,6 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOG_PATH="${1:-${ROOT_DIR}/tests.log}"
 
+# Ensure the GNUstep make tools and libraries (not in PATH/LD paths on fresh
+# Debian installs) are visible before invoking make/tests.
+export PATH="/usr/GNUstep/System/Tools:${PATH}"
+export LD_LIBRARY_PATH="/usr/GNUstep/System/Library/Libraries:${LD_LIBRARY_PATH:-}"
+
 # Ensure GNUstep defaults lock directory exists to avoid noisy warnings.
 mkdir -p "${HOME}/GNUstep/Defaults/.lck"
 mkdir -p "$(dirname "${LOG_PATH}")"

@@ -84,7 +84,7 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 CC = clang
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
 ScreenshotTool_CPPFLAGS += -I/usr/include/freetype2
-ADDITIONAL_LDFLAGS += -lfontconfig -lfreetype
+ADDITIONAL_LDFLAGS += -lfontconfig -lfreetype -ldispatch
 
 TEST_SUPPORT_OBJC = Source/AppDelegate.m \
 	Source/ScreenshotCanvasView.m \
@@ -105,8 +105,15 @@ TEST_SUPPORT_OBJC = Source/AppDelegate.m \
 TEST_OUTPUT_DIR = Tests/bin
 TESTS = CropUndoProbe CropUndoWindowProbe ClipboardHighlighterProbe ClipboardHighlighterOpacityProbe ToolbarBadgeRefreshProbe TooltipsSuppressedProbe ToolbarIconThemeProbe
 TEST_CLANG ?= clang
-TEST_OBJCFLAGS := -fobjc-arc -ISource -I/usr/include/freetype2 $(shell gnustep-config --objc-flags)
-TEST_LDFLAGS := $(shell gnustep-config --gui-libs) -lfontconfig -lfreetype
+GNUStepConfig ?= $(shell command -v gnustep-config 2>/dev/null)
+ifeq ($(strip $(GNUStepConfig)),)
+GNUStepConfig := /usr/GNUstep/System/Tools/gnustep-config
+endif
+ifeq ($(wildcard $(GNUStepConfig)),)
+$(error Unable to locate gnustep-config; please install gnustep-make or add it to PATH)
+endif
+TEST_OBJCFLAGS := -fobjc-arc -ISource -I/usr/include/freetype2 $(shell $(GNUStepConfig) --objc-flags)
+TEST_LDFLAGS := $(shell $(GNUStepConfig) --gui-libs) -lfontconfig -lfreetype -ldispatch
 
 include $(GNUSTEP_MAKEFILES)/application.make
 
@@ -115,9 +122,21 @@ include $(GNUSTEP_MAKEFILES)/application.make
 tests: $(TESTS:%=$(TEST_OUTPUT_DIR)/%)
 	@mkdir -p $(HOME)/GNUstep/Defaults/.lck
 	@set -e; \
+	TEST_PATH_PREFIX="/usr/GNUstep/System/Tools"; \
+	TEST_LD_PREFIX="/usr/GNUstep/System/Library/Libraries"; \
+	if [ -n "$$PATH" ]; then \
+		TEST_ENV_PATH="$$TEST_PATH_PREFIX:$$PATH"; \
+	else \
+		TEST_ENV_PATH="$$TEST_PATH_PREFIX"; \
+	fi; \
+	if [ -n "$$LD_LIBRARY_PATH" ]; then \
+		TEST_ENV_LD="$$TEST_LD_PREFIX:$$LD_LIBRARY_PATH"; \
+	else \
+		TEST_ENV_LD="$$TEST_LD_PREFIX"; \
+	fi; \
 	for tool in $(TESTS); do \
 		echo "Running $$tool..."; \
-		$(TEST_OUTPUT_DIR)/$$tool || exit 1; \
+		PATH="$$TEST_ENV_PATH" LD_LIBRARY_PATH="$$TEST_ENV_LD" $(TEST_OUTPUT_DIR)/$$tool || exit 1; \
 	done
 
 tests-only:

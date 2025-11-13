@@ -1,4 +1,5 @@
 #import "STThemeUtilities.h"
+#import "ScreenshotToolSettings.h"
 
 static NSString *STCurrentThemeName(void) {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
@@ -16,42 +17,27 @@ static BOOL STThemeNameIndicatesDark(NSString *theme) {
     if (lower.length == 0) {
         return NO;
     }
-    NSArray<NSString *> *darkTokens = @[ @"dark", @"sombre", @"graphite", @"night" ];
-    for (NSString *token in darkTokens) {
-        if ([lower containsString:token]) {
-            return YES;
-        }
-    }
-    return NO;
+    return [lower containsString:@"sombre"];
 }
 
-static BOOL STColorIsDark(NSColor *color) {
-    if (!color) {
-        return NO;
-    }
-    NSColor *device = [color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: color;
-    CGFloat luminance = (0.2126f * device.redComponent) +
-                        (0.7152f * device.greenComponent) +
-                        (0.0722f * device.blueComponent);
-    return luminance < 0.45f;
+BOOL STDefaultInterfaceThemeIsDark(void) {
+    NSString *theme = STCurrentThemeName();
+    return STThemeNameIndicatesDark(theme);
 }
 
 BOOL STThemeIsDark(void) {
-    NSString *theme = STCurrentThemeName();
-    if (STThemeNameIndicatesDark(theme)) {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    NSString *preference = [[defaults stringForKey:STDefaultsInterfaceThemeKey] lowercaseString];
+    if (preference.length == 0) {
+        return STDefaultInterfaceThemeIsDark();
+    }
+    if ([preference isEqualToString:STInterfaceThemePreferenceDarkValue]) {
         return YES;
     }
-
-    NSColor *windowColor = [NSColor windowBackgroundColor];
-    if (STColorIsDark(windowColor)) {
-        return YES;
+    if ([preference isEqualToString:STInterfaceThemePreferenceLightValue]) {
+        return NO;
     }
-
-    NSColor *controlBackground = [NSColor controlBackgroundColor];
-    if (STColorIsDark(controlBackground)) {
-        return YES;
-    }
-    return NO;
+    return STDefaultInterfaceThemeIsDark();
 }
 
 NSColor *STThemeCanvasBackgroundColor(void) {

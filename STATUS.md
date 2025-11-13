@@ -1,5 +1,11 @@
 # ScreenshotTool Status — 2025-11-03
 
+## Progress (2025-11-13)
+- Swapped in the DateTracker-style toolbar on GNUstep while keeping our original implementation available behind a flag so we can flip back once the custom container bug is fixed.
+- Added a user-visible “Toolbar Theme” control in Preferences plus a persistent interface-theme default; toolbar icons now select the `*-dark`/`*-light` variants based on either the Sombre heuristic or the explicit preference.
+- Investigated the clipped icon issue: GTK/GNUstep still constrains standard toolbar rows to ~24 px, so 32 px art is cropped; in-memory downscaling via `STRasterizeToolbarIcon` caused the icons to vanish, so we reverted and will experiment with GNUstep-specific 24 px assets next.
+- `Tools/run_tests.sh` currently times out because each probe fails to create `/home/danboyd/GNUstep/Defaults/.lck/.GNUstepDefaults.lck` (permission denied); no automated results for today.
+
 ## Progress (2025-11-05)
 - Hardened GNUstep tooltip flow: AppDelegate now routes Pen/Highlighter/Text/Select/Eraser buttons through custom `STToolbarButton` views so native hints stay nil while Cocoa builds retain default tooltips.
 - Added snapshot accessors to `STToolbarTooltipController` and tightened registration logic; controller updates no longer rely on KVC into private dictionaries.

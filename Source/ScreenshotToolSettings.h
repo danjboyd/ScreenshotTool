@@ -23,6 +23,9 @@ extern NSString * const STDefaultsTextDefaultFontNameKey;
 extern NSString * const STDefaultsTextDefaultFontSizeKey;
 extern NSString * const STDefaultsSaveDirectoryKey;
 extern NSString * const STDefaultsShowStatusBarKey;
+extern NSString * const STDefaultsInterfaceThemeKey;
+extern NSString * const STInterfaceThemePreferenceLightValue;
+extern NSString * const STInterfaceThemePreferenceDarkValue;
 
 FOUNDATION_EXPORT NSColor *STDefaultPenColor(void);
 FOUNDATION_EXPORT NSColor *STDefaultHighlighterColor(void);

@@ -21,6 +21,9 @@ NSString * const STDefaultsTextDefaultFontNameKey = @"ScreenshotToolTextDefaultF
 NSString * const STDefaultsTextDefaultFontSizeKey = @"ScreenshotToolTextDefaultFontSize";
 NSString * const STDefaultsSaveDirectoryKey = @"ScreenshotToolSaveDirectory";
 NSString * const STDefaultsShowStatusBarKey = @"ScreenshotToolShowStatusBar";
+NSString * const STDefaultsInterfaceThemeKey = @"ScreenshotToolInterfaceTheme";
+NSString * const STInterfaceThemePreferenceLightValue = @"light";
+NSString * const STInterfaceThemePreferenceDarkValue = @"dark";
 
 NSColor *STDefaultPenColor(void) {
     return [NSColor redColor];
