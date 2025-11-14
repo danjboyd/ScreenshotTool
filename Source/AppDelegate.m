@@ -8,22 +8,6 @@
 #import "TextToolPopoverController.h"
 #import "PreferencesWindowController.h"
 #import "STThemeUtilities.h"
-#if defined(GNUSTEP)
-#define USE_GNUSTEP_CUSTOM_TOOLBAR 0
-#if USE_GNUSTEP_CUSTOM_TOOLBAR
-#import "STToolbarTooltipController.h"
-@interface STToolbarButton : NSButton
-@end
-
-@implementation STToolbarButton
-
-- (void)setToolTip:(NSString *)string {
-    (void)string;
-    [super setToolTip:nil];
-}
-
-@end
-#endif
 static NSString * const ToolbarItemHighlighter = @"com.screenshottool.toolbar.highlighter";
 static NSString * const ToolbarItemPen = @"com.screenshottool.toolbar.pen";
 static NSString * const ToolbarItemEraser = @"com.screenshottool.toolbar.eraser";
@@ -35,7 +19,6 @@ static NSString * const ToolbarItemPreferences = @"com.screenshottool.toolbar.pr
 static const CGFloat StatusBarHeight = 24.0f;
 static const CGFloat ToolbarIconDimension = 32.0f;
 static NSString * const ToolbarIdentifier = @"com.screenshottool.toolbar";
-static const BOOL STUseDateTrackerToolbarBaseline = YES;
 static NSImage *STRasterizeImage(NSSize size, void (^drawingBlock)(NSRect bounds)) {
     NSInteger width = MAX(1, (NSInteger)ceil(size.width));
     NSInteger height = MAX(1, (NSInteger)ceil(size.height));
@@ -143,13 +126,7 @@ static BOOL STBitmapRepHasVisiblePixels(NSBitmapImageRep *bitmap) {
                 continue;
             }
             NSColor *devicePixel = [pixel colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: pixel;
-            if ([devicePixel alphaComponent] < 0.05f) {
-                continue;
-            }
-            CGFloat brightness = (0.2126f * devicePixel.redComponent) +
-                                 (0.7152f * devicePixel.greenComponent) +
-                                 (0.0722f * devicePixel.blueComponent);
-            if (brightness > 0.20f) {
+            if ([devicePixel alphaComponent] > 0.05f) {
                 return YES;
             }
         }
@@ -289,134 +266,6 @@ static NSString *STPathForToolbarResource(NSString *filename, NSString *extensio
     return nil;
 }
 
-#if defined(GNUSTEP) && USE_GNUSTEP_CUSTOM_TOOLBAR
-@interface STToolbarItemContainer : NSView
-@property (nonatomic, strong) NSImage *iconImage;
-@property (nonatomic, weak) id actionTarget;
-@property (nonatomic) SEL actionSelector;
-@property (nonatomic, strong) NSTextField *labelField;
-- (instancetype)initWithLabel:(NSString *)label target:(id)target action:(SEL)action;
-- (void)updateWithImage:(NSImage *)image label:(NSString *)label;
-- (NSView *)tooltipTargetView;
-- (void)updateTrackingArea;
-- (void)refreshLabelAppearance;
-- (NSImage *)displayedImage;
-@end
-
-@implementation STToolbarItemContainer
-
-- (instancetype)initWithLabel:(NSString *)label target:(id)target action:(SEL)action {
-    const CGFloat width = 60.0f;
-    const CGFloat height = ToolbarIconDimension + 18.0f;
-    self = [super initWithFrame:NSMakeRect(0.0f, 0.0f, width, height)];
-    if (!self) {
-        return nil;
-    }
-
-    _actionTarget = target;
-    _actionSelector = action;
-
-    _labelField = [[NSTextField alloc] initWithFrame:NSMakeRect(0.0f,
-                                                                ToolbarIconDimension + 4.0f,
-                                                                width,
-                                                                14.0f)];
-    [_labelField setEditable:NO];
-    [_labelField setBezeled:NO];
-    [_labelField setBordered:NO];
-    [_labelField setDrawsBackground:NO];
-    [_labelField setAlignment:NSTextAlignmentCenter];
-    [_labelField setSelectable:NO];
-    [_labelField setFocusRingType:NSFocusRingTypeNone];
-    [_labelField setFont:[NSFont systemFontOfSize:10.0f]];
-    [_labelField setStringValue:label ?: @""];
-    [self refreshLabelAppearance];
-    [self addSubview:_labelField];
-
-    [self updateTrackingArea];
-
-    return self;
-}
-
-- (void)updateWithImage:(NSImage *)image label:(NSString *)label {
-    if (image) {
-        self.iconImage = image;
-        [self setNeedsDisplay:YES];
-    }
-    if (label.length > 0) {
-        [_labelField setStringValue:label];
-    } else {
-        [_labelField setStringValue:@""];
-    }
-    [self refreshLabelAppearance];
-}
-
-- (NSView *)tooltipTargetView {
-    return self;
-}
-
-- (void)updateTrackingArea {
-    [self removeAllToolTips];
-    NSString *tip = self.toolTip;
-    if (tip.length > 0) {
-        [self addToolTipRect:self.bounds owner:self userData:NULL];
-    }
-}
-
-- (void)setToolTip:(NSString *)string {
-    [super setToolTip:string];
-    [self updateTrackingArea];
-}
-
-- (void)refreshLabelAppearance {
-    NSColor *labelColor = STThemeToolbarLabelColor();
-    if (labelColor) {
-        [_labelField setTextColor:labelColor];
-        if ([[_labelField cell] respondsToSelector:@selector(setTextColor:)]) {
-            [[_labelField cell] setTextColor:labelColor];
-        }
-    }
-    [_labelField setNeedsDisplay:YES];
-    [self setNeedsDisplay:YES];
-}
-
-- (void)drawRect:(NSRect)dirtyRect {
-    [super drawRect:dirtyRect];
-    if (self.iconImage) {
-        NSRect iconRect = NSMakeRect((NSWidth(self.bounds) - ToolbarIconDimension) * 0.5f,
-                                     2.0f,
-                                     ToolbarIconDimension,
-                                     ToolbarIconDimension);
-        [self.iconImage drawInRect:iconRect
-                          fromRect:NSZeroRect
-                         operation:NSCompositeSourceOver
-                          fraction:1.0f
-                    respectFlipped:YES
-                             hints:nil];
-    }
-    [self refreshLabelAppearance];
-}
-
-- (void)resetCursorRects {
-    [self addCursorRect:self.bounds cursor:[NSCursor arrowCursor]];
-}
-
-- (void)mouseUp:(NSEvent *)event {
-    NSPoint location = [self convertPoint:event.locationInWindow fromView:nil];
-    if (NSPointInRect(location, self.bounds) && self.actionSelector && self.actionTarget) {
-        [NSApp sendAction:self.actionSelector to:self.actionTarget from:self];
-    }
-}
-
-- (void)viewDidMoveToSuperview {
-    [super viewDidMoveToSuperview];
-}
-
-- (NSImage *)displayedImage {
-    return self.iconImage;
-}
-
-#endif
-#endif
 #if defined(GNUSTEP)
 @interface STStatusBarBackgroundView : NSView
 @property (nonatomic, strong) NSColor *fillColor;
@@ -604,9 +453,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSUndoManager *undoManager;
 @property (nonatomic, assign) BOOL usesDarkTheme;
 @property (nonatomic, assign) BOOL toolWidthMenuCanReset;
-#if defined(GNUSTEP) && USE_GNUSTEP_CUSTOM_TOOLBAR
-@property (nonatomic, strong) STToolbarTooltipController *tooltipController;
-#endif
 @end
 
 @implementation AppDelegate
@@ -630,49 +476,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     NSString *identifier = item.itemIdentifier;
     NSString *tip = [self toolTipForIdentifier:identifier];
     BOOL hasCustomTip = (tip.length > 0);
-#if defined(GNUSTEP) && USE_GNUSTEP_CUSTOM_TOOLBAR
-    item.toolTip = nil;
-    STToolbarItemContainer *containerView = nil;
-    NSView *view = item.view;
-    if ([view isKindOfClass:[STToolbarItemContainer class]]) {
-        containerView = (STToolbarItemContainer *)view;
-        view = [containerView tooltipTargetView];
-    }
-    if (view) {
-        if ([view respondsToSelector:@selector(removeAllToolTips)]) {
-            [view removeAllToolTips];
-        }
-        if ([view respondsToSelector:@selector(setToolTip:)]) {
-            [view setToolTip:nil];
-        }
-
-        NSView *superview = view.superview;
-        NSView *superSuperView = superview ? superview.superview : nil;
-        NSView *candidates[2] = { superview, superSuperView };
-        for (NSUInteger idx = 0; idx < 2; idx++) {
-            NSView *candidate = candidates[idx];
-            if (!candidate) {
-                continue;
-            }
-            if ([candidate respondsToSelector:@selector(removeAllToolTips)]) {
-                [candidate removeAllToolTips];
-            }
-            if ([candidate respondsToSelector:@selector(setToolTip:)]) {
-                [candidate setToolTip:nil];
-            }
-        }
-
-        if (hasCustomTip) {
-            if (self.tooltipController) {
-                [self.tooltipController registerView:view withTooltip:tip];
-            } else if (containerView) {
-                [containerView setToolTip:tip];
-            }
-        }
-    } else if (containerView && hasCustomTip) {
-        [containerView setToolTip:tip];
-    }
-#elif defined(GNUSTEP)
+#if defined(GNUSTEP)
     item.toolTip = hasCustomTip ? tip : nil;
 #else
     if (hasCustomTip) {
@@ -712,11 +516,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     ScreenshotToolAppendLog(@"ScreenshotTool launched");
-#if defined(GNUSTEP) && USE_GNUSTEP_CUSTOM_TOOLBAR
-    if (!self.tooltipController) {
-        self.tooltipController = [[STToolbarTooltipController alloc] init];
-    }
-#endif
     self.usesDarkTheme = STThemeIsDark();
     [self setupWindowAndContent];
     [self setupToolbar];
@@ -728,11 +527,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     [self selectTool:ScreenshotCanvasToolHighlighter];
     [self reflectZoomSelection];
 
-#if defined(GNUSTEP) && USE_GNUSTEP_CUSTOM_TOOLBAR
-    for (NSToolbarItem *item in self.toolbar.items) {
-        [self applyToolTipToToolbarItem:item source:@"launch"];
-    }
-#endif
 
     if (self.pendingOpenPath.length > 0) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: attempting deferred open for %@",
@@ -1034,17 +828,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     } else {
         [self.toolbarItemsByIdentifier removeAllObjects];
     }
-    if (STUseDateTrackerToolbarBaseline) {
-        NSToolbar *toolbar = [[NSToolbar alloc] initWithIdentifier:ToolbarIdentifier];
-        toolbar.delegate = self;
-        toolbar.allowsUserCustomization = NO;
-        toolbar.autosavesConfiguration = NO;
-        toolbar.sizeMode = NSToolbarSizeModeRegular;
-        toolbar.displayMode = NSToolbarDisplayModeIconAndLabel;
-        self.window.toolbar = toolbar;
-        self.toolbar = toolbar;
-        return;
-    }
     self.toolbar = [[NSToolbar alloc] initWithIdentifier:ToolbarIdentifier];
     self.toolbar.delegate = self;
     self.toolbar.allowsUserCustomization = NO;
@@ -1177,9 +960,28 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
                              identifier,
                              darkTheme ? @"YES" : @"NO",
                              active ? @"YES" : @"NO"]);
+#if defined(GNUSTEP)
     if (darkTheme) {
+        if (active) {
+            appendUnique([stem stringByAppendingString:@"-dark-active-gnustep"]);
+        }
+        appendUnique([stem stringByAppendingString:@"-dark-gnustep"]);
+    } else {
+        if (active) {
+            appendUnique([stem stringByAppendingString:@"-light-active-gnustep"]);
+        }
+        appendUnique([stem stringByAppendingString:@"-light-gnustep"]);
+    }
+#endif
+    if (darkTheme) {
+        if (active) {
+            appendUnique([stem stringByAppendingString:@"-dark-active"]);
+        }
         appendUnique([stem stringByAppendingString:@"-dark"]);
     } else {
+        if (active) {
+            appendUnique([stem stringByAppendingString:@"-light-active"]);
+        }
         appendUnique([stem stringByAppendingString:@"-light"]);
     }
 
@@ -1210,10 +1012,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 }
 
 - (void)refreshToolButtonIcons {
-    if (STUseDateTrackerToolbarBaseline) {
-        [self refreshBaselineToolbarIcons];
-        return;
-    }
     if (!self.toolbar) {
         ScreenshotToolAppendLog(@"refreshToolButtonIcons: toolbar unavailable");
         return;
@@ -1237,30 +1035,12 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
         NSString *toolTip = [self toolTipForIdentifier:identifier];
         if (toolTip) {
-#if defined(GNUSTEP) && USE_GNUSTEP_CUSTOM_TOOLBAR
-            STToolbarItemContainer *containerView = ([item.view isKindOfClass:[STToolbarItemContainer class]]) ? (STToolbarItemContainer *)item.view : nil;
-            if (containerView) {
-                [containerView setToolTip:toolTip];
-                if (self.tooltipController) {
-                    [self.tooltipController registerView:[containerView tooltipTargetView] withTooltip:toolTip];
-                }
-            } else {
-                item.toolTip = toolTip;
-            }
-#else
             item.toolTip = toolTip;
             if (item.view) {
                 [item.view setToolTip:toolTip];
             }
-#endif
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ tooltip set -> %@", identifier, toolTip]);
         } else {
-#if defined(GNUSTEP) && USE_GNUSTEP_CUSTOM_TOOLBAR
-            if ([item.view isKindOfClass:[STToolbarItemContainer class]]) {
-                STToolbarItemContainer *containerView = (STToolbarItemContainer *)item.view;
-                [containerView setToolTip:nil];
-            }
-#endif
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ tooltip not updated", identifier]);
         }
 
@@ -1277,24 +1057,12 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         }
 
         item.image = icon;
-#if defined(GNUSTEP) && USE_GNUSTEP_CUSTOM_TOOLBAR
-        if ([item.view isKindOfClass:[STToolbarItemContainer class]]) {
-            STToolbarItemContainer *containerView = (STToolbarItemContainer *)item.view;
-            [containerView updateWithImage:icon label:item.label ?: identifier];
-        } else if (item.view && [item.view respondsToSelector:@selector(setImage:)]) {
-            id buttonView = item.view;
-            if ([buttonView respondsToSelector:@selector(setImage:)]) {
-                [buttonView setImage:icon];
-            }
-        }
-#else
         if (item.view && [item.view respondsToSelector:@selector(setImage:)]) {
             id buttonView = item.view;
             if ([buttonView respondsToSelector:@selector(setImage:)]) {
                 [buttonView setImage:icon];
             }
         }
-#endif
         NSString *state = isActive ? @"active" : @"inactive";
         ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ updated (%@)", identifier, state]);
     }
@@ -1341,48 +1109,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
     itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier
  willBeInsertedIntoToolbar:(BOOL)flag {
-    if (STUseDateTrackerToolbarBaseline) {
-        return [self baselineToolbarItemForIdentifier:itemIdentifier];
-    }
-    if ([itemIdentifier isEqualToString:ToolbarItemHighlighter]) {
-        return [self standardToolbarItemWithIdentifier:ToolbarItemHighlighter
-                                                 label:@"Highlighter"
-                                                action:@selector(activateHighlighter:)];
-    }
-    if ([itemIdentifier isEqualToString:ToolbarItemPen]) {
-        return [self standardToolbarItemWithIdentifier:ToolbarItemPen
-                                                 label:@"Pen"
-                                                action:@selector(activatePen:)];
-    }
-    if ([itemIdentifier isEqualToString:ToolbarItemText]) {
-        return [self standardToolbarItemWithIdentifier:ToolbarItemText
-                                                 label:@"Text"
-                                                action:@selector(activateText:)];
-    }
-    if ([itemIdentifier isEqualToString:ToolbarItemSelect]) {
-        return [self standardToolbarItemWithIdentifier:ToolbarItemSelect
-                                                 label:@"Select"
-                                                action:@selector(activateSelect:)];
-    }
-    if ([itemIdentifier isEqualToString:ToolbarItemEraser]) {
-        return [self standardToolbarItemWithIdentifier:ToolbarItemEraser
-                                                 label:@"Eraser"
-                                                action:@selector(activateEraser:)];
-    }
-    if ([itemIdentifier isEqualToString:ToolbarItemCopy]) {
-        return [self standardToolbarItemWithIdentifier:ToolbarItemCopy
-                                                 label:@"Copy"
-                                                action:@selector(copy:)];
-    }
-    if ([itemIdentifier isEqualToString:ToolbarItemPreferences]) {
-        return [self standardToolbarItemWithIdentifier:ToolbarItemPreferences
-                                                 label:@"Preferences"
-                                                action:@selector(showPreferences:)];
-    }
-    if ([itemIdentifier isEqualToString:ToolbarItemZoom]) {
-        return [self toolbarItemForZoomControl];
-    }
-    return nil;
+    (void)toolbar;
+    (void)flag;
+    return [self baselineToolbarItemForIdentifier:itemIdentifier];
 }
 
 - (NSToolbarItem *)baselineToolbarItemForIdentifier:(NSToolbarItemIdentifier)identifier {
@@ -1445,7 +1174,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     item.target = self;
     item.action = selector;
 
-    NSImage *image = [self baselineToolbarImageNamed:imageName];
+    BOOL isActive = [identifier isEqualToString:[self identifierForTool:self.canvasView.activeTool]];
+    NSImage *image = [self baselineToolbarImageNamed:imageName active:isActive];
     if (image) {
         item.image = image;
     }
@@ -1456,6 +1186,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     if (!self.toolbar) {
         return;
     }
+    NSToolbarItemIdentifier activeIdentifier = [self identifierForTool:self.canvasView.activeTool];
     for (NSToolbarItem *item in self.toolbar.items) {
         NSString *identifier = item.itemIdentifier;
         if (!identifier || [identifier isEqualToString:ToolbarItemZoom]) {
@@ -1465,14 +1196,15 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         if (stem.length == 0) {
             continue;
         }
-        NSImage *image = [self baselineToolbarImageNamed:stem];
+        BOOL isActive = activeIdentifier && [identifier isEqualToString:activeIdentifier];
+        NSImage *image = [self baselineToolbarImageNamed:stem active:isActive];
         if (image) {
             item.image = image;
         }
     }
 }
 
-- (NSImage *)baselineToolbarImageNamed:(NSString *)name {
+- (NSImage *)baselineToolbarImageNamed:(NSString *)name active:(BOOL)active {
     if (name.length == 0) {
         return nil;
     }
@@ -1483,9 +1215,28 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     }
 
     NSMutableArray<NSString *> *candidates = [[NSMutableArray alloc] init];
+#if defined(GNUSTEP)
     if (self.usesDarkTheme) {
+        if (active) {
+            [candidates addObject:[name stringByAppendingString:@"-dark-active-gnustep"]];
+        }
+        [candidates addObject:[name stringByAppendingString:@"-dark-gnustep"]];
+    } else {
+        if (active) {
+            [candidates addObject:[name stringByAppendingString:@"-light-active-gnustep"]];
+        }
+        [candidates addObject:[name stringByAppendingString:@"-light-gnustep"]];
+    }
+#endif
+    if (self.usesDarkTheme) {
+        if (active) {
+            [candidates addObject:[name stringByAppendingString:@"-dark-active"]];
+        }
         [candidates addObject:[name stringByAppendingString:@"-dark"]];
     } else {
+        if (active) {
+            [candidates addObject:[name stringByAppendingString:@"-light-active"]];
+        }
         [candidates addObject:[name stringByAppendingString:@"-light"]];
     }
     [candidates addObject:name];
@@ -1564,13 +1315,13 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         fflush(stdout);
     }
 #endif
-    BOOL darkTheme =
+    BOOL shouldApplyDarkFilter =
 #if defined(GNUSTEP)
-        YES;
+        NO;
 #else
         (self.usesDarkTheme || STThemeIsDark());
 #endif
-    if (darkTheme) {
+    if (shouldApplyDarkFilter) {
         baseIcon = [self darkThemeToolbarImageFromImage:baseIcon active:active];
     }
     NSImage *rendered = [baseIcon copy];
@@ -1712,73 +1463,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 }
 #endif
 
-- (NSToolbarItem *)standardToolbarItemWithIdentifier:(NSToolbarItemIdentifier)identifier
-                                               label:(NSString *)label
-                                              action:(SEL)selector {
-    NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:identifier];
-    ScreenshotToolAppendLog([NSString stringWithFormat:@"Standard item build %@", identifier]);
-    item.label = label ?: @"";
-    item.paletteLabel = label;
-    NSString *initialTip = [self toolTipForIdentifier:identifier] ?: label;
-    BOOL routeTooltipViaController = NO;
-#if defined(GNUSTEP) && USE_GNUSTEP_CUSTOM_TOOLBAR
-    if ([identifier isEqualToString:ToolbarItemHighlighter] ||
-        [identifier isEqualToString:ToolbarItemPen] ||
-        [identifier isEqualToString:ToolbarItemText] ||
-        [identifier isEqualToString:ToolbarItemSelect] ||
-        [identifier isEqualToString:ToolbarItemEraser]) {
-        routeTooltipViaController = YES;
-    }
-#endif
-    if (!routeTooltipViaController) {
-        item.toolTip = initialTip;
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"Set native tooltip for %@ -> %@", identifier, initialTip]);
-    } else {
-        item.toolTip = nil;
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"Routing tooltip for %@ via controller -> %@", identifier, initialTip]);
-    }
-    item.target = self;
-    item.action = selector;
-    NSToolbarItemIdentifier activeIdentifier = [self identifierForTool:self.canvasView.activeTool];
-    BOOL isActive = (activeIdentifier && [identifier isEqualToString:activeIdentifier]);
-    NSImage *icon = [self toolbarImageForIdentifier:identifier active:isActive];
-#if defined(GNUSTEP) && USE_GNUSTEP_CUSTOM_TOOLBAR
-    STToolbarItemContainer *container = [[STToolbarItemContainer alloc] initWithLabel:label target:item.target action:item.action];
-    [container updateWithImage:icon label:label];
-    item.view = container;
-    item.image = nil;
-    NSSize size = container.frame.size;
-    item.minSize = size;
-    item.maxSize = size;
-    if (routeTooltipViaController) {
-        if (self.tooltipController) {
-            NSString *tooltipText = [self toolTipForIdentifier:identifier];
-            if (tooltipText.length > 0) {
-                [self.tooltipController registerView:[container tooltipTargetView] withTooltip:tooltipText];
-            } else {
-                [self.tooltipController unregisterView:[container tooltipTargetView]];
-            }
-        }
-    } else if (initialTip.length > 0) {
-        container.toolTip = initialTip;
-    }
-    STApplyAccessibilityLabel(container, label ?: identifier ?: @"Toolbar Button");
-#elif defined(GNUSTEP)
-    item.view = nil;
-#endif
-    if (icon) {
-        item.image = icon;
-    }
-    if (item.itemIdentifier) {
-#if !defined(GNUSTEP)
-        if (!self.toolbarItemsByIdentifier) {
-            self.toolbarItemsByIdentifier = [[NSMutableDictionary alloc] init];
-        }
-        self.toolbarItemsByIdentifier[item.itemIdentifier] = item;
-#endif
-    }
-    return item;
-}
 - (NSToolbarItem *)toolbarItemForZoomControl {
     if (!self.zoomPopUpButton) {
         self.zoomPopUpButton = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 160.0, 28.0) pullsDown:NO];
@@ -3657,9 +3341,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 - (void)dealloc {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
-#if defined(GNUSTEP) && USE_GNUSTEP_CUSTOM_TOOLBAR
-    [self.tooltipController unregisterAll];
-#endif
 }
 
 #pragma mark - NSWindowDelegate

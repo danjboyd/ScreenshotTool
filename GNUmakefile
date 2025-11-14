@@ -1,5 +1,8 @@
 include $(GNUSTEP_MAKEFILES)/common.make
 
+override OBJCFLAGS := $(filter-out -mbranch-protection=%,$(OBJCFLAGS))
+override CFLAGS := $(filter-out -mbranch-protection=%,$(CFLAGS))
+
 APP_NAME = ScreenshotTool
 ScreenshotTool_APPLICATION_ICON =
 
@@ -7,23 +10,35 @@ ScreenshotTool_RESOURCE_DIRS = Resources
 ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
 	Resources/CopyImage-light.png \
 	Resources/CopyImage-dark.png \
+	Resources/CopyImage-light-gnustep.png \
+	Resources/CopyImage-dark-gnustep.png \
 	Resources/Highligher.png \
 	Resources/Highligher-light.png \
 	Resources/Highligher-dark.png \
+	Resources/Highligher-light-gnustep.png \
+	Resources/Highligher-dark-gnustep.png \
 	Resources/HighligherChangeColor.png \
 	Resources/PenTool.png \
 	Resources/PenTool-light.png \
 	Resources/PenTool-dark.png \
+	Resources/PenTool-light-gnustep.png \
+	Resources/PenTool-dark-gnustep.png \
 	Resources/PenChangeColor.png \
 	Resources/Eraser.png \
 	Resources/Eraser-light.png \
 	Resources/Eraser-dark.png \
+	Resources/Eraser-light-gnustep.png \
+	Resources/Eraser-dark-gnustep.png \
 	Resources/AddText.png \
 	Resources/AddText-light.png \
 	Resources/AddText-dark.png \
+	Resources/AddText-light-gnustep.png \
+	Resources/AddText-dark-gnustep.png \
 	Resources/MarqueeTool.png \
 	Resources/MarqueeTool-light.png \
 	Resources/MarqueeTool-dark.png \
+	Resources/MarqueeTool-light-gnustep.png \
+	Resources/MarqueeTool-dark-gnustep.png \
 	Resources/Highligher-active.png \
 	Resources/PenTool-active.png \
 	Resources/Eraser-active.png \
@@ -46,16 +61,17 @@ ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
 	Resources/CopyImage-active.tiff \
 	Resources/Preferences.png \
 	Resources/Preferences-light.png \
-	Resources/Preferences-dark.png
+	Resources/Preferences-dark.png \
+	Resources/Preferences-light-gnustep.png \
+	Resources/Preferences-dark-gnustep.png
 
 ScreenshotTool_HEADERS = Source/AppDelegate.h \
 	Source/ScreenshotCanvasView.h \
 	Source/MarkupStroke.h \
 	Source/MarkupText.h \
 	Source/STFloatingPopover.h \
-	Source/STFloatingPopoverWindow.h \
-	Source/STFloatingPopoverBackgroundView.h \
-	Source/STFloatingResizablePopover.h \
+    Source/STFloatingPopoverWindow.h \
+    Source/STFloatingPopoverBackgroundView.h \
 	Source/STHyperlinkButton.h \
 	Source/ScreenshotToolSettings.h \
 	Source/ToolSettingsPopoverController.h \
@@ -69,10 +85,9 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/ScreenshotCanvasView.m \
 	Source/MarkupStroke.m \
 	Source/MarkupText.m \
-	Source/STFloatingPopover.m \
-	Source/STFloatingPopoverWindow.m \
-	Source/STFloatingPopoverBackgroundView.m \
-	Source/STFloatingResizablePopover.m \
+    Source/STFloatingPopover.m \
+    Source/STFloatingPopoverWindow.m \
+    Source/STFloatingPopoverBackgroundView.m \
 	Source/STHyperlinkButton.m \
 	Source/ScreenshotToolSettings.m \
 	Source/ToolSettingsPopoverController.m \
@@ -81,7 +96,8 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/STToolbarTooltipController.m \
 	Source/STThemeUtilities.m
 
-CC = clang
+CLANG_WRAPPER := $(shell pwd)/tools/clang-wrapper.sh
+CC = $(CLANG_WRAPPER)
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
 ScreenshotTool_CPPFLAGS += -I/usr/include/freetype2
 ADDITIONAL_LDFLAGS += -lfontconfig -lfreetype -ldispatch
@@ -104,7 +120,7 @@ TEST_SUPPORT_OBJC = Source/AppDelegate.m \
 
 TEST_OUTPUT_DIR = Tests/bin
 TESTS = CropUndoProbe CropUndoWindowProbe ClipboardHighlighterProbe ClipboardHighlighterOpacityProbe ToolbarBadgeRefreshProbe TooltipsSuppressedProbe ToolbarIconThemeProbe
-TEST_CLANG ?= clang
+TEST_CLANG ?= $(CLANG_WRAPPER)
 GNUStepConfig ?= $(shell command -v gnustep-config 2>/dev/null)
 ifeq ($(strip $(GNUStepConfig)),)
 GNUStepConfig := /usr/GNUstep/System/Tools/gnustep-config

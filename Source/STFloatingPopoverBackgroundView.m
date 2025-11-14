@@ -1,4 +1,5 @@
 #import "STFloatingPopoverBackgroundView.h"
+#import "STThemeUtilities.h"
 
 static inline CGFloat STFPClamp(CGFloat value, CGFloat minValue, CGFloat maxValue) {
     return MIN(MAX(value, minValue), maxValue);

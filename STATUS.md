@@ -1,10 +1,19 @@
-# ScreenshotTool Status — 2025-11-03
+# ScreenshotTool Status — 2025-11-13
+
+_Progress entries run newest → oldest._
 
 ## Progress (2025-11-13)
 - Swapped in the DateTracker-style toolbar on GNUstep while keeping our original implementation available behind a flag so we can flip back once the custom container bug is fixed.
 - Added a user-visible “Toolbar Theme” control in Preferences plus a persistent interface-theme default; toolbar icons now select the `*-dark`/`*-light` variants based on either the Sombre heuristic or the explicit preference.
 - Investigated the clipped icon issue: GTK/GNUstep still constrains standard toolbar rows to ~24 px, so 32 px art is cropped; in-memory downscaling via `STRasterizeToolbarIcon` caused the icons to vanish, so we reverted and will experiment with GNUstep-specific 24 px assets next.
 - `Tools/run_tests.sh` currently times out because each probe fails to create `/home/danboyd/GNUstep/Defaults/.lck/.GNUstepDefaults.lck` (permission denied); no automated results for today.
+- Captured the toolbar-theme work in `README.md` (Highlights + Toolbar QA checklist) and logged the dark-theme/Sombre blank-toolbar regression in `OpenIssues.md` so the DateTracker fallback removal has a tracking item.
+- Added GNUstep-specific 24 px toolbar assets plus a `scripts/generate_toolbar_icons.sh` helper, and clamped `ToolbarIconDimension` to 24 px on GNUstep builds so the DateTracker baseline renders crisp, unclipped icons while Cocoa keeps the full 32 px glyphs.
+- Documented the full toolbar workflow in `docs/ToolbarIconsOnGNUstep.md`, generated DALL·E art + ImageMagick active variants, and simplified `AppDelegate` so GNUstep always uses the working DateTracker baseline.
+- The Pen/Highlighter popovers now adopt Sombre-friendly colors, non-selectable labels, and aqua hyperlinks; the Text popover shares the same `STFloatingPopover`, wider layout, and a dedicated issue tracks the remaining swatch clipping.
+- Replaced every dark toolbar glyph with DALL·E-generated art tailored to Sombre, regenerated light/dark + GNUstep variants, and layered ImageMagick-driven glow/outline “active” states via `scripts/generate_active_icons.sh`.
+- Normalized every toolbar PNG to 8-bit RGBA (`scripts/normalize_toolbar_icons.sh`) so GNUstep’s bitmap loader stops reporting “no visible pixels,” then regenerated all active/light/dark GNUstep assets with the updated tooling.
+- Relaxed the GNUstep `STBitmapRepHasVisiblePixels` check to treat any pixel with alpha > 0.05 as “visible” (instead of requiring brightness > 0.20), which keeps dark icons from being flagged as empty and fixes the corrupted toolbar rendering.
 
 ## Progress (2025-11-05)
 - Hardened GNUstep tooltip flow: AppDelegate now routes Pen/Highlighter/Text/Select/Eraser buttons through custom `STToolbarButton` views so native hints stay nil while Cocoa builds retain default tooltips.
@@ -12,7 +21,7 @@
 - Reworked `TooltipsSuppressedProbe` with a probe-only delegate and fake toolbar so the suite asserts tracking rect registration, verifies controller strings, and fails immediately if native tooltips return (without provoking the GNUstep toolbar crash).
 - Full test suite passes via `Tools/run_tests.sh`; all clipboard/highlighter and toolbar badge probes still green.
 
-## Recent Progress (2025-11-03)
+## Progress (2025-11-03)
 - Crop-to-selection now registers a proper undo snapshot and the window size re-expands when undo restores the original image.
 - Status bar messages no longer contaminate the shared undo stack; the delegate now suppresses undo registration while touching the status text field.
 - Added headless probes (`make tests`) to lock in crop/undo and window-resize behaviour; wiring is in place pending further clean-up of GNUstep defaults warnings.

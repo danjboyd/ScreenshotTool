@@ -55,6 +55,18 @@
 - **Workaround Implemented:** Before registering custom tooltips we now scrub `removeAllToolTips` / `setToolTip:nil` on the custom view and the first two ancestor views; the regression probe asserts those containers end up tooltip-free.
 - **Action:** Report that GNUstep toolbar container views silently restore native tooltips after clients clear them, preventing custom tooltip controllers from taking over.
 
+## Issue 4 — Toolbar Container Repaints Clobber Custom Label/Icon Colours in Dark Themes
+- **Symptom:** When the system theme or our Toolbar Theme preference is Dark/Sombre, GNUstep repaints custom toolbar containers (`STToolbarItemContainer`) and overwrites both label text colours and embedded icon views. The result is blank or low-contrast toolbar rows, matching the failing `ToolbarIconThemeProbe`.
+- **Repro:**
+  1. Launch ScreenshotTool under GNUstep with Sombre enabled (or set Preferences ▸ Toolbar Theme ▸ Dark).
+  2. Ensure the `STToolbarItemContainer` path is active (feature flag off for the DateTracker fallback).
+  3. Hover or click toolbar items: icons disappear or render with theme-default inks, labels revert to the theme colour instead of the custom value.
+- **Diagnostics:**
+  - `drawRect:` in `STToolbarItemContainer` runs, but subsequent display passes from GNUstep’s toolbar reset the subview colours and occasionally skip our image draws entirely.
+  - Attaching the exact same items to the DateTracker-style toolbar produces correct rendering, confirming the PNG assets and badge compositing are healthy.
+- **Workaround Implemented:** Keep GNUstep on the DateTracker fallback path (flagged in AppDelegate) until the native container retains custom colours; expose the Toolbar Theme preference so QA can verify icon selection even while the fallback is active.
+- **Action:** Report that GNUstep toolbar containers ignore developer-supplied label/icon colours when the window adopts a dark theme, leading to blank toolbars. Include the failing probe output (`ToolbarIconThemeProbe`) and screenshots that show the DateTracker fallback working while the native path fails.
+
 ## Follow-Up
 - Once GNUstep resolves the text rendering bug, we can remove the FreeType/fontconfig path and revert to the simpler `NSAttributedString` flattening.
 - After the scroll-view issue is addressed upstream, consider reintroducing optional scroller hiding logic if needed.

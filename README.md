@@ -6,6 +6,7 @@
   - Pen & highlighter popovers surface width sliders, quick preset buttons, color pickers, and default/reset affordances.
   - The text popover lets you pick the default text color and font (launches the standard font panel).
 - **Color Feedback**: Pen, highlighter, and text toolbar icons render a live colour badge so users always see the currently configured colours.
+- **Toolbar Theme Controls**: Preferences now exposes a Toolbar Theme picker (Auto, Light, Dark). GNUstep defaults to the Sombre heuristic but users can override it, and both the DateTracker-style toolbar fallback and the theme-aware icon loader keep the toolbar legible on dark backgrounds.
 - **Preferences Window**: A dedicated window (App menu ▸ Preferences… or toolbar button) centralises defaults:
   - Sliders + colour wells for pen/highlighter defaults, quick width presets, and text defaults (colour + font).
   - Default save directory chooser (applies to Open/Save panels) and a global “Show status bar” toggle.
@@ -29,6 +30,11 @@
 - `make -j$(nproc)` rebuilds the GNUstep target.
 - Default resources sit in `Resources/`; the preferences toolbar icon ships as `Preferences.png`.
 - Manual QA checklist: status bar slider updates both tools, popovers stay in sync after preference edits, default save directory drives Open/Save, and hiding the status bar reflows the scroll view correctly.
+- Toolbar QA checklist: verify Toolbar Theme preference updates the icon set immediately, Sombre/Auto mode picks up the right `*-dark` assets, the DateTracker fallback flag stays flipped on GNUstep until the native container bug is fixed, and `ToolbarIconThemeProbe` passes once the blank-toolbar regression is resolved.
+- After updating any toolbar artwork, run `scripts/generate_toolbar_icons.sh` so the GNUstep-specific 24 px variants stay in sync with the 32 px masters.
+- Run `scripts/generate_active_icons.sh` to regenerate the glow/outline “active” variants after editing the base icons; it also refreshes the GNUstep-sized active PNGs.
+- If icons start showing up blank on GNUstep, re-run `scripts/normalize_toolbar_icons.sh` to re-encode all PNGs as 8-bit RGBA before calling the other generators.
+- Refer to `docs/ToolbarIconsOnGNUstep.md` for the full asset-to-runtime story (common pitfalls, code references, and verification steps).
 
 ## Development Process
 - Roles: I serve as lead developer while you act as architect, driving design direction and final validation.

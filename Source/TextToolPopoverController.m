@@ -2,7 +2,8 @@
 #import "STHyperlinkButton.h"
 #import "ScreenshotToolSettings.h"
 #import "AppDelegate.h"
-#import "STFloatingResizablePopover.h"
+#import "STFloatingPopover.h"
+#import "STThemeUtilities.h"
 #include <math.h>
 
 #define STTextPopoverMinFontSize 8.0f
@@ -29,7 +30,7 @@
 @end
 
 @interface TextToolPopoverController () <NSTextFieldDelegate, NSTextViewDelegate>
-@property (nonatomic, strong) STFloatingResizablePopover *popover;
+@property (nonatomic, strong) STFloatingPopover *popover;
 @property (nonatomic, strong) NSView *contentView;
 @property (nonatomic, strong) NSTextView *previewTextView;
 @property (nonatomic, strong) NSColorWell *colorWell;
@@ -121,13 +122,13 @@
 
 - (void)buildPopover {
     ScreenshotToolAppendLog(@"TextToolPopoverController buildPopover begin");
-    CGFloat popoverWidth = 320.0f;
-    CGFloat popoverHeight = 270.0f;
+    CGFloat popoverWidth = 340.0f;
+    CGFloat popoverHeight = 320.0f;
 
     STTextPopoverContentView *content = [[STTextPopoverContentView alloc] initWithFrame:NSMakeRect(0, 0, popoverWidth, popoverHeight)];
     content.owner = self;
     self.contentView = content;
-    self.popover = [[STFloatingResizablePopover alloc] initWithContentView:self.contentView];
+    self.popover = [[STFloatingPopover alloc] initWithContentView:self.contentView];
     self.popover.contentSize = self.contentView.bounds.size;
     ScreenshotToolAppendLog(@"TextToolPopoverController floating popover created");
 
@@ -207,20 +208,33 @@
 
     NSArray<NSColor *> *swatches = [NSArray arrayWithObjects:
         [NSColor blackColor],
-        [NSColor darkGrayColor],
+        [NSColor colorWithCalibratedWhite:0.35 alpha:1.0],
         [NSColor whiteColor],
         [NSColor colorWithCalibratedRed:0.22 green:0.56 blue:0.95 alpha:1.0],
+        [NSColor colorWithCalibratedRed:0.16 green:0.78 blue:0.37 alpha:1.0],
         [NSColor colorWithCalibratedRed:0.99 green:0.75 blue:0.20 alpha:1.0],
         [NSColor colorWithCalibratedRed:0.91 green:0.30 blue:0.24 alpha:1.0],
+        [NSColor colorWithCalibratedRed:0.76 green:0.33 blue:0.85 alpha:1.0],
         nil];
     self.colorSwatches = swatches;
-    CGFloat swatchSize = 22.0f;
+    CGFloat swatchSize = 26.0f;
     self.colorSwatchSize = swatchSize;
-    CGFloat swatchX = NSMaxX(self.colorWell.frame) + 12.0f;
+    CGFloat swatchX = padding;
+    CGFloat swatchBaseY = y - swatchSize - 8.0f;
+    if (swatchBaseY < padding + swatchSize) {
+        swatchBaseY = padding + swatchSize;
+    }
+    NSUInteger columns = 6;
+    CGFloat columnWidth = swatchSize + 6.0f;
+    CGFloat rowSpacing = 10.0f;
     NSMutableArray<NSButton *> *swatchButtons = [[NSMutableArray alloc] initWithCapacity:swatches.count];
     for (NSUInteger idx = 0; idx < swatches.count; idx++) {
-        NSButton *swatch = [[NSButton alloc] initWithFrame:NSMakeRect(swatchX + (swatchSize + 8.0f) * idx,
-                                                                      y - 3.0f,
+        NSUInteger row = idx / columns;
+        NSUInteger col = idx % columns;
+        CGFloat originX = swatchX + (columnWidth * col);
+        CGFloat originY = swatchBaseY - (row * (swatchSize + rowSpacing));
+        NSButton *swatch = [[NSButton alloc] initWithFrame:NSMakeRect(originX,
+                                                                      originY,
                                                                       swatchSize,
                                                                       swatchSize)];
         [swatch setButtonType:NSMomentaryChangeButton];
@@ -237,15 +251,23 @@
     self.colorSwatchButtons = swatchButtons;
     [self updateSwatchSelectionForColor:self.colorWell.color];
 
-    CGFloat previewBottom = padding + 28.0f + 8.0f; // button row + margin
-    CGFloat previewTop = y - 10.0f;
-    CGFloat previewHeight = MAX(80.0f, previewTop - previewBottom);
+    NSUInteger totalRows = (swatches.count + columns - 1) / columns;
+    CGFloat swatchAreaHeight = totalRows * swatchSize + (MAX(totalRows - 1, 0) * rowSpacing);
+    y -= (swatchAreaHeight + 20.0f);
+    CGFloat buttonAreaHeight = 28.0f;
+    CGFloat previewBottom = padding + buttonAreaHeight + 18.0f;
+    CGFloat previewTop = y - 8.0f;
+    previewTop = MIN(previewTop, self.contentView.bounds.size.height - padding - 40.0f);
+    if (previewTop <= previewBottom + 140.0f) {
+        previewTop = previewBottom + 140.0f;
+    }
+    CGFloat previewHeight = previewTop - previewBottom;
     NSScrollView *previewScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(padding,
                                                                                  previewBottom,
                                                                                  contentWidth,
                                                                                  previewHeight)];
-    [previewScroll setBorderType:NSBezelBorder];
-    [previewScroll setHasVerticalScroller:YES];
+    [previewScroll setBorderType:NSNoBorder];
+    [previewScroll setHasVerticalScroller:NO];
     [previewScroll setHasHorizontalScroller:NO];
     [previewScroll setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
 
@@ -253,6 +275,13 @@
     [preview setRichText:NO];
     [preview setAllowsUndo:YES];
     [preview setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
+    NSColor *previewBackground = STThemeIsDark()
+        ? [NSColor colorWithCalibratedWhite:0.18f alpha:1.0f]
+        : [NSColor colorWithCalibratedWhite:0.95f alpha:1.0f];
+    [previewScroll setDrawsBackground:YES];
+    [previewScroll setBackgroundColor:previewBackground];
+    [preview setDrawsBackground:YES];
+    [preview setBackgroundColor:previewBackground];
     [preview setFont:STDefaultTextFont()];
     [preview setTextColor:STDefaultTextColor()];
     [preview setDelegate:self];
@@ -304,6 +333,7 @@
 
 - (void)configureLabel:(NSTextField *)label font:(NSFont *)font {
     [label setEditable:NO];
+    [label setSelectable:NO];
     [label setBezeled:NO];
     [label setBordered:NO];
     [label setDrawsBackground:NO];

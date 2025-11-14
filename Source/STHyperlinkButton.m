@@ -1,4 +1,5 @@
 #import "STHyperlinkButton.h"
+#import "STThemeUtilities.h"
 
 @implementation STHyperlinkButton
 
@@ -52,12 +53,15 @@
 
 - (void)updateAttributedTitle {
     NSString *title = self.title ?: @"";
-    NSColor *color = self.isEnabled ? [NSColor systemBlueColor] : [NSColor disabledControlTextColor];
-#if defined(GNUSTEP)
-    if (!color) {
-        color = self.isEnabled ? [NSColor blueColor] : [NSColor lightGrayColor];
+    BOOL darkTheme = STThemeIsDark();
+    NSColor *enabledColor = nil;
+    if (darkTheme) {
+        enabledColor = [NSColor colorWithCalibratedRed:0.35f green:0.78f blue:0.95f alpha:1.0f];
+    } else {
+        enabledColor = [NSColor systemBlueColor] ?: [NSColor blueColor];
     }
-#endif
+    NSColor *disabledColor = [NSColor disabledControlTextColor] ?: [NSColor lightGrayColor];
+    NSColor *color = self.isEnabled ? enabledColor : disabledColor;
     NSMutableAttributedString *attr = [[NSMutableAttributedString alloc] initWithString:title];
     NSRange range = NSMakeRange(0, attr.length);
     [attr addAttribute:NSForegroundColorAttributeName value:color range:range];

@@ -3,6 +3,7 @@
 #import "STFloatingPopover.h"
 #import "STHyperlinkButton.h"
 #import "ScreenshotToolSettings.h"
+#import "STThemeUtilities.h"
 #include <math.h>
 
 @interface ToolSettingsPopoverController ()
@@ -115,25 +116,48 @@
     CGFloat padding = 12.0f;
     CGFloat contentWidth = self.contentView.bounds.size.width - (padding * 2.0f);
     CGFloat y = self.contentView.bounds.size.height - padding - 20.0f;
+    NSColor *primaryTextColor = STThemeStatusPrimaryTextColor() ?: [NSColor labelColor];
+    NSColor *titleColor = STThemeToolbarLabelColor() ?: primaryTextColor;
+    NSColor *valueTextColor = STThemeStatusValueTextColor() ?: primaryTextColor;
 
-    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, 20.0f)];
+    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, 24.0f)];
     [title setEditable:NO];
+    [title setSelectable:NO];
     [title setBezeled:NO];
     [title setBordered:NO];
-    [title setDrawsBackground:NO];
-    [title setFont:[NSFont boldSystemFontOfSize:13.0f]];
+    [title setDrawsBackground:YES];
+    NSFont *baseFont = [NSFont boldSystemFontOfSize:13.0f];
+    NSFont *titleFont = [[NSFontManager sharedFontManager] convertFont:baseFont toHaveTrait:NSBoldFontMask];
+    [title setFont:titleFont ?: baseFont];
     [title setStringValue:[self titleText]];
+    [title setTextColor:titleColor];
+    NSColor *titleBackground = STThemeIsDark()
+        ? [NSColor colorWithCalibratedRed:0.18f green:0.19f blue:0.22f alpha:1.0f]
+        : [NSColor colorWithCalibratedWhite:0.92f alpha:1.0f];
+    [title setBackgroundColor:titleBackground];
+    NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
+    style.alignment = NSTextAlignmentLeft;
+    NSDictionary *attrs = @{
+        NSForegroundColorAttributeName: titleColor,
+        NSFontAttributeName: title.font ?: baseFont,
+        NSKernAttributeName: @(0.5f),
+        NSParagraphStyleAttributeName: style
+    };
+    NSAttributedString *attributed = [[NSAttributedString alloc] initWithString:[self titleText] attributes:attrs];
+    [title setAttributedStringValue:attributed];
     self.titleLabel = title;
     [self.contentView addSubview:title];
 
     y -= 28.0f;
     NSTextField *widthLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 80.0f, 18.0f)];
     [widthLabel setEditable:NO];
+    [widthLabel setSelectable:NO];
     [widthLabel setBezeled:NO];
     [widthLabel setBordered:NO];
     [widthLabel setDrawsBackground:NO];
     [widthLabel setFont:[NSFont systemFontOfSize:12.0f]];
     [widthLabel setStringValue:@"Width"];
+    [widthLabel setTextColor:primaryTextColor];
     self.widthLabel = widthLabel;
     [self.contentView addSubview:widthLabel];
 
@@ -158,17 +182,20 @@
     [valueLabel setAlignment:NSTextAlignmentRight];
     [valueLabel setFont:[NSFont systemFontOfSize:12.0f]];
     [valueLabel setStringValue:@"0 px"];
+    [valueLabel setTextColor:valueTextColor];
     self.widthValueLabel = valueLabel;
     [self.contentView addSubview:valueLabel];
 
     y = slider.frame.origin.y - 36.0f;
     NSTextField *colorLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 80.0f, 18.0f)];
     [colorLabel setEditable:NO];
+    [colorLabel setSelectable:NO];
     [colorLabel setBezeled:NO];
     [colorLabel setBordered:NO];
     [colorLabel setDrawsBackground:NO];
     [colorLabel setFont:[NSFont systemFontOfSize:12.0f]];
     [colorLabel setStringValue:@"Color"];
+    [colorLabel setTextColor:primaryTextColor];
     [self.contentView addSubview:colorLabel];
 
     NSColorWell *well = [[NSColorWell alloc] initWithFrame:NSMakeRect(padding,
@@ -177,6 +204,7 @@
                                                                       28.0f)];
     well.target = self;
     well.action = @selector(colorWellChanged:);
+    [well setBordered:YES];
     self.colorWell = well;
     [self.contentView addSubview:well];
 
