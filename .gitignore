@@ -4,3 +4,4 @@ obj/
 .DS_Store
 screenshottool.log
 debug.log
+local.env
