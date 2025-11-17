@@ -17,6 +17,7 @@
 
 ## Preferences & Environment
 - Cursor debug logging is disabled by default. Set `SCREENSHOT_CURSOR_DEBUG=1` before launching the app to stream cursor transition logs to the console.
+- Tooltip debug logging is also opt-in. Launch with `SCREENSHOT_TOOL_DEBUG_TOOLTIPS=1` to capture registration/show/hide events for every toolbar tooltip in `debug.log`.
 - Runtime logs (non-cursor) continue to append to `~/git/ScreenshotTool/screenshottool.log` unless `SCREENSHOT_TOOL_LOG_PATH` overrides the path.
 
 ## Code Map
@@ -44,6 +45,7 @@
 - Daily Status: `STATUS.md` captures in-flight initiatives and end-of-day notes so we always know where to pick up next session.
 - Regression Guardrails: whenever we close a bug or finish a feature, I look for opportunities to add or extend tests to lock behaviour in and prevent future regressions.
 - Test Harness: run `Tools/run_tests.sh [optional-log-path]` to build the probes and capture the suite output (stdout + stderr) in `tests.log` for Codex review.
+- GNUstep Tooltips: `docs/GNUstepToolbarTooltips.md` documents the suppression strategy for native tooltips and the expectations for the custom controller so regressions can be fixed quickly.
 
 ## Daily Wrap-Up Procedure
 1. Append a brief progress summary (completed work + next steps) to `STATUS.md`.

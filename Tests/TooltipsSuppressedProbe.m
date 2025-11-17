@@ -26,6 +26,26 @@
 #import <AppKit/NSApplication.h>
 #import "STToolbarTooltipController.h"
 
+@interface ProbeToolbar : NSToolbar
+@property (nonatomic, strong) NSArray<NSToolbarItem *> *probeItems;
+@end
+
+@implementation ProbeToolbar
+
+- (instancetype)init {
+    self = [super initWithIdentifier:@"com.screenshottool.tooltips.probe"];
+    if (self) {
+        _probeItems = @[];
+    }
+    return self;
+}
+
+- (NSArray<NSToolbarItem *> *)items {
+    return _probeItems ?: @[];
+}
+
+@end
+
 @interface ProbeAppDelegate : AppDelegate
 @end
 
@@ -139,7 +159,14 @@ int main(int argc, const char * argv[]) {
             }
             NSView *view = item.view;
             if (!view) {
-                continue;
+                NSButton *synthetic = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 32, 32)];
+                synthetic.buttonType = NSMomentaryLightButton;
+#ifdef NSBezelStyleRounded
+                synthetic.bezelStyle = NSBezelStyleRounded;
+#endif
+                [synthetic setTitle:@""];
+                [item setView:synthetic];
+                view = [item view] ?: synthetic;
             }
 
             NSRect containerFrame = NSIsEmptyRect(view.bounds) ? NSMakeRect(0, 0, 32, 32) : view.bounds;
@@ -187,15 +214,46 @@ int main(int argc, const char * argv[]) {
             [toolbarItems addObject:item];
         }
 
+        ProbeToolbar *probeToolbar = [[ProbeToolbar alloc] init];
+        probeToolbar.probeItems = [toolbarItems copy];
+        @try {
+            [delegate setValue:probeToolbar forKey:@"toolbar"];
+        } @catch (NSException *exception) {
+            FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: failed to assign probe toolbar (%@)",
+                                                     exception.reason ?: @"unknown"]);
+        }
+        if ([delegate respondsToSelector:@selector(refreshToolButtonIcons)]) {
+            [delegate refreshToolButtonIcons];
+        }
+
+        SEL snapshotSel = NSSelectorFromString(@"registeredToolbarTooltipsSnapshot");
+        NSDictionary *identifierTooltipMap = nil;
+        if ([delegate respondsToSelector:snapshotSel]) {
+            identifierTooltipMap = [delegate valueForKey:@"registeredToolbarTooltipsSnapshot"];
+        }
+        NSDictionary *identifierTrackingMap = nil;
+        SEL trackingSel = NSSelectorFromString(@"registeredTrackingIdentifiersSnapshot");
+        if ([delegate respondsToSelector:trackingSel]) {
+            identifierTrackingMap = [delegate valueForKey:@"registeredTrackingIdentifiersSnapshot"];
+        }
+
         NSDictionary *trackingTags = @{};
         NSDictionary *registeredTooltips = @{};
         if (controller) {
             trackingTags = [controller registeredTrackingSnapshot] ?: @{};
-            if (trackingTags.count != expectedRegisteredCount) {
+            if (identifierTrackingMap) {
+                if ([(NSDictionary *)identifierTrackingMap count] != expectedRegisteredCount) {
+                    FailAndExit(@"TooltipsSuppressedProbe: controller tracking rect mismatch after suppression");
+                }
+            } else if (trackingTags.count != expectedRegisteredCount) {
                 FailAndExit(@"TooltipsSuppressedProbe: controller tracking rect mismatch after suppression");
             }
             registeredTooltips = [controller registeredTooltipsSnapshot] ?: @{};
-            if (registeredTooltips.count != expectedRegisteredCount) {
+            if (identifierTooltipMap) {
+                if (identifierTooltipMap.count != expectedRegisteredCount) {
+                    FailAndExit(@"TooltipsSuppressedProbe: controller tooltip count mismatch after suppression");
+                }
+            } else if (registeredTooltips.count != expectedRegisteredCount) {
                 FailAndExit(@"TooltipsSuppressedProbe: controller tooltip count mismatch after suppression");
             }
         }
@@ -215,7 +273,13 @@ int main(int argc, const char * argv[]) {
             NSValue *viewKey = [NSValue valueWithNonretainedObject:view];
             NSString *expected = expectedTooltipsByView[viewKey] ?: @"";
             NSString *registered = registeredTooltips[viewKey];
+            if (!registered && identifierTooltipMap) {
+                registered = identifierTooltipMap[item.itemIdentifier];
+            }
             NSNumber *tracking = trackingTags[viewKey];
+            if (!tracking && identifierTrackingMap) {
+                tracking = identifierTrackingMap[item.itemIdentifier];
+            }
             if (expected.length > 0) {
                 if (!registered || ![registered isEqualToString:expected]) {
                     FailAndExit([NSString stringWithFormat:@"TooltipsSuppressedProbe: controller registered '%@' but expected '%@' (%@)",

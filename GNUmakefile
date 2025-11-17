@@ -109,7 +109,6 @@ TEST_SUPPORT_OBJC = Source/AppDelegate.m \
 	Source/STFloatingPopover.m \
 	Source/STFloatingPopoverWindow.m \
 	Source/STFloatingPopoverBackgroundView.m \
-	Source/STFloatingResizablePopover.m \
 	Source/STHyperlinkButton.m \
 	Source/ScreenshotToolSettings.m \
 	Source/ToolSettingsPopoverController.m \

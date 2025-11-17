@@ -101,6 +101,7 @@ Without this change, dark-themed PNGs were considered empty and GNUstep painted 
 | No visual difference between active/inactive tools | Active assets missing or loader only uses base PNGs | Ensure `scripts/generate_active_icons.sh` was run and `iconNameCandidates…` includes `-active` entries (see Section 2). |
 | Icons vanish (GNUstep logs “nz=0”) | `STBitmapRepHasVisiblePixels` rejected dark pixels | Keep the relaxed alpha-only check in place. |
 | Colors washed out or glow mangled | GNUstep `darkThemeToolbarImageFromImage` applied | Ensure the `shouldApplyDarkFilter` flag is `NO` for GNUstep builds. |
+| Toolbar icons disappear entirely | Replacing the DateTracker-provided `NSToolbarItem` views with custom buttons (e.g. while experimenting with tooltip fixes) prevents GNUstep from drawing the cached `NSImage`s; the stock toolbar simply paints the empty custom view. | **Do not replace the toolbar item views.** Keep DateTracker’s baseline container and overlay behaviour intact, and layer tooltip changes on top of the existing items. |
 
 ## 5. Workflow Summary
 

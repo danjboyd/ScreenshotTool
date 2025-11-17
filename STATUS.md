@@ -2,6 +2,12 @@
 
 _Progress entries run newest → oldest._
 
+## Progress (2025-11-17)
+- Instrumented `STToolbarTooltipController` + `AppDelegate` with always-on logging and a GNUstep-specific backView discovery path so we can see when custom tooltips register, update, or fail to receive `mouseEntered:`.
+- Added identifier-to-view tracking plus tooltip string coverage for Select/Eraser, filtered out space/zoom items, and repeatedly rebuilt + tested on GNUstep to keep registration stable while iterating on the intermittent tooltip issue.
+- Attempted multiple GNUstep runs with `SCREENSHOT_TOOL_DEBUG_TOOLTIPS=1`; tooltips now appear intermittently (matching native behavior) and logs show tracking rect churn, but root cause is still open and needs a follow-up pass.
+- `Tools/run_tests.sh` still times out because probes cannot create `/home/danboyd/GNUstep/Defaults/.lck/.GNUstepDefaults.lck` (permission denied); see `tests.log` tail for the latest failure.
+
 ## Progress (2025-11-13)
 - Swapped in the DateTracker-style toolbar on GNUstep while keeping our original implementation available behind a flag so we can flip back once the custom container bug is fixed.
 - Added a user-visible “Toolbar Theme” control in Preferences plus a persistent interface-theme default; toolbar icons now select the `*-dark`/`*-light` variants based on either the Sombre heuristic or the explicit preference.

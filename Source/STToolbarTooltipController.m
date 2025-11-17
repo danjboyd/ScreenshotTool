@@ -2,6 +2,26 @@
 
 #if defined(GNUSTEP)
 
+extern void ScreenshotToolAppendLog(NSString *message);
+
+static BOOL STTooltipDebugLoggingEnabled(void) {
+    return YES;
+}
+
+static NSString *STTooltipDescribeView(NSView *view) {
+    if (!view) {
+        return @"<nil>";
+    }
+    return [NSString stringWithFormat:@"%@:%p", NSStringFromClass([view class]), view];
+}
+
+static void STTooltipDebugLog(NSString *message) {
+    if (!STTooltipDebugLoggingEnabled() || message.length == 0) {
+        return;
+    }
+    ScreenshotToolAppendLog(message);
+}
+
 @interface STTooltipBackgroundView : NSView
 @end
 
@@ -96,6 +116,10 @@
                                      assumeInside:NO];
     self.trackingTags[key] = @(tag);
     self.tooltips[key] = tooltip ?: @"";
+    STTooltipDebugLog([NSString stringWithFormat:@"tooltip-register %@ tag=%@ text=\"%@\"",
+                       STTooltipDescribeView(view),
+                       @(tag),
+                       tooltip ?: @""]);
 }
 
 - (void)updateTooltip:(NSString *)tooltip forView:(NSView *)view {
@@ -113,6 +137,10 @@
         [view removeAllToolTips];
     }
     self.tooltips[key] = tooltip ?: @"";
+    STTooltipDebugLog([NSString stringWithFormat:@"tooltip-update %@ tag=%@ text=\"%@\"",
+                       STTooltipDescribeView(view),
+                       tagNumber ?: @"<nil>",
+                       tooltip ?: @""]);
 }
 
 - (void)unregisterView:(NSView *)view {
@@ -126,6 +154,9 @@
         [self.trackingTags removeObjectForKey:key];
     }
     [self.tooltips removeObjectForKey:key];
+    STTooltipDebugLog([NSString stringWithFormat:@"tooltip-unregister %@ tag=%@",
+                       STTooltipDescribeView(view),
+                       tagNumber ?: @"<nil>"]);
 }
 
 - (void)unregisterAll {
@@ -153,11 +184,12 @@
     if (!view) {
         return;
     }
-#ifdef SCREENSHOT_TOOL_DEBUG_TOOLTIPS
-    NSLog(@"[tooltip-controller] mouseEntered view=%@", view);
-#endif
+    STTooltipDebugLog([NSString stringWithFormat:@"tooltip-mouseEntered %@",
+                       STTooltipDescribeView(view)]);
     NSString *tooltip = self.tooltips[[NSValue valueWithNonretainedObject:view]];
     if (tooltip.length == 0) {
+        STTooltipDebugLog([NSString stringWithFormat:@"tooltip-mouseEntered %@ skipped (empty text)",
+                           STTooltipDescribeView(view)]);
         return;
     }
     [self showTooltip:tooltip relativeToView:view];
@@ -165,6 +197,7 @@
 
 - (void)mouseExited:(NSEvent *)event {
     (void)event;
+    STTooltipDebugLog(@"tooltip-mouseExited (schedule hide)");
     [self hideTooltip];
 }
 
@@ -205,12 +238,17 @@
                                                     selector:@selector(hideTooltip)
                                                     userInfo:nil
                                                      repeats:NO];
+    STTooltipDebugLog([NSString stringWithFormat:@"tooltip-show text=\"%@\" view=%@ frame=%@",
+                       text ?: @"",
+                       STTooltipDescribeView(view),
+                       NSStringFromRect(tooltipFrame)]);
 }
 
 - (void)hideTooltip {
     [self.tooltipWindow orderOut:nil];
     [self.hideTimer invalidate];
     self.hideTimer = nil;
+    STTooltipDebugLog(@"tooltip-hide");
 }
 
 - (NSDictionary<NSValue *, NSString *> *)registeredTooltipsSnapshot {

@@ -67,70 +67,53 @@ static NSImage *ToolbarContainerImage(NSView *view) {
     return nil;
 }
 
-static BOOL ToolbarIconHasVisiblePixels(NSImage *image) {
-    if (!image) {
+static BOOL ToolbarBitmapHasVisiblePixels(NSBitmapImageRep *bitmap) {
+    if (!bitmap) {
         return NO;
     }
-#if defined(GNUSTEP)
-    NSBitmapImageRep *raster = RasterizedBitmapForImage(image);
-    if (!raster) {
+    NSInteger width = bitmap.pixelsWide;
+    NSInteger height = bitmap.pixelsHigh;
+    if (width <= 0 || height <= 0) {
         return NO;
     }
-    NSInteger width = raster.pixelsWide;
-    NSInteger height = raster.pixelsHigh;
     for (NSInteger y = 0; y < height; y++) {
         for (NSInteger x = 0; x < width; x++) {
-            NSColor *color = [raster colorAtX:x y:y];
+            NSColor *color = [bitmap colorAtX:x y:y];
             if (!color) {
                 continue;
             }
             NSColor *device = DeviceColor(color);
-            CGFloat alpha = [device alphaComponent];
-            if (alpha < 0.05f) {
-                continue;
-            }
-            CGFloat brightness = (0.2126f * device.redComponent) +
-                                 (0.7152f * device.greenComponent) +
-                                 (0.0722f * device.blueComponent);
-            if (brightness > 0.20f) {
+            if ([device alphaComponent] > 0.05f) {
                 return YES;
             }
         }
     }
     return NO;
-#else
+}
+
+static BOOL ToolbarIconHasVisiblePixels(NSImage *image) {
+    if (!image) {
+        return NO;
+    }
     for (NSImageRep *representation in image.representations) {
         if (![representation isKindOfClass:[NSBitmapImageRep class]]) {
             continue;
         }
-        NSBitmapImageRep *bitmap = (NSBitmapImageRep *)representation;
-        NSInteger width = bitmap.pixelsWide;
-        NSInteger height = bitmap.pixelsHigh;
-        if (width <= 0 || height <= 0) {
-            continue;
-        }
-        for (NSInteger y = 0; y < height; y++) {
-            for (NSInteger x = 0; x < width; x++) {
-                NSColor *color = [bitmap colorAtX:x y:y];
-                if (!color) {
-                    continue;
-                }
-                NSColor *device = DeviceColor(color);
-                CGFloat alpha = [device alphaComponent];
-                if (alpha < 0.05f) {
-                    continue;
-                }
-                CGFloat brightness = (0.2126f * device.redComponent) +
-                                     (0.7152f * device.greenComponent) +
-                                     (0.0722f * device.blueComponent);
-                if (brightness > 0.20f) {
-                    return YES;
-                }
-            }
+        if (ToolbarBitmapHasVisiblePixels((NSBitmapImageRep *)representation)) {
+            return YES;
         }
     }
-    return NO;
+    NSBitmapImageRep *fallback = nil;
+#if defined(GNUSTEP)
+    fallback = RasterizedBitmapForImage(image);
 #endif
+    if (!fallback) {
+        NSData *tiff = [image TIFFRepresentation];
+        if (tiff) {
+            fallback = [NSBitmapImageRep imageRepWithData:tiff];
+        }
+    }
+    return ToolbarBitmapHasVisiblePixels(fallback);
 }
 
 static NSImage *ToolbarProbeImageForItem(NSView *container, NSToolbarItem *toolbarItem) {
