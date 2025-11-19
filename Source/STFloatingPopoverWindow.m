@@ -28,4 +28,16 @@
     return NO;
 }
 
+- (void)resetCursorRects {
+    [self.contentView discardCursorRects];
+    NSView *contentView = self.contentView;
+    if (!contentView) {
+        return;
+    }
+    NSCursor *cursor = [NSCursor arrowCursor];
+    NSRect bounds = contentView.bounds;
+    [contentView addCursorRect:bounds cursor:cursor];
+    [cursor set];
+}
+
 @end

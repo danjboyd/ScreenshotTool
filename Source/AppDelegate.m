@@ -1028,6 +1028,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
     [self.scrollView setDocumentView:self.canvasView];
     [container addSubview:self.scrollView];
+    [self.window setInitialFirstResponder:self.canvasView];
+    [self.window makeFirstResponder:self.canvasView];
 
 #if defined(GNUSTEP)
     STStatusBarBackgroundView *statusBar = [[STStatusBarBackgroundView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, contentBounds.size.width, StatusBarHeight)];
@@ -3379,7 +3381,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     NSInteger bytesPerRow = [destRep bytesPerRow];
     CGFloat badgeSize = 10.0f;
     CGFloat centerX = width - badgeSize - 2.0f + badgeSize * 0.5f;
-    CGFloat centerY = 2.0f + badgeSize * 0.5f;
+    // NSBitmapImageRep coordinates originate at the top-left on GNUstep, so flip Y to target bottom-right.
+    CGFloat centerY = height - badgeSize - 2.0f + badgeSize * 0.5f;
     CGFloat radius = badgeSize * 0.5f;
     CGFloat borderRadius = radius - 0.5f;
     CGFloat r = deviceColor.redComponent;

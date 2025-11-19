@@ -6,7 +6,7 @@ override CFLAGS := $(filter-out -mbranch-protection=%,$(CFLAGS))
 APP_NAME = ScreenshotTool
 ScreenshotTool_APPLICATION_ICON =
 
-ScreenshotTool_RESOURCE_DIRS = Resources
+ScreenshotTool_RESOURCE_DIRS =
 ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
 	Resources/CopyImage-light.png \
 	Resources/CopyImage-dark.png \
@@ -65,6 +65,25 @@ ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
 	Resources/Preferences-light-gnustep.png \
 	Resources/Preferences-dark-gnustep.png
 
+ScreenshotTool_RESOURCE_FILES += \
+	Resources/Cursors/pen-cursor@1x.png \
+	Resources/Cursors/pen-cursor@1x.tiff \
+	Resources/Cursors/pen-cursor@2x.png \
+	Resources/Cursors/pen-cursor@2x.tiff \
+	Resources/Cursors/highlighter-cursor@1x.png \
+	Resources/Cursors/highlighter-cursor@1x.tiff \
+	Resources/Cursors/highlighter-cursor@2x.png \
+	Resources/Cursors/highlighter-cursor@2x.tiff \
+	Resources/Cursors/eraser-cursor@1x.png \
+	Resources/Cursors/eraser-cursor@1x.tiff \
+	Resources/Cursors/eraser-cursor@2x.png \
+	Resources/Cursors/eraser-cursor@2x.tiff \
+	Resources/Cursors/marquee-cursor@1x.png \
+	Resources/Cursors/marquee-cursor@1x.tiff \
+	Resources/Cursors/marquee-cursor@2x.png \
+	Resources/Cursors/marquee-cursor@2x.tiff \
+	Resources/Cursors/markup-cursors.metadata.json
+
 ScreenshotTool_HEADERS = Source/AppDelegate.h \
 	Source/ScreenshotCanvasView.h \
 	Source/MarkupStroke.h \
@@ -118,7 +137,7 @@ TEST_SUPPORT_OBJC = Source/AppDelegate.m \
 	Source/STThemeUtilities.m
 
 TEST_OUTPUT_DIR = Tests/bin
-TESTS = CropUndoProbe CropUndoWindowProbe ClipboardHighlighterProbe ClipboardHighlighterOpacityProbe ToolbarBadgeRefreshProbe TooltipsSuppressedProbe ToolbarIconThemeProbe
+TESTS = CropUndoProbe CropUndoWindowProbe ClipboardHighlighterProbe ClipboardHighlighterOpacityProbe ToolbarBadgeRefreshProbe TooltipsSuppressedProbe ToolbarIconThemeProbe CursorAssetProbe CursorRectProbe TextFontComboProbe
 TEST_CLANG ?= $(CLANG_WRAPPER)
 GNUStepConfig ?= $(shell command -v gnustep-config 2>/dev/null)
 ifeq ($(strip $(GNUStepConfig)),)
@@ -179,6 +198,15 @@ $(TEST_OUTPUT_DIR)/TooltipsSuppressedProbe: Tests/TooltipsSuppressedProbe.m $(TE
 	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
 
 $(TEST_OUTPUT_DIR)/ToolbarIconThemeProbe: Tests/ToolbarIconThemeProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
+	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
+
+$(TEST_OUTPUT_DIR)/CursorAssetProbe: Tests/CursorAssetProbe.m | $(TEST_OUTPUT_DIR)
+	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
+
+$(TEST_OUTPUT_DIR)/CursorRectProbe: Tests/CursorRectProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
+	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
+
+$(TEST_OUTPUT_DIR)/TextFontComboProbe: Tests/TextFontComboProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
 	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
 
 clean-tests:

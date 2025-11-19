@@ -2,6 +2,11 @@
 
 _Progress entries run newest → oldest._
 
+## Progress (2025-11-19)
+- Text popover font combo on GNUstep now stays responsive: swapped every manual `setStringValue:` call for a helper that defers updates while the field editor is live, flushes pending values once editing ends, and removes the old `objectValueOfSelectedItem` calls that were invalid in data-source mode.
+- Added `TextFontComboProbe` with an editing-deferral scenario so the suite fails immediately if we try to mutate the combo string while an editor is active; `Tools/run_tests.sh` now runs cleanly (with sudo so GNUstep can create defaults locks).
+- `OpenIssues.md` entry for the font combo has been migrated to `ClosedIssues.md`, tests rebuilt, and GNUstep manual validation confirmed the drop-down opens repeatedly without logging warnings.
+
 ## Progress (2025-11-17)
 - Instrumented `STToolbarTooltipController` + `AppDelegate` with always-on logging and a GNUstep-specific backView discovery path so we can see when custom tooltips register, update, or fail to receive `mouseEntered:`.
 - Added identifier-to-view tracking plus tooltip string coverage for Select/Eraser, filtered out space/zoom items, and repeatedly rebuilt + tested on GNUstep to keep registration stable while iterating on the intermittent tooltip issue.

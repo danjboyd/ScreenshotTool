@@ -21,30 +21,35 @@
     return YES;
 }
 
-- (void)changeFont:(id)sender {
-    if (self.owner && [self.owner respondsToSelector:@selector(fontPanelDidChange:)]) {
-        [self.owner performSelector:@selector(fontPanelDidChange:) withObject:sender];
-    }
-}
-
 @end
 
-@interface TextToolPopoverController () <NSTextFieldDelegate, NSTextViewDelegate>
+@interface STTextPopoverPreviewTextView : NSTextView
+@end
+
+@implementation STTextPopoverPreviewTextView
+@end
+
+@interface TextToolPopoverController () <NSTextFieldDelegate, NSTextViewDelegate, NSComboBoxDelegate, NSComboBoxDataSource>
 @property (nonatomic, strong) STFloatingPopover *popover;
 @property (nonatomic, strong) NSView *contentView;
 @property (nonatomic, strong) NSTextView *previewTextView;
 @property (nonatomic, strong) NSColorWell *colorWell;
-@property (nonatomic, strong) NSPopUpButton *fontPopUp;
+@property (nonatomic, strong) NSComboBox *fontComboBox;
+@property (nonatomic, strong) NSPopUpButton *fontFacePopUp;
 @property (nonatomic, strong) NSTextField *fontSizeField;
 @property (nonatomic, strong) NSStepper *fontSizeStepper;
-@property (nonatomic, strong) NSButton *fontPanelButton;
 @property (nonatomic, strong) STHyperlinkButton *resetButton;
 @property (nonatomic, strong) STHyperlinkButton *defaultButton;
 @property (nonatomic, strong) NSArray<NSButton *> *colorSwatchButtons;
 @property (nonatomic, copy) NSArray<NSColor *> *colorSwatches;
+@property (nonatomic, copy) NSArray<NSString *> *allFontFamilies;
+@property (nonatomic, copy) NSArray<NSString *> *filteredFontFamilies;
+@property (nonatomic, copy) NSString *fontFilterQuery;
+@property (nonatomic, copy) NSString *currentFontComboSelection;
+@property (nonatomic, copy) NSString *pendingFontComboStringValue;
+@property (nonatomic, copy) NSArray<NSDictionary<NSString *, NSString *> *> *currentFontFaces;
 @property (nonatomic, copy) NSString *previewSampleText;
 @property (nonatomic, assign) CGFloat colorSwatchSize;
-- (void)fontPanelDidChange:(NSFontManager *)manager;
 @end
 
 @implementation TextToolPopoverController
@@ -147,16 +152,48 @@
     [fontLabel setStringValue:@"Font"];
     [self.contentView addSubview:fontLabel];
 
-    self.fontPopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(padding + 64.0f,
-                                                                     y - 2.0f,
-                                                                     contentWidth - 64.0f,
-                                                                     26.0f) pullsDown:NO];
-    [self.fontPopUp setTarget:self];
-    [self.fontPopUp setAction:@selector(fontFamilyChanged:)];
-    [self.fontPopUp setAutoresizingMask:NSViewWidthSizable];
+    CGFloat typefaceWidth = 130.0f;
+    CGFloat typefaceSpacing = 8.0f;
+    CGFloat familyFieldX = padding + 64.0f;
+    CGFloat familyWidth = contentWidth - 64.0f - typefaceSpacing - typefaceWidth;
+    if (familyWidth < 140.0f) {
+        CGFloat deficit = 140.0f - familyWidth;
+        familyWidth = 140.0f;
+        typefaceWidth = MAX(90.0f, typefaceWidth - deficit);
+    }
+
+    self.fontComboBox = [[NSComboBox alloc] initWithFrame:NSMakeRect(familyFieldX,
+                                                                     y - 4.0f,
+                                                                     familyWidth,
+                                                                     26.0f)];
+    [self.fontComboBox setUsesDataSource:YES];
+    [self.fontComboBox setCompletes:NO];
+    [self.fontComboBox setDelegate:self];
+    [self.fontComboBox setDataSource:self];
+    [self.fontComboBox setNumberOfVisibleItems:12];
+    [self.fontComboBox setAutoresizingMask:NSViewWidthSizable];
     [self populateFontFamilies];
-    [self.contentView addSubview:self.fontPopUp];
+    [self.contentView addSubview:self.fontComboBox];
     [fontLabel setAutoresizingMask:(NSViewMaxYMargin | NSViewWidthSizable)];
+
+    NSTextField *typefaceLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(NSMaxX(self.fontComboBox.frame) + typefaceSpacing,
+                                                                               y,
+                                                                               typefaceWidth,
+                                                                               18.0f)];
+    [self configureLabel:typefaceLabel font:[NSFont systemFontOfSize:12.0f]];
+    [typefaceLabel setStringValue:@"Typeface"];
+    [typefaceLabel setAlignment:NSTextAlignmentLeft];
+    [typefaceLabel setAutoresizingMask:(NSViewMaxYMargin | NSViewMinXMargin)];
+    [self.contentView addSubview:typefaceLabel];
+
+    self.fontFacePopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(typefaceLabel.frame.origin.x,
+                                                                         y - 4.0f,
+                                                                         typefaceWidth,
+                                                                         26.0f)];
+    [self.fontFacePopUp setTarget:self];
+    [self.fontFacePopUp setAction:@selector(fontFaceChanged:)];
+    [self.fontFacePopUp setAutoresizingMask:(NSViewMinXMargin)];
+    [self.contentView addSubview:self.fontFacePopUp];
 
     y -= 36.0f;
     NSTextField *sizeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60.0f, 18.0f)];
@@ -218,50 +255,59 @@
         nil];
     self.colorSwatches = swatches;
     CGFloat swatchSize = 26.0f;
-    self.colorSwatchSize = swatchSize;
-    CGFloat swatchX = padding;
-    CGFloat swatchBaseY = y - swatchSize - 8.0f;
-    if (swatchBaseY < padding + swatchSize) {
-        swatchBaseY = padding + swatchSize;
+    NSUInteger columns = swatches.count;
+    CGFloat swatchSpacing = 6.0f;
+    CGFloat availableWidth = MAX(0.0f, contentWidth - ((columns - 1) * swatchSpacing));
+    CGFloat effectiveSwatchSize = MIN(swatchSize, MAX(20.0f, availableWidth / MAX(columns, 1)));
+    self.colorSwatchSize = effectiveSwatchSize;
+    CGFloat swatchAreaHeight = effectiveSwatchSize;
+
+    CGFloat buttonAreaHeight = 32.0f;
+    CGFloat previewBottom = padding + buttonAreaHeight + 18.0f;
+    CGFloat swatchTopLimit = y - 8.0f;
+    CGFloat swatchBottom = swatchTopLimit - swatchAreaHeight;
+    CGFloat minimumPreviewGap = 12.0f;
+    if (swatchBottom < previewBottom + minimumPreviewGap) {
+        swatchBottom = previewBottom + minimumPreviewGap;
     }
-    NSUInteger columns = 6;
-    CGFloat columnWidth = swatchSize + 6.0f;
-    CGFloat rowSpacing = 10.0f;
+
+    NSRect swatchContainerFrame = NSMakeRect(padding,
+                                             swatchBottom,
+                                             contentWidth,
+                                             swatchAreaHeight);
+    NSView *swatchContainer = [[NSView alloc] initWithFrame:swatchContainerFrame];
+    [swatchContainer setAutoresizingMask:(NSViewMinYMargin | NSViewWidthSizable)];
+    [self.contentView addSubview:swatchContainer];
+
     NSMutableArray<NSButton *> *swatchButtons = [[NSMutableArray alloc] initWithCapacity:swatches.count];
     for (NSUInteger idx = 0; idx < swatches.count; idx++) {
-        NSUInteger row = idx / columns;
-        NSUInteger col = idx % columns;
-        CGFloat originX = swatchX + (columnWidth * col);
-        CGFloat originY = swatchBaseY - (row * (swatchSize + rowSpacing));
+        NSUInteger col = idx;
+        CGFloat originX = (effectiveSwatchSize + swatchSpacing) * col;
+        CGFloat originY = 0.0f;
         NSButton *swatch = [[NSButton alloc] initWithFrame:NSMakeRect(originX,
                                                                       originY,
-                                                                      swatchSize,
-                                                                      swatchSize)];
+                                                                      effectiveSwatchSize,
+                                                                      effectiveSwatchSize)];
         [swatch setButtonType:NSMomentaryChangeButton];
         [swatch setBordered:NO];
         [swatch setBezelStyle:NSShadowlessSquareBezelStyle];
-        [swatch setImage:[self swatchImageWithColor:swatches[idx] highlighted:NO size:swatchSize]];
-        [swatch setAutoresizingMask:NSViewMinYMargin];
+        [swatch setImage:[self swatchImageWithColor:swatches[idx] highlighted:NO size:effectiveSwatchSize]];
+        [swatch setAutoresizingMask:NSViewMaxXMargin];
         swatch.target = self;
         swatch.action = @selector(colorSwatchPressed:);
         swatch.tag = (NSInteger)idx;
-        [self.contentView addSubview:swatch];
+        [swatchContainer addSubview:swatch];
         [swatchButtons addObject:swatch];
     }
     self.colorSwatchButtons = swatchButtons;
     [self updateSwatchSelectionForColor:self.colorWell.color];
 
-    NSUInteger totalRows = (swatches.count + columns - 1) / columns;
-    CGFloat swatchAreaHeight = totalRows * swatchSize + (MAX(totalRows - 1, 0) * rowSpacing);
-    y -= (swatchAreaHeight + 20.0f);
-    CGFloat buttonAreaHeight = 28.0f;
-    CGFloat previewBottom = padding + buttonAreaHeight + 18.0f;
-    CGFloat previewTop = y - 8.0f;
-    previewTop = MIN(previewTop, self.contentView.bounds.size.height - padding - 40.0f);
-    if (previewTop <= previewBottom + 140.0f) {
-        previewTop = previewBottom + 140.0f;
+    y = NSMinY(swatchContainer.frame) - 12.0f;
+    CGFloat previewAvailableHeight = y - previewBottom;
+    if (previewAvailableHeight < 0.0f) {
+        previewAvailableHeight = 0.0f;
     }
-    CGFloat previewHeight = previewTop - previewBottom;
+    CGFloat previewHeight = previewAvailableHeight;
     NSScrollView *previewScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(padding,
                                                                                  previewBottom,
                                                                                  contentWidth,
@@ -269,9 +315,9 @@
     [previewScroll setBorderType:NSNoBorder];
     [previewScroll setHasVerticalScroller:NO];
     [previewScroll setHasHorizontalScroller:NO];
-    [previewScroll setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
+    [previewScroll setAutoresizingMask:(NSViewWidthSizable | NSViewMaxYMargin)];
 
-    NSTextView *preview = [[NSTextView alloc] initWithFrame:previewScroll.contentView.bounds];
+    STTextPopoverPreviewTextView *preview = [[STTextPopoverPreviewTextView alloc] initWithFrame:previewScroll.contentView.bounds];
     [preview setRichText:NO];
     [preview setAllowsUndo:YES];
     [preview setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
@@ -292,17 +338,6 @@
     self.previewSampleText = @"Sample Text";
 
     CGFloat buttonY = padding;
-
-    self.fontPanelButton = [STHyperlinkButton hyperlinkButtonWithTitle:@"Font Panel…"
-                                                               target:self
-                                                               action:@selector(showFontPanel:)];
-    [self.fontPanelButton sizeToFit];
-    self.fontPanelButton.frame = NSMakeRect(padding,
-                                            buttonY,
-                                            self.fontPanelButton.frame.size.width,
-                                            self.fontPanelButton.frame.size.height);
-    [self.fontPanelButton setAutoresizingMask:NSViewMaxYMargin];
-    [self.contentView addSubview:self.fontPanelButton];
 
     self.resetButton = [STHyperlinkButton hyperlinkButtonWithTitle:@"Reset"
                                                           target:self
@@ -343,21 +378,146 @@
 - (void)populateFontFamilies {
     NSArray<NSString *> *families = [[NSFontManager sharedFontManager] availableFontFamilies];
     NSArray<NSString *> *sorted = [families sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
-    [self.fontPopUp removeAllItems];
-    [self.fontPopUp addItemsWithTitles:sorted];
+    self.allFontFamilies = sorted ?: @[];
+    self.fontFilterQuery = @"";
+    [self applyFontFilterAndReloadPreservingQuery:NO];
 }
 
 - (void)updateFontControlsWithFont:(NSFont *)font {
     NSString *family = font.familyName ?: STDefaultTextFont().familyName;
-    NSArray<NSString *> *titles = [self.fontPopUp itemTitles];
-    if (![titles containsObject:family]) {
-        [self.fontPopUp addItemWithTitle:family ?: @"System"];
-    }
-    [self.fontPopUp selectItemWithTitle:family ?: @"System"];
+    self.fontFilterQuery = @"";
+    [self applyFontFilterAndReloadPreservingQuery:NO];
+    [self setFontComboSelectionToFamily:family ?: @"System"];
+    self.currentFontComboSelection = family ?: @"";
+    [self reloadFontFacesForFamily:family selectingFont:font];
 
     CGFloat size = MAX(STTextPopoverMinFontSize, MIN(STTextPopoverMaxFontSize, font.pointSize));
     [self.fontSizeField setStringValue:[NSString stringWithFormat:@"%.0f", roundf(size)]];
     [self.fontSizeStepper setDoubleValue:size];
+}
+
+- (void)applyFontFilterAndReloadPreservingQuery:(BOOL)preserveQuery {
+    NSString *query = self.fontFilterQuery ?: @"";
+    NSArray<NSString *> *source = self.allFontFamilies ?: @[];
+    if (query.length == 0) {
+        self.filteredFontFamilies = source;
+    } else {
+        NSMutableArray<NSString *> *matches = [[NSMutableArray alloc] init];
+        for (NSString *family in source) {
+            if ([family rangeOfString:query options:NSCaseInsensitiveSearch].location != NSNotFound) {
+                [matches addObject:family];
+            }
+        }
+        self.filteredFontFamilies = matches.count > 0 ? matches : @[];
+    }
+    NSString *restoredSelection = preserveQuery ? (self.fontComboBox.stringValue ?: @"") : (self.currentFontComboSelection ?: @"");
+    [self.fontComboBox reloadData];
+    [self.fontComboBox noteNumberOfItemsChanged];
+    if (preserveQuery) {
+        if (![self.fontComboBox currentEditor]) {
+            [self setFontComboBoxStringValue:restoredSelection allowDuringEditing:YES];
+        }
+    } else if (restoredSelection.length > 0) {
+        [self setFontComboBoxStringValue:restoredSelection allowDuringEditing:NO];
+    } else {
+        [self setFontComboBoxStringValue:@"" allowDuringEditing:NO];
+    }
+}
+
+- (NSInteger)indexOfFamily:(NSString *)family inArray:(NSArray<NSString *> *)array {
+    if (family.length == 0) {
+        return NSNotFound;
+    }
+    __block NSInteger found = NSNotFound;
+    [array enumerateObjectsUsingBlock:^(NSString * _Nonnull obj, NSUInteger idx, BOOL * _Nonnull stop) {
+        if ([obj caseInsensitiveCompare:family] == NSOrderedSame) {
+            found = (NSInteger)idx;
+            *stop = YES;
+        }
+    }];
+    return found;
+}
+
+- (void)setFontComboSelectionToFamily:(NSString *)family {
+    if (family.length == 0) {
+        [self setFontComboBoxStringValue:@"" allowDuringEditing:NO];
+        [self.fontComboBox deselectItemAtIndex:self.fontComboBox.indexOfSelectedItem];
+        return;
+    }
+    NSInteger index = [self indexOfFamily:family inArray:self.filteredFontFamilies];
+    [self setFontComboBoxStringValue:family allowDuringEditing:NO];
+    if (index != NSNotFound) {
+        [self.fontComboBox selectItemAtIndex:index];
+    } else {
+        NSInteger selectedIndex = self.fontComboBox.indexOfSelectedItem;
+        if (selectedIndex != -1) {
+            [self.fontComboBox deselectItemAtIndex:selectedIndex];
+        }
+    }
+}
+
+- (void)reloadFontFacesForFamily:(NSString *)family selectingFont:(NSFont *)font {
+    if (!self.fontFacePopUp) {
+        return;
+    }
+    [self.fontFacePopUp setAutoenablesItems:YES];
+    [self.fontFacePopUp setEnabled:YES];
+    NSFontManager *manager = [NSFontManager sharedFontManager];
+    NSArray<NSArray *> *members = (family.length > 0) ? [manager availableMembersOfFontFamily:family] : nil;
+    NSMutableArray<NSDictionary<NSString *, NSString *> *> *faces = [[NSMutableArray alloc] init];
+    for (NSArray *entry in members) {
+        if (![entry isKindOfClass:[NSArray class]] || entry.count == 0) {
+            continue;
+        }
+        NSString *postscript = ([entry[0] isKindOfClass:[NSString class]]) ? entry[0] : nil;
+        NSString *style = (entry.count > 1 && [entry[1] isKindOfClass:[NSString class]]) ? entry[1] : postscript;
+        if (postscript.length == 0 || style.length == 0) {
+            continue;
+        }
+        [faces addObject:@{ @"title" : style, @"postscript" : postscript }];
+    }
+    if (!faces.count && family.length > 0) {
+        NSFont *fallbackFont = font ?: [manager fontWithFamily:family traits:0 weight:5 size:MAX(12.0f, STDefaultTextFont().pointSize)];
+        NSString *fallbackName = fallbackFont.fontName ?: STDefaultTextFont().fontName;
+        if (fallbackName.length > 0) {
+            [faces addObject:@{ @"title" : @"Regular", @"postscript" : fallbackName }];
+        }
+    }
+    self.currentFontFaces = faces;
+    [self.fontFacePopUp removeAllItems];
+    for (NSDictionary<NSString *, NSString *> *face in faces) {
+        NSString *title = face[@"title"] ?: @"";
+        [self.fontFacePopUp addItemWithTitle:title.length ? title : @"Regular"];
+        NSMenuItem *item = (NSMenuItem *)[self.fontFacePopUp itemAtIndex:self.fontFacePopUp.numberOfItems - 1];
+        item.representedObject = face[@"postscript"];
+    }
+    [self.fontFacePopUp setEnabled:(faces.count > 0)];
+    NSInteger selectionIndex = 0;
+    NSString *targetPostscript = font.fontName;
+    if (targetPostscript.length == 0 && faces.count > 0) {
+        targetPostscript = faces[0][@"postscript"];
+    }
+    for (NSUInteger idx = 0; idx < faces.count; idx++) {
+        NSString *candidate = faces[idx][@"postscript"];
+        if (candidate.length > 0 && [candidate isEqualToString:targetPostscript]) {
+            selectionIndex = (NSInteger)idx;
+            break;
+        }
+    }
+    if (faces.count > 0) {
+        [self.fontFacePopUp selectItemAtIndex:selectionIndex];
+    } else {
+        [self.fontFacePopUp setEnabled:NO];
+    }
+}
+
+- (void)finalizeFontComboSelectionWithInput:(NSString *)input {
+    NSString *resolved = [self resolvedFamilyNameForInput:input];
+    self.fontFilterQuery = @"";
+    [self applyFontFilterAndReloadPreservingQuery:NO];
+    [self setFontComboSelectionToFamily:resolved];
+    self.currentFontComboSelection = resolved ?: @"";
+    [self reloadFontFacesForFamily:resolved selectingFont:nil];
 }
 
 - (void)updatePreviewWithFont:(NSFont *)font color:(NSColor *)color {
@@ -408,14 +568,89 @@
     }
 }
 
+- (NSString *)resolvedFamilyNameForInput:(NSString *)input {
+    if (input.length == 0) {
+        return STDefaultTextFont().familyName;
+    }
+    NSInteger index = [self indexOfFamily:input inArray:self.allFontFamilies];
+    if (index != NSNotFound && (NSUInteger)index < self.allFontFamilies.count) {
+        return self.allFontFamilies[(NSUInteger)index];
+    }
+    for (NSString *candidate in self.allFontFamilies) {
+        if ([candidate rangeOfString:input options:NSCaseInsensitiveSearch].location != NSNotFound) {
+            return candidate;
+        }
+    }
+    return input;
+}
+
+- (void)setFontComboBoxStringValue:(NSString *)value allowDuringEditing:(BOOL)allowEditing {
+    NSString *target = value ?: @"";
+    if (!allowEditing && [self.fontComboBox currentEditor]) {
+        self.pendingFontComboStringValue = target;
+        return;
+    }
+    self.pendingFontComboStringValue = nil;
+    [self.fontComboBox setStringValue:target];
+}
+
+- (void)flushPendingFontComboStringValueIfNeeded {
+    if (!self.pendingFontComboStringValue.length) {
+        return;
+    }
+    if ([self.fontComboBox currentEditor]) {
+        return;
+    }
+    NSString *pending = self.pendingFontComboStringValue;
+    self.pendingFontComboStringValue = nil;
+    [self.fontComboBox setStringValue:pending];
+}
+
 - (NSFont *)fontFromCurrentControls {
-    NSString *family = [[self.fontPopUp selectedItem] title] ?: STDefaultTextFont().familyName;
+    NSString *inputFamily = self.fontComboBox.stringValue ?: @"";
+    NSString *family = [self resolvedFamilyNameForInput:inputFamily];
     CGFloat size = self.fontSizeField.doubleValue;
     if (!isfinite(size) || size <= 0.0f) {
         size = STDefaultTextFont().pointSize;
     }
     size = MAX(STTextPopoverMinFontSize, MIN(STTextPopoverMaxFontSize, size));
-    NSFont *font = [NSFont fontWithName:family size:size];
+    NSFontManager *manager = [NSFontManager sharedFontManager];
+    NSFont *font = nil;
+    if (self.fontFacePopUp && self.fontFacePopUp.numberOfItems > 0) {
+        NSMenuItem *selectedItem = (NSMenuItem *)self.fontFacePopUp.selectedItem;
+        NSString *postscriptName = nil;
+        if (selectedItem) {
+            postscriptName = (NSString *)selectedItem.representedObject;
+            if (![postscriptName isKindOfClass:[NSString class]]) {
+                postscriptName = nil;
+            }
+        }
+        if (postscriptName.length == 0 && self.currentFontFaces.count > 0) {
+            postscriptName = self.currentFontFaces.firstObject[@"postscript"];
+        }
+        if (postscriptName.length > 0) {
+            font = [NSFont fontWithName:postscriptName size:size];
+        }
+    }
+    if (!font && family.length > 0) {
+        font = [manager fontWithFamily:family traits:0 weight:5 size:size];
+        if (!font) {
+            NSArray<NSArray *> *members = [manager availableMembersOfFontFamily:family];
+            for (NSArray *entry in members) {
+                if (![entry isKindOfClass:[NSArray class]] || entry.count == 0) {
+                    continue;
+                }
+                NSString *name = entry[0];
+                if (![name isKindOfClass:[NSString class]]) {
+                    continue;
+                }
+                font = [NSFont fontWithName:name size:size];
+                if (font) {
+                    break;
+                }
+            }
+        }
+    }
     if (!font) {
         font = [NSFont fontWithName:STDefaultTextFont().fontName size:size];
     }
@@ -475,11 +710,6 @@
     [self refresh];
 }
 
-- (void)fontFamilyChanged:(id)sender {
-    (void)sender;
-    [self applyFontSelectionChange];
-}
-
 - (void)fontSizeFieldChanged:(id)sender {
     (void)sender;
     CGFloat size = self.fontSizeField.doubleValue;
@@ -499,30 +729,9 @@
     [self applyFontSelectionChange];
 }
 
-- (void)showFontPanel:(id)sender {
+- (void)fontFaceChanged:(id)sender {
     (void)sender;
-    NSWindow *window = [self.contentView window];
-    if (window) {
-        NSResponder *target = self.previewTextView ?: self.contentView;
-        [window makeFirstResponder:target];
-    }
-    NSFontManager *manager = [NSFontManager sharedFontManager];
-    NSFont *current = [self.delegate textToolPopoverCurrentFont:self] ?: STDefaultTextFont();
-    [manager setSelectedFont:current isMultiple:NO];
-    [manager orderFrontFontPanel:self];
-}
-
-- (void)fontPanelDidChange:(NSFontManager *)manager {
-    NSFont *base = [self.delegate textToolPopoverCurrentFont:self] ?: STDefaultTextFont();
-    NSFont *converted = [manager convertFont:base];
-    if (!converted) {
-        converted = [manager convertFont:STDefaultTextFont()];
-    }
-    if (!converted) {
-        return;
-    }
-    [self.delegate textToolPopover:self didChangeFont:converted];
-    [self refresh];
+    [self applyFontSelectionChange];
 }
 
 - (void)resetPressed:(id)sender {
@@ -538,11 +747,20 @@
     [self refresh];
 }
 
-#pragma mark - NSTextFieldDelegate / NSTextViewDelegate
-
 - (void)controlTextDidEndEditing:(NSNotification *)notification {
     if (notification.object == self.fontSizeField) {
         [self fontSizeFieldChanged:self.fontSizeField];
+    } else if (notification.object == self.fontComboBox) {
+        [self finalizeFontComboSelectionWithInput:self.fontComboBox.stringValue ?: @""];
+        [self applyFontSelectionChange];
+        [self flushPendingFontComboStringValueIfNeeded];
+    }
+}
+
+- (void)controlTextDidChange:(NSNotification *)notification {
+    if (notification.object == self.fontComboBox) {
+        self.fontFilterQuery = self.fontComboBox.stringValue ?: @"";
+        [self applyFontFilterAndReloadPreservingQuery:YES];
     }
 }
 
@@ -553,6 +771,65 @@
         NSColor *color = [self.delegate textToolPopoverCurrentColor:self] ?: STDefaultTextColor();
         [self updatePreviewWithFont:font color:color];
     }
+}
+
+- (void)comboBoxSelectionDidChange:(NSNotification *)notification {
+    if (notification.object != self.fontComboBox) {
+        return;
+    }
+    NSString *selection = nil;
+    NSInteger selectedIndex = self.fontComboBox.indexOfSelectedItem;
+    if (selectedIndex >= 0 && (NSUInteger)selectedIndex < self.filteredFontFamilies.count) {
+        selection = self.filteredFontFamilies[(NSUInteger)selectedIndex];
+    }
+    if (selection.length == 0) {
+        selection = self.fontComboBox.stringValue ?: @"";
+    }
+    self.currentFontComboSelection = selection ?: @"";
+    [self finalizeFontComboSelectionWithInput:self.currentFontComboSelection];
+    [self applyFontSelectionChange];
+}
+
+#pragma mark - NSComboBoxDataSource
+
+- (NSInteger)numberOfItemsInComboBox:(NSComboBox *)comboBox {
+    if (comboBox != self.fontComboBox) {
+        return 0;
+    }
+    return (NSInteger)self.filteredFontFamilies.count;
+}
+
+- (id)comboBox:(NSComboBox *)comboBox objectValueForItemAtIndex:(NSInteger)index {
+    if (comboBox != self.fontComboBox) {
+        return nil;
+    }
+    if (index < 0 || (NSUInteger)index >= self.filteredFontFamilies.count) {
+        return nil;
+    }
+    return self.filteredFontFamilies[(NSUInteger)index];
+}
+
+- (NSUInteger)comboBox:(NSComboBox *)comboBox indexOfItemWithStringValue:(NSString *)string {
+    if (comboBox != self.fontComboBox) {
+        return NSNotFound;
+    }
+    NSInteger idx = [self indexOfFamily:string inArray:self.filteredFontFamilies];
+    return (idx == NSNotFound) ? NSNotFound : (NSUInteger)idx;
+}
+
+- (NSString *)comboBox:(NSComboBox *)comboBox completedString:(NSString *)uncompletedString {
+    if (comboBox != self.fontComboBox) {
+        return nil;
+    }
+    if (uncompletedString.length == 0) {
+        return nil;
+    }
+    for (NSString *family in self.filteredFontFamilies) {
+        if ([family rangeOfString:uncompletedString options:(NSCaseInsensitiveSearch | NSAnchoredSearch)].location != NSNotFound) {
+            return family;
+        }
+    }
+    return nil;
 }
 
 @end

@@ -61,6 +61,31 @@ static void ScreenshotCursorLog(NSString *format, ...) {
     va_end(args);
 }
 
+static NSString *STCursorToolName(ScreenshotCanvasTool tool) {
+    switch (tool) {
+        case ScreenshotCanvasToolPen:
+            return @"pen";
+        case ScreenshotCanvasToolHighlighter:
+            return @"highlighter";
+        case ScreenshotCanvasToolEraser:
+            return @"eraser";
+        case ScreenshotCanvasToolSelect:
+            return @"select";
+        case ScreenshotCanvasToolText:
+            return @"text";
+        default:
+            return @"unknown";
+    }
+}
+
+static void STCursorWarnFallback(NSString *toolKey, NSString *reason) {
+#if defined(GNUSTEP)
+    NSLog(@"[Cursor][WARN] tool=%@ fallback=arrow reason=%@", toolKey ?: @"<nil>", reason ?: @"unknown");
+#else
+    ScreenshotCursorLog(@"[CursorFallback] tool=%@ reason=%@", toolKey ?: @"<nil>", reason ?: @"unknown");
+#endif
+}
+
 typedef struct {
     unsigned char *data;
     NSInteger width;
@@ -925,6 +950,10 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 
 @implementation ScreenshotCanvasView
 
+- (BOOL)acceptsFirstResponder {
+    return YES;
+}
+
 - (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
     SEL action = menuItem.action;
     if (action == @selector(undo:)) {
@@ -1263,27 +1292,36 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     return self.mouseInsideCanvas;
 }
 
+- (NSCursor *)cursorForTestingWithMouseInside:(BOOL)mouseInside {
+    BOOL previous = self.mouseInsideCanvas;
+    self.mouseInsideCanvas = mouseInside;
+    NSCursor *cursor = [self shouldShowCanvasCursor] ? [self cursorForActiveTool] : [NSCursor arrowCursor];
+    self.mouseInsideCanvas = previous;
+    return cursor;
+}
+
 - (void)updateCursorForActiveTool {
     if (self.window) {
         [self.window invalidateCursorRectsForView:self];
+        [self updateMouseInsideFromWindowLocation];
     }
-    ScreenshotCursorLog(@"[Cursor] updateCursorForActiveTool mouseInside=%d", self.mouseInsideCanvas);
     NSCursor *cursor = [self shouldShowCanvasCursor] ? [self cursorForActiveTool] : [NSCursor arrowCursor];
     [cursor set];
+    NSString *toolName = STCursorToolName(self.activeTool);
+    BOOL isArrow = (cursor == [NSCursor arrowCursor]);
+    ScreenshotCursorLog(@"[CursorSet] tool=%@ mouseInside=%d cursor=%@ pointer=%p isArrow=%d",
+                        toolName,
+                        self.mouseInsideCanvas,
+                        NSStringFromClass([cursor class]),
+                        cursor,
+                        isArrow);
 }
 
 - (void)resetCursorRects {
     [super resetCursorRects];
     BOOL currentlyInside = self.mouseInsideCanvas;
     if (self.window) {
-        NSPoint mouseLocation = [self.window mouseLocationOutsideOfEventStream];
-        NSPoint localPoint = [self convertPoint:mouseLocation fromView:nil];
-        currentlyInside = NSMouseInRect(localPoint, self.bounds, self.isFlipped);
-        ScreenshotCursorLog(@"[Cursor] resetCursorRects point=%@ bounds=%@ flipped=%d -> inside=%d",
-                             NSStringFromPoint(localPoint),
-                             NSStringFromRect(self.bounds),
-                             self.isFlipped,
-                             currentlyInside);
+        currentlyInside = [self updateMouseInsideFromWindowLocation];
     }
     self.mouseInsideCanvas = currentlyInside;
     NSCursor *rectCursor = [self shouldShowCanvasCursor] ? [self cursorForActiveTool] : [NSCursor arrowCursor];
@@ -1296,38 +1334,84 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
                                              owner:self
                                           userData:NULL
                                       assumeInside:self.mouseInsideCanvas];
-    ScreenshotCursorLog(@"[Cursor] resetCursorRects trackingTag=%ld assumeInside=%d",
+    NSString *toolName = STCursorToolName(self.activeTool);
+    BOOL isArrow = (rectCursor == [NSCursor arrowCursor]);
+    ScreenshotCursorLog(@"[CursorRectApplied] tool=%@ bounds=%@ trackingTag=%ld assumeInside=%d cursor=%@ isArrow=%d",
+                        toolName,
+                        NSStringFromRect(self.bounds),
                         (long)self.cursorTrackingTag,
-                        self.mouseInsideCanvas);
+                        self.mouseInsideCanvas,
+                        NSStringFromClass([rectCursor class]),
+                        isArrow);
+}
+
+- (BOOL)updateMouseInsideFromWindowLocation {
+    if (!self.window) {
+        return self.mouseInsideCanvas;
+    }
+    NSPoint mouseLocation = [self.window mouseLocationOutsideOfEventStream];
+    NSPoint localPoint = [self convertPoint:mouseLocation fromView:nil];
+    BOOL inside = NSMouseInRect(localPoint, self.bounds, self.isFlipped);
+    if (inside != self.mouseInsideCanvas) {
+        ScreenshotCursorLog(@"[CursorEvent] event=mouseLocation point=%@ bounds=%@ flipped=%d inside=%d",
+                            NSStringFromPoint(localPoint),
+                            NSStringFromRect(self.bounds),
+                            self.isFlipped,
+                            inside);
+        self.mouseInsideCanvas = inside;
+    }
+    return inside;
 }
 
 - (void)mouseEntered:(NSEvent *)event {
     [super mouseEntered:event];
     self.mouseInsideCanvas = YES;
-    ScreenshotCursorLog(@"[Cursor] mouseEntered point=%@", NSStringFromPoint(event.locationInWindow));
+    ScreenshotCursorLog(@"[CursorEvent] event=mouseEntered point=%@", NSStringFromPoint(event.locationInWindow));
     [self updateCursorForActiveTool];
 }
 
 - (void)mouseExited:(NSEvent *)event {
     [super mouseExited:event];
     self.mouseInsideCanvas = NO;
-    ScreenshotCursorLog(@"[Cursor] mouseExited point=%@", NSStringFromPoint(event.locationInWindow));
+    ScreenshotCursorLog(@"[CursorEvent] event=mouseExited point=%@", NSStringFromPoint(event.locationInWindow));
     [self updateCursorForActiveTool];
 }
 
+- (void)mouseMoved:(NSEvent *)event {
+    [super mouseMoved:event];
+    if (!self.window) {
+        return;
+    }
+    NSPoint localPoint = [self convertPoint:event.locationInWindow fromView:nil];
+    BOOL inside = NSMouseInRect(localPoint, self.bounds, self.isFlipped);
+    if (inside != self.mouseInsideCanvas) {
+        self.mouseInsideCanvas = inside;
+        ScreenshotCursorLog(@"[CursorEvent] event=mouseMoved point=%@ inside=%d",
+                            NSStringFromPoint(event.locationInWindow),
+                            inside);
+        [self updateCursorForActiveTool];
+    }
+}
+
 - (void)refreshCursor {
-    ScreenshotCursorLog(@"[Cursor] refreshCursor mouseInside=%d", self.mouseInsideCanvas);
     [self updateCursorForActiveTool];
 }
 
 + (NSCursor *)tintedCursorForToolKey:(NSString *)toolKey color:(NSColor *)color fallback:(NSCursor *)fallback {
     if (toolKey.length == 0) {
+        ScreenshotCursorLog(@"[CursorTintRequest] tool=<empty> status=missing-tool");
         return fallback;
     }
     NSColor *resolvedColor = color ?: [NSColor whiteColor];
     NSColor *deviceColor = [resolvedColor colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: resolvedColor;
     CGFloat tr = 0.0, tg = 0.0, tb = 0.0, ta = 1.0;
     [deviceColor getRed:&tr green:&tg blue:&tb alpha:&ta];
+    ScreenshotCursorLog(@"[CursorTintRequest] tool=%@ color=(%.3f,%.3f,%.3f,%.3f)",
+                        toolKey,
+                        tr,
+                        tg,
+                        tb,
+                        ta);
     NSString *cacheKey = [NSString stringWithFormat:@"%@:%0.4f:%0.4f:%0.4f:%0.4f", toolKey, tr, tg, tb, ta];
     static NSMutableDictionary<NSString *, NSCursor *> *tintedCache = nil;
     if (!tintedCache) {
@@ -1335,11 +1419,16 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
     NSCursor *cached = tintedCache[cacheKey];
     if (cached) {
+        ScreenshotCursorLog(@"[CursorConstructed] tool=%@ source=tinted-cache hotspot=(%.2f,%.2f)",
+                            toolKey,
+                            cached.hotSpot.x,
+                            cached.hotSpot.y);
         return cached;
     }
 
     NSDictionary *info = [self cursorMetadata][toolKey];
     if (!info) {
+        ScreenshotCursorLog(@"[CursorTintRequest] tool=%@ status=missing-metadata", toolKey);
         return fallback;
     }
     NSString *file1x = info[@"file1x"] ?: info[@"file"];
@@ -1349,6 +1438,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     NSBitmapImageRep *source = [self cursorBitmapNamed:file1x];
     if (!source) {
+        ScreenshotCursorLog(@"[CursorTintRequest] tool=%@ status=missing-source name=%@",
+                            toolKey,
+                            file1x ?: @"<nil>");
         return fallback;
     }
     NSBitmapImageRep *mutableRep = [source copy];
@@ -1358,9 +1450,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     STBitmapBuffer buffer;
     if (!STPrepareBitmapBuffer(mutableRep, &buffer)) {
+        ScreenshotCursorLog(@"[CursorTintRequest] tool=%@ status=buffer-prepare-failed", toolKey);
         return fallback;
     }
     if (!buffer.data || buffer.bytesPerPixel < 3) {
+        ScreenshotCursorLog(@"[CursorTintRequest] tool=%@ status=invalid-buffer", toolKey);
         return fallback;
     }
 
@@ -1382,6 +1476,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (templateCount > 0) {
         templateComponents = calloc(templateCount, sizeof(STColorComponents));
         if (!templateComponents) {
+            ScreenshotCursorLog(@"[CursorTintRequest] tool=%@ status=no-memory", toolKey);
             return fallback;
         }
         for (NSUInteger idx = 0; idx < templateCount; idx++) {
@@ -1458,14 +1553,22 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     NSCursor *cursor = [[NSCursor alloc] initWithImage:cursorImage hotSpot:hotspot];
     if (cursor) {
+        ScreenshotCursorLog(@"[CursorConstructed] tool=%@ hotspot=(%.2f,%.2f) size=%@ tinted=YES reps=%lu",
+                            toolKey,
+                            hotspot.x,
+                            hotspot.y,
+                            NSStringFromSize(targetSize),
+                            (unsigned long)cursorImage.representations.count);
         tintedCache[cacheKey] = cursor;
         return cursor;
     }
+    ScreenshotCursorLog(@"[CursorTintRequest] tool=%@ status=cursor-init-failed", toolKey);
     return fallback ?: [NSCursor arrowCursor];
 }
 
 + (NSBitmapImageRep *)cursorBitmapNamed:(NSString *)name {
     if (name.length == 0) {
+        ScreenshotCursorLog(@"[CursorAssetLoad] name=<empty> status=missing-name");
         return nil;
     }
     static NSMutableDictionary<NSString *, NSBitmapImageRep *> *bitmapCache = nil;
@@ -1488,11 +1591,16 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (!path) {
         path = [bundle pathForResource:name ofType:@"png"];
     }
+    ScreenshotCursorLog(@"[CursorAssetLoad] name=%@ path=%@ exists=%d",
+                        name,
+                        path ?: @"<not-found>",
+                        path ? 1 : 0);
     if (!path) {
         return nil;
     }
     NSData *data = [NSData dataWithContentsOfFile:path];
     if (!data) {
+        ScreenshotCursorLog(@"[CursorAssetLoad] name=%@ status=no-data", name);
         return nil;
     }
 
@@ -1509,6 +1617,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (!rep) {
         NSImage *image = [[NSImage alloc] initWithData:data];
         if (image) {
+            ScreenshotCursorLog(@"[CursorAssetLoad] name=%@ status=convertedFromImage size=%@", name, NSStringFromSize(image.size));
             NSRect rect = NSMakeRect(0.0, 0.0, image.size.width, image.size.height);
             [image lockFocus];
             rep = [[NSBitmapImageRep alloc] initWithFocusedViewRect:rect];
@@ -1516,13 +1625,20 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         }
     }
     if (!rep) {
+        ScreenshotCursorLog(@"[CursorAssetLoad] name=%@ status=rep-failed", name);
         return nil;
     }
 
     NSBitmapImageRep *standardized = STCreateDeviceRGBBitmapFromRep(rep);
     if (!standardized) {
+        ScreenshotCursorLog(@"[CursorAssetLoad] name=%@ status=standardize-failed", name);
         return nil;
     }
+    ScreenshotCursorLog(@"[CursorAssetLoad] name=%@ status=ok width=%ld height=%ld bpp=%ld",
+                        name,
+                        (long)standardized.pixelsWide,
+                        (long)standardized.pixelsHigh,
+                        (long)standardized.bitsPerPixel);
     bitmapCache[name] = standardized;
     return [standardized copy];
 }
@@ -1544,6 +1660,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
 + (NSCursor *)customCursorForToolKey:(NSString *)toolKey fallback:(NSCursor *)fallback {
     if (toolKey.length == 0) {
+        STCursorWarnFallback(@"<empty>", @"missing tool key");
         return fallback;
     }
     static NSMutableDictionary<NSString *, NSCursor *> *cache = nil;
@@ -1553,11 +1670,16 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     NSCursor *cached = cache[toolKey];
     if (cached) {
+        ScreenshotCursorLog(@"[CursorConstructed] tool=%@ source=cache hotspot=(%.2f,%.2f)",
+                            toolKey,
+                            cached.hotSpot.x,
+                            cached.hotSpot.y);
         return cached;
     }
 
     NSDictionary *info = [self cursorMetadata][toolKey];
     if (!info) {
+        STCursorWarnFallback(toolKey, @"metadata missing");
         return fallback;
     }
 
@@ -1568,6 +1690,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     NSBitmapImageRep *rep = [self cursorBitmapNamed:file1x];
     if (!rep) {
+        STCursorWarnFallback(toolKey, @"bitmap missing");
         return fallback;
     }
 
@@ -1582,9 +1705,16 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     NSCursor *cursor = [[NSCursor alloc] initWithImage:cursorImage hotSpot:hotspot];
     if (cursor) {
+        ScreenshotCursorLog(@"[CursorConstructed] tool=%@ hotspot=(%.2f,%.2f) size=%@ reps=%lu",
+                            toolKey,
+                            hotspot.x,
+                            hotspot.y,
+                            NSStringFromSize(targetSize),
+                            (unsigned long)cursorImage.representations.count);
         cache[toolKey] = cursor;
         return cursor;
     }
+    STCursorWarnFallback(toolKey, @"cursor init failed");
     return fallback ?: [NSCursor arrowCursor];
 }
 
