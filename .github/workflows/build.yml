@@ -7,15 +7,124 @@ on:
 
 jobs:
   linux-appimage:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y gnustep-make libgnustep-base-dev libgnustep-gui-dev libfreetype6-dev libfontconfig1-dev clang rsync patchelf
+          sudo apt-get install -y \
+            ninja-build cmake make clang llvm-dev gcc-multilib libc6-dev \
+            libicu-dev libxml2-dev libxslt1-dev libffi-dev libgmp-dev \
+            libavahi-client-dev libgnutls28-dev libudev-dev \
+            libpng-dev libtiff-dev libjpeg-dev libfreetype6-dev \
+            libx11-dev libxext-dev libxrandr-dev libxft-dev libxmu-dev \
+            libxrender-dev libxtst-dev libxt-dev libxcomposite-dev \
+            libxcursor-dev cups-dev libsndfile1-dev libdbus-1-dev \
+            rsync imagemagick patchelf curl
+      - name: Build GNUstep stack (clang, ld)
+        env:
+          PREFIX: /usr/GNUstep
+          MAKE: make -j$(nproc)
+          CC: clang
+          CXX: clang++
+          cc_flags: -fblocks -fobjc-nonfragile-abi
+          LDFLAGS: -fuse-ld=ld
+        run: |
+          set -euo pipefail
+          export CC CXX
+          export LDFLAGS
+          export MAKE
+          export PREFIX
+
+          # gnustep-make
+          git clone https://github.com/gnustep/tools-make.git gnustep-make
+          pushd gnustep-make
+          CCFLAGS="${cc_flags}" CXX="${CXX}" CC="${CC}" \
+            ./configure --prefix="${PREFIX}" --with-library-combo=ng-gnu-gnu \
+                        --enable-objc-arc --enable-native-objc-exceptions \
+                        --with-layout=gnustep
+          ${MAKE}
+          sudo ${MAKE} install
+          . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
+          popd
+
+          # libobjc2
+          git clone https://github.com/gnustep/libobjc2.git
+          pushd libobjc2
+          mkdir -p Build && cd Build
+          cmake -G Ninja .. \
+            -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER="${CC}" \
+            -DCMAKE_CXX_COMPILER="${CXX}" \
+            -DCMAKE_OBJC_COMPILER="${CC}" \
+            -DCMAKE_EXE_LINKER_FLAGS="${LDFLAGS}" \
+            -DCMAKE_SHARED_LINKER_FLAGS="${LDFLAGS}" \
+            -DTESTS=OFF
+          ninja
+          sudo ninja install
+          popd
+
+          # libdispatch
+          git clone https://github.com/gnustep/libdispatch.git
+          pushd libdispatch
+          mkdir -p Build && cd Build
+          cmake -G Ninja .. \
+            -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER="${CC}" \
+            -DCMAKE_CXX_COMPILER="${CXX}" \
+            -DCMAKE_EXE_LINKER_FLAGS="${LDFLAGS}" \
+            -DCMAKE_SHARED_LINKER_FLAGS="${LDFLAGS}" \
+            -DENABLE_TESTING=OFF \
+            -DWITH_LIBKQUEUE=ON \
+            -DWITH_BLOCKS_RUNTIME=ON
+          ninja
+          sudo ninja install
+          popd
+
+          # gnustep-base
+          git clone https://github.com/gnustep/libs-base.git
+          pushd libs-base
+          . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
+          ./configure --disable-newkvo --prefix="${PREFIX}"
+          LDFLAGS="${LDFLAGS} -ldispatch" ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
+          sudo make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
+          popd
+
+          # gnustep-gui
+          git clone https://github.com/gnustep/libs-gui.git
+          pushd libs-gui
+          . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
+          ./configure --enable-imagemagick --prefix="${PREFIX}"
+          ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
+          sudo make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
+          popd
+
+          # gnustep-back
+          git clone https://github.com/gnustep/libs-back.git
+          pushd libs-back
+          . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
+          ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
+          sudo make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
+          popd
+
+          # Sombre theme
+          git clone https://github.com/gnustep/plugins-themes-sombre.git
+          pushd plugins-themes-sombre
+          ${MAKE} messages=yes
+          sudo make install
+          popd
+
       - name: Build ScreenshotTool (GNUstep)
-        run: make -j"$(nproc)"
+        env:
+          PREFIX: /usr/GNUstep
+        run: |
+          set -euo pipefail
+          . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
+          make -j"$(nproc)"
       - name: Download linuxdeploy
         run: |
           mkdir -p /tmp/linuxdeploy
@@ -26,6 +135,7 @@ jobs:
         env:
           LINUXDEPLOY: /tmp/linuxdeploy/linuxdeploy
           LINUXDEPLOY_PLUGIN_APPIMAGE: /tmp/linuxdeploy/linuxdeploy-plugin-appimage
+          GNUSTEP_ROOT: /usr/GNUstep
         run: scripts/package_appimage.sh
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4

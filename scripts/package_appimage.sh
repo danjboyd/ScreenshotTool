@@ -17,6 +17,7 @@ ARTIFACT="${STAGING_DIR}/ScreenshotTool-x86_64.AppImage"
 LINUXDEPLOY_BIN="${LINUXDEPLOY:-linuxdeploy}"
 APPIMAGE_PLUGIN="${LINUXDEPLOY_PLUGIN_APPIMAGE:-linuxdeploy-plugin-appimage}"
 OUTPUT_NAME="${OUTPUT_NAME:-ScreenshotTool-x86_64.AppImage}"
+GNUSTEP_ROOT="${GNUSTEP_ROOT:-/usr/GNUstep}"
 
 if [[ ! -d "${APP_BUNDLE}" ]]; then
   echo "App bundle missing at ${APP_BUNDLE}. Build first (make -j or scripts/build_macos.sh equivalent on Linux)." >&2
@@ -40,10 +41,34 @@ mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/share/applications" "${APPDIR}/usr/s
 echo "Staging GNUstep bundle into ${APPDIR}..."
 rsync -a --delete "${APP_BUNDLE}/" "${APPDIR}/usr/lib/ScreenshotTool.app/"
 
+# Stage GNUstep runtime (libraries + themes) into the AppImage so it is self contained.
+GNUSTEP_APPDIR_ROOT="${APPDIR}/usr/gnustep"
+if [[ -d "${GNUSTEP_ROOT}/System" ]]; then
+  echo "Copying GNUstep runtime from ${GNUSTEP_ROOT}..."
+  rsync -a "${GNUSTEP_ROOT}/System/" "${GNUSTEP_APPDIR_ROOT}/System/"
+  # Duplicate libraries into the standard lib dir so the loader finds them without env tweaks.
+  if [[ -d "${GNUSTEP_ROOT}/System/Library/Libraries" ]]; then
+    rsync -a "${GNUSTEP_ROOT}/System/Library/Libraries/" "${APPDIR}/usr/lib/"
+  fi
+  if [[ -d "${GNUSTEP_ROOT}/lib" ]]; then
+    rsync -a "${GNUSTEP_ROOT}/lib/" "${APPDIR}/usr/lib/"
+  fi
+  THEME_SRC="${GNUSTEP_ROOT}/System/Library/Themes/Sombre.theme"
+  if [[ -d "${THEME_SRC}" ]]; then
+    mkdir -p "${GNUSTEP_APPDIR_ROOT}/System/Library/Themes"
+    rsync -a "${THEME_SRC}" "${GNUSTEP_APPDIR_ROOT}/System/Library/Themes/"
+  fi
+else
+  echo "WARNING: GNUstep root not found at ${GNUSTEP_ROOT}; continuing without bundling runtime." >&2
+fi
+
 cat > "${APPDIR}/usr/bin/screenshottool" <<'EOF'
 #!/usr/bin/env bash
 HERE="$(cd "$(dirname "$0")" && pwd)"
 APP_DIR="${HERE}/../lib/ScreenshotTool.app"
+GNUSTEP_SYSTEM_ROOT="${HERE}/../gnustep/System"
+export GNUSTEP_SYSTEM_ROOT
+export LD_LIBRARY_PATH="${GNUSTEP_SYSTEM_ROOT}/Library/Libraries:${LD_LIBRARY_PATH}"
 exec "${APP_DIR}/ScreenshotTool" "$@"
 EOF
 chmod +x "${APPDIR}/usr/bin/screenshottool"
