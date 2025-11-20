@@ -40,6 +40,25 @@
 NSString * const ScreenshotCanvasViewDidRestoreStateNotification = @"ScreenshotCanvasViewDidRestoreStateNotification";
 extern BOOL ScreenshotUndoLoggingEnabled(void) __attribute__((weak));
 
+#if defined(GNUSTEP)
+@interface STTransparentTextView : NSTextView
+@end
+
+@implementation STTransparentTextView
+- (BOOL)isOpaque {
+    return NO;
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    [super drawRect:dirtyRect];
+}
+
+- (void)drawViewBackgroundInRect:(NSRect)rect {
+    // Skip GNUstep's default background fill so the text box stays transparent.
+}
+@end
+#endif
+
 static BOOL ScreenshotCursorLoggingEnabled(void) {
     static int initialized = 0;
     static BOOL enabled = NO;
@@ -935,6 +954,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) NSPoint textResizeStartImagePoint;
 @property (nonatomic, assign) NSSize textResizeStartBoxSize;
 @property (nonatomic, strong, nullable) MarkupText *editingTextSnapshot;
+@property (nonatomic, assign) NSInteger editingTextIndex;
 @property (nonatomic, assign) BOOL hasSelectionRect;
 @property (nonatomic, assign) NSRect selectionRect;
 @property (nonatomic, assign) BOOL isCreatingSelection;
@@ -986,6 +1006,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
         _isCreatingTextBox = NO;
         _isResizingTextBox = NO;
         _pendingTextRect = NSZeroRect;
+        _editingTextIndex = NSNotFound;
         _selectionDashPhase = 0.0f;
         _cursorTrackingTag = 0;
         _mouseInsideCanvas = NO;
@@ -1289,6 +1310,12 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 }
 
 - (BOOL)shouldShowCanvasCursor {
+    if (!self.window) {
+        return self.mouseInsideCanvas;
+    }
+    if (!self.window.isKeyWindow) {
+        return NO;
+    }
     return self.mouseInsideCanvas;
 }
 
@@ -1886,8 +1913,13 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     self.activeTextView.delegate = nil;
     [self.activeTextView removeFromSuperview];
     self.activeTextView = nil;
+    if (self.editingTextIndex != NSNotFound && self.editingTextSnapshot) {
+        NSUInteger insertIndex = (NSUInteger)MIN(MAX(0, self.editingTextIndex), (NSInteger)self.texts.count);
+        [self.texts insertObject:self.editingTextSnapshot atIndex:insertIndex];
+    }
     self.currentTextEntry = nil;
     self.editingTextSnapshot = nil;
+    self.editingTextIndex = NSNotFound;
     self.isResizingTextBox = NO;
     self.pendingTextRect = NSZeroRect;
     [self updateSelectionAnimationState];
@@ -1901,11 +1933,13 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     NSString *submitted = self.activeTextView.string ?: @"";
     NSString *trimmed = [submitted stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     MarkupText *entry = self.currentTextEntry;
+    NSInteger editingIndex = self.editingTextIndex;
     NSUInteger existingIndex = [self.texts indexOfObjectIdenticalTo:entry];
 
     if (trimmed.length > 0) {
         entry.text = submitted;
-        entry.color = self.textColor ?: [NSColor whiteColor];
+        NSColor *submittedColor = self.activeTextView.textColor ?: entry.color ?: [NSColor whiteColor];
+        entry.color = submittedColor;
         NSRect viewFrame = self.activeTextView.frame;
         entry.origin = NSMakePoint(viewFrame.origin.x / self.zoomScale,
                                    viewFrame.origin.y / self.zoomScale);
@@ -1913,7 +1947,16 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
                                    viewFrame.size.height / self.zoomScale);
         [entry updateMeasuredSize];
 
-        if (existingIndex == NSNotFound) {
+        if (editingIndex != NSNotFound) {
+            NSUInteger insertIndex = (NSUInteger)MIN(MAX(0, editingIndex), (NSInteger)self.texts.count);
+            [self.texts insertObject:entry atIndex:insertIndex];
+            [self setNeedsDisplay:YES];
+            if (self.editingTextSnapshot) {
+                NSUndoManager *undo = [self undoManager];
+                [[undo prepareWithInvocationTarget:self] applyTextSnapshot:self.editingTextSnapshot toIndex:insertIndex registeringUndo:YES];
+                [undo setActionName:@"Edit Text"];
+            }
+        } else if (existingIndex == NSNotFound) {
             [self insertText:entry atIndex:self.texts.count registeringUndo:YES actionName:@"Insert Text"];
         } else {
             [self setNeedsDisplay:YES];
@@ -1925,6 +1968,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         }
     }
 
+    self.editingTextIndex = NSNotFound;
     self.editingTextSnapshot = nil;
     [self cancelActiveTextEntry];
 }
@@ -1983,9 +2027,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     return NSMakePoint(imagePoint.x * self.zoomScale, imagePoint.y * self.zoomScale);
 }
 
-- (NSFont *)scaledFontForEditing {
-    CGFloat size = (self.textFont ?: [NSFont systemFontOfSize:24.0f]).pointSize * self.zoomScale;
-    NSFont *font = self.textFont ?: [NSFont systemFontOfSize:24.0f];
+- (NSFont *)scaledFontForEditingWithBaseFont:(NSFont *)baseFont {
+    NSFont *font = baseFont ?: self.textFont ?: [NSFont systemFontOfSize:24.0f];
+    CGFloat size = font.pointSize * self.zoomScale;
     NSFont *scaled = [NSFont fontWithName:font.fontName size:MAX(1.0, size)];
     if (!scaled) {
         scaled = [NSFont systemFontOfSize:MAX(1.0, size)];
@@ -2075,9 +2119,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         [container setWidthTracksTextView:YES];
     }
 
-    [self.activeTextView setFont:[self scaledFontForEditing]];
-    [self.activeTextView setTextColor:self.textColor ?: [NSColor whiteColor]];
-    [self.activeTextView setInsertionPointColor:self.textColor ?: [NSColor whiteColor]];
+    NSFont *editingFont = self.currentTextEntry.font ?: self.textFont;
+    [self.activeTextView setFont:[self scaledFontForEditingWithBaseFont:editingFont]];
+    NSColor *editingColor = self.currentTextEntry.color ?: self.textColor ?: [NSColor whiteColor];
+    [self.activeTextView setTextColor:editingColor];
+    [self.activeTextView setInsertionPointColor:editingColor];
 
     self.currentTextEntry.boxSize = NSMakeSize(minWidth, requiredHeight);
 }
@@ -2088,6 +2134,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     NSFont *baseFont = self.textFont ?: [NSFont systemFontOfSize:24.0f];
     NSColor *baseColor = self.textColor ?: [NSColor whiteColor];
     MarkupText *entry = existingText;
+    NSInteger existingIndex = NSNotFound;
     if (!entry) {
         entry = [[MarkupText alloc] initWithText:@""
                                             font:baseFont
@@ -2097,8 +2144,13 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     } else {
         entry.origin = imageRect.origin;
         entry.boxSize = imageRect.size;
+        existingIndex = (NSInteger)[self.texts indexOfObjectIdenticalTo:existingText];
+        if (existingIndex != NSNotFound) {
+            [self.texts removeObjectAtIndex:(NSUInteger)existingIndex];
+        }
     }
 
+    self.editingTextIndex = existingIndex;
     self.currentTextEntry = entry;
     if (existingText) {
         self.editingTextSnapshot = [existingText copy];
@@ -2109,19 +2161,34 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     self.pendingTextRect = NSZeroRect;
 
     NSRect viewRect = [self viewRectForImageRect:imageRect];
-    NSTextView *textView = [[NSTextView alloc] initWithFrame:viewRect];
+    NSTextView *textView =
+#if defined(GNUSTEP)
+        [[STTransparentTextView alloc] initWithFrame:viewRect];
+#else
+        [[NSTextView alloc] initWithFrame:viewRect];
+#endif
     [textView setDelegate:self];
     [textView setRichText:NO];
     [textView setEditable:YES];
     [textView setImportsGraphics:NO];
-    [textView setDrawsBackground:YES];
+    [textView setDrawsBackground:
+#if defined(GNUSTEP)
+         NO
+#else
+         YES
+#endif
+    ];
+#if defined(GNUSTEP)
+    [textView setBackgroundColor:[NSColor clearColor]];
+#else
     NSColor *background = [NSColor textBackgroundColor] ?: [NSColor lightGrayColor];
     if ([background respondsToSelector:@selector(colorWithAlphaComponent:)]) {
         background = [background colorWithAlphaComponent:0.15f];
     }
     [textView setBackgroundColor:background];
+#endif
     [textView setTextColor:entry.color];
-    [textView setFont:[self scaledFontForEditing]];
+    [textView setFont:[self scaledFontForEditingWithBaseFont:entry.font]];
     [textView setInsertionPointColor:entry.color];
     [textView setHorizontallyResizable:NO];
     [textView setVerticallyResizable:YES];
@@ -2145,6 +2212,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
 
     [self updateActiveTextViewFrame];
+    [self setNeedsDisplay:YES]; // Redraw to hide the stored text while the live editor is visible.
     [self updateSelectionAnimationState];
 }
 
@@ -2243,7 +2311,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     [self.currentStroke drawPath];
 
+    BOOL isEditingExistingText = (self.activeTextView && self.currentTextEntry && [self.texts containsObject:self.currentTextEntry]);
     for (MarkupText *text in self.texts) {
+        if (isEditingExistingText && text == self.currentTextEntry) {
+            continue; // Hide stored text while editing to avoid double draw.
+        }
         [text drawInCanvas];
     }
     if (self.currentTextEntry && !self.activeTextView) {
@@ -2752,10 +2824,14 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         if (self.currentStroke) {
             [self.currentStroke renderInContext:bitmapContext canvasSize:size];
         }
+        BOOL isEditingExistingText = (self.activeTextView && self.currentTextEntry && [self.texts containsObject:self.currentTextEntry]);
         for (MarkupText *text in self.texts) {
+            if (isEditingExistingText && text == self.currentTextEntry) {
+                continue;
+            }
             [text renderInContext:bitmapContext canvasSize:size];
         }
-        if (self.currentTextEntry) {
+        if (self.currentTextEntry && !isEditingExistingText) {
             [self.currentTextEntry renderInContext:bitmapContext canvasSize:size];
         }
 
@@ -2767,20 +2843,27 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         if (self.currentStroke) {
             STRasterizeStrokeOntoBitmap(self.currentStroke, &buffer, size);
         }
+        BOOL isEditingExistingText = (self.activeTextView && self.currentTextEntry && [self.texts containsObject:self.currentTextEntry]);
         if (rasterizeTextDirectly) {
             for (MarkupText *text in self.texts) {
+                if (isEditingExistingText && text == self.currentTextEntry) {
+                    continue;
+                }
                 STRasterizeTextOntoBitmap(text, &buffer, size);
             }
-            if (self.currentTextEntry) {
+            if (self.currentTextEntry && !isEditingExistingText) {
                 STRasterizeTextOntoBitmap(self.currentTextEntry, &buffer, size);
             }
         } else {
             [NSGraphicsContext saveGraphicsState];
             [NSGraphicsContext setCurrentContext:bitmapContext];
             for (MarkupText *text in self.texts) {
+                if (isEditingExistingText && text == self.currentTextEntry) {
+                    continue;
+                }
                 [text renderInContext:bitmapContext canvasSize:size];
             }
-            if (self.currentTextEntry) {
+            if (self.currentTextEntry && !isEditingExistingText) {
                 [self.currentTextEntry renderInContext:bitmapContext canvasSize:size];
             }
             [NSGraphicsContext restoreGraphicsState];

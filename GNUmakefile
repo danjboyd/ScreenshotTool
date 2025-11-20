@@ -84,19 +84,20 @@ ScreenshotTool_RESOURCE_FILES += \
 	Resources/Cursors/marquee-cursor@2x.tiff \
 	Resources/Cursors/markup-cursors.metadata.json
 
+ScreenshotTool_GSWAPP_INFO_PLIST = Resources/Info-gnustep.plist
+
 ScreenshotTool_HEADERS = Source/AppDelegate.h \
 	Source/ScreenshotCanvasView.h \
 	Source/MarkupStroke.h \
 	Source/MarkupText.h \
 	Source/STFloatingPopover.h \
-    Source/STFloatingPopoverWindow.h \
+	Source/STFloatingPopoverWindow.h \
     Source/STFloatingPopoverBackgroundView.h \
 	Source/STHyperlinkButton.h \
 	Source/ScreenshotToolSettings.h \
 	Source/ToolSettingsPopoverController.h \
 	Source/TextToolPopoverController.h \
 	Source/PreferencesWindowController.h \
-	Source/STToolbarTooltipController.h \
 	Source/STThemeUtilities.h
 
 ScreenshotTool_OBJC_FILES = Source/main.m \
@@ -112,7 +113,6 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/ToolSettingsPopoverController.m \
 	Source/TextToolPopoverController.m \
 	Source/PreferencesWindowController.m \
-	Source/STToolbarTooltipController.m \
 	Source/STThemeUtilities.m
 
 CLANG_WRAPPER := $(shell pwd)/tools/clang-wrapper.sh
@@ -133,11 +133,10 @@ TEST_SUPPORT_OBJC = Source/AppDelegate.m \
 	Source/ToolSettingsPopoverController.m \
 	Source/TextToolPopoverController.m \
 	Source/PreferencesWindowController.m \
-	Source/STToolbarTooltipController.m \
 	Source/STThemeUtilities.m
 
 TEST_OUTPUT_DIR = Tests/bin
-TESTS = CropUndoProbe CropUndoWindowProbe ClipboardHighlighterProbe ClipboardHighlighterOpacityProbe ToolbarBadgeRefreshProbe TooltipsSuppressedProbe ToolbarIconThemeProbe CursorAssetProbe CursorRectProbe TextFontComboProbe
+TESTS = CropUndoProbe CropUndoWindowProbe ClipboardHighlighterProbe ClipboardHighlighterOpacityProbe ToolbarBadgeRefreshProbe ToolbarIconThemeProbe CursorAssetProbe CursorRectProbe TextFontComboProbe StatusBarToggleProbe
 TEST_CLANG ?= $(CLANG_WRAPPER)
 GNUStepConfig ?= $(shell command -v gnustep-config 2>/dev/null)
 ifeq ($(strip $(GNUStepConfig)),)
@@ -194,9 +193,6 @@ $(TEST_OUTPUT_DIR)/ClipboardHighlighterOpacityProbe: Tests/ClipboardHighlighterO
 $(TEST_OUTPUT_DIR)/ToolbarBadgeRefreshProbe: Tests/ToolbarBadgeRefreshProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
 	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
 
-$(TEST_OUTPUT_DIR)/TooltipsSuppressedProbe: Tests/TooltipsSuppressedProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
-	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
-
 $(TEST_OUTPUT_DIR)/ToolbarIconThemeProbe: Tests/ToolbarIconThemeProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
 	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
 
@@ -208,6 +204,12 @@ $(TEST_OUTPUT_DIR)/CursorRectProbe: Tests/CursorRectProbe.m $(TEST_SUPPORT_OBJC)
 
 $(TEST_OUTPUT_DIR)/TextFontComboProbe: Tests/TextFontComboProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
 	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
+
+$(TEST_OUTPUT_DIR)/StatusBarToggleProbe: Tests/StatusBarToggleProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
+	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
+
+after-all:: Resources/Info-gnustep.plist
+	@cp Resources/Info-gnustep.plist ScreenshotTool.app/Resources/Info-gnustep.plist
 
 clean-tests:
 	@rm -rf $(TEST_OUTPUT_DIR)

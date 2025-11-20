@@ -1,0 +1,13 @@
+{
+  ApplicationName = "ScreenshotTool";
+  ApplicationDescription = "Screenshot annotation utility";
+  ApplicationIcon = "ScreenshotToolIcon.tiff";
+  ApplicationRelease = "0.1";
+  ApplicationVersion = "0.1";
+  FullVersionID = "0.1 (2025.11.21)";
+  Version = "2025.11.21";
+  Authors = ("Daniel Boyd");
+  Copyright = "Copyright (C) 2025 Daniel Boyd";
+  CopyrightDescription = "Released under the GNU GPLv2 or later";
+  URL = "https://github.com/danboyd/ScreenshotTool";
+}

@@ -2,7 +2,18 @@
   ApplicationDescription = "Screenshot annotation utility";
   ApplicationName = ScreenshotTool;
   ApplicationVersion = "0.1";
+  ApplicationRelease = "0.1";
+  ApplicationLicense = "GNU GPLv2 or later";
+  Authors = ("Daniel Boyd");
+  FullVersionID = "0.1 (2025.11.21)";
+  Version = "2025.11.21";
+  Copyright = "Copyright (C) 2025 Daniel Boyd";
+  CopyrightDescription = "Released under the GNU GPLv2 or later";
+  CFBundleIdentifier = "com.danboyd.screenshottool";
+  CFBundleShortVersionString = "0.1";
+  CFBundleVersion = "2025.11.21";
   NSExecutable = ScreenshotTool;
+  NSHumanReadableCopyright = "Copyright (C) 2025 Daniel Boyd — GNU GPLv2 or later.";
   NSPrincipalClass = NSApplication;
   ApplicationIcon = "ScreenshotToolIcon.tiff";
 }

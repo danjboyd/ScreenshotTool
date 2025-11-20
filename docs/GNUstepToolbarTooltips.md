@@ -3,6 +3,8 @@
 Date: 2025‑11‑17  
 Owners: Codex / Daniel
 
+> Update (2025-11-21): We removed the custom tooltip controller and reverted to GNUstep’s native tooltips to gather upstream repros. The workflow below is legacy documentation of the custom approach.
+
 ## Problem
 GNUstep kept resurfacing its native yellow tooltips even though we disable `GSShowToolTips` and register our custom `STToolbarTooltipController`. When we switched to the DateTracker-style toolbar (to fix the dark-theme rendering bug), `NSToolbarItem` stopped providing custom container views, so our tooltip controller no longer had stable views to hook onto.
 

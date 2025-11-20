@@ -2,30 +2,44 @@
 #import "ScreenshotToolSettings.h"
 #include <math.h>
 
-static const CGFloat STPreferencesWidth = 520.0f;
-static const CGFloat STPreferencesHeight = 470.0f;
+static const CGFloat STPreferencesWidth = 560.0f;
+static const CGFloat STPreferencesHeight = 580.0f;
 
 @interface PreferencesWindowController () <NSWindowDelegate>
 @property (nonatomic, strong) NSWindow *window;
+@property (nonatomic, strong) NSView *contentView;
+@property (nonatomic, strong) NSTextField *drawingHeaderLabel;
+
+@property (nonatomic, strong) NSTextField *penLabel;
+@property (nonatomic, strong) NSTextField *penColorLabel;
 @property (nonatomic, strong) NSSlider *penWidthSlider;
 @property (nonatomic, strong) NSTextField *penWidthValueLabel;
 @property (nonatomic, strong) NSArray<NSButton *> *penQuickButtons;
 @property (nonatomic, strong) NSColorWell *penColorWell;
 
+@property (nonatomic, strong) NSTextField *highlighterLabel;
+@property (nonatomic, strong) NSTextField *highlighterColorLabel;
 @property (nonatomic, strong) NSSlider *highlighterWidthSlider;
 @property (nonatomic, strong) NSTextField *highlighterWidthValueLabel;
 @property (nonatomic, strong) NSArray<NSButton *> *highlighterQuickButtons;
 @property (nonatomic, strong) NSColorWell *highlighterColorWell;
 
+@property (nonatomic, strong) NSTextField *textHeaderLabel;
+@property (nonatomic, strong) NSTextField *textColorLabel;
+@property (nonatomic, strong) NSTextField *textFontLabel;
 @property (nonatomic, strong) NSColorWell *textColorWell;
 @property (nonatomic, strong) NSTextField *textFontSummaryLabel;
 @property (nonatomic, strong) NSButton *textFontButton;
 
 @property (nonatomic, weak) NSResponder *previousFirstResponder;
 
+@property (nonatomic, strong) NSTextField *workspaceHeaderLabel;
+@property (nonatomic, strong) NSTextField *directoryLabel;
 @property (nonatomic, strong) NSTextField *saveDirectoryField;
 @property (nonatomic, strong) NSButton *chooseDirectoryButton;
 
+@property (nonatomic, strong) NSTextField *interfaceHeaderLabel;
+@property (nonatomic, strong) NSTextField *themeLabel;
 @property (nonatomic, strong) NSButton *statusBarCheckbox;
 @property (nonatomic, strong) NSPopUpButton *interfaceThemePopUp;
 @property (nonatomic, strong) NSButton *restoreDefaultsButton;
@@ -52,88 +66,124 @@ static const CGFloat STPreferencesHeight = 470.0f;
     self.window = [[NSWindow alloc] initWithContentRect:frame
                                               styleMask:(NSWindowStyleMaskTitled |
                                                          NSWindowStyleMaskClosable |
-                                                         NSWindowStyleMaskMiniaturizable)
+                                                         NSWindowStyleMaskMiniaturizable |
+                                                         NSWindowStyleMaskResizable)
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
+    [self.window setReleasedWhenClosed:NO];
     self.window.title = @"Preferences";
     self.window.delegate = self;
 
     NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, STPreferencesWidth, STPreferencesHeight)];
+    self.contentView = content;
     [self.window setContentView:content];
 
-    CGFloat padding = 20.0f;
-    CGFloat y = STPreferencesHeight - padding - 24.0f;
-    CGFloat sectionSpacing = 30.0f;
-    CGFloat controlSpacing = 18.0f;
-    CGFloat labelWidth = 90.0f;
-    CGFloat sliderWidth = 260.0f;
-    CGFloat valueWidth = 64.0f;
+    self.drawingHeaderLabel = [self headerLabelWithString:@"Drawing Defaults"];
+    [content addSubview:self.drawingHeaderLabel];
 
-    // Drawing Defaults header
-    NSTextField *drawingHeader = [self headerLabelWithString:@"Drawing Defaults" y:y width:STPreferencesWidth - (padding * 2.0f)];
-    [content addSubview:drawingHeader];
-    y -= sectionSpacing;
+    self.penLabel = [self fieldLabelWithString:@"Pen" frame:NSZeroRect];
+    [self.penLabel setFont:[NSFont boldSystemFontOfSize:12.0f]];
+    [content addSubview:self.penLabel];
 
-    y = [self addToolSectionWithTitle:@"Pen"
-                                baseY:y
-                            labelWidth:labelWidth
-                           sliderWidth:sliderWidth
-                            valueWidth:valueWidth
-                           quickValues:@[@2.0f, @4.0f, @6.0f]
-                             colorWell:&_penColorWell
-                                 slider:&_penWidthSlider
-                              valueLabel:&_penWidthValueLabel
-                                 buttons:&_penQuickButtons
-                                content:content];
-    y -= controlSpacing;
+    self.penWidthSlider = [[NSSlider alloc] initWithFrame:NSZeroRect];
+    [self.penWidthSlider setMinValue:STToolWidthMin];
+    [self.penWidthSlider setMaxValue:STToolWidthMax];
+    [self.penWidthSlider setNumberOfTickMarks:0];
+    [self.penWidthSlider setContinuous:YES];
+    [self.penWidthSlider setTarget:self];
+    [self.penWidthSlider setAction:@selector(penWidthSliderChanged:)];
+    [content addSubview:self.penWidthSlider];
 
-    y = [self addToolSectionWithTitle:@"Highlighter"
-                                baseY:y
-                            labelWidth:labelWidth
-                           sliderWidth:sliderWidth
-                            valueWidth:valueWidth
-                           quickValues:@[@8.0f, @12.0f, @20.0f]
-                             colorWell:&_highlighterColorWell
-                                 slider:&_highlighterWidthSlider
-                              valueLabel:&_highlighterWidthValueLabel
-                                 buttons:&_highlighterQuickButtons
-                                content:content];
-    y -= sectionSpacing;
+    self.penWidthValueLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    [self configureSummaryLabel:self.penWidthValueLabel];
+    [self.penWidthValueLabel setAlignment:NSTextAlignmentRight];
+    [self.penWidthValueLabel setStringValue:@"0 px"];
+    [content addSubview:self.penWidthValueLabel];
 
-    // Text Defaults
-    NSTextField *textHeader = [self headerLabelWithString:@"Text Defaults" y:y width:STPreferencesWidth - (padding * 2.0f)];
-    [content addSubview:textHeader];
-    y -= (controlSpacing + 6.0f);
+    NSMutableArray<NSButton *> *penButtons = [[NSMutableArray alloc] initWithCapacity:3];
+    for (NSNumber *value in @[@2.0f, @4.0f, @6.0f]) {
+        NSButton *button = [[NSButton alloc] initWithFrame:NSZeroRect];
+        [button setButtonType:NSMomentaryPushInButton];
+        [button setBezelStyle:NSTexturedRoundedBezelStyle];
+        [button setTitle:[NSString stringWithFormat:@"%.0f", value.doubleValue]];
+        [button setTag:(NSInteger)lrint(value.doubleValue)];
+        [button setTarget:self];
+        [button setAction:@selector(penQuickWidthPressed:)];
+        [content addSubview:button];
+        [penButtons addObject:button];
+    }
+    self.penQuickButtons = penButtons;
 
-    NSTextField *textColorLabel = [self fieldLabelWithString:@"Color" frame:NSMakeRect(padding, y, labelWidth, 20.0f)];
-    [content addSubview:textColorLabel];
+    self.penColorLabel = [self fieldLabelWithString:@"Color" frame:NSZeroRect];
+    [content addSubview:self.penColorLabel];
 
-    self.textColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(padding + labelWidth,
-                                                                       y - 4.0f,
-                                                                       52.0f,
-                                                                       30.0f)];
+    self.penColorWell = [[NSColorWell alloc] initWithFrame:NSZeroRect];
+    [self.penColorWell setTarget:self];
+    [self.penColorWell setAction:@selector(penColorChanged:)];
+    [content addSubview:self.penColorWell];
+
+    self.highlighterLabel = [self fieldLabelWithString:@"Highlighter" frame:NSZeroRect];
+    [self.highlighterLabel setFont:[NSFont boldSystemFontOfSize:12.0f]];
+    [content addSubview:self.highlighterLabel];
+
+    self.highlighterWidthSlider = [[NSSlider alloc] initWithFrame:NSZeroRect];
+    [self.highlighterWidthSlider setMinValue:STToolWidthMin];
+    [self.highlighterWidthSlider setMaxValue:STToolWidthMax];
+    [self.highlighterWidthSlider setNumberOfTickMarks:0];
+    [self.highlighterWidthSlider setContinuous:YES];
+    [self.highlighterWidthSlider setTarget:self];
+    [self.highlighterWidthSlider setAction:@selector(highlighterWidthSliderChanged:)];
+    [content addSubview:self.highlighterWidthSlider];
+
+    self.highlighterWidthValueLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    [self configureSummaryLabel:self.highlighterWidthValueLabel];
+    [self.highlighterWidthValueLabel setAlignment:NSTextAlignmentRight];
+    [self.highlighterWidthValueLabel setStringValue:@"0 px"];
+    [content addSubview:self.highlighterWidthValueLabel];
+
+    NSMutableArray<NSButton *> *highlighterButtons = [[NSMutableArray alloc] initWithCapacity:3];
+    for (NSNumber *value in @[@8.0f, @12.0f, @20.0f]) {
+        NSButton *button = [[NSButton alloc] initWithFrame:NSZeroRect];
+        [button setButtonType:NSMomentaryPushInButton];
+        [button setBezelStyle:NSTexturedRoundedBezelStyle];
+        [button setTitle:[NSString stringWithFormat:@"%.0f", value.doubleValue]];
+        [button setTag:(NSInteger)lrint(value.doubleValue)];
+        [button setTarget:self];
+        [button setAction:@selector(highlighterQuickWidthPressed:)];
+        [content addSubview:button];
+        [highlighterButtons addObject:button];
+    }
+    self.highlighterQuickButtons = highlighterButtons;
+
+    self.highlighterColorLabel = [self fieldLabelWithString:@"Color" frame:NSZeroRect];
+    [content addSubview:self.highlighterColorLabel];
+
+    self.highlighterColorWell = [[NSColorWell alloc] initWithFrame:NSZeroRect];
+    [self.highlighterColorWell setTarget:self];
+    [self.highlighterColorWell setAction:@selector(highlighterColorChanged:)];
+    [content addSubview:self.highlighterColorWell];
+
+    self.textHeaderLabel = [self headerLabelWithString:@"Text Defaults"];
+    [content addSubview:self.textHeaderLabel];
+
+    self.textColorLabel = [self fieldLabelWithString:@"Color" frame:NSZeroRect];
+    [content addSubview:self.textColorLabel];
+
+    self.textColorWell = [[NSColorWell alloc] initWithFrame:NSZeroRect];
     [self.textColorWell setTarget:self];
     [self.textColorWell setAction:@selector(textColorChanged:)];
     [content addSubview:self.textColorWell];
 
-    y -= (controlSpacing + 8.0f);
-    NSTextField *fontLabel = [self fieldLabelWithString:@"Font" frame:NSMakeRect(padding, y, labelWidth, 20.0f)];
-    [content addSubview:fontLabel];
+    self.textFontLabel = [self fieldLabelWithString:@"Font" frame:NSZeroRect];
+    [content addSubview:self.textFontLabel];
 
-    CGFloat summaryWidth = STPreferencesWidth - (padding * 2.0f) - labelWidth - 140.0f;
-    self.textFontSummaryLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding + labelWidth,
-                                                                              y,
-                                                                              MAX(summaryWidth, 160.0f),
-                                                                              20.0f)];
+    self.textFontSummaryLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
     [self configureSummaryLabel:self.textFontSummaryLabel];
     [self.textFontSummaryLabel setAlignment:NSTextAlignmentLeft];
     [self.textFontSummaryLabel setStringValue:@"Current font"];
     [content addSubview:self.textFontSummaryLabel];
 
-    self.textFontButton = [[NSButton alloc] initWithFrame:NSMakeRect(NSMaxX(self.textFontSummaryLabel.frame) + 16.0f,
-                                                                     y - 4.0f,
-                                                                     120.0f,
-                                                                     28.0f)];
+    self.textFontButton = [[NSButton alloc] initWithFrame:NSZeroRect];
     [self.textFontButton setTitle:@"Choose Font…"];
     [self.textFontButton setButtonType:NSMomentaryPushInButton];
     [self.textFontButton setBezelStyle:NSRoundedBezelStyle];
@@ -141,23 +191,14 @@ static const CGFloat STPreferencesHeight = 470.0f;
     [self.textFontButton setAction:@selector(chooseTextFont:)];
     [content addSubview:self.textFontButton];
 
-    y -= sectionSpacing;
+    self.workspaceHeaderLabel = [self headerLabelWithString:@"Workspace"];
+    [content addSubview:self.workspaceHeaderLabel];
 
-    // Workspace section
-    NSTextField *workspaceHeader = [self headerLabelWithString:@"Workspace" y:y width:STPreferencesWidth - (padding * 2.0f)];
-    [content addSubview:workspaceHeader];
-    y -= (controlSpacing + 6.0f);
+    self.directoryLabel = [self fieldLabelWithString:@"Default Save Folder" frame:NSZeroRect];
+    [self.directoryLabel setAlignment:NSTextAlignmentLeft];
+    [content addSubview:self.directoryLabel];
 
-    NSTextField *directoryLabel = [self fieldLabelWithString:@"Default Save Folder"
-                                                       frame:NSMakeRect(padding, y, STPreferencesWidth - (padding * 2.0f), 18.0f)];
-    [content addSubview:directoryLabel];
-    y -= (controlSpacing - 6.0f);
-
-    CGFloat directoryWidth = STPreferencesWidth - (padding * 2.0f) - 120.0f;
-    self.saveDirectoryField = [[NSTextField alloc] initWithFrame:NSMakeRect(padding,
-                                                                            y,
-                                                                            directoryWidth,
-                                                                            24.0f)];
+    self.saveDirectoryField = [[NSTextField alloc] initWithFrame:NSZeroRect];
     [self.saveDirectoryField setEditable:NO];
     [self.saveDirectoryField setBezeled:YES];
     [self.saveDirectoryField setBordered:YES];
@@ -165,10 +206,7 @@ static const CGFloat STPreferencesHeight = 470.0f;
     [self.saveDirectoryField setFont:[NSFont systemFontOfSize:12.0f]];
     [content addSubview:self.saveDirectoryField];
 
-    self.chooseDirectoryButton = [[NSButton alloc] initWithFrame:NSMakeRect(NSMaxX(self.saveDirectoryField.frame) + 10.0f,
-                                                                           y - 2.0f,
-                                                                           100.0f,
-                                                                           28.0f)];
+    self.chooseDirectoryButton = [[NSButton alloc] initWithFrame:NSZeroRect];
     [self.chooseDirectoryButton setTitle:@"Choose…"];
     [self.chooseDirectoryButton setButtonType:NSMomentaryPushInButton];
     [self.chooseDirectoryButton setBezelStyle:NSRoundedBezelStyle];
@@ -176,34 +214,20 @@ static const CGFloat STPreferencesHeight = 470.0f;
     [self.chooseDirectoryButton setAction:@selector(chooseSaveDirectory:)];
     [content addSubview:self.chooseDirectoryButton];
 
-    y -= sectionSpacing;
+    self.interfaceHeaderLabel = [self headerLabelWithString:@"Interface"];
+    [content addSubview:self.interfaceHeaderLabel];
 
-    // Interface section
-    NSTextField *interfaceHeader = [self headerLabelWithString:@"Interface" y:y width:STPreferencesWidth - (padding * 2.0f)];
-    [content addSubview:interfaceHeader];
-    y -= (controlSpacing + 6.0f);
-
-    self.statusBarCheckbox = [[NSButton alloc] initWithFrame:NSMakeRect(padding, y, STPreferencesWidth - (padding * 2.0f), 24.0f)];
+    self.statusBarCheckbox = [[NSButton alloc] initWithFrame:NSZeroRect];
     [self.statusBarCheckbox setButtonType:NSSwitchButton];
     [self.statusBarCheckbox setTitle:@"Show status bar"];
     [self.statusBarCheckbox setTarget:self];
     [self.statusBarCheckbox setAction:@selector(statusBarToggled:)];
     [content addSubview:self.statusBarCheckbox];
 
-    y -= (controlSpacing + 6.0f);
+    self.themeLabel = [self fieldLabelWithString:@"Toolbar Theme" frame:NSZeroRect];
+    [content addSubview:self.themeLabel];
 
-    NSTextField *themeLabel = [self fieldLabelWithString:@"Toolbar Theme"
-                                                  frame:NSMakeRect(padding,
-                                                                   y,
-                                                                   labelWidth + 60.0f,
-                                                                   20.0f)];
-    [content addSubview:themeLabel];
-
-    self.interfaceThemePopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(padding + labelWidth + 70.0f,
-                                                                               y - 2.0f,
-                                                                               180.0f,
-                                                                               26.0f)
-                                                          pullsDown:NO];
+    self.interfaceThemePopUp = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
     [self.interfaceThemePopUp setTarget:self];
     [self.interfaceThemePopUp setAction:@selector(interfaceThemeSelectionChanged:)];
     [self.interfaceThemePopUp removeAllItems];
@@ -213,14 +237,7 @@ static const CGFloat STPreferencesHeight = 470.0f;
     [[self.interfaceThemePopUp itemAtIndex:1] setTag:1];
     [content addSubview:self.interfaceThemePopUp];
 
-    y -= sectionSpacing;
-
-    y = padding + 60.0f;
-
-    self.restoreDefaultsButton = [[NSButton alloc] initWithFrame:NSMakeRect(padding,
-                                                                            y - 6.0f,
-                                                                            150.0f,
-                                                                            32.0f)];
+    self.restoreDefaultsButton = [[NSButton alloc] initWithFrame:NSZeroRect];
     [self.restoreDefaultsButton setTitle:@"Restore Defaults"];
     [self.restoreDefaultsButton setButtonType:NSMomentaryPushInButton];
     [self.restoreDefaultsButton setBezelStyle:NSRoundedBezelStyle];
@@ -228,10 +245,7 @@ static const CGFloat STPreferencesHeight = 470.0f;
     [self.restoreDefaultsButton setAction:@selector(restoreDefaultsPressed:)];
     [content addSubview:self.restoreDefaultsButton];
 
-    self.closeButton = [[NSButton alloc] initWithFrame:NSMakeRect(STPreferencesWidth - padding - 100.0f,
-                                                                  y - 6.0f,
-                                                                  100.0f,
-                                                                  32.0f)];
+    self.closeButton = [[NSButton alloc] initWithFrame:NSZeroRect];
     [self.closeButton setTitle:@"Close"];
     [self.closeButton setButtonType:NSMomentaryPushInButton];
     [self.closeButton setBezelStyle:NSRoundedBezelStyle];
@@ -239,15 +253,17 @@ static const CGFloat STPreferencesHeight = 470.0f;
     [self.closeButton setAction:@selector(closePressed:)];
     [content addSubview:self.closeButton];
 
-    [self ensureWindowAccommodatesContent];
+    [self.window setContentMinSize:NSMakeSize(STPreferencesWidth, STPreferencesHeight)];
+    [self layoutContentView];
 }
 
-- (NSTextField *)headerLabelWithString:(NSString *)string y:(CGFloat)y width:(CGFloat)width {
-    NSTextField *label = [[NSTextField alloc] initWithFrame:NSMakeRect(20.0f, y, width, 22.0f)];
+- (NSTextField *)headerLabelWithString:(NSString *)string {
+    NSTextField *label = [[NSTextField alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, STPreferencesWidth - 40.0f, 22.0f)];
     [label setEditable:NO];
     [label setBezeled:NO];
     [label setBordered:NO];
     [label setDrawsBackground:NO];
+    [label setSelectable:NO];
     [label setFont:[NSFont boldSystemFontOfSize:14.0f]];
     [label setStringValue:string ?: @""];
     return label;
@@ -259,6 +275,7 @@ static const CGFloat STPreferencesHeight = 470.0f;
     [label setBezeled:NO];
     [label setBordered:NO];
     [label setDrawsBackground:NO];
+    [label setSelectable:NO];
     [label setFont:[NSFont systemFontOfSize:12.0f]];
     [label setStringValue:string ?: @""];
     return label;
@@ -269,122 +286,198 @@ static const CGFloat STPreferencesHeight = 470.0f;
     [label setBezeled:NO];
     [label setBordered:NO];
     [label setDrawsBackground:NO];
+    [label setSelectable:NO];
     [label setFont:[NSFont systemFontOfSize:12.0f]];
 }
 
-- (CGFloat)addToolSectionWithTitle:(NSString *)title
-                              baseY:(CGFloat)y
-                          labelWidth:(CGFloat)labelWidth
-                          sliderWidth:(CGFloat)sliderWidth
-                           valueWidth:(CGFloat)valueWidth
-                          quickValues:(NSArray<NSNumber *> *)quickValues
-                            colorWell:(NSColorWell *__strong *)colorWell
-                                slider:(NSSlider *__strong *)slider
-                             valueLabel:(NSTextField *__strong *)valueLabel
-                                buttons:(NSArray<NSButton *> *__strong *)buttons
-                               content:(NSView *)content {
-    CGFloat padding = 20.0f;
-
-    NSTextField *toolLabel = [self fieldLabelWithString:title
-                                                  frame:NSMakeRect(padding, y, labelWidth, 20.0f)];
-    [toolLabel setFont:[NSFont boldSystemFontOfSize:12.0f]];
-    [content addSubview:toolLabel];
-
-    NSSlider *toolSlider = [[NSSlider alloc] initWithFrame:NSMakeRect(padding + labelWidth,
-                                                                      y - 2.0f,
-                                                                      sliderWidth,
-                                                                      22.0f)];
-    [toolSlider setMinValue:STToolWidthMin];
-    [toolSlider setMaxValue:STToolWidthMax];
-    [toolSlider setNumberOfTickMarks:0];
-    [toolSlider setContinuous:YES];
-    [toolSlider setTarget:self];
-    if ([title isEqualToString:@"Pen"]) {
-        [toolSlider setAction:@selector(penWidthSliderChanged:)];
-    } else {
-        [toolSlider setAction:@selector(highlighterWidthSliderChanged:)];
+- (void)layoutContentView {
+    NSView *content = self.contentView ?: self.window.contentView;
+    if (!content) {
+        return;
     }
-    [content addSubview:toolSlider];
 
-    NSTextField *toolValueLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(NSMaxX(toolSlider.frame) + 12.0f,
-                                                                              y,
-                                                                              valueWidth,
-                                                                              18.0f)];
-    [self configureSummaryLabel:toolValueLabel];
-    [toolValueLabel setAlignment:NSTextAlignmentRight];
-    [toolValueLabel setStringValue:@"0 px"];
-    [content addSubview:toolValueLabel];
+    CGFloat padding = 20.0f;
+    CGFloat headerSpacing = 8.0f;
+    CGFloat sectionSpacing = 18.0f;
+    CGFloat labelWidth = 110.0f;
+    CGFloat valueWidth = 72.0f;
+    CGFloat contentWidth = MAX(420.0f, content.bounds.size.width - (padding * 2.0f));
+    CGFloat headerHeight = 22.0f;
 
-    CGFloat quickButtonWidth = 48.0f;
+    CGFloat y = content.bounds.size.height - padding;
+
+    // Drawing Defaults
+    [self.drawingHeaderLabel setFrame:NSMakeRect(padding, y - headerHeight, contentWidth, headerHeight)];
+    y -= (headerHeight + headerSpacing);
+
+    y = [self layoutToolSectionWithLabel:self.penLabel
+                                   slider:self.penWidthSlider
+                              valueLabel:self.penWidthValueLabel
+                             quickButtons:self.penQuickButtons
+                              colorLabel:self.penColorLabel
+                               colorWell:self.penColorWell
+                                      y:y
+                            contentWidth:contentWidth
+                                 padding:padding
+                              labelWidth:labelWidth
+                              valueWidth:valueWidth];
+
+    y = [self layoutToolSectionWithLabel:self.highlighterLabel
+                                   slider:self.highlighterWidthSlider
+                              valueLabel:self.highlighterWidthValueLabel
+                             quickButtons:self.highlighterQuickButtons
+                              colorLabel:self.highlighterColorLabel
+                               colorWell:self.highlighterColorWell
+                                      y:y
+                            contentWidth:contentWidth
+                                 padding:padding
+                              labelWidth:labelWidth
+                              valueWidth:valueWidth];
+
+    y -= sectionSpacing;
+
+    // Text Defaults
+    [self.textHeaderLabel setFrame:NSMakeRect(padding, y - headerHeight, contentWidth, headerHeight)];
+    y -= (headerHeight + headerSpacing);
+
+    CGFloat colorWellWidth = 52.0f;
+    CGFloat colorWellHeight = 30.0f;
+    CGFloat colorRowHeight = colorWellHeight;
+    CGFloat colorRowY = y - colorRowHeight;
+    [self.textColorLabel setFrame:NSMakeRect(padding, colorRowY + 6.0f, labelWidth, 20.0f)];
+    [self.textColorWell setFrame:NSMakeRect(padding + labelWidth + 12.0f,
+                                            colorRowY - 2.0f,
+                                            colorWellWidth,
+                                            colorWellHeight)];
+    y = colorRowY - headerSpacing;
+
+    CGFloat fontButtonWidth = 140.0f;
+    CGFloat fontButtonHeight = 28.0f;
+    CGFloat fontRowHeight = fontButtonHeight;
+    CGFloat fontRowY = y - fontRowHeight;
+    CGFloat fontSummaryWidth = MAX(160.0f, contentWidth - labelWidth - fontButtonWidth - 32.0f);
+    [self.textFontLabel setFrame:NSMakeRect(padding, fontRowY + 4.0f, labelWidth, 20.0f)];
+    [self.textFontSummaryLabel setFrame:NSMakeRect(padding + labelWidth + 12.0f,
+                                                   fontRowY + 4.0f,
+                                                   fontSummaryWidth,
+                                                   20.0f)];
+    [self.textFontButton setFrame:NSMakeRect(padding + labelWidth + 12.0f + fontSummaryWidth + 12.0f,
+                                             fontRowY,
+                                             fontButtonWidth,
+                                             fontButtonHeight)];
+    y = fontRowY - sectionSpacing;
+
+    // Workspace
+    [self.workspaceHeaderLabel setFrame:NSMakeRect(padding, y - headerHeight, contentWidth, headerHeight)];
+    y -= (headerHeight + headerSpacing);
+
+    [self.directoryLabel setFrame:NSMakeRect(padding, y - 18.0f, contentWidth, 18.0f)];
+    y -= (18.0f + 8.0f);
+
+    CGFloat chooseWidth = 110.0f;
+    CGFloat fieldHeight = 26.0f;
+    CGFloat fieldY = y - fieldHeight;
+    CGFloat fieldWidth = MAX(160.0f, contentWidth - chooseWidth - 10.0f);
+    [self.saveDirectoryField setFrame:NSMakeRect(padding, fieldY, fieldWidth, fieldHeight)];
+    [self.chooseDirectoryButton setFrame:NSMakeRect(padding + fieldWidth + 10.0f,
+                                                    fieldY - 1.0f,
+                                                    chooseWidth,
+                                                    fieldHeight)];
+    y = fieldY - sectionSpacing;
+
+    // Interface
+    [self.interfaceHeaderLabel setFrame:NSMakeRect(padding, y - headerHeight, contentWidth, headerHeight)];
+    y -= (headerHeight + headerSpacing);
+
+    CGFloat checkboxHeight = 24.0f;
+    CGFloat checkboxY = y - checkboxHeight;
+    [self.statusBarCheckbox setFrame:NSMakeRect(padding, checkboxY, contentWidth, checkboxHeight)];
+    y = checkboxY - headerSpacing;
+
+    CGFloat themeRowHeight = 26.0f;
+    CGFloat themeRowY = y - themeRowHeight;
+    CGFloat themeLabelWidth = labelWidth + 40.0f;
+    CGFloat popupWidth = 200.0f;
+    [self.themeLabel setFrame:NSMakeRect(padding, themeRowY + 4.0f, themeLabelWidth, 20.0f)];
+    [self.interfaceThemePopUp setFrame:NSMakeRect(padding + themeLabelWidth + 12.0f,
+                                                  themeRowY - 1.0f,
+                                                  popupWidth,
+                                                  themeRowHeight)];
+
+    // Footer buttons pinned to bottom
+    CGFloat footerHeight = 32.0f;
+    CGFloat footerY = padding;
+    [self.restoreDefaultsButton setFrame:NSMakeRect(padding, footerY, 170.0f, footerHeight)];
+    [self.closeButton setFrame:NSMakeRect(padding + contentWidth - 110.0f, footerY, 110.0f, footerHeight)];
+}
+
+- (CGFloat)layoutToolSectionWithLabel:(NSTextField *)label
+                               slider:(NSSlider *)slider
+                          valueLabel:(NSTextField *)valueLabel
+                         quickButtons:(NSArray<NSButton *> *)quickButtons
+                          colorLabel:(NSTextField *)colorLabel
+                           colorWell:(NSColorWell *)colorWell
+                                  y:(CGFloat)y
+                        contentWidth:(CGFloat)contentWidth
+                             padding:(CGFloat)padding
+                          labelWidth:(CGFloat)labelWidth
+                          valueWidth:(CGFloat)valueWidth {
+    if (!label || !slider || !valueLabel || !colorLabel || !colorWell) {
+        return y;
+    }
+
+    CGFloat sliderHeight = 22.0f;
+    CGFloat sliderSpacing = 12.0f;
+    CGFloat valueHeight = 18.0f;
+    CGFloat rowSpacing = 8.0f;
+    CGFloat quickHeight = 26.0f;
     CGFloat quickSpacing = 8.0f;
-    NSMutableArray<NSButton *> *quickButtons = [[NSMutableArray alloc] initWithCapacity:quickValues.count];
-    CGFloat quickY = y - 32.0f;
-    CGFloat quickX = padding + labelWidth;
-    for (NSNumber *value in quickValues) {
-        NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(quickX,
-                                                                      quickY,
-                                                                      quickButtonWidth,
-                                                                      26.0f)];
-        [button setButtonType:NSMomentaryPushInButton];
-        [button setBezelStyle:NSTexturedRoundedBezelStyle];
-        [button setTitle:[NSString stringWithFormat:@"%.0f", value.doubleValue]];
-        [button setTag:(NSInteger)lrint(value.doubleValue)];
-        if ([title isEqualToString:@"Pen"]) {
-            [button setTarget:self];
-            [button setAction:@selector(penQuickWidthPressed:)];
-        } else {
-            [button setTarget:self];
-            [button setAction:@selector(highlighterQuickWidthPressed:)];
-        }
-        [content addSubview:button];
-        [quickButtons addObject:button];
+    CGFloat postSpacing = 12.0f;
+    CGFloat colorLabelWidth = 50.0f;
+    CGFloat colorWellWidth = 52.0f;
+
+    CGFloat sliderWidth = MAX(180.0f, contentWidth - labelWidth - valueWidth - (sliderSpacing * 2.0f));
+    CGFloat sliderRowY = y - sliderHeight;
+    [label setFrame:NSMakeRect(padding, sliderRowY + 2.0f, labelWidth, 20.0f)];
+    [slider setFrame:NSMakeRect(padding + labelWidth + sliderSpacing, sliderRowY, sliderWidth, sliderHeight)];
+    [valueLabel setFrame:NSMakeRect(NSMaxX(slider.frame) + sliderSpacing, sliderRowY + 2.0f, valueWidth, valueHeight)];
+
+    CGFloat quickRowY = sliderRowY - rowSpacing - quickHeight;
+
+    CGFloat colorWellX = padding + contentWidth - colorWellWidth;
+    CGFloat colorLabelX = colorWellX - 6.0f - colorLabelWidth;
+    [colorLabel setFrame:NSMakeRect(colorLabelX, quickRowY + 4.0f, colorLabelWidth, 18.0f)];
+    [colorWell setFrame:NSMakeRect(colorWellX, quickRowY - 2.0f, colorWellWidth, 30.0f)];
+
+    CGFloat quickStartX = padding + labelWidth;
+    CGFloat quickEndX = colorLabelX - 10.0f;
+    CGFloat availableQuickWidth = MAX(0.0f, quickEndX - quickStartX);
+    CGFloat quickButtonWidth = 0.0f;
+    NSInteger count = (NSInteger)quickButtons.count;
+    if (count > 0) {
+        quickButtonWidth = (availableQuickWidth - (quickSpacing * (count - 1))) / (CGFloat)count;
+        quickButtonWidth = MIN(64.0f, MAX(44.0f, quickButtonWidth));
+    }
+    CGFloat quickX = quickStartX;
+    for (NSButton *button in quickButtons) {
+        [button setFrame:NSMakeRect(quickX, quickRowY, quickButtonWidth, quickHeight)];
         quickX += quickButtonWidth + quickSpacing;
     }
 
-    NSTextField *colorLabel = [self fieldLabelWithString:@"Color"
-                                                  frame:NSMakeRect(padding + labelWidth + sliderWidth + valueWidth + 24.0f,
-                                                                   quickY + 4.0f,
-                                                                   50.0f,
-                                                                   18.0f)];
-    [content addSubview:colorLabel];
-
-    NSColorWell *toolColorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(NSMaxX(colorLabel.frame) + 6.0f,
-                                                                             quickY - 2.0f,
-                                                                             52.0f,
-                                                                             30.0f)];
-    [toolColorWell setTarget:self];
-    if ([title isEqualToString:@"Pen"]) {
-        [toolColorWell setAction:@selector(penColorChanged:)];
-    } else {
-        [toolColorWell setAction:@selector(highlighterColorChanged:)];
-    }
-    [content addSubview:toolColorWell];
-
-    if (slider) {
-        *slider = toolSlider;
-    }
-    if (valueLabel) {
-        *valueLabel = toolValueLabel;
-    }
-    if (buttons) {
-        *buttons = quickButtons;
-    }
-    if (colorWell) {
-        *colorWell = toolColorWell;
-    }
-
-    return quickY - 12.0f;
+    return quickRowY - postSpacing;
 }
 
 - (void)showRelativeToWindow:(NSWindow *)window {
     if (!self.window) {
         return;
     }
+    [self layoutContentView];
     [self refresh];
     if (window) {
         NSRect parentFrame = window.frame;
-        NSPoint origin = NSMakePoint(NSMidX(parentFrame) - (STPreferencesWidth / 2.0f),
-                                     NSMidY(parentFrame) - (STPreferencesHeight / 2.0f));
+        NSSize size = self.window.frame.size;
+        NSPoint origin = NSMakePoint(NSMidX(parentFrame) - (size.width / 2.0f),
+                                     NSMidY(parentFrame) - (size.height / 2.0f));
         [self.window setFrameOrigin:origin];
     } else {
         [self.window center];
@@ -438,46 +531,6 @@ static const CGFloat STPreferencesHeight = 470.0f;
     CGFloat size = MAX(1.0f, font.pointSize);
     NSString *summary = [NSString stringWithFormat:@"%@ — %.0f pt", family, roundf(size)];
     [self.textFontSummaryLabel setStringValue:summary];
-}
-
-- (void)ensureWindowAccommodatesContent {
-    NSView *content = self.window.contentView;
-    if (!content) {
-        return;
-    }
-
-    CGFloat minY = CGFLOAT_MAX;
-    CGFloat maxY = 0.0f;
-    CGFloat maxX = 0.0f;
-    for (NSView *subview in content.subviews) {
-        if (subview.isHidden) {
-            continue;
-        }
-        NSRect frame = subview.frame;
-        minY = MIN(minY, NSMinY(frame));
-        maxY = MAX(maxY, NSMaxY(frame));
-        maxX = MAX(maxX, NSMaxX(frame));
-    }
-
-    CGFloat bottomPadding = 20.0f;
-    if (minY < bottomPadding) {
-        CGFloat delta = bottomPadding - minY;
-        for (NSView *subview in content.subviews) {
-            NSRect frame = subview.frame;
-            frame.origin.y += delta;
-            [subview setFrame:frame];
-        }
-        maxY += delta;
-    }
-
-    CGFloat targetHeight = MAX(maxY + 20.0f, STPreferencesHeight);
-    CGFloat targetWidth = MAX(maxX + 20.0f, STPreferencesWidth);
-
-    NSSize currentSize = content.bounds.size;
-    if (fabs(targetWidth - currentSize.width) > 0.5f ||
-        fabs(targetHeight - currentSize.height) > 0.5f) {
-        [self.window setContentSize:NSMakeSize(targetWidth, targetHeight)];
-    }
 }
 
 - (void)chooseTextFont:(id)sender {
@@ -589,10 +642,15 @@ static const CGFloat STPreferencesHeight = 470.0f;
 
 - (void)closePressed:(id)sender {
     (void)sender;
-    [self.window close];
+    [self.window orderOut:nil];
 }
 
 #pragma mark - NSWindowDelegate
+
+- (void)windowDidResize:(NSNotification *)notification {
+    (void)notification;
+    [self layoutContentView];
+}
 
 - (void)windowWillClose:(NSNotification *)notification {
     (void)notification;

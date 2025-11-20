@@ -2,6 +2,18 @@
 
 _Progress entries run newest → oldest._
 
+## Progress (2025-11-21)
+- Preferences window rebuilt with an explicit layout pass and resizable bounds (approx 560x580): tool rows align labels/slider/value/color wells, workspace/interface rows expand to content width, and footer buttons pin to padding while `layoutContentView` reflows on resize.
+- Built with `make -j$(nproc)`; `Tools/run_tests.sh` completed (sudo required for GNUstep defaults locks).
+- Manual validation succeeded: launched app, opened Preferences, and captured `Screenshots/preferences-gnu.png` (GNUstep dark theme). Layout holds under resize; spacing and padding match expectations.
+ - Cursor gating adjusted so non-canvas windows (including Preferences) always show the arrow cursor; canvas still swaps to custom cursors only when the window is key and the pointer is inside bounds.
+- Pivoted tooltips back to native GNUstep behaviour: removed custom tooltip controller/suppression from the app/tests so we can capture a clean upstream repro. Tooltips now rely solely on GNUstep; new open issue tracks the remaining native tooltip bug.
+- Fixed Preferences reopen crash and label selection: preferences controller now releases itself on close so reopening doesn’t segfault, and all labels (headers/fields/summary text) are non-selectable.
+
+## Progress (2025-11-20)
+- Fixed GNUstep text overlay opacity and edit fidelity: added a transparent GNUstep-only `NSTextView`, hid stored overlays while editing, and ensured reopened text boxes reuse their saved font/color/size instead of current defaults. Double-rendering during edits is gone.
+- Reran full suite (`Tools/run_tests.sh`, ends 2025-11-20T16:34:10Z) after the text fixes; build via `make -j$(nproc)` succeeded and logs were truncated for fresh manual runs.
+
 ## Progress (2025-11-19)
 - Text popover font combo on GNUstep now stays responsive: swapped every manual `setStringValue:` call for a helper that defers updates while the field editor is live, flushes pending values once editing ends, and removes the old `objectValueOfSelectedItem` calls that were invalid in data-source mode.
 - Added `TextFontComboProbe` with an editing-deferral scenario so the suite fails immediately if we try to mutate the combo string while an editor is active; `Tools/run_tests.sh` now runs cleanly (with sudo so GNUstep can create defaults locks).
