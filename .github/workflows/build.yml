@@ -38,19 +38,7 @@ jobs:
           export MAKE
           export PREFIX
 
-          # gnustep-make
-          git clone https://github.com/gnustep/tools-make.git gnustep-make
-          pushd gnustep-make
-          CCFLAGS="${cc_flags}" CXX="${CXX}" CC="${CC}" \
-            ./configure --prefix="${PREFIX}" --with-library-combo=ng-gnu-gnu \
-                        --enable-objc-arc --enable-native-objc-exceptions \
-                        --with-layout=gnustep
-          ${MAKE}
-          sudo ${MAKE} install
-          . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
-          popd
-
-          # libobjc2
+          # Bootstrap libobjc2 first so clang blocks support is available before gnustep-make config.
           git clone https://github.com/gnustep/libobjc2.git
           pushd libobjc2
           mkdir -p Build && cd Build
@@ -67,7 +55,7 @@ jobs:
           sudo ninja install
           popd
 
-          # libdispatch
+          # libdispatch (needed by base; matches clang flow)
           git clone https://github.com/gnustep/libdispatch.git
           pushd libdispatch
           mkdir -p Build && cd Build
@@ -83,6 +71,19 @@ jobs:
             -DWITH_BLOCKS_RUNTIME=ON
           ninja
           sudo ninja install
+          popd
+
+          # gnustep-make (first in compile-all; runs after objc/dispatch so blocks symbols exist)
+          # gnustep-make
+          git clone https://github.com/gnustep/tools-make.git gnustep-make
+          pushd gnustep-make
+          CCFLAGS="${cc_flags}" CXX="${CXX}" CC="${CC}" \
+            ./configure --prefix="${PREFIX}" --with-library-combo=ng-gnu-gnu \
+                        --enable-objc-arc --enable-native-objc-exceptions \
+                        --with-layout=gnustep
+          ${MAKE}
+          sudo ${MAKE} install
+          . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
           popd
 
           # gnustep-base
