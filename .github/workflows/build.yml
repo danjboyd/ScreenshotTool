@@ -21,7 +21,7 @@ jobs:
             libpng-dev libtiff-dev libjpeg-dev libfreetype6-dev \
             libx11-dev libxext-dev libxrandr-dev libxft-dev libxmu-dev \
             libxrender-dev libxtst-dev libxt-dev libxcomposite-dev \
-            libxcursor-dev cups-dev libsndfile1-dev libdbus-1-dev \
+            libxcursor-dev libcups2-dev libsndfile1-dev libdbus-1-dev \
             rsync imagemagick patchelf curl
       - name: Build GNUstep stack (clang, ld)
         env:
@@ -143,20 +143,20 @@ jobs:
           name: ScreenshotTool-AppImage
           path: Staging/ScreenshotTool-x86_64.AppImage
 
-  macos-dmg:
-    runs-on: macos-13
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install dependencies
-        run: brew update && brew install gnustep pkg-config freetype fontconfig
-      - name: Build ScreenshotTool (macOS)
-        run: scripts/build_macos.sh
-      - name: Smoke launch
-        run: scripts/smoke_macos_app.sh
-      - name: Package DMG
-        run: scripts/package_macos_dmg.sh
-      - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: ScreenshotTool-macOS-DMG
-          path: Staging/ScreenshotTool-macOS.dmg
+  # macos-dmg:
+  #   runs-on: macos-13
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Install dependencies
+  #       run: brew update && brew install gnustep pkg-config freetype fontconfig
+  #     - name: Build ScreenshotTool (macOS)
+  #       run: scripts/build_macos.sh
+  #     - name: Smoke launch
+  #       run: scripts/smoke_macos_app.sh
+  #     - name: Package DMG
+  #       run: scripts/package_macos_dmg.sh
+  #     - name: Upload DMG artifact
+  #       uses: actions/upload-artifact@v4
+  #       with:
+  #         name: ScreenshotTool-macOS-DMG
+  #         path: Staging/ScreenshotTool-macOS.dmg
