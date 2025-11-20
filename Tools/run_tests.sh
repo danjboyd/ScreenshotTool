@@ -7,10 +7,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOG_PATH="${1:-${ROOT_DIR}/tests.log}"
 
-# Ensure the GNUstep make tools and libraries (not in PATH/LD paths on fresh
-# Debian installs) are visible before invoking make/tests.
-export PATH="/usr/GNUstep/System/Tools:${PATH}"
-export LD_LIBRARY_PATH="/usr/GNUstep/System/Library/Libraries:${LD_LIBRARY_PATH:-}"
+GNUSTEP_SYSTEM_TOOLS=""
+GNUSTEP_SYSTEM_LIBRARY=""
+if command -v gnustep-config >/dev/null 2>&1; then
+  GNUSTEP_SYSTEM_TOOLS="$(gnustep-config --variable=GNUSTEP_SYSTEM_TOOLS 2>/dev/null || true)"
+  GNUSTEP_SYSTEM_LIBRARY="$(gnustep-config --variable=GNUSTEP_SYSTEM_LIBRARY 2>/dev/null || true)"
+fi
+
+TOOLS_PREFIX="${GNUSTEP_SYSTEM_TOOLS:-/usr/GNUstep/System/Tools}"
+LIB_PREFIX="${GNUSTEP_SYSTEM_LIBRARY:-/usr/GNUstep/System/Library}"
+
+# Ensure the GNUstep make tools and libraries are visible before invoking make/tests.
+export PATH="${TOOLS_PREFIX}:${PATH}"
+export LD_LIBRARY_PATH="${LIB_PREFIX}/Libraries:${LD_LIBRARY_PATH:-}"
+export DYLD_LIBRARY_PATH="${LIB_PREFIX}/Libraries:${DYLD_LIBRARY_PATH:-}"
 
 # Ensure GNUstep defaults lock directory exists to avoid noisy warnings.
 mkdir -p "${HOME}/GNUstep/Defaults/.lck"

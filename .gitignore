@@ -5,3 +5,8 @@ obj/
 screenshottool.log
 debug.log
 local.env
+build/
+Staging/
+*.AppImage
+*.dmg
+screenshottool-smoke.log

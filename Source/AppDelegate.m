@@ -39,6 +39,8 @@ static const CGFloat StatusBarHeight = 24.0f;
 static const CGFloat ToolbarIconDimension = 32.0f;
 static NSString * const ToolbarIdentifier = @"com.screenshottool.toolbar";
 
+static id STInfoValueForKey(NSString *key);
+
 static NSString *STInfoStringForKey(NSString *key) {
     if (key.length == 0) {
         return nil;
@@ -682,14 +684,12 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     return YES;
 }
 
-#if defined(GNUSTEP)
 static id STInfoValueForKey(NSString *key) {
     if (key.length == 0) {
         return nil;
     }
     return [[NSBundle mainBundle] objectForInfoDictionaryKey:key];
 }
-#endif
 
 #pragma mark - Setup
 

@@ -3,6 +3,15 @@ include $(GNUSTEP_MAKEFILES)/common.make
 override OBJCFLAGS := $(filter-out -mbranch-protection=%,$(OBJCFLAGS))
 override CFLAGS := $(filter-out -mbranch-protection=%,$(CFLAGS))
 
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+FONTCONFIG_CFLAGS :=
+FONTCONFIG_LDFLAGS :=
+else
+FONTCONFIG_CFLAGS := -I/usr/include/freetype2
+FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
+endif
+
 APP_NAME = ScreenshotTool
 ScreenshotTool_APPLICATION_ICON =
 
@@ -118,8 +127,8 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 CLANG_WRAPPER := $(shell pwd)/tools/clang-wrapper.sh
 CC = $(CLANG_WRAPPER)
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
-ScreenshotTool_CPPFLAGS += -I/usr/include/freetype2
-ADDITIONAL_LDFLAGS += -lfontconfig -lfreetype -ldispatch
+ScreenshotTool_CPPFLAGS += $(FONTCONFIG_CFLAGS)
+ADDITIONAL_LDFLAGS += $(FONTCONFIG_LDFLAGS)
 
 TEST_SUPPORT_OBJC = Source/AppDelegate.m \
 	Source/ScreenshotCanvasView.m \
@@ -145,8 +154,16 @@ endif
 ifeq ($(wildcard $(GNUStepConfig)),)
 $(error Unable to locate gnustep-config; please install gnustep-make or add it to PATH)
 endif
-TEST_OBJCFLAGS := -fobjc-arc -ISource -I/usr/include/freetype2 $(shell $(GNUStepConfig) --objc-flags)
-TEST_LDFLAGS := $(shell $(GNUStepConfig) --gui-libs) -lfontconfig -lfreetype -ldispatch
+GNUSTEP_SYSTEM_TOOLS ?= $(shell $(GNUStepConfig) --variable=GNUSTEP_SYSTEM_TOOLS 2>/dev/null)
+GNUSTEP_SYSTEM_LIBRARY ?= $(shell $(GNUStepConfig) --variable=GNUSTEP_SYSTEM_LIBRARY 2>/dev/null)
+ifeq ($(strip $(GNUSTEP_SYSTEM_TOOLS)),)
+GNUSTEP_SYSTEM_TOOLS := /usr/GNUstep/System/Tools
+endif
+ifeq ($(strip $(GNUSTEP_SYSTEM_LIBRARY)),)
+GNUSTEP_SYSTEM_LIBRARY := /usr/GNUstep/System/Library
+endif
+TEST_OBJCFLAGS := -fobjc-arc -ISource $(FONTCONFIG_CFLAGS) $(shell $(GNUStepConfig) --objc-flags)
+TEST_LDFLAGS := $(shell $(GNUStepConfig) --gui-libs) $(FONTCONFIG_LDFLAGS)
 
 include $(GNUSTEP_MAKEFILES)/application.make
 
@@ -155,8 +172,8 @@ include $(GNUSTEP_MAKEFILES)/application.make
 tests: $(TESTS:%=$(TEST_OUTPUT_DIR)/%)
 	@mkdir -p $(HOME)/GNUstep/Defaults/.lck
 	@set -e; \
-	TEST_PATH_PREFIX="/usr/GNUstep/System/Tools"; \
-	TEST_LD_PREFIX="/usr/GNUstep/System/Library/Libraries"; \
+	TEST_PATH_PREFIX="$(GNUSTEP_SYSTEM_TOOLS)"; \
+	TEST_LD_PREFIX="$(GNUSTEP_SYSTEM_LIBRARY)/Libraries"; \
 	if [ -n "$$PATH" ]; then \
 		TEST_ENV_PATH="$$TEST_PATH_PREFIX:$$PATH"; \
 	else \
@@ -167,9 +184,14 @@ tests: $(TESTS:%=$(TEST_OUTPUT_DIR)/%)
 	else \
 		TEST_ENV_LD="$$TEST_LD_PREFIX"; \
 	fi; \
+	if [ -n "$$DYLD_LIBRARY_PATH" ]; then \
+		TEST_ENV_DYLD="$$TEST_LD_PREFIX:$$DYLD_LIBRARY_PATH"; \
+	else \
+		TEST_ENV_DYLD="$$TEST_LD_PREFIX"; \
+	fi; \
 	for tool in $(TESTS); do \
 		echo "Running $$tool..."; \
-		PATH="$$TEST_ENV_PATH" LD_LIBRARY_PATH="$$TEST_ENV_LD" $(TEST_OUTPUT_DIR)/$$tool || exit 1; \
+		PATH="$$TEST_ENV_PATH" LD_LIBRARY_PATH="$$TEST_ENV_LD" DYLD_LIBRARY_PATH="$$TEST_ENV_DYLD" $(TEST_OUTPUT_DIR)/$$tool || exit 1; \
 	done
 
 tests-only:
@@ -209,7 +231,13 @@ $(TEST_OUTPUT_DIR)/StatusBarToggleProbe: Tests/StatusBarToggleProbe.m $(TEST_SUP
 	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
 
 after-all:: Resources/Info-gnustep.plist
-	@cp Resources/Info-gnustep.plist ScreenshotTool.app/Resources/Info-gnustep.plist
+	@if [ -d ScreenshotTool.app/Resources ]; then \
+		cp Resources/Info-gnustep.plist ScreenshotTool.app/Resources/Info-gnustep.plist; \
+	elif [ -d ScreenshotTool.app/Contents/Resources ]; then \
+		cp Resources/Info-gnustep.plist ScreenshotTool.app/Contents/Resources/Info-gnustep.plist; \
+	else \
+		echo "Warning: could not locate bundle Resources directory to copy Info-gnustep.plist"; \
+	fi
 
 clean-tests:
 	@rm -rf $(TEST_OUTPUT_DIR)

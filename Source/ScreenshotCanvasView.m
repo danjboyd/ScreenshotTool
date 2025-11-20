@@ -31,16 +31,28 @@
 #include <string.h>
 #include <float.h>
 #include <stdlib.h>
-#if defined(GNUSTEP)
+#if defined(GNUSTEP) && !defined(__APPLE__)
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include <fontconfig/fontconfig.h>
 #endif
 
-NSString * const ScreenshotCanvasViewDidRestoreStateNotification = @"ScreenshotCanvasViewDidRestoreStateNotification";
-extern BOOL ScreenshotUndoLoggingEnabled(void) __attribute__((weak));
+#if defined(GNUSTEP) && !defined(__APPLE__)
+#define ST_ENABLE_GNUSTEP_WORKAROUNDS 1
+#else
+#define ST_ENABLE_GNUSTEP_WORKAROUNDS 0
+#endif
 
-#if defined(GNUSTEP)
+NSString * const ScreenshotCanvasViewDidRestoreStateNotification = @"ScreenshotCanvasViewDidRestoreStateNotification";
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
+BOOL ScreenshotUndoLoggingEnabled(void) __attribute__((weak));
+#else
+static BOOL ScreenshotUndoLoggingEnabled(void) {
+    return NO;
+}
+#endif
+
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
 @interface STTransparentTextView : NSTextView
 @end
 
@@ -98,12 +110,18 @@ static NSString *STCursorToolName(ScreenshotCanvasTool tool) {
 }
 
 static void STCursorWarnFallback(NSString *toolKey, NSString *reason) {
-#if defined(GNUSTEP)
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
     NSLog(@"[Cursor][WARN] tool=%@ fallback=arrow reason=%@", toolKey ?: @"<nil>", reason ?: @"unknown");
 #else
     ScreenshotCursorLog(@"[CursorFallback] tool=%@ reason=%@", toolKey ?: @"<nil>", reason ?: @"unknown");
 #endif
 }
+
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
+#define STUndoLoggingActive() (ScreenshotUndoLoggingEnabled && ScreenshotUndoLoggingEnabled())
+#else
+#define STUndoLoggingActive() (ScreenshotUndoLoggingEnabled())
+#endif
 
 typedef struct {
     unsigned char *data;
@@ -523,7 +541,7 @@ static void STRasterizeStrokeOntoBitmap(MarkupStroke *stroke,
     }
 }
 
-#if defined(GNUSTEP)
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
 static FT_Library STFTLibrary = NULL;
 static BOOL STFTLibraryInitialized = NO;
 static BOOL STFontConfigInitialized = NO;
@@ -774,7 +792,7 @@ static void STRasterizeTextOntoBitmap(MarkupText *text,
         return;
     }
 
-#if defined(GNUSTEP)
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
     if (STRasterizeTextUsingFreeType(text, buffer, canvasSize)) {
         return;
     }
@@ -2162,7 +2180,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     NSRect viewRect = [self viewRectForImageRect:imageRect];
     NSTextView *textView =
-#if defined(GNUSTEP)
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
         [[STTransparentTextView alloc] initWithFrame:viewRect];
 #else
         [[NSTextView alloc] initWithFrame:viewRect];
@@ -2172,13 +2190,13 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [textView setEditable:YES];
     [textView setImportsGraphics:NO];
     [textView setDrawsBackground:
-#if defined(GNUSTEP)
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
          NO
 #else
          YES
 #endif
     ];
-#if defined(GNUSTEP)
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
     [textView setBackgroundColor:[NSColor clearColor]];
 #else
     NSColor *background = [NSColor textBackgroundColor] ?: [NSColor lightGrayColor];
@@ -2790,13 +2808,13 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     STBitmapBuffer buffer;
     BOOL canRasterizeDirectly = STPrepareBitmapBuffer(bitmap, &buffer);
-#if defined(GNUSTEP)
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
     BOOL rasterizeTextDirectly = canRasterizeDirectly;
 #else
     BOOL rasterizeTextDirectly = NO;
 #endif
     BOOL needsContextDrawing = !canRasterizeDirectly;
-#if !defined(GNUSTEP)
+#if !ST_ENABLE_GNUSTEP_WORKAROUNDS
     if (!needsContextDrawing) {
         BOOL hasHighlighter = NO;
         for (MarkupStroke *stroke in self.strokes) {
@@ -2970,16 +2988,16 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [self setNeedsDisplay:YES];
 
     NSUndoManager *undo = [self undoManager];
-    if (ScreenshotUndoLoggingEnabled && ScreenshotUndoLoggingEnabled()) {
+    if (STUndoLoggingActive()) {
         NSLog(@"[Undo Debug] crop view=%p window=%p undo=%p", self, self.window, undo);
     }
     if (undo && snapshot) {
-        if (ScreenshotUndoLoggingEnabled && ScreenshotUndoLoggingEnabled()) {
+        if (STUndoLoggingActive()) {
             NSLog(@"[Undo Debug] register undo manager=%p grouping=%ld", undo, (long)[undo groupingLevel]);
         }
         [undo registerUndoWithTarget:self selector:@selector(restoreSnapshotForUndo:) object:snapshot];
         [undo setActionName:@"Crop"];
-        if (ScreenshotUndoLoggingEnabled && ScreenshotUndoLoggingEnabled()) {
+        if (STUndoLoggingActive()) {
             NSLog(@"[Undo Debug] canUndo after register=%d", [undo canUndo]);
         }
     }

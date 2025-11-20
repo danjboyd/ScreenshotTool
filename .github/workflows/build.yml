@@ -1,0 +1,52 @@
+name: build-and-package
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux-appimage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gnustep-make libgnustep-base-dev libgnustep-gui-dev libfreetype6-dev libfontconfig1-dev clang rsync patchelf
+      - name: Build ScreenshotTool (GNUstep)
+        run: make -j"$(nproc)"
+      - name: Download linuxdeploy
+        run: |
+          mkdir -p /tmp/linuxdeploy
+          curl -L https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage -o /tmp/linuxdeploy/linuxdeploy
+          curl -L https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage -o /tmp/linuxdeploy/linuxdeploy-plugin-appimage
+          chmod +x /tmp/linuxdeploy/linuxdeploy /tmp/linuxdeploy/linuxdeploy-plugin-appimage
+      - name: Package AppImage
+        env:
+          LINUXDEPLOY: /tmp/linuxdeploy/linuxdeploy
+          LINUXDEPLOY_PLUGIN_APPIMAGE: /tmp/linuxdeploy/linuxdeploy-plugin-appimage
+        run: scripts/package_appimage.sh
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenshotTool-AppImage
+          path: Staging/ScreenshotTool-x86_64.AppImage
+
+  macos-dmg:
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew update && brew install gnustep pkg-config freetype fontconfig
+      - name: Build ScreenshotTool (macOS)
+        run: scripts/build_macos.sh
+      - name: Smoke launch
+        run: scripts/smoke_macos_app.sh
+      - name: Package DMG
+        run: scripts/package_macos_dmg.sh
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenshotTool-macOS-DMG
+          path: Staging/ScreenshotTool-macOS.dmg

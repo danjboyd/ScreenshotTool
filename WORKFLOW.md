@@ -21,6 +21,8 @@ This document captures the current handoff contract between Codex (engineering) 
      : > ./screenshottool.log
      ```
    - Only after build + tests succeed should you ask the user to run the app.
+5. **Packaging (release builds):**  
+   Follow `docs/Packaging.md` for AppImage/DMG creation so local releases match CI artifacts.
 
 ## User Workflow (Testing Hand-off)
 1. Launch the freshly-built app with the standardized scenario and capture logs:

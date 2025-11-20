@@ -17,6 +17,14 @@ Prerequisites: GNUstep GUI toolchain (gnustep-make, gnustep-base, gnustep-gui), 
 make -j"$(nproc)"
 ```
 
+### macOS (Cocoa-native, no GNUstep runtime)
+```bash
+scripts/build_cocoa.sh                              # builds build/cocoa/ScreenshotTool.app
+scripts/smoke_macos_app.sh build/cocoa/ScreenshotTool.app    # writes ./screenshottool-smoke.log
+scripts/package_macos_dmg.sh build/cocoa/ScreenshotTool.app  # optional DMG
+```
+Requires Xcode Command Line Tools; no GNUstep runtime needed on macOS.
+
 If you want to run the automated probes:
 ```bash
 Tools/run_tests.sh   # may require sudo on some systems for GNUstep defaults locks
@@ -47,3 +55,6 @@ GNU GPL v2 or later (see `COPYING`).
 
 ## Contributing
 Developer workflow, debugging knobs, and QA notes now live in `CONTRIBUTING.md` and `WORKFLOW.md`. Issues and closed items are tracked in `OpenIssues.md` / `ClosedIssues.md`.
+
+## Packaging
+AppImage + macOS DMG packaging scripts live in `docs/Packaging.md`; CI builds both artifacts on Ubuntu and macOS via `.github/workflows/build.yml`.
