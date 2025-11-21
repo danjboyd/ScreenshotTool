@@ -43,6 +43,7 @@ rsync -a --delete "${APP_BUNDLE}/" "${APPDIR}/usr/lib/ScreenshotTool.app/"
 
 # Stage GNUstep runtime (libraries + themes) into the AppImage so it is self contained.
 GNUSTEP_APPDIR_ROOT="${APPDIR}/usr/gnustep"
+mkdir -p "${GNUSTEP_APPDIR_ROOT}/System"
 if [[ -d "${GNUSTEP_ROOT}/System" ]]; then
   echo "Copying GNUstep runtime from ${GNUSTEP_ROOT}..."
   rsync -a "${GNUSTEP_ROOT}/System/" "${GNUSTEP_APPDIR_ROOT}/System/"
