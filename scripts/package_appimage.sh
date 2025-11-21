@@ -92,6 +92,7 @@ fi
 echo "Running linuxdeploy..."
 chmod +x "${LINUXDEPLOY_BIN}" "${APPIMAGE_PLUGIN}" 2>/dev/null || true
 export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${GNUSTEP_ROOT}/System/Library/Libraries:${GNUSTEP_ROOT}/lib:${LD_LIBRARY_PATH:-}"
+chmod -x "${APPDIR}/usr/bin/screenshottool"
 pushd "${STAGING_DIR}" >/dev/null
 env OUTPUT="${OUTPUT_NAME}" "${LINUXDEPLOY_BIN}" \
   --appdir="${APPDIR}" \
@@ -99,6 +100,7 @@ env OUTPUT="${OUTPUT_NAME}" "${LINUXDEPLOY_BIN}" \
   --executable="${APPDIR}/usr/lib/ScreenshotTool.app/ScreenshotTool" \
   -o appimage
 popd >/dev/null
+chmod +x "${APPDIR}/usr/bin/screenshottool"
 
 if [[ ! -f "${STAGING_DIR}/${OUTPUT_NAME}" ]]; then
   echo "linuxdeploy did not emit ${OUTPUT_NAME}; inspect linuxdeploy output above." >&2
