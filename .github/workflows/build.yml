@@ -47,6 +47,12 @@ jobs:
           export GNUSTEP_USER_CONFIG_FILE=""
           export GNUSTEP_CONFIG_FILE=""
 
+          source_gnustep_env() {
+            set +u
+            . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
+            set -u
+          }
+
           # Bootstrap libobjc2 first so clang blocks support is available before gnustep-make config.
           git clone https://github.com/gnustep/libobjc2.git
           pushd libobjc2
@@ -92,13 +98,13 @@ jobs:
                         --with-layout=gnustep
           ${MAKE}
           sudo ${MAKE} install
-          . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
+          source_gnustep_env
           popd
 
           # gnustep-base
           git clone https://github.com/gnustep/libs-base.git
           pushd libs-base
-          . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
+          source_gnustep_env
           ./configure --disable-newkvo --prefix="${PREFIX}"
           LDFLAGS="${LDFLAGS} -ldispatch" ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
           sudo make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
@@ -107,7 +113,7 @@ jobs:
           # gnustep-gui
           git clone https://github.com/gnustep/libs-gui.git
           pushd libs-gui
-          . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
+          source_gnustep_env
           ./configure --enable-imagemagick --prefix="${PREFIX}"
           ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
           sudo make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
@@ -116,7 +122,7 @@ jobs:
           # gnustep-back
           git clone https://github.com/gnustep/libs-back.git
           pushd libs-back
-          . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
+          source_gnustep_env
           ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
           sudo make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
           popd
@@ -133,7 +139,9 @@ jobs:
           PREFIX: /usr/GNUstep
         run: |
           set -euo pipefail
+          set +u
           . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
+          set -u
           make -j"$(nproc)"
       - name: Download linuxdeploy
         run: |
