@@ -10,3 +10,4 @@ Staging/
 *.AppImage
 *.dmg
 screenshottool-smoke.log
+node_modules/

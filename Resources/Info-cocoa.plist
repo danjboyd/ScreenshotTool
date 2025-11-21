@@ -8,6 +8,8 @@
     <string>ScreenshotTool</string>
     <key>CFBundleDisplayName</key>
     <string>ScreenshotTool</string>
+    <key>CFBundleIconFile</key>
+    <string>ScreenshotTool.icns</string>
     <key>CFBundleExecutable</key>
     <string>ScreenshotTool</string>
     <key>CFBundlePackageType</key>
