@@ -26,7 +26,6 @@ jobs:
       - name: Build GNUstep stack (clang, ld)
         env:
           PREFIX: /usr/GNUstep
-          MAKE: make -j$(nproc)
           CC: clang
           CXX: clang++
           cc_flags: -fblocks -fobjc-nonfragile-abi
@@ -38,11 +37,11 @@ jobs:
           set -euo pipefail
           export CC CXX
           export PREFIX
+          export MAKE="make -j$(nproc)"
           export LDFLAGS="-L${PREFIX}/lib -fuse-ld=ld"
           export LD_LIBRARY_PATH="${PREFIX}/lib"
           export PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig"
           export CPPFLAGS="-I${PREFIX}/include"
-          export MAKE
 
           # Bootstrap libobjc2 first so clang blocks support is available before gnustep-make config.
           git clone https://github.com/gnustep/libobjc2.git
