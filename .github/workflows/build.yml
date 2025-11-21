@@ -42,6 +42,9 @@ jobs:
           export LD_LIBRARY_PATH="${PREFIX}/lib"
           export PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig"
           export CPPFLAGS="-I${PREFIX}/include"
+          export PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}"
+          export GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles"
+          export GNUSTEP_SYSTEM_ROOT="${PREFIX}/System"
           export ZSH_VERSION=""
           export GNUSTEP_CONFIG_FILE=""
           export GNUSTEP_USER_CONFIG_FILE=""
@@ -139,6 +142,9 @@ jobs:
           PREFIX: /usr/GNUstep
         run: |
           set -euo pipefail
+          export PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}"
+          export GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles"
+          export GNUSTEP_SYSTEM_ROOT="${PREFIX}/System"
           set +u
           . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
           set -u
