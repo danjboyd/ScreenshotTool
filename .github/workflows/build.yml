@@ -30,19 +30,19 @@ jobs:
           CC: clang
           CXX: clang++
           cc_flags: -fblocks -fobjc-nonfragile-abi
-          LDFLAGS: -L${PREFIX}/lib -fuse-ld=ld
-          LD_LIBRARY_PATH: ${PREFIX}/lib
-          PKG_CONFIG_PATH: ${PREFIX}/lib/pkgconfig
-          CPPFLAGS: -I${PREFIX}/include
+          LDFLAGS: ""
+          LD_LIBRARY_PATH: ""
+          PKG_CONFIG_PATH: ""
+          CPPFLAGS: ""
         run: |
           set -euo pipefail
           export CC CXX
-          export LDFLAGS
-          export LD_LIBRARY_PATH
-          export PKG_CONFIG_PATH
-          export CPPFLAGS
-          export MAKE
           export PREFIX
+          export LDFLAGS="-L${PREFIX}/lib -fuse-ld=ld"
+          export LD_LIBRARY_PATH="${PREFIX}/lib"
+          export PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig"
+          export CPPFLAGS="-I${PREFIX}/include"
+          export MAKE
 
           # Bootstrap libobjc2 first so clang blocks support is available before gnustep-make config.
           git clone https://github.com/gnustep/libobjc2.git
