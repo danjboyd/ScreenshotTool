@@ -110,8 +110,13 @@ jobs:
           pushd libs-base
           source_gnustep_env
           ./configure --disable-newkvo --prefix="${PREFIX}"
-          LDFLAGS="${LDFLAGS} -ldispatch" ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
-          sudo make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
+          PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+            LDFLAGS="${LDFLAGS} -ldispatch" \
+            ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
+          sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+            make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
           popd
 
           # gnustep-gui
@@ -119,16 +124,24 @@ jobs:
           pushd libs-gui
           source_gnustep_env
           ./configure --enable-imagemagick --prefix="${PREFIX}"
-          ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
-          sudo make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
+          PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+            ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
+          sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+            make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
           popd
 
           # gnustep-back
           git clone https://github.com/gnustep/libs-back.git
           pushd libs-back
           source_gnustep_env
-          ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
-          sudo make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
+          PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+            ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
+          sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+            make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
           popd
 
           # Sombre theme
