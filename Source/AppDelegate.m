@@ -461,6 +461,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSToolbar *toolbar;
 @property (nonatomic, strong) NSMutableDictionary<NSToolbarItemIdentifier, NSToolbarItem *> *toolbarItemsByIdentifier;
 @property (nonatomic, strong) NSPopUpButton *zoomPopUpButton;
+@property (nonatomic, strong) NSView *zoomToolbarContainer;
+@property (nonatomic, strong) NSTextField *zoomToolbarLabel;
 @property (nonatomic, strong) NSView *statusBarView;
 @property (nonatomic, strong) NSTextField *statusTextField;
 @property (nonatomic, strong) NSTimer *statusClearTimer;
@@ -1584,14 +1586,46 @@ static id STInfoValueForKey(NSString *key) {
         [self.zoomPopUpButton setTarget:self];
         [self.zoomPopUpButton setAction:@selector(zoomPopUpAction:)];
         [self.zoomPopUpButton selectItemAtIndex:0];
+        [self.zoomPopUpButton setFont:[NSFont systemFontOfSize:12.0f]];
+    }
+
+    if (!self.zoomToolbarLabel) {
+        NSTextField *label = [[NSTextField alloc] initWithFrame:NSZeroRect];
+        [label setEditable:NO];
+        [label setBezeled:NO];
+        [label setBordered:NO];
+        [label setDrawsBackground:NO];
+        [label setAlignment:NSTextAlignmentCenter];
+        [label setFont:[NSFont boldSystemFontOfSize:11.0f]];
+        [label setTextColor:STThemeToolbarLabelColor()];
+        [label setStringValue:@"Zoom"];
+        self.zoomToolbarLabel = label;
+    }
+
+    if (!self.zoomToolbarContainer) {
+        NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 160.0, 32.0)];
+        [container setAutoresizesSubviews:YES];
+
+        // Label sits at the top; pop-up sits directly beneath within the 32px slot GNUstep allocates.
+        CGFloat labelHeight = 12.0f;
+        [self.zoomToolbarLabel setFrame:NSMakeRect(0, 0, container.frame.size.width, labelHeight)];
+        self.zoomToolbarLabel.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
+        [container addSubview:self.zoomToolbarLabel];
+
+        CGFloat popUpHeight = 20.0f;
+        [self.zoomPopUpButton setFrame:NSMakeRect(0, labelHeight, container.frame.size.width, popUpHeight)];
+        self.zoomPopUpButton.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+        [container addSubview:self.zoomPopUpButton];
+
+        self.zoomToolbarContainer = container;
     }
 
     NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:ToolbarItemZoom];
-    item.label = @"Zoom";
+    item.label = @"";
     item.paletteLabel = @"Zoom";
-    item.view = self.zoomPopUpButton;
-    item.minSize = NSMakeSize(160.0, 28.0);
-    item.maxSize = NSMakeSize(180.0, 28.0);
+    item.view = self.zoomToolbarContainer;
+    item.minSize = NSMakeSize(160.0, 32.0);
+    item.maxSize = NSMakeSize(180.0, 32.0);
     return item;
 }
 
@@ -1827,6 +1861,9 @@ static id STInfoValueForKey(NSString *key) {
     if (self.toolWidthValueLabel) {
         [self.toolWidthValueLabel setBackgroundColor:STThemeStatusValueBackgroundColor()];
         [self.toolWidthValueLabel setTextColor:STThemeStatusValueTextColor()];
+    }
+    if (self.zoomToolbarLabel) {
+        [self.zoomToolbarLabel setTextColor:STThemeToolbarLabelColor()];
     }
     [self updateToolWidthControls];
     if (self.statusBarView) {

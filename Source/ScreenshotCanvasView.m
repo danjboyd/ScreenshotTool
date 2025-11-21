@@ -1328,6 +1328,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 }
 
 - (BOOL)shouldShowCanvasCursor {
+    if (![self hasImage]) {
+        return NO;
+    }
     if (!self.window) {
         return self.mouseInsideCanvas;
     }
@@ -1369,6 +1372,15 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         currentlyInside = [self updateMouseInsideFromWindowLocation];
     }
     self.mouseInsideCanvas = currentlyInside;
+    if (![self hasImage]) {
+        [self addCursorRect:self.bounds cursor:[NSCursor arrowCursor]];
+        if (self.cursorTrackingTag != 0) {
+            [self removeTrackingRect:self.cursorTrackingTag];
+            self.cursorTrackingTag = 0;
+        }
+        self.mouseInsideCanvas = NO;
+        return;
+    }
     NSCursor *rectCursor = [self shouldShowCanvasCursor] ? [self cursorForActiveTool] : [NSCursor arrowCursor];
     [self addCursorRect:self.bounds cursor:rectCursor];
     if (self.cursorTrackingTag != 0) {
