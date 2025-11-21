@@ -91,6 +91,7 @@ fi
 
 echo "Running linuxdeploy..."
 chmod +x "${LINUXDEPLOY_BIN}" "${APPIMAGE_PLUGIN}" 2>/dev/null || true
+export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${GNUSTEP_ROOT}/System/Library/Libraries:${GNUSTEP_ROOT}/lib:${LD_LIBRARY_PATH:-}"
 pushd "${STAGING_DIR}" >/dev/null
 env OUTPUT="${OUTPUT_NAME}" "${LINUXDEPLOY_BIN}" --appdir="${APPDIR}" --desktop-file="${APPDIR}/usr/share/applications/screenshottool.desktop" --executable="${APPDIR}/usr/bin/screenshottool" -o appimage
 popd >/dev/null
