@@ -907,8 +907,8 @@ static id STInfoValueForKey(NSString *key) {
 
 #if defined(GNUSTEP)
     STStatusBarBackgroundView *statusBar = [[STStatusBarBackgroundView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, contentBounds.size.width, StatusBarHeight)];
-    statusBar.fillColor = STThemeStatusBarBackgroundColor();
-    statusBar.topBorderColor = STThemeStatusBarBorderColor();
+    statusBar.fillColor = STThemeStatusBarBackgroundColorForTheme(self.usesDarkTheme);
+    statusBar.topBorderColor = STThemeStatusBarBorderColorForTheme(self.usesDarkTheme);
 #else
     NSView *statusBar = [[NSView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, contentBounds.size.width, StatusBarHeight)];
 #endif
@@ -1848,8 +1848,8 @@ static id STInfoValueForKey(NSString *key) {
 #if defined(GNUSTEP)
     if ([self.statusBarView isKindOfClass:[STStatusBarBackgroundView class]]) {
         STStatusBarBackgroundView *backgroundView = (STStatusBarBackgroundView *)self.statusBarView;
-        backgroundView.fillColor = STThemeStatusBarBackgroundColor();
-        backgroundView.topBorderColor = STThemeStatusBarBorderColor();
+        backgroundView.fillColor = STThemeStatusBarBackgroundColorForTheme(self.usesDarkTheme);
+        backgroundView.topBorderColor = STThemeStatusBarBorderColorForTheme(self.usesDarkTheme);
     }
 #endif
     if (self.statusTextField) {

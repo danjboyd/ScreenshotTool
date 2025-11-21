@@ -8,6 +8,8 @@ BOOL STDefaultInterfaceThemeIsDark(void);
 NSColor *STThemeCanvasBackgroundColor(void);
 NSColor *STThemeStatusBarBackgroundColor(void);
 NSColor *STThemeStatusBarBorderColor(void);
+NSColor *STThemeStatusBarBackgroundColorForTheme(BOOL darkTheme);
+NSColor *STThemeStatusBarBorderColorForTheme(BOOL darkTheme);
 NSColor *STThemeStatusPrimaryTextColor(void);
 NSColor *STThemeStatusValueTextColor(void);
 NSColor *STThemeStatusValueBackgroundColor(void);

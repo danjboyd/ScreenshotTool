@@ -178,6 +178,8 @@ int main(int argc, const char * argv[]) {
         if (!view) {
             FailAndExit(@"CursorRectProbe: failed to create canvas view");
         }
+        // Ensure cursor logic thinks an image is present; otherwise it intentionally falls back to the arrow cursor.
+        view.image = [[NSImage alloc] initWithSize:NSMakeSize(10.0, 10.0)];
         view.penColor = [NSColor colorWithCalibratedRed:0.9 green:0.2 blue:0.2 alpha:1.0];
         view.highlighterColor = [NSColor colorWithCalibratedRed:1.0 green:1.0 blue:0.3 alpha:1.0];
 

@@ -47,18 +47,26 @@ NSColor *STThemeCanvasBackgroundColor(void) {
     return [NSColor windowBackgroundColor] ?: [NSColor colorWithCalibratedWhite:0.96f alpha:1.0f];
 }
 
-NSColor *STThemeStatusBarBackgroundColor(void) {
-    if (STThemeIsDark()) {
+NSColor *STThemeStatusBarBackgroundColorForTheme(BOOL darkTheme) {
+    if (darkTheme) {
         return [NSColor colorWithCalibratedRed:0.12f green:0.13f blue:0.15f alpha:1.0f];
     }
     return [NSColor colorWithCalibratedWhite:0.95f alpha:1.0f];
 }
 
-NSColor *STThemeStatusBarBorderColor(void) {
-    if (STThemeIsDark()) {
+NSColor *STThemeStatusBarBackgroundColor(void) {
+    return STThemeStatusBarBackgroundColorForTheme(STThemeIsDark());
+}
+
+NSColor *STThemeStatusBarBorderColorForTheme(BOOL darkTheme) {
+    if (darkTheme) {
         return [NSColor colorWithCalibratedWhite:0.05f alpha:1.0f];
     }
     return [NSColor colorWithCalibratedWhite:0.80f alpha:1.0f];
+}
+
+NSColor *STThemeStatusBarBorderColor(void) {
+    return STThemeStatusBarBorderColorForTheme(STThemeIsDark());
 }
 
 NSColor *STThemeStatusPrimaryTextColor(void) {
