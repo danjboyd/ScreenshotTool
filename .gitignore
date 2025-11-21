@@ -11,3 +11,5 @@ Staging/
 *.dmg
 screenshottool-smoke.log
 node_modules/
+package-lock.json
+**/.package-lock.json
