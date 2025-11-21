@@ -31,10 +31,16 @@ jobs:
           CXX: clang++
           cc_flags: -fblocks -fobjc-nonfragile-abi
           LDFLAGS: -L${PREFIX}/lib -fuse-ld=ld
+          LD_LIBRARY_PATH: ${PREFIX}/lib
+          PKG_CONFIG_PATH: ${PREFIX}/lib/pkgconfig
+          CPPFLAGS: -I${PREFIX}/include
         run: |
           set -euo pipefail
           export CC CXX
           export LDFLAGS
+          export LD_LIBRARY_PATH
+          export PKG_CONFIG_PATH
+          export CPPFLAGS
           export MAKE
           export PREFIX
 
