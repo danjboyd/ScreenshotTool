@@ -53,6 +53,8 @@ jobs:
             set +u
             . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
             set -u
+            export PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}"
+            export GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles"
           }
 
           # Bootstrap libobjc2 first so clang blocks support is available before gnustep-make config.
@@ -146,6 +148,8 @@ jobs:
           set +u
           . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
           set -u
+          export PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}"
+          export GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles"
           make -j"$(nproc)"
       - name: Download linuxdeploy
         run: |
