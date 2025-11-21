@@ -147,8 +147,13 @@ jobs:
           # Sombre theme
           git clone https://github.com/gnustep/plugins-themes-sombre.git
           pushd plugins-themes-sombre
-          ${MAKE} messages=yes
-          sudo make install
+          source_gnustep_env
+          PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+            ${MAKE} messages=yes
+          sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+            make install
           popd
 
       - name: Build ScreenshotTool (GNUstep)
