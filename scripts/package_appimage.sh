@@ -36,7 +36,7 @@ fi
 export LINUXDEPLOY_PLUGIN_APPIMAGE="${APPIMAGE_PLUGIN}"
 
 rm -rf "${APPDIR}"
-mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/share/applications" "${APPDIR}/usr/share/icons/hicolor/256x256/apps"
+mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/lib" "${APPDIR}/usr/share/applications" "${APPDIR}/usr/share/icons/hicolor/256x256/apps"
 
 echo "Staging GNUstep bundle into ${APPDIR}..."
 rsync -a --delete "${APP_BUNDLE}/" "${APPDIR}/usr/lib/ScreenshotTool.app/"
