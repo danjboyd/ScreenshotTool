@@ -44,6 +44,7 @@ jobs:
           export CPPFLAGS="-I${PREFIX}/include"
           export ZSH_VERSION=""
           export GNUSTEP_CONFIG_FILE=""
+          export GNUSTEP_USER_CONFIG_FILE=""
           export GNUSTEP_CONFIG_FILE=""
 
           # Bootstrap libobjc2 first so clang blocks support is available before gnustep-make config.
