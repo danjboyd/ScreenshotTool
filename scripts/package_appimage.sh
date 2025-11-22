@@ -108,7 +108,9 @@ if [[ ! -f "${STAGING_DIR}/${OUTPUT_NAME}" ]]; then
 fi
 
 mkdir -p "${STAGING_DIR}"
-mv "${STAGING_DIR}/${OUTPUT_NAME}" "${ARTIFACT}"
+if [[ "${STAGING_DIR}/${OUTPUT_NAME}" != "${ARTIFACT}" ]]; then
+  mv "${STAGING_DIR}/${OUTPUT_NAME}" "${ARTIFACT}"
+fi
 chmod +x "${ARTIFACT}"
 
 echo "AppImage ready: ${ARTIFACT}"
