@@ -65,7 +65,11 @@ fi
 
 cat > "${APPDIR}/usr/bin/screenshottool" <<'EOF'
 #!/usr/bin/env bash
-HERE="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_PATH="$0"
+if command -v readlink >/dev/null 2>&1; then
+  SCRIPT_PATH="$(readlink -f "$SCRIPT_PATH" || echo "$SCRIPT_PATH")"
+fi
+HERE="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 APP_DIR="${HERE}/../lib/ScreenshotTool.app"
 GNUSTEP_SYSTEM_ROOT="${HERE}/../gnustep/System"
 export GNUSTEP_SYSTEM_ROOT
