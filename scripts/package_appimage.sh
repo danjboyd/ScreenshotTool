@@ -71,9 +71,10 @@ if command -v readlink >/dev/null 2>&1; then
 fi
 HERE="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 APP_DIR="${HERE}/../lib/ScreenshotTool.app"
+APP_LIB="${HERE}/../lib"
 GNUSTEP_SYSTEM_ROOT="${HERE}/../gnustep/System"
 export GNUSTEP_SYSTEM_ROOT
-export LD_LIBRARY_PATH="${GNUSTEP_SYSTEM_ROOT}/Library/Libraries:${LD_LIBRARY_PATH}"
+export LD_LIBRARY_PATH="${APP_LIB}:${GNUSTEP_SYSTEM_ROOT}/Library/Libraries:${LD_LIBRARY_PATH}"
 exec "${APP_DIR}/ScreenshotTool" "$@"
 EOF
 chmod +x "${APPDIR}/usr/bin/screenshottool"
