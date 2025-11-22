@@ -97,13 +97,29 @@ pushd "${STAGING_DIR}" >/dev/null
 env OUTPUT="${OUTPUT_NAME}" "${LINUXDEPLOY_BIN}" \
   --appdir="${APPDIR}" \
   --desktop-file="${APPDIR}/usr/share/applications/screenshottool.desktop" \
-  --executable="${APPDIR}/usr/lib/ScreenshotTool.app/ScreenshotTool" \
-  -o appimage
+  --executable="${APPDIR}/usr/lib/ScreenshotTool.app/ScreenshotTool"
 popd >/dev/null
 chmod +x "${APPDIR}/usr/bin/screenshottool"
 
+# Repackage with appimagetool after restoring the launcher executable bit so the
+# resulting AppImage contains a runnable AppRun/screenshottool.
+TEMP_APPIMAGE_DIR="$(mktemp -d)"
+pushd "${TEMP_APPIMAGE_DIR}" >/dev/null
+"${APPIMAGE_PLUGIN}" --appimage-extract >/dev/null
+APPIMAGETOOL_BIN="${TEMP_APPIMAGE_DIR}/squashfs-root/usr/bin/appimagetool"
+if [[ ! -x "${APPIMAGETOOL_BIN}" ]]; then
+  echo "appimagetool missing after extracting ${APPIMAGE_PLUGIN}." >&2
+  exit 1
+fi
+chmod +x "${APPIMAGETOOL_BIN}"
+popd >/dev/null
+
+rm -f "${STAGING_DIR:?}/${OUTPUT_NAME}"
+"${APPIMAGETOOL_BIN}" "${APPDIR}" "${STAGING_DIR}/${OUTPUT_NAME}"
+rm -rf "${TEMP_APPIMAGE_DIR}"
+
 if [[ ! -f "${STAGING_DIR}/${OUTPUT_NAME}" ]]; then
-  echo "linuxdeploy did not emit ${OUTPUT_NAME}; inspect linuxdeploy output above." >&2
+  echo "appimagetool did not emit ${OUTPUT_NAME}; inspect output above." >&2
   exit 1
 fi
 
