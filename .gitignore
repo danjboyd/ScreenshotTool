@@ -13,3 +13,5 @@ screenshottool-smoke.log
 node_modules/
 package-lock.json
 **/.package-lock.json
+Tests/bin/
+Tests/bin/*.d

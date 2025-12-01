@@ -1,5 +1,10 @@
 # Open Issues
 
+- Fit-to-window stops scaling up smaller images after the window grows.  
+  **Repro:** With View ▸ Fit to Window active, open a small image (smaller than the viewport). It loads at ~100% as intended. Drag a window corner to enlarge the viewport while staying in fit-to-window mode.  
+  **Expected:** The canvas should scale the image proportionally with the larger viewport (within our normal clamps) so the picture visibly grows.  
+  **Observed:** The image size remains pinned near its original 1× scale while only the window grows. `ScreenshotCanvasView updateForEnclosingBoundsChange` clamps `newScale` to ≤1.0, so once the image fits at 100% we never let it upscale on further resizes.  
+  **Next steps:** Allow fit-to-window to upscale after the user enlarges the viewport while preserving the “don’t over-zoom on initial load” guard. One approach: track the initial clip size when loading an image, keep the 1.0 cap for that first fit pass, but drop the cap (or raise it to the true fit scale) once the clip view grows beyond the baseline while fit-to-window remains active. Guard with a regression probe that resizes the host scroll view and asserts the zoom increases past 1.0 for small images.
 - ~Toolbar icons still regress on GNUstep: the DateTracker-style toolbar baseline displays them, but GNUstep’s standard toolbar constrains rows to ~24 px so our 32 px art is clipped, and labels revert to the theme’s default colour if we re-enable the custom container.  
   **Resolution:** We now generate GNUstep-specific 24 px PNGs (light/dark + active variants) and load them before the 32 px masters, so the DateTracker baseline renders correctly without the custom container path (which has since been removed). The end-to-end workflow lives in `docs/ToolbarIconsOnGNUstep.md`.~
 - ~Dark-theme toolbar regression on GNUstep: when Sombre is active (or Toolbar Theme = Dark) the stock toolbar sometimes renders blank icons/labels, matching the failing `ToolbarIconThemeProbe`.  

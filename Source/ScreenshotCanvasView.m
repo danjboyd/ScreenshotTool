@@ -984,6 +984,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) CGFloat selectionDashPhase;
 @property (nonatomic, assign) NSTrackingRectTag cursorTrackingTag;
 @property (nonatomic, assign) BOOL mouseInsideCanvas;
+@property (nonatomic, assign) NSSize fitToWindowBaselineClipSize;
 @end
 
 @implementation ScreenshotCanvasView
@@ -1028,6 +1029,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
         _selectionDashPhase = 0.0f;
         _cursorTrackingTag = 0;
         _mouseInsideCanvas = NO;
+        _fitToWindowBaselineClipSize = NSZeroSize;
         [self setPostsFrameChangedNotifications:YES];
     }
     return self;
@@ -1866,6 +1868,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [self clearSelection];
     _zoomScale = 1.0;
     self.fitToWindow = YES;
+    self.fitToWindowBaselineClipSize = NSZeroSize;
     [self updateForEnclosingBoundsChange];
     [self setNeedsDisplay:YES];
 }
@@ -1902,6 +1905,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         return;
     }
     _fitToWindow = fitToWindow;
+    if (fitToWindow) {
+        self.fitToWindowBaselineClipSize = NSZeroSize;
+    }
     if (fitToWindow) {
         [self updateForEnclosingBoundsChange];
     }
@@ -2299,13 +2305,20 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         return;
     }
 
+    if (self.fitToWindowBaselineClipSize.width <= 0.0 || self.fitToWindowBaselineClipSize.height <= 0.0) {
+        self.fitToWindowBaselineClipSize = clipBounds.size;
+    }
+
     CGFloat scaleX = clipBounds.size.width / imageSize.width;
     CGFloat scaleY = clipBounds.size.height / imageSize.height;
     CGFloat newScale = MIN(scaleX, scaleY);
     if (fabs(scaleX - scaleY) < 0.0005f) {
         newScale = scaleX;
     }
-    newScale = MIN(newScale, 1.0);
+    BOOL clipExpanded = (clipBounds.size.width - self.fitToWindowBaselineClipSize.width > 0.5f) ||
+                        (clipBounds.size.height - self.fitToWindowBaselineClipSize.height > 0.5f);
+    CGFloat maxScale = clipExpanded ? 8.0f : 1.0f;
+    newScale = MIN(newScale, maxScale);
     newScale = MAX(0.05, MIN(newScale, 8.0));
     _zoomScale = newScale;
     [self updateFrameSize];
