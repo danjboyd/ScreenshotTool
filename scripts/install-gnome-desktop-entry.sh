@@ -54,6 +54,7 @@ Terminal=false
 StartupNotify=false
 StartupWMClass=ScreenshotTool
 Categories=Graphics;Utility;
+MimeType=image/png;image/jpeg;image/jpg;image/webp;image/tiff;
 EOF
 
 chmod 644 "$DESKTOP_FILE"
