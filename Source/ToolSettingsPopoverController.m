@@ -34,7 +34,7 @@
 
 - (void)showRelativeToRect:(NSRect)rect ofView:(NSView *)view preferredEdge:(NSRectEdge)edge {
     if (!self.popover) {
-        [self buildPopover];
+        [self buildPopoverForView:view];
     }
     [self refresh];
     ScreenshotToolAppendLog([NSString stringWithFormat:@"ToolSettingsPopoverController(%@) showRelativeToRect entry (popover=%@ isShown=%@)",
@@ -105,28 +105,32 @@
 
 #pragma mark - Private
 
-- (void)buildPopover {
+- (void)buildPopoverForView:(NSView *)view {
     ScreenshotToolAppendLog([NSString stringWithFormat:@"ToolSettingsPopoverController(%@) buildPopover begin", [self titleText]]);
-    self.contentView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 260, 180)];
+    CGFloat scaleFactor = 1.0f;
+    NSRect contentFrame = NSMakeRect(0, 0, 260.0f, 180.0f);
+    self.contentView = [[NSView alloc] initWithFrame:contentFrame];
     self.popover = [[STFloatingPopover alloc] initWithContentView:self.contentView];
-    self.popover.contentSize = self.contentView.bounds.size;
+    self.popover.contentSize = contentFrame.size;
+    self.popover.effectiveScaleFactor = scaleFactor;
+
     ScreenshotToolAppendLog([NSString stringWithFormat:@"ToolSettingsPopoverController(%@) floating popover created",
                              [self titleText]]);
 
-    CGFloat padding = 12.0f;
+    CGFloat padding = 12.0f * scaleFactor;
     CGFloat contentWidth = self.contentView.bounds.size.width - (padding * 2.0f);
-    CGFloat y = self.contentView.bounds.size.height - padding - 20.0f;
+    CGFloat y = self.contentView.bounds.size.height - padding - (20.0f * scaleFactor);
     NSColor *primaryTextColor = STThemeStatusPrimaryTextColor() ?: [NSColor labelColor];
     NSColor *titleColor = STThemeToolbarLabelColor() ?: primaryTextColor;
     NSColor *valueTextColor = STThemeStatusValueTextColor() ?: primaryTextColor;
 
-    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, 24.0f)];
+    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, 24.0f * scaleFactor)];
     [title setEditable:NO];
     [title setSelectable:NO];
     [title setBezeled:NO];
     [title setBordered:NO];
     [title setDrawsBackground:YES];
-    NSFont *baseFont = [NSFont boldSystemFontOfSize:13.0f];
+    NSFont *baseFont = [NSFont boldSystemFontOfSize:13.0f * scaleFactor];
     NSFont *titleFont = [[NSFontManager sharedFontManager] convertFont:baseFont toHaveTrait:NSBoldFontMask];
     [title setFont:titleFont ?: baseFont];
     [title setStringValue:[self titleText]];
@@ -140,7 +144,7 @@
     NSDictionary *attrs = @{
         NSForegroundColorAttributeName: titleColor,
         NSFontAttributeName: title.font ?: baseFont,
-        NSKernAttributeName: @(0.5f),
+        NSKernAttributeName: @(0.5f * scaleFactor),
         NSParagraphStyleAttributeName: style
     };
     NSAttributedString *attributed = [[NSAttributedString alloc] initWithString:[self titleText] attributes:attrs];
@@ -148,20 +152,20 @@
     self.titleLabel = title;
     [self.contentView addSubview:title];
 
-    y -= 28.0f;
-    NSTextField *widthLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 80.0f, 18.0f)];
+    y -= 28.0f * scaleFactor;
+    NSTextField *widthLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 80.0f * scaleFactor, 18.0f * scaleFactor)];
     [widthLabel setEditable:NO];
     [widthLabel setSelectable:NO];
     [widthLabel setBezeled:NO];
     [widthLabel setBordered:NO];
     [widthLabel setDrawsBackground:NO];
-    [widthLabel setFont:[NSFont systemFontOfSize:12.0f]];
+    [widthLabel setFont:[NSFont systemFontOfSize:12.0f * scaleFactor]];
     [widthLabel setStringValue:@"Width"];
     [widthLabel setTextColor:primaryTextColor];
     self.widthLabel = widthLabel;
     [self.contentView addSubview:widthLabel];
 
-    NSSlider *slider = [[NSSlider alloc] initWithFrame:NSMakeRect(padding, y - 24.0f, contentWidth - 60.0f, 20.0f)];
+    NSSlider *slider = [[NSSlider alloc] initWithFrame:NSMakeRect(padding, y - (24.0f * scaleFactor), contentWidth - (60.0f * scaleFactor), 20.0f * scaleFactor)];
     [slider setMinValue:STToolWidthMin];
     [slider setMaxValue:STToolWidthMax];
     [slider setNumberOfTickMarks:0];
@@ -171,37 +175,37 @@
     self.widthSlider = slider;
     [self.contentView addSubview:slider];
 
-    NSTextField *valueLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(NSMaxX(slider.frame) + 6.0f,
+    NSTextField *valueLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(NSMaxX(slider.frame) + (6.0f * scaleFactor),
                                                                            slider.frame.origin.y,
-                                                                           50.0f,
-                                                                           20.0f)];
+                                                                           50.0f * scaleFactor,
+                                                                           20.0f * scaleFactor)];
     [valueLabel setEditable:NO];
     [valueLabel setBezeled:NO];
     [valueLabel setBordered:NO];
     [valueLabel setDrawsBackground:NO];
     [valueLabel setAlignment:NSTextAlignmentRight];
-    [valueLabel setFont:[NSFont systemFontOfSize:12.0f]];
+    [valueLabel setFont:[NSFont systemFontOfSize:12.0f * scaleFactor]];
     [valueLabel setStringValue:@"0 px"];
     [valueLabel setTextColor:valueTextColor];
     self.widthValueLabel = valueLabel;
     [self.contentView addSubview:valueLabel];
 
-    y = slider.frame.origin.y - 36.0f;
-    NSTextField *colorLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 80.0f, 18.0f)];
+    y = slider.frame.origin.y - (36.0f * scaleFactor);
+    NSTextField *colorLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 80.0f * scaleFactor, 18.0f * scaleFactor)];
     [colorLabel setEditable:NO];
     [colorLabel setSelectable:NO];
     [colorLabel setBezeled:NO];
     [colorLabel setBordered:NO];
     [colorLabel setDrawsBackground:NO];
-    [colorLabel setFont:[NSFont systemFontOfSize:12.0f]];
+    [colorLabel setFont:[NSFont systemFontOfSize:12.0f * scaleFactor]];
     [colorLabel setStringValue:@"Color"];
     [colorLabel setTextColor:primaryTextColor];
     [self.contentView addSubview:colorLabel];
 
     NSColorWell *well = [[NSColorWell alloc] initWithFrame:NSMakeRect(padding,
-                                                                      y - 28.0f,
-                                                                      44.0f,
-                                                                      28.0f)];
+                                                                      y - (28.0f * scaleFactor),
+                                                                      44.0f * scaleFactor,
+                                                                      28.0f * scaleFactor)];
     well.target = self;
     well.action = @selector(colorWellChanged:);
     [well setBordered:YES];
@@ -224,13 +228,13 @@
     [reset sizeToFit];
     [setDefault sizeToFit];
 
-    CGFloat buttonsWidth = reset.frame.size.width + 12.0f + setDefault.frame.size.width;
+    CGFloat buttonsWidth = reset.frame.size.width + (12.0f * scaleFactor) + setDefault.frame.size.width;
     CGFloat buttonsOriginX = padding + (contentWidth - buttonsWidth);
     reset.frame = NSMakeRect(buttonsOriginX,
                              buttonY,
                              reset.frame.size.width,
                              reset.frame.size.height);
-    setDefault.frame = NSMakeRect(NSMaxX(reset.frame) + 12.0f,
+    setDefault.frame = NSMakeRect(NSMaxX(reset.frame) + (12.0f * scaleFactor),
                                   buttonY,
                                   setDefault.frame.size.width,
                                   setDefault.frame.size.height);

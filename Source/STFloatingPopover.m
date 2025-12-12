@@ -8,6 +8,23 @@ static const CGFloat kSTPopoverCornerRadius = 8.0f;
 static const CGFloat kSTPopoverArrowMargin = 4.0f;
 static const CGFloat kSTPopoverWindowGap = 7.0f;
 
+static CGFloat STReadGSScaleFactor(void) {
+    const char *rawValue = getenv("GSScaleFactor");
+    if (rawValue) {
+        CGFloat parsed = (CGFloat)atof(rawValue);
+        if (parsed > 0.0f) {
+            return parsed;
+        }
+    }
+
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    CGFloat userDefault = [defaults doubleForKey:@"GSScaleFactor"];
+    if (userDefault > 0.0f) {
+        return userDefault;
+    }
+    return 0.0f;
+}
+
 @interface STFloatingPopover ()
 @property (nonatomic, strong) STFloatingPopoverWindow *window;
 @property (nonatomic, strong) STFloatingPopoverBackgroundView *backgroundView;
@@ -26,8 +43,15 @@ static const CGFloat kSTPopoverWindowGap = 7.0f;
         _hostedView = contentView;
         _contentSize = contentView.bounds.size;
         _currentArrowEdge = NSMaxYEdge;
+        _effectiveScaleFactor = [[self class] currentScaleFactorForView:contentView];
     }
     return self;
+}
+
++ (CGFloat)currentScaleFactorForView:(NSView *)view {
+    (void)view;
+    // Layout and positioning already occur in logical coordinates; avoid double-scaling.
+    return 1.0f;
 }
 
 - (void)dealloc {
@@ -91,9 +115,9 @@ static const CGFloat kSTPopoverWindowGap = 7.0f;
     NSSize windowSize = frame.size;
     NSSize contentSize = windowSize;
     if (self.currentArrowEdge == NSMinYEdge || self.currentArrowEdge == NSMaxYEdge) {
-        contentSize.height = MAX(windowSize.height - kSTPopoverArrowHeight, 40.0f);
+        contentSize.height = MAX(windowSize.height - kSTPopoverArrowHeight * self.effectiveScaleFactor, 40.0f);
     } else {
-        contentSize.width = MAX(windowSize.width - kSTPopoverArrowHeight, 80.0f);
+        contentSize.width = MAX(windowSize.width - kSTPopoverArrowHeight * self.effectiveScaleFactor, 80.0f);
     }
     _contentSize = contentSize;
 
@@ -108,9 +132,9 @@ static const CGFloat kSTPopoverWindowGap = 7.0f;
     self.backgroundView.frame = NSMakeRect(0, 0, windowSize.width, windowSize.height);
     self.backgroundView.arrowEdge = self.currentArrowEdge;
     self.backgroundView.arrowOffset = arrowOffset;
-    self.backgroundView.arrowBase = kSTPopoverArrowBase;
-    self.backgroundView.arrowHeight = kSTPopoverArrowHeight;
-    self.backgroundView.cornerRadius = kSTPopoverCornerRadius;
+    self.backgroundView.arrowBase = kSTPopoverArrowBase * self.effectiveScaleFactor;
+    self.backgroundView.arrowHeight = kSTPopoverArrowHeight * self.effectiveScaleFactor;
+    self.backgroundView.cornerRadius = kSTPopoverCornerRadius * self.effectiveScaleFactor;
 
     [self applyContentFramesForEdge:self.currentArrowEdge];
 }
@@ -121,18 +145,18 @@ static const CGFloat kSTPopoverWindowGap = 7.0f;
 
     switch (edge) {
         case NSMinYEdge: // arrow on bottom
-            holderFrame.origin.y += kSTPopoverArrowHeight;
-            holderFrame.size.height -= kSTPopoverArrowHeight;
+            holderFrame.origin.y += kSTPopoverArrowHeight * self.effectiveScaleFactor;
+            holderFrame.size.height -= kSTPopoverArrowHeight * self.effectiveScaleFactor;
             break;
         case NSMaxYEdge: // arrow on top
-            holderFrame.size.height -= kSTPopoverArrowHeight;
+            holderFrame.size.height -= kSTPopoverArrowHeight * self.effectiveScaleFactor;
             break;
         case NSMinXEdge: // arrow on left
-            holderFrame.origin.x += kSTPopoverArrowHeight;
-            holderFrame.size.width -= kSTPopoverArrowHeight;
+            holderFrame.origin.x += kSTPopoverArrowHeight * self.effectiveScaleFactor;
+            holderFrame.size.width -= kSTPopoverArrowHeight * self.effectiveScaleFactor;
             break;
         case NSMaxXEdge: // arrow on right
-            holderFrame.size.width -= kSTPopoverArrowHeight;
+            holderFrame.size.width -= kSTPopoverArrowHeight * self.effectiveScaleFactor;
             break;
         default:
             break;
@@ -150,9 +174,9 @@ static const CGFloat kSTPopoverWindowGap = 7.0f;
 
     NSSize windowSize = self.contentSize;
     if (self.currentArrowEdge == NSMinYEdge || self.currentArrowEdge == NSMaxYEdge) {
-        windowSize.height += kSTPopoverArrowHeight;
+        windowSize.height += kSTPopoverArrowHeight * self.effectiveScaleFactor;
     } else if (self.currentArrowEdge == NSMinXEdge || self.currentArrowEdge == NSMaxXEdge) {
-        windowSize.width += kSTPopoverArrowHeight;
+        windowSize.width += kSTPopoverArrowHeight * self.effectiveScaleFactor;
     }
 
     [self.window setContentSize:windowSize];
@@ -167,9 +191,9 @@ static const CGFloat kSTPopoverWindowGap = 7.0f;
     CGFloat arrowOffset = [self clampedArrowOffsetForEdge:self.currentArrowEdge windowSize:windowSize desired:desiredOffset];
     self.backgroundView.arrowEdge = self.currentArrowEdge;
     self.backgroundView.arrowOffset = arrowOffset;
-    self.backgroundView.arrowBase = kSTPopoverArrowBase;
-    self.backgroundView.arrowHeight = kSTPopoverArrowHeight;
-    self.backgroundView.cornerRadius = kSTPopoverCornerRadius;
+    self.backgroundView.arrowBase = kSTPopoverArrowBase * self.effectiveScaleFactor;
+    self.backgroundView.arrowHeight = kSTPopoverArrowHeight * self.effectiveScaleFactor;
+    self.backgroundView.cornerRadius = kSTPopoverCornerRadius * self.effectiveScaleFactor;
     [self applyContentFramesForEdge:self.currentArrowEdge];
 }
 
@@ -189,7 +213,7 @@ static const CGFloat kSTPopoverWindowGap = 7.0f;
 }
 
 - (CGFloat)clampedArrowOffsetForEdge:(NSRectEdge)edge windowSize:(NSSize)windowSize desired:(CGFloat)desired {
-    CGFloat minOffset = kSTPopoverCornerRadius + (kSTPopoverArrowBase * 0.5f) + kSTPopoverArrowMargin;
+    CGFloat minOffset = (kSTPopoverCornerRadius + (kSTPopoverArrowBase * 0.5f) + kSTPopoverArrowMargin) * self.effectiveScaleFactor;
     CGFloat maxOffset;
     if (edge == NSMinYEdge || edge == NSMaxYEdge) {
         maxOffset = windowSize.width - minOffset;
@@ -208,6 +232,7 @@ static const CGFloat kSTPopoverWindowGap = 7.0f;
     }
 
     [self ensureWindow];
+    self.effectiveScaleFactor = [[self class] currentScaleFactorForView:view];
 
     NSRectEdge arrowEdge = [self arrowEdgeForPreferredEdge:edge];
     NSSize contentSize = self.contentSize;
@@ -217,9 +242,9 @@ static const CGFloat kSTPopoverWindowGap = 7.0f;
 
     NSSize windowSize = contentSize;
     if (arrowEdge == NSMinYEdge || arrowEdge == NSMaxYEdge) {
-        windowSize.height += kSTPopoverArrowHeight;
+        windowSize.height += kSTPopoverArrowHeight * self.effectiveScaleFactor;
     } else if (arrowEdge == NSMinXEdge || arrowEdge == NSMaxXEdge) {
-        windowSize.width += kSTPopoverArrowHeight;
+        windowSize.width += kSTPopoverArrowHeight * self.effectiveScaleFactor;
     }
 
     NSRect screenRect = [view.window convertRectToScreen:rect];
@@ -230,23 +255,23 @@ static const CGFloat kSTPopoverWindowGap = 7.0f;
     switch (edge) {
         case NSMinYEdge:
             frame.origin.x = anchorCenter.x - (windowSize.width * 0.5f);
-            frame.origin.y = NSMaxY(screenRect) + kSTPopoverWindowGap;
+            frame.origin.y = NSMaxY(screenRect) + kSTPopoverWindowGap * self.effectiveScaleFactor;
             break;
         case NSMaxYEdge:
             frame.origin.x = anchorCenter.x - (windowSize.width * 0.5f);
-            frame.origin.y = NSMinY(screenRect) - kSTPopoverWindowGap - windowSize.height;
+            frame.origin.y = NSMinY(screenRect) - kSTPopoverWindowGap * self.effectiveScaleFactor - windowSize.height;
             break;
         case NSMinXEdge:
-            frame.origin.x = NSMinX(screenRect) - kSTPopoverWindowGap - windowSize.width;
+            frame.origin.x = NSMinX(screenRect) - kSTPopoverWindowGap * self.effectiveScaleFactor - windowSize.width;
             frame.origin.y = anchorCenter.y - (windowSize.height * 0.5f);
             break;
         case NSMaxXEdge:
-            frame.origin.x = NSMaxX(screenRect) + kSTPopoverWindowGap;
+            frame.origin.x = NSMaxX(screenRect) + kSTPopoverWindowGap * self.effectiveScaleFactor;
             frame.origin.y = anchorCenter.y - (windowSize.height * 0.5f);
             break;
         default:
             frame.origin.x = anchorCenter.x - (windowSize.width * 0.5f);
-            frame.origin.y = NSMinY(screenRect) - kSTPopoverWindowGap - windowSize.height;
+            frame.origin.y = NSMinY(screenRect) - kSTPopoverWindowGap * self.effectiveScaleFactor - windowSize.height;
             arrowEdge = NSMaxYEdge;
             break;
     }
@@ -276,9 +301,9 @@ static const CGFloat kSTPopoverWindowGap = 7.0f;
     self.backgroundView.frame = NSMakeRect(0, 0, windowSize.width, windowSize.height);
     self.backgroundView.arrowEdge = arrowEdge;
     self.backgroundView.arrowOffset = arrowOffset;
-    self.backgroundView.arrowBase = kSTPopoverArrowBase;
-    self.backgroundView.arrowHeight = kSTPopoverArrowHeight;
-    self.backgroundView.cornerRadius = kSTPopoverCornerRadius;
+    self.backgroundView.arrowBase = kSTPopoverArrowBase * self.effectiveScaleFactor;
+    self.backgroundView.arrowHeight = kSTPopoverArrowHeight * self.effectiveScaleFactor;
+    self.backgroundView.cornerRadius = kSTPopoverCornerRadius * self.effectiveScaleFactor;
 
     if (self.hostedView.superview != self.contentHolder) {
         [self.hostedView removeFromSuperviewWithoutNeedingDisplay];

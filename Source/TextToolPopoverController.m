@@ -56,7 +56,7 @@
 
 - (void)showRelativeToRect:(NSRect)rect ofView:(NSView *)view preferredEdge:(NSRectEdge)edge {
     if (!self.popover) {
-        [self buildPopover];
+        [self buildPopoverForView:view];
     }
     [self refresh];
     ScreenshotToolAppendLog([NSString stringWithFormat:@"TextToolPopoverController showRelativeToRect entry (popover=%@ isShown=%@)",
@@ -125,8 +125,10 @@
 
 #pragma mark - Private helpers
 
-- (void)buildPopover {
+- (void)buildPopoverForView:(NSView *)view {
     ScreenshotToolAppendLog(@"TextToolPopoverController buildPopover begin");
+    CGFloat scaleFactor = 1.0f;
+    
     CGFloat popoverWidth = 340.0f;
     CGFloat popoverHeight = 320.0f;
 
@@ -135,37 +137,38 @@
     self.contentView = content;
     self.popover = [[STFloatingPopover alloc] initWithContentView:self.contentView];
     self.popover.contentSize = self.contentView.bounds.size;
+    self.popover.effectiveScaleFactor = scaleFactor;
     ScreenshotToolAppendLog(@"TextToolPopoverController floating popover created");
 
-    CGFloat padding = 14.0f;
+    CGFloat padding = 14.0f * scaleFactor;
     CGFloat contentWidth = self.contentView.bounds.size.width - (padding * 2.0f);
-    CGFloat y = self.contentView.bounds.size.height - padding - 22.0f;
+    CGFloat y = self.contentView.bounds.size.height - padding - (22.0f * scaleFactor);
 
-    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, 22.0f)];
-    [self configureLabel:title font:[NSFont boldSystemFontOfSize:13.0f]];
+    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, 22.0f * scaleFactor)];
+    [self configureLabel:title font:[NSFont boldSystemFontOfSize:13.0f * scaleFactor]];
     [title setStringValue:@"Text Settings"];
     [self.contentView addSubview:title];
 
-    y -= 30.0f;
-    NSTextField *fontLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60.0f, 18.0f)];
-    [self configureLabel:fontLabel font:[NSFont systemFontOfSize:12.0f]];
+    y -= 30.0f * scaleFactor;
+    NSTextField *fontLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60.0f * scaleFactor, 18.0f * scaleFactor)];
+    [self configureLabel:fontLabel font:[NSFont systemFontOfSize:12.0f * scaleFactor]];
     [fontLabel setStringValue:@"Font"];
     [self.contentView addSubview:fontLabel];
 
-    CGFloat typefaceWidth = 130.0f;
-    CGFloat typefaceSpacing = 8.0f;
-    CGFloat familyFieldX = padding + 64.0f;
-    CGFloat familyWidth = contentWidth - 64.0f - typefaceSpacing - typefaceWidth;
-    if (familyWidth < 140.0f) {
-        CGFloat deficit = 140.0f - familyWidth;
-        familyWidth = 140.0f;
-        typefaceWidth = MAX(90.0f, typefaceWidth - deficit);
+    CGFloat typefaceWidth = 130.0f * scaleFactor;
+    CGFloat typefaceSpacing = 8.0f * scaleFactor;
+    CGFloat familyFieldX = padding + (64.0f * scaleFactor);
+    CGFloat familyWidth = contentWidth - (64.0f * scaleFactor) - typefaceSpacing - typefaceWidth;
+    if (familyWidth < 140.0f * scaleFactor) {
+        CGFloat deficit = (140.0f * scaleFactor) - familyWidth;
+        familyWidth = 140.0f * scaleFactor;
+        typefaceWidth = MAX(90.0f * scaleFactor, typefaceWidth - deficit);
     }
 
     self.fontComboBox = [[NSComboBox alloc] initWithFrame:NSMakeRect(familyFieldX,
-                                                                     y - 4.0f,
+                                                                     y - (4.0f * scaleFactor),
                                                                      familyWidth,
-                                                                     26.0f)];
+                                                                     26.0f * scaleFactor)];
     [self.fontComboBox setUsesDataSource:YES];
     [self.fontComboBox setCompletes:NO];
     [self.fontComboBox setDelegate:self];
@@ -179,34 +182,34 @@
     NSTextField *typefaceLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(NSMaxX(self.fontComboBox.frame) + typefaceSpacing,
                                                                                y,
                                                                                typefaceWidth,
-                                                                               18.0f)];
-    [self configureLabel:typefaceLabel font:[NSFont systemFontOfSize:12.0f]];
+                                                                               18.0f * scaleFactor)];
+    [self configureLabel:typefaceLabel font:[NSFont systemFontOfSize:12.0f * scaleFactor]];
     [typefaceLabel setStringValue:@"Typeface"];
     [typefaceLabel setAlignment:NSTextAlignmentLeft];
     [typefaceLabel setAutoresizingMask:(NSViewMaxYMargin | NSViewMinXMargin)];
     [self.contentView addSubview:typefaceLabel];
 
     self.fontFacePopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(typefaceLabel.frame.origin.x,
-                                                                         y - 4.0f,
+                                                                         y - (4.0f * scaleFactor),
                                                                          typefaceWidth,
-                                                                         26.0f)];
+                                                                         26.0f * scaleFactor)];
     [self.fontFacePopUp setTarget:self];
     [self.fontFacePopUp setAction:@selector(fontFaceChanged:)];
     [self.fontFacePopUp setAutoresizingMask:(NSViewMinXMargin)];
     [self.contentView addSubview:self.fontFacePopUp];
 
-    y -= 36.0f;
-    NSTextField *sizeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60.0f, 18.0f)];
-    [self configureLabel:sizeLabel font:[NSFont systemFontOfSize:12.0f]];
+    y -= 36.0f * scaleFactor;
+    NSTextField *sizeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60.0f * scaleFactor, 18.0f * scaleFactor)];
+    [self configureLabel:sizeLabel font:[NSFont systemFontOfSize:12.0f * scaleFactor]];
     [sizeLabel setStringValue:@"Size"];
     [self.contentView addSubview:sizeLabel];
 
-    CGFloat sizeFieldWidth = 64.0f;
-    self.fontSizeField = [[NSTextField alloc] initWithFrame:NSMakeRect(padding + 64.0f,
-                                                                       y - 2.0f,
+    CGFloat sizeFieldWidth = 64.0f * scaleFactor;
+    self.fontSizeField = [[NSTextField alloc] initWithFrame:NSMakeRect(padding + (64.0f * scaleFactor),
+                                                                       y - (2.0f * scaleFactor),
                                                                        sizeFieldWidth,
-                                                                       24.0f)];
-    [self.fontSizeField setFont:[NSFont systemFontOfSize:12.0f]];
+                                                                       24.0f * scaleFactor)];
+    [self.fontSizeField setFont:[NSFont systemFontOfSize:12.0f * scaleFactor]];
     [self.fontSizeField setAlignment:NSTextAlignmentRight];
     [self.fontSizeField setDelegate:self];
     [self.fontSizeField setAutoresizingMask:NSViewMaxYMargin];
@@ -215,10 +218,10 @@
     [self.fontSizeField setStringValue:@"14"];
     [self.contentView addSubview:self.fontSizeField];
 
-    self.fontSizeStepper = [[NSStepper alloc] initWithFrame:NSMakeRect(NSMaxX(self.fontSizeField.frame) + 6.0f,
-                                                                       y - 2.0f,
-                                                                       18.0f,
-                                                                       24.0f)];
+    self.fontSizeStepper = [[NSStepper alloc] initWithFrame:NSMakeRect(NSMaxX(self.fontSizeField.frame) + (6.0f * scaleFactor),
+                                                                       y - (2.0f * scaleFactor),
+                                                                       18.0f * scaleFactor,
+                                                                       24.0f * scaleFactor)];
     [self.fontSizeStepper setMinValue:STTextPopoverMinFontSize];
     [self.fontSizeStepper setMaxValue:STTextPopoverMaxFontSize];
     [self.fontSizeStepper setIncrement:1.0];
@@ -227,17 +230,17 @@
     [self.fontSizeStepper setAutoresizingMask:NSViewMaxYMargin];
     [self.contentView addSubview:self.fontSizeStepper];
 
-    y -= 44.0f;
-    NSTextField *colorTitleLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60.0f, 18.0f)];
-    [self configureLabel:colorTitleLabel font:[NSFont systemFontOfSize:12.0f]];
+    y -= 44.0f * scaleFactor;
+    NSTextField *colorTitleLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60.0f * scaleFactor, 18.0f * scaleFactor)];
+    [self configureLabel:colorTitleLabel font:[NSFont systemFontOfSize:12.0f * scaleFactor]];
     [colorTitleLabel setStringValue:@"Color"];
     [self.contentView addSubview:colorTitleLabel];
 
-    CGFloat colorWellWidth = 44.0f;
-    self.colorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(padding + 64.0f,
-                                                                   y - 4.0f,
+    CGFloat colorWellWidth = 44.0f * scaleFactor;
+    self.colorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(padding + (64.0f * scaleFactor),
+                                                                   y - (4.0f * scaleFactor),
                                                                    colorWellWidth,
-                                                                   28.0f)];
+                                                                   28.0f * scaleFactor)];
     [self.colorWell setTarget:self];
     [self.colorWell setAction:@selector(colorChanged:)];
     [self.colorWell setAutoresizingMask:NSViewMaxYMargin];
@@ -254,19 +257,19 @@
         [NSColor colorWithCalibratedRed:0.76 green:0.33 blue:0.85 alpha:1.0],
         nil];
     self.colorSwatches = swatches;
-    CGFloat swatchSize = 26.0f;
+    CGFloat swatchSize = 26.0f * scaleFactor;
     NSUInteger columns = swatches.count;
-    CGFloat swatchSpacing = 6.0f;
+    CGFloat swatchSpacing = 6.0f * scaleFactor;
     CGFloat availableWidth = MAX(0.0f, contentWidth - ((columns - 1) * swatchSpacing));
-    CGFloat effectiveSwatchSize = MIN(swatchSize, MAX(20.0f, availableWidth / MAX(columns, 1)));
+    CGFloat effectiveSwatchSize = MIN(swatchSize, MAX(20.0f * scaleFactor, availableWidth / MAX(columns, 1)));
     self.colorSwatchSize = effectiveSwatchSize;
     CGFloat swatchAreaHeight = effectiveSwatchSize;
 
-    CGFloat buttonAreaHeight = 32.0f;
-    CGFloat previewBottom = padding + buttonAreaHeight + 18.0f;
-    CGFloat swatchTopLimit = y - 8.0f;
+    CGFloat buttonAreaHeight = 32.0f * scaleFactor;
+    CGFloat previewBottom = padding + buttonAreaHeight + (18.0f * scaleFactor);
+    CGFloat swatchTopLimit = y - (8.0f * scaleFactor);
     CGFloat swatchBottom = swatchTopLimit - swatchAreaHeight;
-    CGFloat minimumPreviewGap = 12.0f;
+    CGFloat minimumPreviewGap = 12.0f * scaleFactor;
     if (swatchBottom < previewBottom + minimumPreviewGap) {
         swatchBottom = previewBottom + minimumPreviewGap;
     }
@@ -302,7 +305,7 @@
     self.colorSwatchButtons = swatchButtons;
     [self updateSwatchSelectionForColor:self.colorWell.color];
 
-    y = NSMinY(swatchContainer.frame) - 12.0f;
+    y = NSMinY(swatchContainer.frame) - (12.0f * scaleFactor);
     CGFloat previewAvailableHeight = y - previewBottom;
     if (previewAvailableHeight < 0.0f) {
         previewAvailableHeight = 0.0f;
@@ -354,13 +357,13 @@
     [self.resetButton setAutoresizingMask:NSViewMaxYMargin];
     [self.defaultButton setAutoresizingMask:NSViewMaxYMargin];
 
-    CGFloat buttonsWidth = self.resetButton.frame.size.width + 12.0f + self.defaultButton.frame.size.width;
+    CGFloat buttonsWidth = self.resetButton.frame.size.width + (12.0f * scaleFactor) + self.defaultButton.frame.size.width;
     CGFloat originX = padding + (contentWidth - buttonsWidth);
     self.resetButton.frame = NSMakeRect(originX,
                                         buttonY,
                                         self.resetButton.frame.size.width,
                                         self.resetButton.frame.size.height);
-    self.defaultButton.frame = NSMakeRect(NSMaxX(self.resetButton.frame) + 12.0f,
+    self.defaultButton.frame = NSMakeRect(NSMaxX(self.resetButton.frame) + (12.0f * scaleFactor),
                                           buttonY,
                                           self.defaultButton.frame.size.width,
                                           self.defaultButton.frame.size.height);

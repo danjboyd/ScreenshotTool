@@ -6,7 +6,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (instancetype)initWithContentView:(NSView *)contentView;
 
+// Resolves the current scale factor, honoring GSScaleFactor overrides when present.
++ (CGFloat)currentScaleFactorForView:(nullable NSView *)view;
+
 @property (nonatomic, assign) NSSize contentSize;
+@property (nonatomic, assign) CGFloat effectiveScaleFactor;
 
 - (void)showRelativeToRect:(NSRect)rect ofView:(NSView *)view preferredEdge:(NSRectEdge)edge;
 - (void)close;

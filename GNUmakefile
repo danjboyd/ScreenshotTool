@@ -144,105 +144,22 @@ ADDITIONAL_OBJCFLAGS += -fobjc-arc
 ScreenshotTool_CPPFLAGS += $(FONTCONFIG_CFLAGS)
 ADDITIONAL_LDFLAGS += $(FONTCONFIG_LDFLAGS)
 
-TEST_SUPPORT_OBJC = Source/AppDelegate.m \
-	Source/ScreenshotCanvasView.m \
-	Source/MarkupStroke.m \
-	Source/MarkupText.m \
-	Source/STFloatingPopover.m \
-	Source/STFloatingPopoverWindow.m \
-	Source/STFloatingPopoverBackgroundView.m \
-	Source/STHyperlinkButton.m \
-	Source/ScreenshotToolSettings.m \
-	Source/ToolSettingsPopoverController.m \
-	Source/TextToolPopoverController.m \
-	Source/PreferencesWindowController.m \
-	Source/STThemeUtilities.m
 
-TEST_OUTPUT_DIR = Tests/bin
-TESTS = CropUndoProbe CropUndoWindowProbe ClipboardHighlighterProbe ClipboardHighlighterOpacityProbe ToolbarBadgeRefreshProbe ToolbarIconThemeProbe CursorAssetProbe CursorRectProbe TextFontComboProbe StatusBarToggleProbe
-TEST_CLANG ?= $(CLANG_WRAPPER)
-GNUStepConfig ?= $(shell command -v gnustep-config 2>/dev/null)
-ifeq ($(strip $(GNUStepConfig)),)
-GNUStepConfig := /usr/GNUstep/System/Tools/gnustep-config
-endif
-ifeq ($(wildcard $(GNUStepConfig)),)
-$(error Unable to locate gnustep-config; please install gnustep-make or add it to PATH)
-endif
-GNUSTEP_SYSTEM_TOOLS ?= $(shell $(GNUStepConfig) --variable=GNUSTEP_SYSTEM_TOOLS 2>/dev/null)
-GNUSTEP_SYSTEM_LIBRARY ?= $(shell $(GNUStepConfig) --variable=GNUSTEP_SYSTEM_LIBRARY 2>/dev/null)
-ifeq ($(strip $(GNUSTEP_SYSTEM_TOOLS)),)
-GNUSTEP_SYSTEM_TOOLS := /usr/GNUstep/System/Tools
-endif
-ifeq ($(strip $(GNUSTEP_SYSTEM_LIBRARY)),)
-GNUSTEP_SYSTEM_LIBRARY := /usr/GNUstep/System/Library
-endif
-TEST_OBJCFLAGS := -fobjc-arc -ISource $(FONTCONFIG_CFLAGS) $(shell $(GNUStepConfig) --objc-flags)
-TEST_LDFLAGS := $(shell $(GNUStepConfig) --gui-libs) $(FONTCONFIG_LDFLAGS)
 
 include $(GNUSTEP_MAKEFILES)/application.make
 
 .PHONY: tests tests-only clean-tests
 
-tests: $(TESTS:%=$(TEST_OUTPUT_DIR)/%)
-	@mkdir -p $(HOME)/GNUstep/Defaults/.lck
-	@set -e; \
-	TEST_PATH_PREFIX="$(GNUSTEP_SYSTEM_TOOLS)"; \
-	TEST_LD_PREFIX="$(GNUSTEP_SYSTEM_LIBRARY)/Libraries"; \
-	if [ -n "$$PATH" ]; then \
-		TEST_ENV_PATH="$$TEST_PATH_PREFIX:$$PATH"; \
-	else \
-		TEST_ENV_PATH="$$TEST_PATH_PREFIX"; \
-	fi; \
-	if [ -n "$$LD_LIBRARY_PATH" ]; then \
-		TEST_ENV_LD="$$TEST_LD_PREFIX:$$LD_LIBRARY_PATH"; \
-	else \
-		TEST_ENV_LD="$$TEST_LD_PREFIX"; \
-	fi; \
-	if [ -n "$$DYLD_LIBRARY_PATH" ]; then \
-		TEST_ENV_DYLD="$$TEST_LD_PREFIX:$$DYLD_LIBRARY_PATH"; \
-	else \
-		TEST_ENV_DYLD="$$TEST_LD_PREFIX"; \
-	fi; \
-	for tool in $(TESTS); do \
-		echo "Running $$tool..."; \
-		PATH="$$TEST_ENV_PATH" LD_LIBRARY_PATH="$$TEST_ENV_LD" DYLD_LIBRARY_PATH="$$TEST_ENV_DYLD" $(TEST_OUTPUT_DIR)/$$tool || exit 1; \
-	done
+tests:
+	@echo "Building test bundle..."
+	@$(MAKE) -C Tests
+	@echo "Running XCTest bundle..."
+	@xctest Tests/ScreenshotToolTests.bundle
 
 tests-only:
 	@$(MAKE) tests
 
-$(TEST_OUTPUT_DIR):
-	@mkdir -p $(TEST_OUTPUT_DIR)
 
-$(TEST_OUTPUT_DIR)/CropUndoProbe: Tests/CropUndoProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
-	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
-
-$(TEST_OUTPUT_DIR)/CropUndoWindowProbe: Tests/CropUndoWindowProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
-	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
-
-$(TEST_OUTPUT_DIR)/ClipboardHighlighterProbe: Tests/ClipboardHighlighterProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
-	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
-
-$(TEST_OUTPUT_DIR)/ClipboardHighlighterOpacityProbe: Tests/ClipboardHighlighterOpacityProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
-	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
-
-$(TEST_OUTPUT_DIR)/ToolbarBadgeRefreshProbe: Tests/ToolbarBadgeRefreshProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
-	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
-
-$(TEST_OUTPUT_DIR)/ToolbarIconThemeProbe: Tests/ToolbarIconThemeProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
-	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
-
-$(TEST_OUTPUT_DIR)/CursorAssetProbe: Tests/CursorAssetProbe.m | $(TEST_OUTPUT_DIR)
-	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
-
-$(TEST_OUTPUT_DIR)/CursorRectProbe: Tests/CursorRectProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
-	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
-
-$(TEST_OUTPUT_DIR)/TextFontComboProbe: Tests/TextFontComboProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
-	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
-
-$(TEST_OUTPUT_DIR)/StatusBarToggleProbe: Tests/StatusBarToggleProbe.m $(TEST_SUPPORT_OBJC) | $(TEST_OUTPUT_DIR)
-	$(TEST_CLANG) $^ $(TEST_OBJCFLAGS) $(TEST_LDFLAGS) -o $@
 
 after-all:: Resources/Info-gnustep.plist
 	@if [ -d ScreenshotTool.app/Resources ]; then \
@@ -254,6 +171,7 @@ after-all:: Resources/Info-gnustep.plist
 	fi
 
 clean-tests:
-	@rm -rf $(TEST_OUTPUT_DIR)
+	@echo "Cleaning test bundle..."
+	@$(MAKE) -C Tests clean
 
 clean:: clean-tests
