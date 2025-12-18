@@ -1,6 +1,7 @@
 #import "STFloatingPopover.h"
 #import "STFloatingPopoverWindow.h"
 #import "STFloatingPopoverBackgroundView.h"
+#import "AppDelegate.h"
 
 static const CGFloat kSTPopoverArrowHeight = 12.0f;
 static const CGFloat kSTPopoverArrowBase = 20.0f;
@@ -21,6 +22,16 @@ static CGFloat STReadGSScaleFactor(void) {
     CGFloat userDefault = [defaults doubleForKey:@"GSScaleFactor"];
     if (userDefault > 0.0f) {
         return userDefault;
+    }
+    return 0.0f;
+}
+
+static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
+    if (!window) {
+        return 0.0f;
+    }
+    if ([window respondsToSelector:@selector(userSpaceScaleFactor)]) {
+        return window.userSpaceScaleFactor;
     }
     return 0.0f;
 }
@@ -112,7 +123,8 @@ static CGFloat STReadGSScaleFactor(void) {
         return;
     }
     NSRect frame = self.window.frame;
-    NSSize windowSize = frame.size;
+    NSRect contentRect = [self.window contentRectForFrameRect:frame];
+    NSSize windowSize = contentRect.size;
     NSSize contentSize = windowSize;
     if (self.currentArrowEdge == NSMinYEdge || self.currentArrowEdge == NSMaxYEdge) {
         contentSize.height = MAX(windowSize.height - kSTPopoverArrowHeight * self.effectiveScaleFactor, 40.0f);
@@ -121,13 +133,21 @@ static CGFloat STReadGSScaleFactor(void) {
     }
     _contentSize = contentSize;
 
+    CGFloat screenScale = STUserSpaceScaleFactorForWindow(self.window);
+    if (screenScale <= 0.0f) {
+        screenScale = STReadGSScaleFactor();
+    }
+    if (screenScale <= 0.0f) {
+        screenScale = 1.0f;
+    }
+
     CGFloat desiredOffset;
     if (self.currentArrowEdge == NSMinYEdge || self.currentArrowEdge == NSMaxYEdge) {
         desiredOffset = self.anchorCenterInScreen.x - frame.origin.x;
     } else {
         desiredOffset = self.anchorCenterInScreen.y - frame.origin.y;
     }
-    CGFloat arrowOffset = [self clampedArrowOffsetForEdge:self.currentArrowEdge windowSize:windowSize desired:desiredOffset];
+    CGFloat arrowOffset = [self clampedArrowOffsetForEdge:self.currentArrowEdge windowSize:windowSize desired:(desiredOffset / screenScale)];
 
     self.backgroundView.frame = NSMakeRect(0, 0, windowSize.width, windowSize.height);
     self.backgroundView.arrowEdge = self.currentArrowEdge;
@@ -181,6 +201,14 @@ static CGFloat STReadGSScaleFactor(void) {
 
     [self.window setContentSize:windowSize];
     self.backgroundView.frame = NSMakeRect(0, 0, windowSize.width, windowSize.height);
+    CGFloat screenScale = STUserSpaceScaleFactorForWindow(self.window);
+    if (screenScale <= 0.0f) {
+        screenScale = STReadGSScaleFactor();
+    }
+    if (screenScale <= 0.0f) {
+        screenScale = 1.0f;
+    }
+
     CGFloat desiredOffset;
     NSRect frame = self.window.frame;
     if (self.currentArrowEdge == NSMinYEdge || self.currentArrowEdge == NSMaxYEdge) {
@@ -188,7 +216,7 @@ static CGFloat STReadGSScaleFactor(void) {
     } else {
         desiredOffset = self.anchorCenterInScreen.y - frame.origin.y;
     }
-    CGFloat arrowOffset = [self clampedArrowOffsetForEdge:self.currentArrowEdge windowSize:windowSize desired:desiredOffset];
+    CGFloat arrowOffset = [self clampedArrowOffsetForEdge:self.currentArrowEdge windowSize:windowSize desired:(desiredOffset / screenScale)];
     self.backgroundView.arrowEdge = self.currentArrowEdge;
     self.backgroundView.arrowOffset = arrowOffset;
     self.backgroundView.arrowBase = kSTPopoverArrowBase * self.effectiveScaleFactor;
@@ -233,6 +261,9 @@ static CGFloat STReadGSScaleFactor(void) {
 
     [self ensureWindow];
     self.effectiveScaleFactor = [[self class] currentScaleFactorForView:view];
+    CGFloat gsScaleFactor = STReadGSScaleFactor();
+    CGFloat anchorWindowScale = STUserSpaceScaleFactorForWindow(view.window);
+    CGFloat screenScale = anchorWindowScale > 0.0f ? anchorWindowScale : (gsScaleFactor > 0.0f ? gsScaleFactor : 1.0f);
 
     NSRectEdge arrowEdge = [self arrowEdgeForPreferredEdge:edge];
     NSSize contentSize = self.contentSize;
@@ -247,31 +278,34 @@ static CGFloat STReadGSScaleFactor(void) {
         windowSize.width += kSTPopoverArrowHeight * self.effectiveScaleFactor;
     }
 
-    NSRect screenRect = [view.window convertRectToScreen:rect];
+    NSRect windowRect = [view convertRect:rect toView:nil];
+    NSRect screenRect = [view.window convertRectToScreen:windowRect];
     NSPoint anchorCenter = NSMakePoint(NSMidX(screenRect), NSMidY(screenRect));
     self.anchorCenterInScreen = anchorCenter;
 
-    NSRect frame = NSMakeRect(0, 0, windowSize.width, windowSize.height);
+    NSSize scaledWindowSize = NSMakeSize(windowSize.width * screenScale, windowSize.height * screenScale);
+    CGFloat screenGap = kSTPopoverWindowGap * screenScale;
+    NSRect frame = NSMakeRect(0, 0, scaledWindowSize.width, scaledWindowSize.height);
     switch (edge) {
         case NSMinYEdge:
-            frame.origin.x = anchorCenter.x - (windowSize.width * 0.5f);
-            frame.origin.y = NSMaxY(screenRect) + kSTPopoverWindowGap * self.effectiveScaleFactor;
+            frame.origin.x = anchorCenter.x - (scaledWindowSize.width * 0.5f);
+            frame.origin.y = NSMaxY(screenRect) + screenGap;
             break;
         case NSMaxYEdge:
-            frame.origin.x = anchorCenter.x - (windowSize.width * 0.5f);
-            frame.origin.y = NSMinY(screenRect) - kSTPopoverWindowGap * self.effectiveScaleFactor - windowSize.height;
+            frame.origin.x = anchorCenter.x - (scaledWindowSize.width * 0.5f);
+            frame.origin.y = NSMinY(screenRect) - screenGap - scaledWindowSize.height;
             break;
         case NSMinXEdge:
-            frame.origin.x = NSMinX(screenRect) - kSTPopoverWindowGap * self.effectiveScaleFactor - windowSize.width;
-            frame.origin.y = anchorCenter.y - (windowSize.height * 0.5f);
+            frame.origin.x = NSMinX(screenRect) - screenGap - scaledWindowSize.width;
+            frame.origin.y = anchorCenter.y - (scaledWindowSize.height * 0.5f);
             break;
         case NSMaxXEdge:
-            frame.origin.x = NSMaxX(screenRect) + kSTPopoverWindowGap * self.effectiveScaleFactor;
-            frame.origin.y = anchorCenter.y - (windowSize.height * 0.5f);
+            frame.origin.x = NSMaxX(screenRect) + screenGap;
+            frame.origin.y = anchorCenter.y - (scaledWindowSize.height * 0.5f);
             break;
         default:
-            frame.origin.x = anchorCenter.x - (windowSize.width * 0.5f);
-            frame.origin.y = NSMinY(screenRect) - kSTPopoverWindowGap * self.effectiveScaleFactor - windowSize.height;
+            frame.origin.x = anchorCenter.x - (scaledWindowSize.width * 0.5f);
+            frame.origin.y = NSMinY(screenRect) - screenGap - scaledWindowSize.height;
             arrowEdge = NSMaxYEdge;
             break;
     }
@@ -279,11 +313,11 @@ static CGFloat STReadGSScaleFactor(void) {
     NSScreen *targetScreen = view.window.screen ?: [NSScreen mainScreen];
     if (targetScreen) {
         NSRect visibleFrame = targetScreen.visibleFrame;
-        if (NSWidth(visibleFrame) >= windowSize.width) {
-            frame.origin.x = MAX(NSMinX(visibleFrame), MIN(frame.origin.x, NSMaxX(visibleFrame) - windowSize.width));
+        if (NSWidth(visibleFrame) >= scaledWindowSize.width) {
+            frame.origin.x = MAX(NSMinX(visibleFrame), MIN(frame.origin.x, NSMaxX(visibleFrame) - scaledWindowSize.width));
         }
-        if (NSHeight(visibleFrame) >= windowSize.height) {
-            frame.origin.y = MAX(NSMinY(visibleFrame), MIN(frame.origin.y, NSMaxY(visibleFrame) - windowSize.height));
+        if (NSHeight(visibleFrame) >= scaledWindowSize.height) {
+            frame.origin.y = MAX(NSMinY(visibleFrame), MIN(frame.origin.y, NSMaxY(visibleFrame) - scaledWindowSize.height));
         }
     }
 
@@ -294,7 +328,7 @@ static CGFloat STReadGSScaleFactor(void) {
         desiredOffset = anchorCenter.y - frame.origin.y;
     }
 
-    CGFloat arrowOffset = [self clampedArrowOffsetForEdge:arrowEdge windowSize:windowSize desired:desiredOffset];
+    CGFloat arrowOffset = [self clampedArrowOffsetForEdge:arrowEdge windowSize:windowSize desired:(desiredOffset / screenScale)];
 
     self.currentArrowEdge = arrowEdge;
     [self.window setContentSize:windowSize];

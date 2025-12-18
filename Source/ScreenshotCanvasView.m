@@ -117,12 +117,6 @@ static void STCursorWarnFallback(NSString *toolKey, NSString *reason) {
 #endif
 }
 
-#if ST_ENABLE_GNUSTEP_WORKAROUNDS
-#define STUndoLoggingActive() (ScreenshotUndoLoggingEnabled && ScreenshotUndoLoggingEnabled())
-#else
-#define STUndoLoggingActive() (ScreenshotUndoLoggingEnabled())
-#endif
-
 typedef struct {
     unsigned char *data;
     NSInteger width;
@@ -137,6 +131,125 @@ typedef struct {
 } STBitmapBuffer;
 
 static const CGFloat STSelectionHandleSize = 10.0f;
+
+static CGFloat STReadGSScaleFactor(void) {
+    const char *rawValue = getenv("GSScaleFactor");
+    if (rawValue && rawValue[0] != '\0') {
+        CGFloat parsed = (CGFloat)atof(rawValue);
+        if (parsed > 0.0f) {
+            return parsed;
+        }
+    }
+
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    id raw = [defaults objectForKey:@"GSScaleFactor"];
+    if ([raw respondsToSelector:@selector(doubleValue)]) {
+        CGFloat parsed = [raw doubleValue];
+        if (parsed > 0.0f) {
+            return parsed;
+        }
+    }
+
+    NSString *domainName = NSGlobalDomain;
+    NSDictionary *global = [defaults persistentDomainForName:domainName];
+    id rawGlobal = global[@"GSScaleFactor"];
+    if ([rawGlobal respondsToSelector:@selector(doubleValue)]) {
+        CGFloat parsed = [rawGlobal doubleValue];
+        if (parsed > 0.0f) {
+            return parsed;
+        }
+    }
+
+    return 0.0f;
+}
+
+static BOOL STPrepareBitmapBuffer(NSBitmapImageRep *rep, STBitmapBuffer *buffer);
+
+static NSBitmapImageRep *STScaledCursorRep(NSBitmapImageRep *rep, CGFloat scale) {
+    if (!rep || scale <= 1.01f) {
+        return rep;
+    }
+    NSInteger srcWidth = rep.pixelsWide;
+    NSInteger srcHeight = rep.pixelsHigh;
+    NSInteger dstWidth = (NSInteger)lrint(srcWidth * scale);
+    NSInteger dstHeight = (NSInteger)lrint(srcHeight * scale);
+    if (srcWidth <= 0 || srcHeight <= 0 || dstWidth <= 0 || dstHeight <= 0) {
+        return rep;
+    }
+    NSBitmapImageRep *scaled = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                                       pixelsWide:dstWidth
+                                                                       pixelsHigh:dstHeight
+                                                                    bitsPerSample:8
+                                                                  samplesPerPixel:4
+                                                                         hasAlpha:YES
+                                                                         isPlanar:NO
+                                                                   colorSpaceName:NSDeviceRGBColorSpace
+                                                                      bitmapFormat:0
+                                                                       bytesPerRow:0
+                                                                      bitsPerPixel:0];
+    if (!scaled) {
+        return rep;
+    }
+    [scaled setSize:NSMakeSize(dstWidth, dstHeight)];
+
+    STBitmapBuffer src;
+    STBitmapBuffer dst;
+    if (!STPrepareBitmapBuffer(rep, &src) || !STPrepareBitmapBuffer(scaled, &dst)) {
+        return rep;
+    }
+
+    for (NSInteger y = 0; y < dst.height; y++) {
+        NSInteger srcY = (NSInteger)floor((double)y / scale);
+        if (srcY < 0) {
+            srcY = 0;
+        } else if (srcY >= src.height) {
+            srcY = src.height - 1;
+        }
+        unsigned char *dstRow = dst.data + (y * dst.bytesPerRow);
+        unsigned char *srcRow = src.data + (srcY * src.bytesPerRow);
+        for (NSInteger x = 0; x < dst.width; x++) {
+            NSInteger srcX = (NSInteger)floor((double)x / scale);
+            if (srcX < 0) {
+                srcX = 0;
+            } else if (srcX >= src.width) {
+                srcX = src.width - 1;
+            }
+            unsigned char *dstPixel = dstRow + (x * dst.bytesPerPixel);
+            unsigned char *srcPixel = srcRow + (srcX * src.bytesPerPixel);
+            dstPixel[dst.rIndex] = srcPixel[src.rIndex];
+            dstPixel[dst.gIndex] = srcPixel[src.gIndex];
+            dstPixel[dst.bIndex] = srcPixel[src.bIndex];
+            if (dst.hasAlpha) {
+                dstPixel[dst.aIndex] = src.hasAlpha ? srcPixel[src.aIndex] : 255;
+            }
+        }
+    }
+
+    return scaled;
+}
+
+static CGFloat STCursorScaleFactor(void) {
+    static int initialized = 0;
+    static CGFloat scale = 1.0f;
+    if (!initialized) {
+        initialized = 1;
+        CGFloat parsed = STReadGSScaleFactor();
+        if (parsed > 0.0f) {
+            scale = parsed;
+        }
+        if (scale < 1.0f) {
+            scale = 1.0f;
+        }
+        ScreenshotCursorLog(@"[CursorScale] scale=%.3f", scale);
+    }
+    return scale;
+}
+
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
+#define STUndoLoggingActive() (ScreenshotUndoLoggingEnabled && ScreenshotUndoLoggingEnabled())
+#else
+#define STUndoLoggingActive() (ScreenshotUndoLoggingEnabled())
+#endif
 
 static inline unsigned char STRoundToByte(double value) {
     if (value <= 0.0) {
@@ -1471,7 +1584,8 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
                         tg,
                         tb,
                         ta);
-    NSString *cacheKey = [NSString stringWithFormat:@"%@:%0.4f:%0.4f:%0.4f:%0.4f", toolKey, tr, tg, tb, ta];
+    CGFloat cursorScale = STCursorScaleFactor();
+    NSString *cacheKey = [NSString stringWithFormat:@"%@:%0.4f:%0.4f:%0.4f:%0.4f:%0.3f", toolKey, tr, tg, tb, ta, cursorScale];
     static NSMutableDictionary<NSString *, NSCursor *> *tintedCache = nil;
     if (!tintedCache) {
         tintedCache = [[NSMutableDictionary alloc] init];
@@ -1601,14 +1715,20 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         free(templateComponents);
     }
 
-    CGFloat sizeInPoints = sizeNumber ? sizeNumber.doubleValue : mutableRep.size.width;
+    NSBitmapImageRep *scaledRep = STScaledCursorRep(mutableRep, cursorScale);
+    CGFloat baseSize = sizeNumber ? sizeNumber.doubleValue : mutableRep.size.width;
+    if (baseSize <= 0.0) {
+        baseSize = mutableRep.pixelsWide > 0 ? mutableRep.pixelsWide : 24.0;
+    }
+    CGFloat sizeInPoints = baseSize * cursorScale;
     if (sizeInPoints <= 0.0) {
-        sizeInPoints = mutableRep.pixelsWide > 0 ? mutableRep.pixelsWide : 24.0;
+        sizeInPoints = scaledRep.pixelsWide > 0 ? scaledRep.pixelsWide : 24.0;
     }
     NSSize targetSize = NSMakeSize(sizeInPoints, sizeInPoints);
-    [mutableRep setSize:targetSize];
+    hotspot = NSMakePoint(hotspot.x * cursorScale, hotspot.y * cursorScale);
+    [scaledRep setSize:targetSize];
     NSImage *cursorImage = [[NSImage alloc] initWithSize:targetSize];
-    [cursorImage addRepresentation:mutableRep];
+    [cursorImage addRepresentation:scaledRep];
 
     NSCursor *cursor = [[NSCursor alloc] initWithImage:cursorImage hotSpot:hotspot];
     if (cursor) {
@@ -1726,8 +1846,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (!cache) {
         cache = [[NSMutableDictionary alloc] init];
     }
-
-    NSCursor *cached = cache[toolKey];
+    CGFloat cursorScale = STCursorScaleFactor();
+    NSString *cacheKey = [NSString stringWithFormat:@"%@:%0.3f", toolKey, cursorScale];
+    NSCursor *cached = cache[cacheKey];
     if (cached) {
         ScreenshotCursorLog(@"[CursorConstructed] tool=%@ source=cache hotspot=(%.2f,%.2f)",
                             toolKey,
@@ -1753,14 +1874,20 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         return fallback;
     }
 
-    CGFloat sizeInPoints = size1xNumber ? size1xNumber.doubleValue : rep.size.width;
+    NSBitmapImageRep *scaledRep = STScaledCursorRep(rep, cursorScale);
+    CGFloat baseSize = size1xNumber ? size1xNumber.doubleValue : rep.size.width;
+    if (baseSize <= 0.0) {
+        baseSize = rep.pixelsWide > 0 ? rep.pixelsWide : 24.0;
+    }
+    CGFloat sizeInPoints = baseSize * cursorScale;
     if (sizeInPoints <= 0.0) {
-        sizeInPoints = rep.pixelsWide > 0 ? rep.pixelsWide : 24.0;
+        sizeInPoints = scaledRep.pixelsWide > 0 ? scaledRep.pixelsWide : 24.0;
     }
     NSSize targetSize = NSMakeSize(sizeInPoints, sizeInPoints);
-    [rep setSize:targetSize];
+    hotspot = NSMakePoint(hotspot.x * cursorScale, hotspot.y * cursorScale);
+    [scaledRep setSize:targetSize];
     NSImage *cursorImage = [[NSImage alloc] initWithSize:targetSize];
-    [cursorImage addRepresentation:rep];
+    [cursorImage addRepresentation:scaledRep];
 
     NSCursor *cursor = [[NSCursor alloc] initWithImage:cursorImage hotSpot:hotspot];
     if (cursor) {
@@ -1770,7 +1897,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
                             hotspot.y,
                             NSStringFromSize(targetSize),
                             (unsigned long)cursorImage.representations.count);
-        cache[toolKey] = cursor;
+        cache[cacheKey] = cursor;
         return cursor;
     }
     STCursorWarnFallback(toolKey, @"cursor init failed");

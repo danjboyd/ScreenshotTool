@@ -8,6 +8,7 @@
 #import "TextToolPopoverController.h"
 #import "PreferencesWindowController.h"
 #import "STThemeUtilities.h"
+#import "STHudView.h"
 
 #ifndef NSAboutPanelOptionApplicationIcon
 #define NSAboutPanelOptionApplicationIcon @"ApplicationIcon"
@@ -36,6 +37,12 @@ static NSString * const ToolbarItemZoom = @"com.screenshottool.toolbar.zoom";
 static NSString * const ToolbarItemCopy = @"com.screenshottool.toolbar.copy";
 static NSString * const ToolbarItemPreferences = @"com.screenshottool.toolbar.preferences";
 static const CGFloat StatusBarHeight = 24.0f;
+static const CGFloat STHudCornerRadius = 10.0f;
+static const CGFloat STHudHorizontalPadding = 20.0f;
+static const CGFloat STHudVerticalPadding = 12.0f;
+static const CGFloat STHudMaxWidth = 360.0f;
+static const NSTimeInterval STHudFadeInDuration = 0.12;
+static const NSTimeInterval STHudFadeOutDuration = 0.20;
 static const CGFloat ToolbarIconDimension = 32.0f;
 static NSString * const ToolbarIdentifier = @"com.screenshottool.toolbar";
 
@@ -467,6 +474,15 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSTextField *statusTextField;
 @property (nonatomic, strong) NSTimer *statusClearTimer;
 @property (nonatomic, strong) NSView *statusControlsContainer;
+@property (nonatomic, strong) NSWindow *hudWindow;
+@property (nonatomic, strong) STHudView *hudView;
+@property (nonatomic, strong) NSTimer *hudDismissTimer;
+@property (nonatomic, strong) NSTimer *hudFadeTimer;
+@property (nonatomic, copy) void (^hudFadeCompletion)(void);
+@property (nonatomic, assign) NSTimeInterval hudFadeStartTime;
+@property (nonatomic, assign) NSTimeInterval hudFadeDuration;
+@property (nonatomic, assign) CGFloat hudFadeStartAlpha;
+@property (nonatomic, assign) CGFloat hudFadeTargetAlpha;
 @property (nonatomic, strong) NSTextField *toolWidthTitleLabel;
 @property (nonatomic, strong) NSSlider *toolWidthSlider;
 @property (nonatomic, strong) NSTextField *toolWidthValueLabel;
@@ -1875,6 +1891,7 @@ static id STInfoValueForKey(NSString *key) {
     if (self.window.contentView) {
         [self.window.contentView setNeedsDisplay:YES];
     }
+    [self updateHUDAppearance];
     [self refreshToolButtonIcons];
 }
 
@@ -2751,6 +2768,285 @@ static id STInfoValueForKey(NSString *key) {
     }
 }
 
+- (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration {
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"copy feedback message=\"%@\" duration=%.2f statusBarVisible=%@", message ?: @"", duration, self.statusBarVisiblePreference ? @"YES" : @"NO"]);
+    if (self.statusBarVisiblePreference) {
+        [self showStatusMessage:message duration:duration];
+        return;
+    }
+    NSTimeInterval hudDuration = duration;
+    if (hudDuration <= 0.0) {
+        hudDuration = 1.5;
+    } else if (hudDuration > 2.0) {
+        hudDuration = 2.0;
+    }
+    [self showHUDMessage:message duration:hudDuration];
+}
+
+- (void)showHUDMessage:(NSString *)message duration:(NSTimeInterval)duration {
+    if (message.length == 0 || !self.window) {
+        ScreenshotToolAppendLog(@"showHUDMessage skipped (empty message or missing window)");
+        return;
+    }
+    [self.hudDismissTimer invalidate];
+    self.hudDismissTimer = nil;
+    [self.hudFadeTimer invalidate];
+    self.hudFadeTimer = nil;
+    self.hudFadeCompletion = nil;
+
+    [self ensureHUDWindow];
+    [self updateHUDAppearance];
+
+    self.hudView.message = message;
+    self.hudView.textPadding = NSMakeSize(STHudHorizontalPadding, STHudVerticalPadding);
+    self.hudView.cornerRadius = STHudCornerRadius;
+
+    NSDictionary *attributes = @{ NSFontAttributeName: self.hudView.font ?: [NSFont systemFontOfSize:13.0f] };
+    NSSize textSize = [message sizeWithAttributes:attributes];
+    CGFloat width = MIN(STHudMaxWidth, textSize.width + (STHudHorizontalPadding * 2.0f));
+    CGFloat height = textSize.height + (STHudVerticalPadding * 2.0f);
+    width = MAX(width, 120.0f);
+    height = MAX(height, 36.0f);
+
+#if defined(GNUSTEP)
+    NSView *contentView = self.window.contentView;
+    if (!contentView) {
+        return;
+    }
+    NSRect contentBounds = contentView.bounds;
+    NSRect hudRect = NSMakeRect(NSMidX(contentBounds) - (width / 2.0f),
+                                NSMidY(contentBounds) - (height / 2.0f),
+                                width,
+                                height);
+    self.hudView.frame = hudRect;
+    if (self.hudView.superview) {
+        [self.hudView removeFromSuperview];
+    }
+    [contentView addSubview:self.hudView];
+    self.hudView.hudAlpha = 0.0f;
+    self.hudView.hidden = NO;
+    [self.hudView setNeedsDisplay:YES];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"showHUDMessage message=\"%@\" hudRect=%@",
+                                                       message,
+                                                       NSStringFromRect(hudRect)]);
+#else
+    NSSize contentSize = NSMakeSize(width, height);
+    [self.hudWindow setContentSize:contentSize];
+    self.hudView.frame = NSMakeRect(0.0f, 0.0f, width, height);
+
+    NSRect windowFrame = self.window.frame;
+    NSRect hudFrame = NSMakeRect(NSMidX(windowFrame) - (width / 2.0f),
+                                 NSMidY(windowFrame) - (height / 2.0f),
+                                 width,
+                                 height);
+    [self.hudWindow setFrame:hudFrame display:NO];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"showHUDMessage message=\"%@\" windowFrame=%@ hudFrame=%@",
+                                                       message,
+                                                       NSStringFromRect(windowFrame),
+                                                       NSStringFromRect(hudFrame)]);
+#endif
+
+#if !defined(GNUSTEP)
+    if (self.hudWindow.parentWindow != self.window) {
+        [self.window addChildWindow:self.hudWindow ordered:NSWindowAbove];
+    }
+    self.hudWindow.alphaValue = 0.0f;
+    [self.hudWindow orderFront:nil];
+    [self startHudFadeToAlpha:1.0f duration:STHudFadeInDuration completion:nil];
+#else
+    [self startHudFadeToAlpha:1.0f duration:STHudFadeInDuration completion:nil];
+#endif
+
+    if (duration > 0.0) {
+        self.hudDismissTimer = [NSTimer scheduledTimerWithTimeInterval:duration
+                                                                 target:self
+                                                               selector:@selector(hideHUDMessage)
+                                                               userInfo:nil
+                                                                repeats:NO];
+    }
+}
+
+- (void)hideHUDMessage {
+    [self.hudDismissTimer invalidate];
+    self.hudDismissTimer = nil;
+
+#if defined(GNUSTEP)
+    if (!self.hudView) {
+        ScreenshotToolAppendLog(@"hideHUDMessage skipped (no hudView)");
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    [self startHudFadeToAlpha:0.0f duration:STHudFadeOutDuration completion:^{
+        if (weakSelf.hudView) {
+            weakSelf.hudView.hidden = YES;
+        }
+    }];
+#else
+    if (!self.hudWindow) {
+        ScreenshotToolAppendLog(@"hideHUDMessage skipped (no hudWindow)");
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    [self startHudFadeToAlpha:0.0f duration:STHudFadeOutDuration completion:^{
+        if (weakSelf.hudWindow) {
+            [weakSelf.hudWindow orderOut:nil];
+        }
+    }];
+#endif
+}
+
+- (void)ensureHUDWindow {
+#if defined(GNUSTEP)
+    if (self.hudView) {
+        return;
+    }
+    NSRect rect = NSMakeRect(0.0f, 0.0f, 160.0f, 44.0f);
+    STHudView *hudView = [[STHudView alloc] initWithFrame:rect];
+    hudView.cornerRadius = STHudCornerRadius;
+    hudView.textPadding = NSMakeSize(STHudHorizontalPadding, STHudVerticalPadding);
+    hudView.hidden = YES;
+    self.hudView = hudView;
+    ScreenshotToolAppendLog(@"HUD view created (GNUstep)");
+#else
+    if (self.hudWindow) {
+        return;
+    }
+    NSRect rect = NSMakeRect(0.0f, 0.0f, 160.0f, 44.0f);
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:rect
+                                                   styleMask:NSWindowStyleMaskBorderless
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:YES];
+    [window setOpaque:NO];
+    [window setHasShadow:YES];
+    [window setBackgroundColor:[NSColor clearColor]];
+    [window setLevel:NSPopUpMenuWindowLevel];
+    [window setIgnoresMouseEvents:YES];
+    [window setReleasedWhenClosed:NO];
+    [window setCollectionBehavior:NSWindowCollectionBehaviorTransient];
+
+    STHudView *hudView = [[STHudView alloc] initWithFrame:rect];
+    hudView.cornerRadius = STHudCornerRadius;
+    hudView.textPadding = NSMakeSize(STHudHorizontalPadding, STHudVerticalPadding);
+    [window setContentView:hudView];
+
+    self.hudWindow = window;
+    self.hudView = hudView;
+    ScreenshotToolAppendLog(@"HUD window created");
+#endif
+}
+
+- (void)updateHUDAppearance {
+    if (!self.hudView) {
+        return;
+    }
+    self.hudView.font = [NSFont boldSystemFontOfSize:13.0f];
+    if (self.usesDarkTheme) {
+        self.hudView.fillColor = [NSColor colorWithCalibratedWhite:0.20f alpha:0.88f];
+        self.hudView.textColor = [NSColor colorWithCalibratedWhite:0.96f alpha:1.0f];
+    } else {
+        self.hudView.fillColor = [NSColor colorWithCalibratedWhite:0.10f alpha:0.85f];
+        self.hudView.textColor = [NSColor colorWithCalibratedWhite:0.97f alpha:1.0f];
+    }
+    [self.hudView setNeedsDisplay:YES];
+}
+
+- (void)startHudFadeToAlpha:(CGFloat)targetAlpha duration:(NSTimeInterval)duration completion:(void (^)(void))completion {
+    if (!self.hudWindow) {
+#if defined(GNUSTEP)
+        if (!self.hudView) {
+            if (completion) {
+                completion();
+            }
+            return;
+        }
+#else
+        if (completion) {
+            completion();
+        }
+        return;
+#endif
+    }
+    [self.hudFadeTimer invalidate];
+    self.hudFadeTimer = nil;
+
+    if (duration <= 0.0) {
+#if defined(GNUSTEP)
+        self.hudView.hudAlpha = targetAlpha;
+        [self.hudView setNeedsDisplay:YES];
+#else
+        self.hudWindow.alphaValue = targetAlpha;
+#endif
+        if (completion) {
+            completion();
+        }
+        return;
+    }
+
+#if defined(GNUSTEP)
+    self.hudFadeCompletion = [completion copy];
+    self.hudFadeStartAlpha = self.hudView.hudAlpha;
+    self.hudFadeTargetAlpha = targetAlpha;
+    self.hudFadeDuration = duration;
+    self.hudFadeStartTime = [NSDate timeIntervalSinceReferenceDate];
+    self.hudFadeTimer = [NSTimer scheduledTimerWithTimeInterval:(1.0 / 60.0)
+                                                         target:self
+                                                       selector:@selector(handleHudFadeTimer:)
+                                                       userInfo:nil
+                                                        repeats:YES];
+#else
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+        context.duration = duration;
+        self.hudWindow.animator.alphaValue = targetAlpha;
+    } completionHandler:^{
+        if (completion) {
+            completion();
+        }
+    }];
+#endif
+}
+
+- (void)handleHudFadeTimer:(NSTimer *)timer {
+    (void)timer;
+    if (!self.hudWindow) {
+#if defined(GNUSTEP)
+        if (!self.hudView) {
+            [self.hudFadeTimer invalidate];
+            self.hudFadeTimer = nil;
+            return;
+        }
+#else
+        [self.hudFadeTimer invalidate];
+        self.hudFadeTimer = nil;
+        return;
+#endif
+    }
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    NSTimeInterval elapsed = now - self.hudFadeStartTime;
+    CGFloat progress = 1.0f;
+    if (self.hudFadeDuration > 0.0) {
+        progress = (CGFloat)(elapsed / self.hudFadeDuration);
+        if (progress > 1.0f) {
+            progress = 1.0f;
+        }
+    }
+    CGFloat alpha = self.hudFadeStartAlpha + ((self.hudFadeTargetAlpha - self.hudFadeStartAlpha) * progress);
+#if defined(GNUSTEP)
+    self.hudView.hudAlpha = alpha;
+    [self.hudView setNeedsDisplay:YES];
+#else
+    self.hudWindow.alphaValue = alpha;
+#endif
+    if (progress >= 1.0f) {
+        [self.hudFadeTimer invalidate];
+        self.hudFadeTimer = nil;
+        void (^completion)(void) = self.hudFadeCompletion;
+        self.hudFadeCompletion = nil;
+        if (completion) {
+            completion();
+        }
+    }
+}
+
 - (void)layoutContentSubviews {
     if (!self.window || !self.scrollView || !self.statusBarView) {
         return;
@@ -2890,13 +3186,13 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)copy:(id)sender {
     if (![self.canvasView hasImage]) {
-        [self showStatusMessage:@"No image to copy" duration:2.0];
+        [self showCopyFeedbackMessage:@"No image to copy" duration:2.0];
         return;
     }
 
     NSImage *flattened = [self.canvasView flattenedImageForSelection];
     if (!flattened) {
-        [self showStatusMessage:@"Copy failed" duration:2.0];
+        [self showCopyFeedbackMessage:@"Copy failed" duration:2.0];
         return;
     }
 
@@ -2911,7 +3207,7 @@ static id STInfoValueForKey(NSString *key) {
         [types addObject:NSPasteboardTypeTIFF];
     }
     if (types.count == 0) {
-        [self showStatusMessage:@"Copy failed" duration:2.0];
+        [self showCopyFeedbackMessage:@"Copy failed" duration:2.0];
         return;
     }
 
@@ -2925,7 +3221,7 @@ static id STInfoValueForKey(NSString *key) {
     }
 
     NSString *status = [self.canvasView hasSelection] ? @"Copied selection to clipboard" : @"Copied image to clipboard";
-    [self showStatusMessage:status duration:3.0];
+    [self showCopyFeedbackMessage:status duration:3.0];
 }
 
 - (void)cropImage:(id)sender {

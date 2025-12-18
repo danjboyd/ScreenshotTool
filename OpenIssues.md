@@ -1,5 +1,7 @@
 # Open Issues
 
+- ~**Transient HUD for copy confirmation (status bar hidden):** With the status bar disabled, the app has no user-facing feedback when Copy succeeds.  
+  **Resolution:** Added a transient HUD overlay for copy feedback. Cocoa uses a borderless HUD window with fade in/out; GNUstep uses an in-window HUD view with timer-driven alpha fade. Copy now routes to the HUD when the status bar is hidden, and text matches the selection vs full image copy message. Tests updated with a HUD probe and the suite is green.~
 - Fit-to-window stops scaling up smaller images after the window grows.  
   **Repro:** With View ▸ Fit to Window active, open a small image (smaller than the viewport). It loads at ~100% as intended. Drag a window corner to enlarge the viewport while staying in fit-to-window mode.  
   **Expected:** The canvas should scale the image proportionally with the larger viewport (within our normal clamps) so the picture visibly grows.  
@@ -25,6 +27,7 @@
   **Resolution:** Pivoted to native tooltips and captured repro for upstream; no further app-side work planned.~ 
 - ~Color overlay badges sit at the top-right: the pen/highlighter/text toolbar icons display their color dot in the top-right instead of the previous bottom-right.  
   **Resolution:** Confirmed GNUstep’s `NSBitmapImageRep` coordinates originate at the top-left after switching to 24 px toolbar art, so the badge math drew the circle near the top-right. Flipped the badge’s Y coordinate in `imageByAddingColorBadgeToImage:` so the dot returns to the bottom-right while Cocoa continues using the existing drawing path.~
-- **Integrate XCTest for unit testing:** Currently, tests are compiled and run via a custom script (`scripts/test.sh`). We should integrate XCTest to provide a more standard, robust testing framework. For GNUstep, this can be achieved using the `tools-xctest` available in the `gnustep-clang-tools-xctest` package.
+- ~Integrate XCTest for unit testing: tests now run via `xctest` on GNUstep (see `GNUmakefile` target and `tests.log` output), replacing the old custom runner in practice.~ 
 - **Integrate Apple XCTest for macOS:** The test suite currently runs on GNUstep using `tools-xctest`. We need to add conditional logic to the `GNUmakefile` to build and run this same XCTest bundle natively on macOS using Apple's XCTest framework. This involves adjusting compiler flags and linking against the correct frameworks for the Darwin platform.
-- 2025-12-12 Popover still misaligned under GSScaleFactor: content scales correctly but window is offset (down/left) and sizing may still need scaled gaps/anchors. Positioning uses convertRectToScreen(rect) with scaled arrow/gap; need to verify coordinate space under GNUstep y-down and GSScaleFactor. (AppDelegate anchorRectForEvent + STFloatingPopover showRelativeToRect)
+- ~2025-12-12 Popover still misaligned under GSScaleFactor: fixed by computing screen-space frame sizes using the window scale and converting arrow offsets back into logical units; popovers now align under the toolbar on GNUstep with GSScaleFactor != 1.~
+- ~2025-12-18 Custom cursors scale incorrectly under GSScaleFactor: cursor bitmaps now upscale using nearest-neighbor pixel replication and scaled hotspots so pen/highlighter/eraser match UI scale.~

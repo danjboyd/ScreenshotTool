@@ -23,6 +23,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	CropUndoProbe_test.m \
 	CropUndoWindowProbe_test.m \
 	CursorRectProbe_test.m \
+	HudCopyFeedbackProbe_test.m \
 	StatusBarToggleProbe_test.m \
 	TextFontComboProbe_test.m \
 	ToolbarBadgeRefreshProbe_test.m \
@@ -40,8 +41,9 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/MarkupText.m \
     ../Source/STFloatingPopover.m \
     ../Source/STFloatingPopoverWindow.m \
-    ../Source/STFloatingPopoverBackgroundView.m \
+	../Source/STFloatingPopoverBackgroundView.m \
 	../Source/STHyperlinkButton.m \
+	../Source/STHudView.m \
 	../Source/ScreenshotToolSettings.m \
 	../Source/ToolSettingsPopoverController.m \
 	../Source/TextToolPopoverController.m \

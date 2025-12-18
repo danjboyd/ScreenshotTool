@@ -9,11 +9,13 @@ This document captures the current handoff contract between Codex (engineering) 
    make -j"$(nproc)"
    ```
    Fix any build failures before moving to the next step.
-3. **Run the regression suite:**  
+3. **Run the regression suite (GNUstep XCTest):**  
    ```bash
-   Tools/run_tests.sh
+   PATH=/usr/GNUstep/System/Tools:$PATH \
+   LD_LIBRARY_PATH=/usr/GNUstep/System/Library/Libraries:$LD_LIBRARY_PATH \
+   make tests
    ```
-   All probes must pass before requesting manual testing. If tests become obsolete or redundant, delete or update them immediately so the suite stays lean and relevant.
+   This builds the test bundle under `Tests/` and runs it with GNUstep's `xctest` (from `tools-xctest`). All probes must pass before requesting manual testing. If tests become obsolete or redundant, delete or update them immediately so the suite stays lean and relevant.
 4. **Prepare the app for manual testing:**
    - Truncate both runtime logs so the next launch starts fresh:
      ```bash

@@ -3,6 +3,8 @@ obj/
 *.dSYM/
 .DS_Store
 screenshottool.log
+tests.log
+clipboard.png
 debug.log
 local.env
 build/

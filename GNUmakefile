@@ -117,6 +117,7 @@ ScreenshotTool_HEADERS = Source/AppDelegate.h \
 	Source/STFloatingPopoverWindow.h \
     Source/STFloatingPopoverBackgroundView.h \
 	Source/STHyperlinkButton.h \
+	Source/STHudView.h \
 	Source/ScreenshotToolSettings.h \
 	Source/ToolSettingsPopoverController.h \
 	Source/TextToolPopoverController.h \
@@ -132,6 +133,7 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
     Source/STFloatingPopoverWindow.m \
     Source/STFloatingPopoverBackgroundView.m \
 	Source/STHyperlinkButton.m \
+	Source/STHudView.m \
 	Source/ScreenshotToolSettings.m \
 	Source/ToolSettingsPopoverController.m \
 	Source/TextToolPopoverController.m \
