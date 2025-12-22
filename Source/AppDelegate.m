@@ -3780,6 +3780,18 @@ static id STInfoValueForKey(NSString *key) {
     }
 
     NSSize size = image.size;
+    NSBitmapImageRep *bitmapRep = nil;
+    for (NSImageRep *rep in [image representations]) {
+        if ([rep isKindOfClass:[NSBitmapImageRep class]]) {
+            bitmapRep = (NSBitmapImageRep *)rep;
+            break;
+        }
+    }
+    if (bitmapRep && bitmapRep.pixelsWide > 0 && bitmapRep.pixelsHigh > 0) {
+        // Normalize to 1 image pixel per point to ignore DPI metadata.
+        size = NSMakeSize((CGFloat)bitmapRep.pixelsWide, (CGFloat)bitmapRep.pixelsHigh);
+        [image setSize:size];
+    }
     ScreenshotToolAppendLog([NSString stringWithFormat:@"openImageAtURL loaded %@ (%.0fx%.0f)",
                              url.path ?: url.absoluteString ?: @"<unknown>",
                              size.width,
