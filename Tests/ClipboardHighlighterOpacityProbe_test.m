@@ -7,6 +7,7 @@
 #import <AppKit/AppKit.h>
 #import "ScreenshotCanvasView.h"
 #import "MarkupStroke.h"
+#import "TestEnvironmentHelpers.h"
 
 // Expose the strokes property for testing purposes
 @interface ScreenshotCanvasView (ClipboardOpacityProbe)
@@ -23,14 +24,7 @@
 
 // This logic is called before any tests run
 + (void)load {
-    char templatePath[] = "/tmp/ScreenshotToolDefaultsXXXXXX";
-    char *defaultsDir = mkdtemp(templatePath);
-    if (defaultsDir) {
-        setenv("GNUSTEP_DEFAULTS_ROOT", defaultsDir, 1);
-        char defaultsFile[PATH_MAX];
-        snprintf(defaultsFile, sizeof(defaultsFile), "%s/GNUstepDefaults.plist", defaultsDir);
-        setenv("GNUSTEP_USER_DEFAULTS", defaultsFile, 1);
-    }
+    STConfigureTestDefaults();
 }
 
 - (void)setUp {

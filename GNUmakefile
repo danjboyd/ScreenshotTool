@@ -8,8 +8,13 @@ ifeq ($(UNAME_S),Darwin)
 FONTCONFIG_CFLAGS :=
 FONTCONFIG_LDFLAGS :=
 else
+ifneq ($(filter CLANG64,$(MSYSTEM)),)
+FONTCONFIG_CFLAGS := -I/clang64/include/freetype2
+FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
+else
 FONTCONFIG_CFLAGS := -I/usr/include/freetype2
 FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
+endif
 endif
 
 APP_NAME = ScreenshotTool
@@ -143,8 +148,11 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 CLANG_WRAPPER := $(shell pwd)/tools/clang-wrapper.sh
 CC = $(CLANG_WRAPPER)
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
+ADDITIONAL_OBJCFLAGS += -DHAVE_MODE_T
 ScreenshotTool_CPPFLAGS += $(FONTCONFIG_CFLAGS)
 ADDITIONAL_LDFLAGS += $(FONTCONFIG_LDFLAGS)
+ADDITIONAL_LDFLAGS += -lstdc++
+ADDITIONAL_LDFLAGS += -lobjc
 
 
 
@@ -156,7 +164,7 @@ tests:
 	@echo "Building test bundle..."
 	@$(MAKE) -C Tests
 	@echo "Running XCTest bundle..."
-	@xctest Tests/ScreenshotToolTests.bundle
+	@Tests/obj/ScreenshotToolTestsRunner.exe Tests/ScreenshotToolTests.bundle
 
 tests-only:
 	@$(MAKE) tests

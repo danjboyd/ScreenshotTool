@@ -8,6 +8,7 @@
 #import "STFloatingPopover.h"
 #import "ToolSettingsPopoverController.h"
 #import "TextToolPopoverController.h"
+#import "TestEnvironmentHelpers.h"
 
 @interface ToolSettingsPopoverController (Testing)
 @property (nonatomic, strong) STFloatingPopover *popover;
@@ -31,7 +32,7 @@
     [super setUp];
     const char *existing = getenv("GSScaleFactor");
     _priorGSScaleFactor = existing ? [NSString stringWithUTF8String:existing] : nil;
-    unsetenv("GSScaleFactor");
+    STUnsetEnvVar("GSScaleFactor");
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"GSScaleFactor"];
     _shouldSkip = NO;
     @try {
@@ -44,23 +45,23 @@
 
 - (void)tearDown {
     if (_priorGSScaleFactor) {
-        setenv("GSScaleFactor", _priorGSScaleFactor.UTF8String, 1);
+        STSetEnvVar("GSScaleFactor", _priorGSScaleFactor.UTF8String);
     } else {
-        unsetenv("GSScaleFactor");
+        STUnsetEnvVar("GSScaleFactor");
     }
     [super tearDown];
 }
 
 - (void)testCurrentScaleFactorUsesEnvironmentValue {
     if (_shouldSkip) return;
-    setenv("GSScaleFactor", "1.75", 1);
+    STSetEnvVar("GSScaleFactor", "1.75");
     CGFloat factor = [STFloatingPopover currentScaleFactorForView:nil];
     XCTAssertEqualWithAccuracy(factor, 1.0f, 0.0f, @"Scale factor should remain logical (no double-scaling)");
 }
 
 - (void)testToolSettingsPopoverScalesContentSize {
     if (_shouldSkip) return;
-    setenv("GSScaleFactor", "1.50", 1);
+    STSetEnvVar("GSScaleFactor", "1.50");
     NSView *anchor = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 10.0f, 10.0f)];
     ToolSettingsPopoverController *controller = [[ToolSettingsPopoverController alloc] initWithTool:ScreenshotCanvasToolPen];
     [controller buildPopoverForView:anchor];
@@ -72,7 +73,7 @@
 
 - (void)testTextPopoverScalesContentSize {
     if (_shouldSkip) return;
-    setenv("GSScaleFactor", "1.25", 1);
+    STSetEnvVar("GSScaleFactor", "1.25");
     NSView *anchor = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 10.0f, 10.0f)];
     TextToolPopoverController *controller = [[TextToolPopoverController alloc] init];
     [controller buildPopoverForView:anchor];

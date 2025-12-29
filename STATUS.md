@@ -1,6 +1,13 @@
-# ScreenshotTool Status — 2025-11-13
+# ScreenshotTool Status — 2025-12-29
 
 _Progress entries run newest → oldest._
+
+## Progress (2025-12-29)
+- Pulled remote updates and rebased local `main`; working tree clean with local commits ahead.
+- CLANG64 app build now succeeds after fixing `mode_t` guard and updating FreeType include path to `/clang64/include/freetype2`.
+- Added test environment helpers to avoid `mkdtemp`/`setenv` in Windows builds, and unified test defaults setup.
+- Tests compile and bundle links in CLANG64, but `make tests` fails at runtime: `xctest` exits 127 in MSYS and crashes when run via `cmd.exe`; custom `TestRunner` exits non-zero without output.
+- Logged the CLANG64 test runner failure in `OpenIssues.md`; next step is to stabilize a Windows test runner or make `TestRunner` emit real failure logs.
 
 ## Progress (2025-11-21)
 - Preferences window rebuilt with an explicit layout pass and resizable bounds (approx 560x580): tool rows align labels/slider/value/color wells, workspace/interface rows expand to content width, and footer buttons pin to padding while `layoutContentView` reflows on resize.

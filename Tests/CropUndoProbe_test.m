@@ -7,6 +7,7 @@
 #import <AppKit/AppKit.h>
 #import "AppDelegate.h"
 #import "ScreenshotCanvasView.h"
+#import "TestEnvironmentHelpers.h"
 
 #pragma mark - Testing Categories
 
@@ -34,14 +35,7 @@
 @implementation CropUndoProbeTests
 
 + (void)load {
-    char templatePath[] = "/tmp/ScreenshotToolDefaultsXXXXXX";
-    char *defaultsDir = mkdtemp(templatePath);
-    if (defaultsDir) {
-        setenv("GNUSTEP_DEFAULTS_ROOT", defaultsDir, 1);
-        char defaultsFile[PATH_MAX];
-        snprintf(defaultsFile, sizeof(defaultsFile), "%s/GNUstepDefaults.plist", defaultsDir);
-        setenv("GNUSTEP_USER_DEFAULTS", defaultsFile, 1);
-    }
+    STConfigureTestDefaults();
 }
 
 - (void)setUp {

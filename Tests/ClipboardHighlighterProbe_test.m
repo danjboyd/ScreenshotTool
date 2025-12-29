@@ -7,6 +7,7 @@
 #import <AppKit/AppKit.h>
 #import "ScreenshotCanvasView.h"
 #import "MarkupStroke.h"
+#import "TestEnvironmentHelpers.h"
 
 @interface ScreenshotCanvasView (ClipboardProbe)
 @property (nonatomic, strong) NSMutableArray<MarkupStroke *> *strokes;
@@ -20,14 +21,7 @@
 @implementation ClipboardHighlighterProbeTests
 
 + (void)load {
-    char templatePath[] = "/tmp/ScreenshotToolDefaultsXXXXXX";
-    char *defaultsDir = mkdtemp(templatePath);
-    if (defaultsDir) {
-        setenv("GNUSTEP_DEFAULTS_ROOT", defaultsDir, 1);
-        char defaultsFile[PATH_MAX];
-        snprintf(defaultsFile, sizeof(defaultsFile), "%s/GNUstepDefaults.plist", defaultsDir);
-        setenv("GNUSTEP_USER_DEFAULTS", defaultsFile, 1);
-    }
+    STConfigureTestDefaults();
 }
 
 - (void)setUp {

@@ -1,5 +1,8 @@
 # Open Issues
 
+- **CLANG64 tests runner fails to execute on Windows:** `make tests` builds the app and test bundle, but the Windows `xctest` binary exits with missing DLLs / access violations, and the custom `Tests/TestRunner.m` runner exits non-zero without producing output.  
+  **Observed:** `xctest` returns 127 in MSYS and segfaults when run via `cmd.exe` once DLLs are copied. The custom runner loads the bundle and exits 1 with no log output; `make tests` therefore fails even though compilation succeeds.  
+  **Next steps:** Stabilize a test runner for CLANG64 by (1) making `TestRunner` reliably log and return failures from `GSXCTestRunner`, and (2) documenting/automating the correct Windows DLL search path so `xctest` can run without crashes. Consider preferring `TestRunner` as the default in CLANG64 if `xctest` remains unstable.
 - ~**Transient HUD for copy confirmation (status bar hidden):** With the status bar disabled, the app has no user-facing feedback when Copy succeeds.  
   **Resolution:** Added a transient HUD overlay for copy feedback. Cocoa uses a borderless HUD window with fade in/out; GNUstep uses an in-window HUD view with timer-driven alpha fade. Copy now routes to the HUD when the status bar is hidden, and text matches the selection vs full image copy message. Tests updated with a HUD probe and the suite is green.~
 - Fit-to-window stops scaling up smaller images after the window grows.  
