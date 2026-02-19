@@ -9,6 +9,9 @@
 #import "PreferencesWindowController.h"
 #import "STThemeUtilities.h"
 #import "STHudView.h"
+#if defined(ST_USE_OPENSAVE)
+#import <GSOpenSave.h>
+#endif
 
 #ifndef NSAboutPanelOptionApplicationIcon
 #define NSAboutPanelOptionApplicationIcon @"ApplicationIcon"
@@ -387,6 +390,26 @@ void ScreenshotToolAppendLog(NSString *message) {
     [handle closeFile];
 }
 
+#if defined(ST_USE_OPENSAVE)
+static void STConfigureOpenSaveModeFromEnvironment(void) {
+    NSString *rawMode = [[NSProcessInfo processInfo] environment][@"SCREENSHOT_TOOL_OPENSAVE_MODE"];
+    NSString *mode = [rawMode lowercaseString];
+    if (mode.length == 0 || [mode isEqualToString:@"gtk"]) {
+        GSOpenSaveSetMode(GSOpenSaveModeGtk);
+        ScreenshotToolAppendLog(@"OpenSave mode: GTK");
+        return;
+    }
+    if ([mode isEqualToString:@"gnustep"] || [mode isEqualToString:@"gnu"]) {
+        GSOpenSaveSetMode(GSOpenSaveModeGNUstep);
+        ScreenshotToolAppendLog(@"OpenSave mode: GNUstep");
+        return;
+    }
+    GSOpenSaveSetMode(GSOpenSaveModeGtk);
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"OpenSave mode: unknown value \"%@\"; defaulting to GTK",
+                             rawMode ?: @"<nil>"]);
+}
+#endif
+
 static NSString *STDebugToolName(ScreenshotCanvasTool tool) {
     switch (tool) {
         case ScreenshotCanvasToolHighlighter:
@@ -604,6 +627,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     ScreenshotToolAppendLog(@"ScreenshotTool launched");
+#if defined(ST_USE_OPENSAVE)
+    STConfigureOpenSaveModeFromEnvironment();
+#endif
     self.usesDarkTheme = STThemeIsDark();
     [self setupWindowAndContent];
     [self setupToolbar];

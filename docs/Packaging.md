@@ -7,6 +7,7 @@
 
 ## Build the App Bundles
 - Linux: `make -j"$(nproc)"` to produce `ScreenshotTool.app/` (GNUstep).
+  - Optional OpenSave-enabled build: `git submodule update --init --recursive && make USE_OPENSAVE=1 -j"$(nproc)"`.
 - macOS (Cocoa-native): `scripts/build_cocoa.sh` → `build/cocoa/ScreenshotTool.app/`.
 
 ## Smoke Test on macOS

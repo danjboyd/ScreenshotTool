@@ -17,6 +17,16 @@ Prerequisites: GNUstep GUI toolchain (gnustep-make, gnustep-base, gnustep-gui), 
 make -j"$(nproc)"
 ```
 
+Optional native GTK open/save dialogs on GNUstep builds:
+```bash
+git submodule update --init --recursive
+make USE_OPENSAVE=1 -j"$(nproc)"
+```
+Notes:
+- `USE_OPENSAVE=1` links `third_party/libs-OpenSave` and routes `NSOpenPanel`/`NSSavePanel` through that library.
+- `SCREENSHOT_TOOL_OPENSAVE_MODE=gnustep` forces GNUstep panel mode at runtime for fallback troubleshooting.
+- GTK4 development files are needed for GTK-backed dialogs; without them, dialogs fall back to GNUstep behavior.
+
 ### macOS (Cocoa-native, no GNUstep runtime)
 ```bash
 scripts/build_cocoa.sh                              # builds build/cocoa/ScreenshotTool.app

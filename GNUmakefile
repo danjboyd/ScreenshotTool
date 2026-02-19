@@ -19,6 +19,10 @@ endif
 
 APP_NAME = ScreenshotTool
 ScreenshotTool_APPLICATION_ICON =
+USE_OPENSAVE ?= 0
+OPENSAVE_DIR := $(CURDIR)/third_party/libs-OpenSave
+OPENSAVE_SOURCE_DIR := $(OPENSAVE_DIR)/Source
+OPENSAVE_LIB_DIR := $(OPENSAVE_SOURCE_DIR)/obj
 
 ScreenshotTool_RESOURCE_DIRS =
 ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
@@ -154,11 +158,32 @@ ADDITIONAL_LDFLAGS += $(FONTCONFIG_LDFLAGS)
 ADDITIONAL_LDFLAGS += -lstdc++
 ADDITIONAL_LDFLAGS += -lobjc
 
+ifeq ($(USE_OPENSAVE),1)
+ADDITIONAL_OBJCFLAGS += -DST_USE_OPENSAVE=1
+ADDITIONAL_INCLUDE_DIRS += -I$(OPENSAVE_DIR)/Headers
+ADDITIONAL_LIB_DIRS += -L$(OPENSAVE_LIB_DIR)
+ADDITIONAL_OBJC_LIBS += -lOpenSave
+ADDITIONAL_LDFLAGS += -Wl,-rpath,$(OPENSAVE_LIB_DIR)
+endif
+
 
 
 include $(GNUSTEP_MAKEFILES)/application.make
 
-.PHONY: tests tests-only clean-tests
+.PHONY: tests tests-only clean-tests opensave-lib
+
+ifeq ($(USE_OPENSAVE),1)
+before-all:: opensave-lib
+
+opensave-lib:
+	@if [ ! -f "$(OPENSAVE_SOURCE_DIR)/GNUmakefile" ]; then \
+		echo "libs-OpenSave submodule not initialized."; \
+		echo "Run: git submodule update --init --recursive"; \
+		exit 1; \
+	fi
+	@echo "Building libs-OpenSave..."
+	@$(MAKE) -C "$(OPENSAVE_SOURCE_DIR)"
+endif
 
 tests:
 	@echo "Building test bundle..."
