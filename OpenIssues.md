@@ -1,5 +1,8 @@
 # Open Issues
 
+- **Normalize Git author history to `Daniel Boyd <danieljboyd@icloud.com>`:** The repo now uses that identity for future local commits, but existing history still contains multiple older author emails and service accounts.  
+  **Current state:** `git shortlog -sne --all` still shows commits under `dboyd@invitoep.com`, `support@invitoep.com`, machine-local addresses, and a temporary GitHub noreply address.  
+  **Next steps:** When ready, rewrite the full Git history so every commit author/committer becomes `Daniel Boyd <danieljboyd@icloud.com>`, then force-push `main`. This should be scheduled deliberately because it changes every historical commit SHA and will require anyone with an existing clone to resync.
 - **CLANG64 tests runner fails to execute on Windows:** `make tests` builds the app and test bundle, but the Windows `xctest` binary exits with missing DLLs / access violations, and the custom `Tests/TestRunner.m` runner exits non-zero without producing output.  
   **Observed:** `xctest` returns 127 in MSYS and segfaults when run via `cmd.exe` once DLLs are copied. The custom runner loads the bundle and exits 1 with no log output; `make tests` therefore fails even though compilation succeeds.  
   **Next steps:** Stabilize a test runner for CLANG64 by (1) making `TestRunner` reliably log and return failures from `GSXCTestRunner`, and (2) documenting/automating the correct Windows DLL search path so `xctest` can run without crashes. Consider preferring `TestRunner` as the default in CLANG64 if `xctest` remains unstable.
