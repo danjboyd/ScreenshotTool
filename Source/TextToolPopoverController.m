@@ -54,6 +54,10 @@
 
 @implementation TextToolPopoverController
 
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
 - (void)showRelativeToRect:(NSRect)rect ofView:(NSView *)view preferredEdge:(NSRectEdge)edge {
     if (!self.popover) {
         [self buildPopoverForView:view];
@@ -198,6 +202,18 @@
     [self.fontFacePopUp setAction:@selector(fontFaceChanged:)];
     [self.fontFacePopUp setAutoresizingMask:(NSViewMinXMargin)];
     [self.contentView addSubview:self.fontFacePopUp];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(fontFacePopUpWillPopUp:)
+                                                 name:NSPopUpButtonWillPopUpNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(fontFacePopUpWillPopUp:)
+                                                 name:NSPopUpButtonCellWillPopUpNotification
+                                               object:nil];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(fontFaceMenuDidEndTracking:)
+                                                 name:NSMenuDidEndTrackingNotification
+                                               object:nil];
 
     y -= 36.0f * scaleFactor;
     NSTextField *sizeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60.0f * scaleFactor, 18.0f * scaleFactor)];
@@ -801,6 +817,27 @@
 
 - (void)comboBoxWillDismiss:(NSNotification *)notification {
     if (notification.object != self.fontComboBox) {
+        return;
+    }
+    [self.popover endTransientInteraction];
+}
+
+- (void)fontFacePopUpWillPopUp:(NSNotification *)notification {
+    if (!self.fontFacePopUp) {
+        return;
+    }
+    id object = notification.object;
+    if (object != self.fontFacePopUp && object != self.fontFacePopUp.cell) {
+        return;
+    }
+    [self.popover beginTransientInteraction];
+}
+
+- (void)fontFaceMenuDidEndTracking:(NSNotification *)notification {
+    if (!self.fontFacePopUp) {
+        return;
+    }
+    if (notification.object != self.fontFacePopUp.menu) {
         return;
     }
     [self.popover endTransientInteraction];

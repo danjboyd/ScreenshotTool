@@ -44,13 +44,18 @@ ScreenshotToolTests_OBJC_FILES = \
 	CropUndoWindowProbe_test.m \
 	CursorRectProbe_test.m \
 	HudCopyFeedbackProbe_test.m \
+	OpenImageToolbarRefreshProbe_test.m \
+	OpenRecentProbe_test.m \
 	StatusBarToggleProbe_test.m \
+	TextFontFacePopupProbe_test.m \
 	ThemePreferenceProbe_test.m \
 	TextFontComboProbe_test.m \
 	ToolbarBadgeRefreshProbe_test.m \
 	ToolbarIconThemeProbe_test.m \
 	PopoverScaleFactorProbe_test.m \
 	TooltipsSuppressedProbe_test.m \
+	WaylandClipboardMirrorProbe_test.m \
+	ZoomToolbarWidthProbe_test.m \
 	ZoomComboBoxProbe_test.m
 
 # We also need to include the application's own source files to test them

@@ -13,6 +13,7 @@
 #if defined(ST_USE_OPENSAVE)
 #import <GSOpenSave.h>
 #endif
+#import <Foundation/NSTask.h>
 #if defined(GNUSTEP)
 #import <AppKit/NSSegmentedCell.h>
 #endif
@@ -53,6 +54,9 @@ static const CGFloat STHudMaxWidth = 360.0f;
 static const NSTimeInterval STHudFadeInDuration = 0.12;
 static const NSTimeInterval STHudFadeOutDuration = 0.20;
 static const CGFloat ToolbarIconDimension = 32.0f;
+static const NSUInteger STRecentDocumentLimit = 10;
+static NSString * const STRecentDocumentsEmptyTitle = @"No Recent Documents";
+static NSString * const STRecentDocumentsClearTitle = @"Clear Menu";
 #if defined(GNUSTEP)
 static const CGFloat STToolbarToolSegmentWidth = 46.0f;
 static const CGFloat STToolbarToolControlHeight = 32.0f;
@@ -71,6 +75,17 @@ static const CGFloat STToolbarZoomHorizontalPadding = 12.0f;
 static NSString * const ToolbarIdentifier = @"com.screenshottool.toolbar";
 
 static id STInfoValueForKey(NSString *key);
+
+static NSString *STStandardizedRecentDocumentPath(NSURL *url) {
+    if (!url || !url.isFileURL) {
+        return nil;
+    }
+    NSString *path = [[url path] stringByStandardizingPath];
+    if (path.length == 0) {
+        return nil;
+    }
+    return path;
+}
 
 static NSString *STInfoStringForKey(NSString *key) {
     if (key.length == 0) {
@@ -95,6 +110,16 @@ static CGFloat STToolbarZoomControlWidthForTitle(NSString *title) {
     NSSize titleSize = [displayTitle sizeWithAttributes:attributes];
     CGFloat contentWidth = titleSize.width + STToolbarZoomChevronSpacing + STToolbarZoomChevronWidth;
     return ceil(contentWidth + (STToolbarZoomHorizontalPadding * 2.0f));
+}
+
+static CGFloat STToolbarZoomReservedControlWidth(void) {
+    static CGFloat reservedWidth = 0.0f;
+    if (reservedWidth <= 0.0f) {
+        // Reserve enough width for the widest zoom string so the toolbar item stays stable.
+        reservedWidth = MAX(STToolbarZoomControlWidthForTitle(@"Fit"),
+                            STToolbarZoomControlWidthForTitle(@"888.8%"));
+    }
+    return reservedWidth;
 }
 #endif
 
@@ -946,6 +971,130 @@ static NSString *ScreenshotToolLogFilePath(void) {
     return logPath;
 }
 
+static BOOL STScreenshotToolIsWaylandSession(void) {
+    NSDictionary *env = [[NSProcessInfo processInfo] environment];
+    NSString *waylandDisplay = env[@"WAYLAND_DISPLAY"];
+    if (waylandDisplay.length > 0) {
+        return YES;
+    }
+    NSString *sessionType = [env[@"XDG_SESSION_TYPE"] lowercaseString];
+    return [sessionType isEqualToString:@"wayland"];
+}
+
+static NSString *STExecutablePathInPATH(NSString *executableName) {
+    if (executableName.length == 0) {
+        return nil;
+    }
+
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    if ([executableName containsString:@"/"]) {
+        return [fileManager isExecutableFileAtPath:executableName] ? executableName : nil;
+    }
+
+    NSString *pathValue = [[NSProcessInfo processInfo] environment][@"PATH"];
+    for (NSString *directory in [pathValue componentsSeparatedByString:@":"]) {
+        if (directory.length == 0) {
+            continue;
+        }
+        NSString *candidate = [directory stringByAppendingPathComponent:executableName];
+        if ([fileManager isExecutableFileAtPath:candidate]) {
+            return candidate;
+        }
+    }
+    return nil;
+}
+
+static BOOL STMirrorPNGDataToWaylandClipboard(NSData *pngData) {
+    if (pngData.length == 0 || !STScreenshotToolIsWaylandSession()) {
+        return NO;
+    }
+
+    NSString *wlCopyPath = STExecutablePathInPATH(@"wl-copy");
+    if (wlCopyPath.length == 0) {
+        ScreenshotToolAppendLog(@"Wayland clipboard mirror unavailable: wl-copy not found in PATH");
+        return NO;
+    }
+
+    @try {
+        NSTask *task = [[NSTask alloc] init];
+        NSPipe *inputPipe = [NSPipe pipe];
+        NSPipe *errorPipe = [NSPipe pipe];
+        task.launchPath = wlCopyPath;
+        task.arguments = @[ @"--type", @"image/png" ];
+        task.standardInput = inputPipe;
+        task.standardError = errorPipe;
+        [task launch];
+
+        NSFileHandle *stdinHandle = [inputPipe fileHandleForWriting];
+        [stdinHandle writeData:pngData];
+        [stdinHandle closeFile];
+
+        [task waitUntilExit];
+        if (task.terminationStatus == 0) {
+            ScreenshotToolAppendLog(@"Wayland clipboard mirror succeeded via wl-copy");
+            return YES;
+        }
+
+        NSData *stderrData = [[errorPipe fileHandleForReading] readDataToEndOfFile];
+        NSString *stderrText = [[NSString alloc] initWithData:stderrData encoding:NSUTF8StringEncoding];
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Wayland clipboard mirror failed via wl-copy (status=%d%@%@)",
+                                 task.terminationStatus,
+                                 stderrText.length > 0 ? @": " : @"",
+                                 stderrText.length > 0 ? [stderrText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]] : @""]);
+    } @catch (NSException *exception) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Wayland clipboard mirror exception (%@ - %@)",
+                                 exception.name ?: @"<no name>",
+                                 exception.reason ?: @"<no reason>"]);
+    }
+
+    return NO;
+}
+
+static NSData *STWaylandClipboardDataForMIMEType(NSString *mimeType) {
+    if (mimeType.length == 0 || !STScreenshotToolIsWaylandSession()) {
+        return nil;
+    }
+
+    NSString *wlPastePath = STExecutablePathInPATH(@"wl-paste");
+    if (wlPastePath.length == 0) {
+        return nil;
+    }
+
+    @try {
+        NSTask *task = [[NSTask alloc] init];
+        NSPipe *outputPipe = [NSPipe pipe];
+        NSPipe *errorPipe = [NSPipe pipe];
+        task.launchPath = wlPastePath;
+        task.arguments = @[ @"--type", mimeType ];
+        task.standardOutput = outputPipe;
+        task.standardError = errorPipe;
+        [task launch];
+
+        NSData *stdoutData = [[outputPipe fileHandleForReading] readDataToEndOfFile];
+        NSData *stderrData = [[errorPipe fileHandleForReading] readDataToEndOfFile];
+        [task waitUntilExit];
+
+        if (task.terminationStatus == 0 && stdoutData.length > 0) {
+            return stdoutData;
+        }
+
+        NSString *stderrText = [[NSString alloc] initWithData:stderrData encoding:NSUTF8StringEncoding];
+        if (stderrText.length > 0) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Wayland clipboard read failed for %@ (status=%d): %@",
+                                     mimeType,
+                                     task.terminationStatus,
+                                     [stderrText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]]);
+        }
+    } @catch (NSException *exception) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Wayland clipboard read exception for %@ (%@ - %@)",
+                                 mimeType,
+                                 exception.name ?: @"<no name>",
+                                 exception.reason ?: @"<no reason>"]);
+    }
+
+    return nil;
+}
+
 void ScreenshotToolAppendLog(NSString *message) {
     if (message.length == 0) {
         return;
@@ -1120,9 +1269,15 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) BOOL statusBarVisiblePreference;
 @property (nonatomic, copy) NSString *pendingOpenPath;
 @property (nonatomic, strong) NSURL *currentImageURL;
+@property (nonatomic, strong) NSMutableArray<NSString *> *recentDocumentPaths;
+@property (nonatomic, strong) NSMenu *openRecentMenu;
 @property (nonatomic, strong) NSUndoManager *undoManager;
 @property (nonatomic, assign) BOOL usesDarkTheme;
 @property (nonatomic, assign) BOOL toolWidthMenuCanReset;
+- (NSData *)clipboardPNGDataForPasteAsNewImage;
+- (NSURL *)temporaryClipboardImageURLForPNGData:(NSData *)pngData;
+- (BOOL)launchNewWindowForImageAtURL:(NSURL *)url;
+- (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
 @end
 
 @implementation AppDelegate
@@ -1192,6 +1347,146 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         return [NSString stringWithFormat:@"Zoom: %@ — click to adjust", value];
     }
     return nil;
+}
+
+- (void)loadRecentDocumentPathsFromDefaults {
+    NSArray *storedPaths = [[NSUserDefaults standardUserDefaults] arrayForKey:STDefaultsRecentDocumentsKey];
+    NSMutableArray<NSString *> *paths = [[NSMutableArray alloc] init];
+    NSMutableSet<NSString *> *seenPaths = [[NSMutableSet alloc] init];
+
+    for (id candidate in storedPaths) {
+        if (![candidate isKindOfClass:[NSString class]]) {
+            continue;
+        }
+        NSString *path = [(NSString *)candidate stringByStandardizingPath];
+        if (path.length == 0 || [seenPaths containsObject:path]) {
+            continue;
+        }
+        [paths addObject:path];
+        [seenPaths addObject:path];
+        if (paths.count >= STRecentDocumentLimit) {
+            break;
+        }
+    }
+
+    self.recentDocumentPaths = paths;
+}
+
+- (void)ensureRecentDocumentPathsLoaded {
+    if (!self.recentDocumentPaths) {
+        [self loadRecentDocumentPathsFromDefaults];
+    }
+}
+
+- (void)persistRecentDocumentPaths {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if (self.recentDocumentPaths.count > 0) {
+        [defaults setObject:[self.recentDocumentPaths copy] forKey:STDefaultsRecentDocumentsKey];
+    } else {
+        [defaults removeObjectForKey:STDefaultsRecentDocumentsKey];
+    }
+    [defaults synchronize];
+}
+
+- (NSString *)recentDocumentMenuTitleForPath:(NSString *)path duplicateLeafCounts:(NSDictionary<NSString *, NSNumber *> *)duplicateLeafCounts {
+    NSString *leafName = [[NSFileManager defaultManager] displayNameAtPath:path];
+    if (leafName.length == 0) {
+        leafName = path.lastPathComponent;
+    }
+    if (leafName.length == 0) {
+        leafName = path;
+    }
+
+    if ([duplicateLeafCounts[leafName] integerValue] > 1) {
+        NSString *directory = [[path stringByDeletingLastPathComponent] stringByAbbreviatingWithTildeInPath];
+        if (directory.length > 0) {
+            return [NSString stringWithFormat:@"%@ (%@)", leafName, directory];
+        }
+    }
+    return leafName;
+}
+
+- (void)rebuildOpenRecentMenu {
+    if (!self.openRecentMenu) {
+        return;
+    }
+
+    [self ensureRecentDocumentPathsLoaded];
+    [self.openRecentMenu removeAllItems];
+
+    if (self.recentDocumentPaths.count == 0) {
+        NSMenuItem *emptyItem = [[NSMenuItem alloc] initWithTitle:STRecentDocumentsEmptyTitle
+                                                           action:NULL
+                                                    keyEquivalent:@""];
+        [emptyItem setEnabled:NO];
+        [self.openRecentMenu addItem:emptyItem];
+        return;
+    }
+
+    NSMutableDictionary<NSString *, NSNumber *> *duplicateLeafCounts = [[NSMutableDictionary alloc] init];
+    for (NSString *path in self.recentDocumentPaths) {
+        NSString *leafName = [[NSFileManager defaultManager] displayNameAtPath:path];
+        if (leafName.length == 0) {
+            leafName = path.lastPathComponent;
+        }
+        if (leafName.length == 0) {
+            leafName = path;
+        }
+        NSInteger count = [duplicateLeafCounts[leafName] integerValue] + 1;
+        duplicateLeafCounts[leafName] = @(count);
+    }
+
+    for (NSString *path in self.recentDocumentPaths) {
+        NSString *title = [self recentDocumentMenuTitleForPath:path duplicateLeafCounts:duplicateLeafCounts];
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:title
+                                                      action:@selector(openRecentDocument:)
+                                               keyEquivalent:@""];
+        [item setTarget:self];
+        [item setRepresentedObject:path];
+        [self.openRecentMenu addItem:item];
+    }
+
+    [self.openRecentMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem *clearItem = [[NSMenuItem alloc] initWithTitle:STRecentDocumentsClearTitle
+                                                       action:@selector(clearRecentDocuments:)
+                                                keyEquivalent:@""];
+    [clearItem setTarget:self];
+    [self.openRecentMenu addItem:clearItem];
+}
+
+- (void)addRecentDocumentURL:(NSURL *)url {
+    NSString *path = STStandardizedRecentDocumentPath(url);
+    if (path.length == 0) {
+        return;
+    }
+
+    [self ensureRecentDocumentPathsLoaded];
+    [self.recentDocumentPaths removeObject:path];
+    [self.recentDocumentPaths insertObject:path atIndex:0];
+    while (self.recentDocumentPaths.count > STRecentDocumentLimit) {
+        [self.recentDocumentPaths removeLastObject];
+    }
+
+    [self persistRecentDocumentPaths];
+    [self rebuildOpenRecentMenu];
+}
+
+- (void)removeRecentDocumentPath:(NSString *)path {
+    NSString *standardizedPath = [path stringByStandardizingPath];
+    if (standardizedPath.length == 0) {
+        return;
+    }
+
+    [self ensureRecentDocumentPathsLoaded];
+    NSUInteger index = [self.recentDocumentPaths indexOfObject:standardizedPath];
+    if (index == NSNotFound) {
+        return;
+    }
+
+    [self.recentDocumentPaths removeObjectAtIndex:index];
+    [self persistRecentDocumentPaths];
+    [self rebuildOpenRecentMenu];
 }
 
 - (void)applicationWillFinishLaunching:(NSNotification *)notification {
@@ -1323,6 +1618,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     if (action == @selector(cropImage:)) {
         return [self.canvasView hasSelection];
     }
+    if (action == @selector(pasteAsNewImage:)) {
+        return YES;
+    }
     if (action == @selector(undo:)) {
         NSUndoManager *undo = self.window.undoManager;
         return (undo && [undo canUndo]);
@@ -1419,6 +1717,16 @@ static id STInfoValueForKey(NSString *key) {
     [openItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
     [fileMenu addItem:openItem];
 
+    NSMenuItem *openRecentItem = [[NSMenuItem alloc] initWithTitle:@"Open Recent"
+                                                            action:NULL
+                                                     keyEquivalent:@""];
+    self.openRecentMenu = [[NSMenu alloc] initWithTitle:@"Open Recent"];
+    [self.openRecentMenu setAutoenablesItems:NO];
+    [self loadRecentDocumentPathsFromDefaults];
+    [self rebuildOpenRecentMenu];
+    [fileMenu addItem:openRecentItem];
+    [fileMenu setSubmenu:self.openRecentMenu forItem:openRecentItem];
+
     NSMenuItem *saveAsItem = [[NSMenuItem alloc] initWithTitle:@"Save As…"
                                                         action:@selector(saveDocumentAs:)
                                                  keyEquivalent:@"s"];
@@ -1454,6 +1762,17 @@ static id STInfoValueForKey(NSString *key) {
     [copyItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
     [copyItem setTarget:self];
     [editMenu addItem:copyItem];
+
+    NSMenuItem *pasteAsNewItem = [[NSMenuItem alloc] initWithTitle:@"Paste as New Image"
+                                                            action:@selector(pasteAsNewImage:)
+                                                     keyEquivalent:@"V"];
+    [pasteAsNewItem setTarget:self];
+#if defined(GNUSTEP)
+    [pasteAsNewItem setKeyEquivalentModifierMask:(NSEventModifierFlagControl | NSEventModifierFlagShift)];
+#else
+    [pasteAsNewItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
+#endif
+    [editMenu addItem:pasteAsNewItem];
 
     NSMenuItem *cropSelectionItem = [[NSMenuItem alloc] initWithTitle:@"Crop to Selection"
                                                                action:@selector(cropImage:)
@@ -2529,7 +2848,7 @@ static id STInfoValueForKey(NSString *key) {
 - (NSToolbarItem *)toolbarItemForZoomControl {
 #if defined(GNUSTEP)
     if (!self.zoomToolbarButtonView) {
-        CGFloat initialWidth = STToolbarZoomControlWidthForTitle(@"100%");
+        CGFloat initialWidth = STToolbarZoomReservedControlWidth();
         self.zoomToolbarButtonView = [[STToolbarZoomButtonView alloc] initWithFrame:NSMakeRect(0, 0, initialWidth, STToolbarZoomControlHeight)];
         self.zoomToolbarButtonView.target = self;
         self.zoomToolbarButtonView.action = @selector(showZoomPopover:);
@@ -2613,7 +2932,7 @@ static id STInfoValueForKey(NSString *key) {
 
     self.zoomToolbarButtonView.title = title;
     self.zoomToolbarButtonView.enabled = hasImage;
-    CGFloat targetWidth = STToolbarZoomControlWidthForTitle(title);
+    CGFloat targetWidth = STToolbarZoomReservedControlWidth();
     NSRect zoomFrame = self.zoomToolbarButtonView.frame;
     if (fabs(zoomFrame.size.width - targetWidth) >= 0.5f ||
         fabs(zoomFrame.size.height - STToolbarZoomControlHeight) >= 0.5f) {
@@ -3882,6 +4201,21 @@ static id STInfoValueForKey(NSString *key) {
     }
 }
 
+- (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration {
+    if (self.statusBarVisiblePreference) {
+        [self showStatusMessage:message duration:duration];
+        return;
+    }
+
+    NSTimeInterval hudDuration = duration;
+    if (hudDuration <= 0.0) {
+        hudDuration = 1.5;
+    } else if (hudDuration > 2.0) {
+        hudDuration = 2.0;
+    }
+    [self showHUDMessage:message duration:hudDuration];
+}
+
 - (void)clearStatusMessage {
     [self.statusClearTimer invalidate];
     self.statusClearTimer = nil;
@@ -3902,17 +4236,7 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration {
     ScreenshotToolAppendLog([NSString stringWithFormat:@"copy feedback message=\"%@\" duration=%.2f statusBarVisible=%@", message ?: @"", duration, self.statusBarVisiblePreference ? @"YES" : @"NO"]);
-    if (self.statusBarVisiblePreference) {
-        [self showStatusMessage:message duration:duration];
-        return;
-    }
-    NSTimeInterval hudDuration = duration;
-    if (hudDuration <= 0.0) {
-        hudDuration = 1.5;
-    } else if (hudDuration > 2.0) {
-        hudDuration = 2.0;
-    }
-    [self showHUDMessage:message duration:hudDuration];
+    [self showTransientFeedbackMessage:message duration:duration];
 }
 
 - (void)showHUDMessage:(NSString *)message duration:(NSTimeInterval)duration {
@@ -4249,8 +4573,53 @@ static id STInfoValueForKey(NSString *key) {
     }
 
     if ([panel runModal] == NSModalResponseOK) {
-        [self openImageAtURL:panel.URL];
+        NSURL *selectedURL = panel.URL;
+        if (!selectedURL) {
+            ScreenshotToolAppendLog(@"Open panel returned OK but no file URL could be resolved");
+            NSAlert *alert = [[NSAlert alloc] init];
+            alert.messageText = @"Unable to Open Selection";
+            alert.informativeText = @"The selected file could not be resolved from the open dialog.";
+            [alert addButtonWithTitle:@"OK"];
+            [alert runModal];
+            return;
+        }
+        [self openImageAtURL:selectedURL];
     }
+}
+
+- (void)openRecentDocument:(id)sender {
+    NSString *path = nil;
+    if ([sender isKindOfClass:[NSMenuItem class]]) {
+        id representedObject = [(NSMenuItem *)sender representedObject];
+        if ([representedObject isKindOfClass:[NSString class]]) {
+            path = [(NSString *)representedObject stringByStandardizingPath];
+        }
+    }
+    if (path.length == 0) {
+        return;
+    }
+
+    BOOL isDirectory = NO;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDirectory] || isDirectory) {
+        [self removeRecentDocumentPath:path];
+
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Recent File Not Found";
+        alert.informativeText = [NSString stringWithFormat:@"%@ was removed from Open Recent.", path];
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+        return;
+    }
+
+    [self openImageAtURL:[NSURL fileURLWithPath:path]];
+}
+
+- (void)clearRecentDocuments:(id)sender {
+    (void)sender;
+    [self ensureRecentDocumentPathsLoaded];
+    [self.recentDocumentPaths removeAllObjects];
+    [self persistRecentDocumentPaths];
+    [self rebuildOpenRecentMenu];
 }
 
 - (void)showPreferences:(id)sender {
@@ -4285,6 +4654,15 @@ static id STInfoValueForKey(NSString *key) {
     }
 
     NSURL *destination = panel.URL;
+    if (!destination) {
+        ScreenshotToolAppendLog(@"Save panel returned OK but no destination URL could be resolved");
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Unable to Save Image";
+        alert.informativeText = @"The selected save destination could not be resolved from the save dialog.";
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+        return;
+    }
     NSImage *flattened = [self.canvasView flattenedImage];
     if (!flattened) {
         return;
@@ -4308,10 +4686,12 @@ static id STInfoValueForKey(NSString *key) {
     }
 
     self.currentImageURL = destination;
+    [self addRecentDocumentURL:destination];
     [self.window setTitleWithRepresentedFilename:destination.path];
 }
 
 - (void)copy:(id)sender {
+    (void)sender;
     if (![self.canvasView hasImage]) {
         [self showCopyFeedbackMessage:@"No image to copy" duration:2.0];
         return;
@@ -4340,15 +4720,163 @@ static id STInfoValueForKey(NSString *key) {
 
     NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
     [pasteboard declareTypes:types owner:nil];
+    BOOL wrotePasteboard = NO;
     if (pngData) {
-        [pasteboard setData:pngData forType:NSPasteboardTypePNG];
+        wrotePasteboard = [pasteboard setData:pngData forType:NSPasteboardTypePNG] || wrotePasteboard;
     }
     if (tiffData) {
-        [pasteboard setData:tiffData forType:NSPasteboardTypeTIFF];
+        wrotePasteboard = [pasteboard setData:tiffData forType:NSPasteboardTypeTIFF] || wrotePasteboard;
+    }
+    BOOL mirroredWayland = STMirrorPNGDataToWaylandClipboard(pngData);
+
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"copy action write results pasteboard=%@ waylandMirror=%@",
+                             wrotePasteboard ? @"YES" : @"NO",
+                             mirroredWayland ? @"YES" : @"NO"]);
+
+    if (!wrotePasteboard && !mirroredWayland) {
+        [self showCopyFeedbackMessage:@"Copy failed" duration:2.0];
+        return;
     }
 
-    NSString *status = [self.canvasView hasSelection] ? @"Copied selection to clipboard" : @"Copied image to clipboard";
+    BOOL x11OnlyCopy = (STScreenshotToolIsWaylandSession() && !mirroredWayland && wrotePasteboard);
+    NSString *status = nil;
+    if ([self.canvasView hasSelection]) {
+        status = x11OnlyCopy ? @"Copied selection to X11 clipboard" : @"Copied selection to clipboard";
+    } else {
+        status = x11OnlyCopy ? @"Copied image to X11 clipboard" : @"Copied image to clipboard";
+    }
     [self showCopyFeedbackMessage:status duration:3.0];
+}
+
+- (NSData *)clipboardPNGDataForPasteAsNewImage {
+    NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
+    NSArray<NSString *> *imageTypes = @[ NSPasteboardTypePNG, NSPasteboardTypeTIFF, NSTIFFPboardType ];
+    NSString *availableType = [pasteboard availableTypeFromArray:imageTypes];
+    if (availableType.length > 0) {
+        NSData *data = [pasteboard dataForType:availableType];
+        if ([availableType isEqualToString:NSPasteboardTypePNG] && data.length > 0) {
+            ScreenshotToolAppendLog(@"pasteAsNewImage: using PNG data from NSPasteboard");
+            return data;
+        }
+        if (data.length > 0) {
+            NSImage *image = [[NSImage alloc] initWithData:data];
+            NSData *pngData = [self pngDataForImage:image];
+            if (pngData.length > 0) {
+                ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: converted %@ data from NSPasteboard to PNG",
+                                         availableType]);
+                return pngData;
+            }
+        }
+    }
+
+    NSData *waylandPNG = STWaylandClipboardDataForMIMEType(@"image/png");
+    if (waylandPNG.length > 0) {
+        ScreenshotToolAppendLog(@"pasteAsNewImage: using PNG data from Wayland clipboard");
+        return waylandPNG;
+    }
+
+    NSData *waylandTIFF = STWaylandClipboardDataForMIMEType(@"image/tiff");
+    if (waylandTIFF.length > 0) {
+        NSImage *image = [[NSImage alloc] initWithData:waylandTIFF];
+        NSData *pngData = [self pngDataForImage:image];
+        if (pngData.length > 0) {
+            ScreenshotToolAppendLog(@"pasteAsNewImage: converted TIFF data from Wayland clipboard to PNG");
+            return pngData;
+        }
+    }
+
+    ScreenshotToolAppendLog(@"pasteAsNewImage: clipboard does not contain supported image data");
+    return nil;
+}
+
+- (NSURL *)temporaryClipboardImageURLForPNGData:(NSData *)pngData {
+    if (pngData.length == 0) {
+        return nil;
+    }
+
+    NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:@"ScreenshotToolClipboard"];
+    NSError *error = nil;
+    if (![[NSFileManager defaultManager] createDirectoryAtPath:root
+                                   withIntermediateDirectories:YES
+                                                    attributes:nil
+                                                         error:&error]) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: failed to create temp directory %@ (%@)",
+                                 root,
+                                 error.localizedDescription ?: @"unknown error"]);
+        return nil;
+    }
+
+    NSString *filename = [NSString stringWithFormat:@"clipboard-%@.png", [NSUUID UUID].UUIDString];
+    NSURL *url = [NSURL fileURLWithPath:[root stringByAppendingPathComponent:filename]];
+    if (![pngData writeToURL:url options:NSDataWritingAtomic error:&error]) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: failed to write temp image %@ (%@)",
+                                 url.path ?: @"<nil>",
+                                 error.localizedDescription ?: @"unknown error"]);
+        return nil;
+    }
+    return url;
+}
+
+- (BOOL)launchNewWindowForImageAtURL:(NSURL *)url {
+    if (!url.isFileURL || url.path.length == 0) {
+        return NO;
+    }
+
+    @try {
+        NSTask *task = [[NSTask alloc] init];
+#if defined(GNUSTEP)
+        NSString *openappPath = nil;
+        if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/GNUstep/System/Tools/openapp"]) {
+            openappPath = @"/usr/GNUstep/System/Tools/openapp";
+        } else {
+            openappPath = STExecutablePathInPATH(@"openapp");
+        }
+        NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
+        if (openappPath.length > 0 && bundlePath.length > 0) {
+            task.launchPath = openappPath;
+            task.arguments = @[ bundlePath, url.path ];
+        } else
+#endif
+        {
+            NSString *executablePath = [[NSBundle mainBundle] executablePath];
+            if (executablePath.length == 0) {
+                ScreenshotToolAppendLog(@"pasteAsNewImage: executable path unavailable");
+                return NO;
+            }
+            task.launchPath = executablePath;
+            task.arguments = @[ url.path ];
+        }
+
+        [task launch];
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: launched new instance for %@",
+                                 url.path ?: @"<nil>"]);
+        return YES;
+    } @catch (NSException *exception) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage launch exception for %@ (%@ - %@)",
+                                 url.path ?: @"<nil>",
+                                 exception.name ?: @"<no name>",
+                                 exception.reason ?: @"<no reason>"]);
+    }
+    return NO;
+}
+
+- (void)pasteAsNewImage:(id)sender {
+    (void)sender;
+    NSData *pngData = [self clipboardPNGDataForPasteAsNewImage];
+    if (pngData.length == 0) {
+        [self showTransientFeedbackMessage:@"Clipboard does not contain an image" duration:2.0];
+        return;
+    }
+
+    NSURL *temporaryURL = [self temporaryClipboardImageURLForPNGData:pngData];
+    if (!temporaryURL) {
+        [self showTransientFeedbackMessage:@"Unable to prepare clipboard image" duration:2.0];
+        return;
+    }
+
+    if (![self launchNewWindowForImageAtURL:temporaryURL]) {
+        [self showTransientFeedbackMessage:@"Unable to open clipboard image in a new window" duration:2.0];
+    }
 }
 
 - (void)cropImage:(id)sender {
@@ -4933,11 +5461,13 @@ static id STInfoValueForKey(NSString *key) {
                              size.width,
                              size.height]);
     self.currentImageURL = url;
+    [self addRecentDocumentURL:url];
     [self.canvasView loadImage:image];
     [self.window setTitleWithRepresentedFilename:url.path];
     [self resizeWindowToImageSize:image.size];
     [self.canvasView updateForEnclosingBoundsChange];
     [self reflectZoomSelection];
+    [self refreshToolButtonIcons];
     return YES;
 }
 

@@ -6,8 +6,8 @@
 - macOS DMG: Xcode command line tools installed. No GNUstep runtime needed when using the Cocoa build.
 
 ## Build the App Bundles
-- Linux: `make -j"$(nproc)"` to produce `ScreenshotTool.app/` (GNUstep).
-  - Optional OpenSave-enabled build: `git submodule update --init --recursive && make USE_OPENSAVE=1 -j"$(nproc)"`.
+- Linux: `git submodule update --init --recursive && make -j"$(nproc)"` to produce `ScreenshotTool.app/` (GNUstep with `libs-OpenSave` enabled by default).
+  - Fallback GNUstep-only build: `make USE_OPENSAVE=0 -j"$(nproc)"`.
 - macOS (Cocoa-native): `scripts/build_cocoa.sh` → `build/cocoa/ScreenshotTool.app/`.
 
 ## Smoke Test on macOS

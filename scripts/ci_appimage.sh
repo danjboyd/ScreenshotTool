@@ -143,6 +143,7 @@ popd
 
 echo "== Building ScreenshotTool.app =="
 cd "${ROOT_DIR}"
+git submodule update --init --recursive
 set +u
 . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
 set -u

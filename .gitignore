@@ -6,6 +6,10 @@ screenshottool.log
 tests.log
 clipboard.png
 debug.log
+.env
+.env.*
+*.env
+!*.env.example
 local.env
 build/
 Staging/

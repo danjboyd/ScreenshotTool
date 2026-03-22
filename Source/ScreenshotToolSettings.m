@@ -20,6 +20,7 @@ NSString * const STDefaultsTextFontSizeKey = @"ScreenshotToolTextFontSize";
 NSString * const STDefaultsTextDefaultFontNameKey = @"ScreenshotToolTextDefaultFontName";
 NSString * const STDefaultsTextDefaultFontSizeKey = @"ScreenshotToolTextDefaultFontSize";
 NSString * const STDefaultsSaveDirectoryKey = @"ScreenshotToolSaveDirectory";
+NSString * const STDefaultsRecentDocumentsKey = @"ScreenshotToolRecentDocuments";
 NSString * const STDefaultsShowStatusBarKey = @"ScreenshotToolShowStatusBar";
 NSString * const STDefaultsInterfaceThemeKey = @"ScreenshotToolInterfaceTheme";
 NSString * const STInterfaceThemePreferenceAutoValue = @"auto";

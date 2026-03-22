@@ -22,6 +22,7 @@ extern NSString * const STDefaultsTextFontSizeKey;
 extern NSString * const STDefaultsTextDefaultFontNameKey;
 extern NSString * const STDefaultsTextDefaultFontSizeKey;
 extern NSString * const STDefaultsSaveDirectoryKey;
+extern NSString * const STDefaultsRecentDocumentsKey;
 extern NSString * const STDefaultsShowStatusBarKey;
 extern NSString * const STDefaultsInterfaceThemeKey;
 extern NSString * const STInterfaceThemePreferenceAutoValue;

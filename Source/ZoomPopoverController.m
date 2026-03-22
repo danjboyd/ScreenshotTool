@@ -10,12 +10,29 @@ static const CGFloat STZoomPopoverSliderMaxValue = 1000.0f;
 static const CGFloat STZoomPopoverButtonHeight = 28.0f;
 static const CGFloat STZoomPopoverButtonGap = 12.0f;
 
-static CGFloat STZoomPopoverButtonWidth(NSString *title, CGFloat minimumWidth) {
-    NSString *displayTitle = (title.length > 0) ? title : @"";
-    NSFont *font = [NSFont systemFontOfSize:[NSFont systemFontSize]];
-    NSSize titleSize = [displayTitle sizeWithAttributes:@{ NSFontAttributeName: font }];
-    CGFloat bezelPadding = 40.0f;
-    return ceil(MAX(minimumWidth, titleSize.width + bezelPadding));
+static NSSize STZoomPopoverButtonSize(NSString *title, CGFloat minimumWidth, CGFloat minimumHeight) {
+    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, minimumWidth, minimumHeight)];
+    [button setTitle:(title ?: @"")];
+    [button setButtonType:NSMomentaryPushInButton];
+    [button setBezelStyle:NSRoundedBezelStyle];
+    [button sizeToFit];
+
+    NSSize size = button.frame.size;
+    if (button.cell && [button.cell respondsToSelector:@selector(cellSize)]) {
+        NSSize cellSize = [button.cell cellSize];
+        size.width = MAX(size.width, cellSize.width);
+        size.height = MAX(size.height, cellSize.height);
+    }
+
+#if defined(GNUSTEP)
+    size.width += 20.0f;
+#else
+    size.width += 10.0f;
+#endif
+
+    size.width = ceil(MAX(minimumWidth, size.width));
+    size.height = ceil(MAX(minimumHeight, size.height));
+    return size;
 }
 
 static CGFloat STClampZoomScale(CGFloat scale) {
@@ -122,8 +139,10 @@ static CGFloat STZoomScaleForSliderValue(CGFloat sliderValue) {
     (void)view;
     CGFloat scaleFactor = 1.0f;
     CGFloat padding = 12.0f * scaleFactor;
-    CGFloat fitButtonWidth = STZoomPopoverButtonWidth(@"Fit to Window", 132.0f);
-    CGFloat resetButtonWidth = STZoomPopoverButtonWidth(@"100%", 84.0f);
+    NSSize fitButtonSize = STZoomPopoverButtonSize(@"Fit to Window", 132.0f, STZoomPopoverButtonHeight);
+    NSSize resetButtonSize = STZoomPopoverButtonSize(@"100%", 84.0f, STZoomPopoverButtonHeight);
+    CGFloat fitButtonWidth = fitButtonSize.width;
+    CGFloat resetButtonWidth = resetButtonSize.width;
     CGFloat contentWidthTarget = fitButtonWidth + STZoomPopoverButtonGap + resetButtonWidth + (padding * 2.0f);
     NSRect contentFrame = NSMakeRect(0, 0, MAX(284.0f, contentWidthTarget), 132.0f);
     self.contentView = [[NSView alloc] initWithFrame:contentFrame];
@@ -171,7 +190,7 @@ static CGFloat STZoomScaleForSliderValue(CGFloat sliderValue) {
     [self.contentView addSubview:slider];
 
     y -= 42.0f * scaleFactor;
-    NSButton *fitButton = [[NSButton alloc] initWithFrame:NSMakeRect(padding, y, fitButtonWidth, STZoomPopoverButtonHeight)];
+    NSButton *fitButton = [[NSButton alloc] initWithFrame:NSMakeRect(padding, y, fitButtonWidth, fitButtonSize.height)];
     [fitButton setTitle:@"Fit to Window"];
     [fitButton setButtonType:NSMomentaryPushInButton];
     [fitButton setBezelStyle:NSRoundedBezelStyle];
@@ -183,7 +202,7 @@ static CGFloat STZoomScaleForSliderValue(CGFloat sliderValue) {
     NSButton *resetButton = [[NSButton alloc] initWithFrame:NSMakeRect(NSMaxX(contentFrame) - padding - resetButtonWidth,
                                                                        y,
                                                                        resetButtonWidth,
-                                                                       STZoomPopoverButtonHeight)];
+                                                                       resetButtonSize.height)];
     [resetButton setTitle:@"100%"];
     [resetButton setButtonType:NSMomentaryPushInButton];
     [resetButton setBezelStyle:NSRoundedBezelStyle];
