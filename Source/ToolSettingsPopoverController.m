@@ -120,31 +120,26 @@
     CGFloat padding = 12.0f * scaleFactor;
     CGFloat contentWidth = self.contentView.bounds.size.width - (padding * 2.0f);
     CGFloat y = self.contentView.bounds.size.height - padding - (20.0f * scaleFactor);
-    NSColor *primaryTextColor = STThemeStatusPrimaryTextColor() ?: [NSColor labelColor];
-    NSColor *titleColor = STThemeToolbarLabelColor() ?: primaryTextColor;
-    NSColor *valueTextColor = STThemeStatusValueTextColor() ?: primaryTextColor;
+    NSColor *primaryTextColor = STThemeSecondaryTextColor() ?: [NSColor labelColor];
+    NSColor *titleColor = STThemeSectionHeaderColor() ?: STThemePrimaryTextColor();
+    NSColor *valueTextColor = STThemePrimaryTextColor() ?: primaryTextColor;
 
     NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, 24.0f * scaleFactor)];
     [title setEditable:NO];
     [title setSelectable:NO];
     [title setBezeled:NO];
     [title setBordered:NO];
-    [title setDrawsBackground:YES];
+    [title setDrawsBackground:NO];
     NSFont *baseFont = [NSFont boldSystemFontOfSize:13.0f * scaleFactor];
     NSFont *titleFont = [[NSFontManager sharedFontManager] convertFont:baseFont toHaveTrait:NSBoldFontMask];
     [title setFont:titleFont ?: baseFont];
     [title setStringValue:[self titleText]];
     [title setTextColor:titleColor];
-    NSColor *titleBackground = STThemeIsDark()
-        ? [NSColor colorWithCalibratedRed:0.18f green:0.19f blue:0.22f alpha:1.0f]
-        : [NSColor colorWithCalibratedWhite:0.92f alpha:1.0f];
-    [title setBackgroundColor:titleBackground];
     NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
     style.alignment = NSTextAlignmentLeft;
     NSDictionary *attrs = @{
         NSForegroundColorAttributeName: titleColor,
         NSFontAttributeName: title.font ?: baseFont,
-        NSKernAttributeName: @(0.5f * scaleFactor),
         NSParagraphStyleAttributeName: style
     };
     NSAttributedString *attributed = [[NSAttributedString alloc] initWithString:[self titleText] attributes:attrs];

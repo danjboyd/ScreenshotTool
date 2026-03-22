@@ -147,6 +147,7 @@
     NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, 22.0f * scaleFactor)];
     [self configureLabel:title font:[NSFont boldSystemFontOfSize:13.0f * scaleFactor]];
     [title setStringValue:@"Text Settings"];
+    [title setTextColor:STThemeSectionHeaderColor()];
     [self.contentView addSubview:title];
 
     y -= 30.0f * scaleFactor;
@@ -250,11 +251,11 @@
         [NSColor blackColor],
         [NSColor colorWithCalibratedWhite:0.35 alpha:1.0],
         [NSColor whiteColor],
-        [NSColor colorWithCalibratedRed:0.22 green:0.56 blue:0.95 alpha:1.0],
-        [NSColor colorWithCalibratedRed:0.16 green:0.78 blue:0.37 alpha:1.0],
-        [NSColor colorWithCalibratedRed:0.99 green:0.75 blue:0.20 alpha:1.0],
-        [NSColor colorWithCalibratedRed:0.91 green:0.30 blue:0.24 alpha:1.0],
-        [NSColor colorWithCalibratedRed:0.76 green:0.33 blue:0.85 alpha:1.0],
+        [NSColor colorWithCalibratedRed:0.21 green:0.52 blue:0.89 alpha:1.0],
+        [NSColor colorWithCalibratedRed:0.20 green:0.78 blue:0.48 alpha:1.0],
+        [NSColor colorWithCalibratedRed:0.96 green:0.83 blue:0.18 alpha:1.0],
+        [NSColor colorWithCalibratedRed:0.88 green:0.11 blue:0.14 alpha:1.0],
+        [NSColor colorWithCalibratedRed:0.60 green:0.25 blue:0.77 alpha:1.0],
         nil];
     self.colorSwatches = swatches;
     CGFloat swatchSize = 26.0f * scaleFactor;
@@ -324,9 +325,7 @@
     [preview setRichText:NO];
     [preview setAllowsUndo:YES];
     [preview setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
-    NSColor *previewBackground = STThemeIsDark()
-        ? [NSColor colorWithCalibratedWhite:0.18f alpha:1.0f]
-        : [NSColor colorWithCalibratedWhite:0.95f alpha:1.0f];
+    NSColor *previewBackground = STThemeInsetBackgroundColor();
     [previewScroll setDrawsBackground:YES];
     [previewScroll setBackgroundColor:previewBackground];
     [preview setDrawsBackground:YES];
@@ -376,6 +375,7 @@
     [label setBordered:NO];
     [label setDrawsBackground:NO];
     [label setFont:font];
+    [label setTextColor:STThemeSecondaryTextColor()];
 }
 
 - (void)populateFontFamilies {
@@ -540,8 +540,7 @@
                                                          yRadius:4.0f];
     [[color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: color setFill];
     [path fill];
-    NSColor *strokeColor = highlighted ? [NSColor colorWithCalibratedRed:0.18 green:0.8 blue:0.44 alpha:1.0]
-                                       : [NSColor colorWithCalibratedWhite:0.0 alpha:0.25];
+    NSColor *strokeColor = highlighted ? STThemeAccentColor() : STThemeHairlineColor();
     CGFloat strokeWidth = highlighted ? 2.0f : 1.0f;
     [strokeColor setStroke];
     [path setLineWidth:strokeWidth];
@@ -791,6 +790,20 @@
     self.currentFontComboSelection = selection ?: @"";
     [self finalizeFontComboSelectionWithInput:self.currentFontComboSelection];
     [self applyFontSelectionChange];
+}
+
+- (void)comboBoxWillPopUp:(NSNotification *)notification {
+    if (notification.object != self.fontComboBox) {
+        return;
+    }
+    [self.popover beginTransientInteraction];
+}
+
+- (void)comboBoxWillDismiss:(NSNotification *)notification {
+    if (notification.object != self.fontComboBox) {
+        return;
+    }
+    [self.popover endTransientInteraction];
 }
 
 #pragma mark - NSComboBoxDataSource

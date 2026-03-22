@@ -1,13 +1,61 @@
 #import "PreferencesWindowController.h"
 #import "ScreenshotToolSettings.h"
+#import "STThemeUtilities.h"
+#import <AppKit/NSSegmentedCell.h>
 #include <math.h>
 
-static const CGFloat STPreferencesWidth = 560.0f;
-static const CGFloat STPreferencesHeight = 580.0f;
+static const CGFloat STPreferencesWidth = 760.0f;
+static const CGFloat STPreferencesHeight = 500.0f;
+static const CGFloat STPreferencesCardCornerRadius = 14.0f;
+
+typedef NS_ENUM(NSInteger, STPreferencesSection) {
+    STPreferencesSectionAppearance = 0,
+    STPreferencesSectionDrawing = 1,
+    STPreferencesSectionText = 2,
+    STPreferencesSectionWorkspace = 3,
+};
+
+@interface STPreferencesBackgroundView : NSView
+@property (nonatomic, assign) NSRect contentCardRect;
+@end
+
+@implementation STPreferencesBackgroundView
+
+- (BOOL)isOpaque {
+    return YES;
+}
+
+- (void)drawCardInRect:(NSRect)rect {
+    if (NSIsEmptyRect(rect)) {
+        return;
+    }
+    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:rect
+                                                         xRadius:STPreferencesCardCornerRadius
+                                                         yRadius:STPreferencesCardCornerRadius];
+    [STThemeCardBackgroundColor() setFill];
+    [path fill];
+    [STThemeHairlineColor() setStroke];
+    [path setLineWidth:1.0f];
+    [path stroke];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    [STThemeWindowBackgroundColor() setFill];
+    NSRectFill(self.bounds);
+    [self drawCardInRect:self.contentCardRect];
+}
+
+@end
 
 @interface PreferencesWindowController () <NSWindowDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NSView *contentView;
+@property (nonatomic, strong) STPreferencesBackgroundView *backgroundView;
+@property (nonatomic, strong) NSSegmentedControl *sectionControl;
+@property (nonatomic, strong) NSTextField *pageTitleLabel;
+@property (nonatomic, strong) NSTextField *pageDescriptionLabel;
+@property (nonatomic, assign) STPreferencesSection currentSection;
 @property (nonatomic, strong) NSTextField *drawingHeaderLabel;
 
 @property (nonatomic, strong) NSTextField *penLabel;
@@ -56,6 +104,7 @@ static const CGFloat STPreferencesHeight = 580.0f;
     self = [super init];
     if (self) {
         _delegate = delegate;
+        _currentSection = STPreferencesSectionAppearance;
         [self buildInterface];
     }
     return self;
@@ -73,10 +122,35 @@ static const CGFloat STPreferencesHeight = 580.0f;
     [self.window setReleasedWhenClosed:NO];
     self.window.title = @"Preferences";
     self.window.delegate = self;
+    [self.window setBackgroundColor:STThemeWindowBackgroundColor()];
 
-    NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, STPreferencesWidth, STPreferencesHeight)];
+    STPreferencesBackgroundView *content = [[STPreferencesBackgroundView alloc] initWithFrame:NSMakeRect(0, 0, STPreferencesWidth, STPreferencesHeight)];
+    self.backgroundView = content;
     self.contentView = content;
     [self.window setContentView:content];
+
+    self.sectionControl = [[NSSegmentedControl alloc] initWithFrame:NSZeroRect];
+    [self.sectionControl setSegmentCount:4];
+    [self.sectionControl setLabel:@"Appearance" forSegment:0];
+    [self.sectionControl setLabel:@"Drawing" forSegment:1];
+    [self.sectionControl setLabel:@"Text" forSegment:2];
+    [self.sectionControl setLabel:@"Workspace" forSegment:3];
+    [(NSSegmentedCell *)[self.sectionControl cell] setTrackingMode:NSSegmentSwitchTrackingSelectOne];
+    [self.sectionControl setSelectedSegment:self.currentSection];
+    [self.sectionControl setTarget:self];
+    [self.sectionControl setAction:@selector(sectionSelectionChanged:)];
+    [content addSubview:self.sectionControl];
+
+    self.pageTitleLabel = [self headerLabelWithString:@"Appearance"];
+    [self.pageTitleLabel setFont:[NSFont boldSystemFontOfSize:18.0f]];
+    [content addSubview:self.pageTitleLabel];
+
+    self.pageDescriptionLabel = [self fieldLabelWithString:@"" frame:NSZeroRect];
+    [self.pageDescriptionLabel setFont:[NSFont systemFontOfSize:13.0f]];
+    [[self.pageDescriptionLabel cell] setWraps:YES];
+    [[self.pageDescriptionLabel cell] setScrollable:NO];
+    [[self.pageDescriptionLabel cell] setLineBreakMode:NSLineBreakByWordWrapping];
+    [content addSubview:self.pageDescriptionLabel];
 
     self.drawingHeaderLabel = [self headerLabelWithString:@"Drawing Defaults"];
     [content addSubview:self.drawingHeaderLabel];
@@ -104,7 +178,7 @@ static const CGFloat STPreferencesHeight = 580.0f;
     for (NSNumber *value in @[@2.0f, @4.0f, @6.0f]) {
         NSButton *button = [[NSButton alloc] initWithFrame:NSZeroRect];
         [button setButtonType:NSMomentaryPushInButton];
-        [button setBezelStyle:NSTexturedRoundedBezelStyle];
+        [button setBezelStyle:NSRoundedBezelStyle];
         [button setTitle:[NSString stringWithFormat:@"%.0f", value.doubleValue]];
         [button setTag:(NSInteger)lrint(value.doubleValue)];
         [button setTarget:self];
@@ -145,7 +219,7 @@ static const CGFloat STPreferencesHeight = 580.0f;
     for (NSNumber *value in @[@8.0f, @12.0f, @20.0f]) {
         NSButton *button = [[NSButton alloc] initWithFrame:NSZeroRect];
         [button setButtonType:NSMomentaryPushInButton];
-        [button setBezelStyle:NSTexturedRoundedBezelStyle];
+        [button setBezelStyle:NSRoundedBezelStyle];
         [button setTitle:[NSString stringWithFormat:@"%.0f", value.doubleValue]];
         [button setTag:(NSInteger)lrint(value.doubleValue)];
         [button setTarget:self];
@@ -224,17 +298,16 @@ static const CGFloat STPreferencesHeight = 580.0f;
     [self.statusBarCheckbox setAction:@selector(statusBarToggled:)];
     [content addSubview:self.statusBarCheckbox];
 
-    self.themeLabel = [self fieldLabelWithString:@"Toolbar Theme" frame:NSZeroRect];
+    self.themeLabel = [self fieldLabelWithString:@"Theme" frame:NSZeroRect];
     [content addSubview:self.themeLabel];
 
     self.interfaceThemePopUp = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
     [self.interfaceThemePopUp setTarget:self];
     [self.interfaceThemePopUp setAction:@selector(interfaceThemeSelectionChanged:)];
     [self.interfaceThemePopUp removeAllItems];
-    [self.interfaceThemePopUp addItemWithTitle:@"Light"];
-    [[self.interfaceThemePopUp itemAtIndex:0] setTag:0];
-    [self.interfaceThemePopUp addItemWithTitle:@"Dark"];
-    [[self.interfaceThemePopUp itemAtIndex:1] setTag:1];
+    [self addThemeItemWithTitle:@"Follow Theme" preference:STInterfaceThemePreferenceAutoValue];
+    [self addThemeItemWithTitle:@"Light" preference:STInterfaceThemePreferenceLightValue];
+    [self addThemeItemWithTitle:@"Dark" preference:STInterfaceThemePreferenceDarkValue];
     [content addSubview:self.interfaceThemePopUp];
 
     self.restoreDefaultsButton = [[NSButton alloc] initWithFrame:NSZeroRect];
@@ -255,6 +328,7 @@ static const CGFloat STPreferencesHeight = 580.0f;
 
     [self.window setContentMinSize:NSMakeSize(STPreferencesWidth, STPreferencesHeight)];
     [self layoutContentView];
+    [self applyThemeAppearance];
 }
 
 - (NSTextField *)headerLabelWithString:(NSString *)string {
@@ -265,6 +339,7 @@ static const CGFloat STPreferencesHeight = 580.0f;
     [label setDrawsBackground:NO];
     [label setSelectable:NO];
     [label setFont:[NSFont boldSystemFontOfSize:14.0f]];
+    [label setTextColor:STThemeSectionHeaderColor()];
     [label setStringValue:string ?: @""];
     return label;
 }
@@ -277,6 +352,7 @@ static const CGFloat STPreferencesHeight = 580.0f;
     [label setDrawsBackground:NO];
     [label setSelectable:NO];
     [label setFont:[NSFont systemFontOfSize:12.0f]];
+    [label setTextColor:STThemeSecondaryTextColor()];
     [label setStringValue:string ?: @""];
     return label;
 }
@@ -288,6 +364,106 @@ static const CGFloat STPreferencesHeight = 580.0f;
     [label setDrawsBackground:NO];
     [label setSelectable:NO];
     [label setFont:[NSFont systemFontOfSize:12.0f]];
+    [label setTextColor:STThemePrimaryTextColor()];
+}
+
+- (void)addThemeItemWithTitle:(NSString *)title preference:(NSString *)preference {
+    [self.interfaceThemePopUp addItemWithTitle:title ?: @""];
+    NSMenuItem *item = (NSMenuItem *)[self.interfaceThemePopUp itemAtIndex:(self.interfaceThemePopUp.numberOfItems - 1)];
+    item.representedObject = preference ?: STInterfaceThemePreferenceAutoValue;
+}
+
+- (NSString *)titleForSection:(STPreferencesSection)section {
+    switch (section) {
+        case STPreferencesSectionAppearance:
+            return @"Appearance";
+        case STPreferencesSectionDrawing:
+            return @"Drawing Defaults";
+        case STPreferencesSectionText:
+            return @"Text Defaults";
+        case STPreferencesSectionWorkspace:
+            return @"Workspace";
+    }
+    return @"Preferences";
+}
+
+- (NSString *)descriptionForSection:(STPreferencesSection)section {
+    switch (section) {
+        case STPreferencesSectionAppearance:
+            return @"Choose how the app should look and which interface chrome should stay visible.";
+        case STPreferencesSectionDrawing:
+            return @"Set the default stroke width and color for the pen and highlighter tools.";
+        case STPreferencesSectionText:
+            return @"Choose the default color and typeface used when you add text annotations.";
+        case STPreferencesSectionWorkspace:
+            return @"Pick the folder used when saving screenshots and exports by default.";
+    }
+    return @"";
+}
+
+- (void)setViews:(NSArray<NSView *> *)views hidden:(BOOL)hidden {
+    for (NSView *view in views) {
+        [view setHidden:hidden];
+    }
+}
+
+- (void)hideAllPageControls {
+    [self setViews:@[
+        self.drawingHeaderLabel,
+        self.penLabel,
+        self.penWidthSlider,
+        self.penWidthValueLabel,
+        self.penColorLabel,
+        self.penColorWell,
+        self.highlighterLabel,
+        self.highlighterWidthSlider,
+        self.highlighterWidthValueLabel,
+        self.highlighterColorLabel,
+        self.highlighterColorWell,
+        self.textHeaderLabel,
+        self.textColorLabel,
+        self.textColorWell,
+        self.textFontLabel,
+        self.textFontSummaryLabel,
+        self.textFontButton,
+        self.workspaceHeaderLabel,
+        self.directoryLabel,
+        self.saveDirectoryField,
+        self.chooseDirectoryButton,
+        self.interfaceHeaderLabel,
+        self.themeLabel,
+        self.interfaceThemePopUp,
+        self.statusBarCheckbox
+    ] hidden:YES];
+    [self setViews:self.penQuickButtons hidden:YES];
+    [self setViews:self.highlighterQuickButtons hidden:YES];
+}
+
+- (void)applyThemeAppearance {
+    [self.window setBackgroundColor:STThemeWindowBackgroundColor()];
+    [self.sectionControl setSelectedSegment:self.currentSection];
+    [self.pageTitleLabel setTextColor:STThemePrimaryTextColor()];
+    [self.pageDescriptionLabel setTextColor:STThemeSecondaryTextColor()];
+    [self.drawingHeaderLabel setTextColor:STThemeSectionHeaderColor()];
+    [self.textHeaderLabel setTextColor:STThemeSectionHeaderColor()];
+    [self.workspaceHeaderLabel setTextColor:STThemeSectionHeaderColor()];
+    [self.interfaceHeaderLabel setTextColor:STThemeSectionHeaderColor()];
+    [self.penColorLabel setTextColor:STThemeSecondaryTextColor()];
+    [self.highlighterColorLabel setTextColor:STThemeSecondaryTextColor()];
+    [self.saveDirectoryField setBackgroundColor:STThemeInsetBackgroundColor()];
+    [self.saveDirectoryField setTextColor:STThemePrimaryTextColor()];
+    [self.textFontSummaryLabel setTextColor:STThemePrimaryTextColor()];
+    [self.penWidthValueLabel setTextColor:STThemePrimaryTextColor()];
+    [self.highlighterWidthValueLabel setTextColor:STThemePrimaryTextColor()];
+    [self.themeLabel setTextColor:STThemeSecondaryTextColor()];
+    [self.directoryLabel setTextColor:STThemeSecondaryTextColor()];
+    [self.textColorLabel setTextColor:STThemeSecondaryTextColor()];
+    [self.textFontLabel setTextColor:STThemeSecondaryTextColor()];
+    [self.penLabel setTextColor:STThemePrimaryTextColor()];
+    [self.highlighterLabel setTextColor:STThemePrimaryTextColor()];
+    [self.pageTitleLabel setStringValue:[self titleForSection:self.currentSection]];
+    [self.pageDescriptionLabel setStringValue:[self descriptionForSection:self.currentSection]];
+    [self.backgroundView setNeedsDisplay:YES];
 }
 
 - (void)layoutContentView {
@@ -296,119 +472,139 @@ static const CGFloat STPreferencesHeight = 580.0f;
         return;
     }
 
-    CGFloat padding = 20.0f;
-    CGFloat headerSpacing = 8.0f;
-    CGFloat sectionSpacing = 18.0f;
-    CGFloat labelWidth = 110.0f;
-    CGFloat valueWidth = 72.0f;
-    CGFloat contentWidth = MAX(420.0f, content.bounds.size.width - (padding * 2.0f));
-    CGFloat headerHeight = 22.0f;
-
-    CGFloat y = content.bounds.size.height - padding;
-
-    // Drawing Defaults
-    [self.drawingHeaderLabel setFrame:NSMakeRect(padding, y - headerHeight, contentWidth, headerHeight)];
-    y -= (headerHeight + headerSpacing);
-
-    y = [self layoutToolSectionWithLabel:self.penLabel
-                                   slider:self.penWidthSlider
-                              valueLabel:self.penWidthValueLabel
-                             quickButtons:self.penQuickButtons
-                              colorLabel:self.penColorLabel
-                               colorWell:self.penColorWell
-                                      y:y
-                            contentWidth:contentWidth
-                                 padding:padding
-                              labelWidth:labelWidth
-                              valueWidth:valueWidth];
-
-    y = [self layoutToolSectionWithLabel:self.highlighterLabel
-                                   slider:self.highlighterWidthSlider
-                              valueLabel:self.highlighterWidthValueLabel
-                             quickButtons:self.highlighterQuickButtons
-                              colorLabel:self.highlighterColorLabel
-                               colorWell:self.highlighterColorWell
-                                      y:y
-                            contentWidth:contentWidth
-                                 padding:padding
-                              labelWidth:labelWidth
-                              valueWidth:valueWidth];
-
-    y -= sectionSpacing;
-
-    // Text Defaults
-    [self.textHeaderLabel setFrame:NSMakeRect(padding, y - headerHeight, contentWidth, headerHeight)];
-    y -= (headerHeight + headerSpacing);
-
-    CGFloat colorWellWidth = 52.0f;
-    CGFloat colorWellHeight = 30.0f;
-    CGFloat colorRowHeight = colorWellHeight;
-    CGFloat colorRowY = y - colorRowHeight;
-    [self.textColorLabel setFrame:NSMakeRect(padding, colorRowY + 6.0f, labelWidth, 20.0f)];
-    [self.textColorWell setFrame:NSMakeRect(padding + labelWidth + 12.0f,
-                                            colorRowY - 2.0f,
-                                            colorWellWidth,
-                                            colorWellHeight)];
-    y = colorRowY - headerSpacing;
-
-    CGFloat fontButtonWidth = 140.0f;
-    CGFloat fontButtonHeight = 28.0f;
-    CGFloat fontRowHeight = fontButtonHeight;
-    CGFloat fontRowY = y - fontRowHeight;
-    CGFloat fontSummaryWidth = MAX(160.0f, contentWidth - labelWidth - fontButtonWidth - 32.0f);
-    [self.textFontLabel setFrame:NSMakeRect(padding, fontRowY + 4.0f, labelWidth, 20.0f)];
-    [self.textFontSummaryLabel setFrame:NSMakeRect(padding + labelWidth + 12.0f,
-                                                   fontRowY + 4.0f,
-                                                   fontSummaryWidth,
-                                                   20.0f)];
-    [self.textFontButton setFrame:NSMakeRect(padding + labelWidth + 12.0f + fontSummaryWidth + 12.0f,
-                                             fontRowY,
-                                             fontButtonWidth,
-                                             fontButtonHeight)];
-    y = fontRowY - sectionSpacing;
-
-    // Workspace
-    [self.workspaceHeaderLabel setFrame:NSMakeRect(padding, y - headerHeight, contentWidth, headerHeight)];
-    y -= (headerHeight + headerSpacing);
-
-    [self.directoryLabel setFrame:NSMakeRect(padding, y - 18.0f, contentWidth, 18.0f)];
-    y -= (18.0f + 8.0f);
-
-    CGFloat chooseWidth = 110.0f;
-    CGFloat fieldHeight = 26.0f;
-    CGFloat fieldY = y - fieldHeight;
-    CGFloat fieldWidth = MAX(160.0f, contentWidth - chooseWidth - 10.0f);
-    [self.saveDirectoryField setFrame:NSMakeRect(padding, fieldY, fieldWidth, fieldHeight)];
-    [self.chooseDirectoryButton setFrame:NSMakeRect(padding + fieldWidth + 10.0f,
-                                                    fieldY - 1.0f,
-                                                    chooseWidth,
-                                                    fieldHeight)];
-    y = fieldY - sectionSpacing;
-
-    // Interface
-    [self.interfaceHeaderLabel setFrame:NSMakeRect(padding, y - headerHeight, contentWidth, headerHeight)];
-    y -= (headerHeight + headerSpacing);
-
-    CGFloat checkboxHeight = 24.0f;
-    CGFloat checkboxY = y - checkboxHeight;
-    [self.statusBarCheckbox setFrame:NSMakeRect(padding, checkboxY, contentWidth, checkboxHeight)];
-    y = checkboxY - headerSpacing;
-
-    CGFloat themeRowHeight = 26.0f;
-    CGFloat themeRowY = y - themeRowHeight;
-    CGFloat themeLabelWidth = labelWidth + 40.0f;
-    CGFloat popupWidth = 200.0f;
-    [self.themeLabel setFrame:NSMakeRect(padding, themeRowY + 4.0f, themeLabelWidth, 20.0f)];
-    [self.interfaceThemePopUp setFrame:NSMakeRect(padding + themeLabelWidth + 12.0f,
-                                                  themeRowY - 1.0f,
-                                                  popupWidth,
-                                                  themeRowHeight)];
-
-    // Footer buttons pinned to bottom
+    CGFloat outerPadding = 24.0f;
+    CGFloat switcherHeight = 40.0f;
+    CGFloat switcherGap = 16.0f;
+    CGFloat cardInnerPadding = 28.0f;
     CGFloat footerHeight = 32.0f;
-    CGFloat footerY = padding;
-    [self.restoreDefaultsButton setFrame:NSMakeRect(padding, footerY, 170.0f, footerHeight)];
-    [self.closeButton setFrame:NSMakeRect(padding + contentWidth - 110.0f, footerY, 110.0f, footerHeight)];
+    CGFloat footerInset = 24.0f;
+    CGFloat contentWidth = MAX(620.0f, content.bounds.size.width - (outerPadding * 2.0f));
+
+    CGFloat switcherY = content.bounds.size.height - outerPadding - switcherHeight;
+    [self.sectionControl setFrame:NSMakeRect(outerPadding, switcherY, contentWidth, switcherHeight)];
+    CGFloat segmentWidth = floor(contentWidth / 4.0f);
+    for (NSInteger segment = 0; segment < 4; segment++) {
+        CGFloat width = (segment == 3) ? (contentWidth - (segmentWidth * 3.0f)) : segmentWidth;
+        [self.sectionControl setWidth:width forSegment:segment];
+    }
+
+    NSRect cardRect = NSMakeRect(outerPadding,
+                                 outerPadding,
+                                 contentWidth,
+                                 MAX(220.0f, switcherY - switcherGap - outerPadding));
+    self.backgroundView.contentCardRect = cardRect;
+    [self.backgroundView setNeedsDisplay:YES];
+
+    CGFloat innerX = NSMinX(cardRect) + cardInnerPadding;
+    CGFloat innerWidth = NSWidth(cardRect) - (cardInnerPadding * 2.0f);
+    CGFloat y = NSMaxY(cardRect) - cardInnerPadding;
+
+    [self.pageTitleLabel setFrame:NSMakeRect(innerX, y - 28.0f, innerWidth, 28.0f)];
+    y -= 34.0f;
+    [self.pageDescriptionLabel setFrame:NSMakeRect(innerX, y - 36.0f, innerWidth, 36.0f)];
+    y -= 52.0f;
+
+    CGFloat footerY = NSMinY(cardRect) + footerInset;
+    [self.restoreDefaultsButton setFrame:NSMakeRect(innerX, footerY, 150.0f, footerHeight)];
+    [self.closeButton setFrame:NSMakeRect(NSMaxX(cardRect) - cardInnerPadding - 108.0f, footerY, 108.0f, footerHeight)];
+
+    [self hideAllPageControls];
+
+    CGFloat rowLabelWidth = 138.0f;
+    CGFloat valueWidth = 72.0f;
+    CGFloat controlHeight = 30.0f;
+    CGFloat contentBottom = footerY + footerHeight + 20.0f;
+
+    switch (self.currentSection) {
+        case STPreferencesSectionAppearance: {
+            [self setViews:@[self.themeLabel, self.interfaceThemePopUp, self.statusBarCheckbox] hidden:NO];
+            CGFloat themeRowY = y - controlHeight;
+            [self.themeLabel setFrame:NSMakeRect(innerX, themeRowY + 5.0f, rowLabelWidth, 20.0f)];
+            [self.interfaceThemePopUp setFrame:NSMakeRect(innerX + rowLabelWidth + 16.0f,
+                                                          themeRowY - 1.0f,
+                                                          innerWidth - rowLabelWidth - 16.0f,
+                                                          controlHeight)];
+            y = themeRowY - 22.0f;
+            CGFloat checkboxHeight = 24.0f;
+            [self.statusBarCheckbox setFrame:NSMakeRect(innerX, y - checkboxHeight, innerWidth, checkboxHeight)];
+            break;
+        }
+
+        case STPreferencesSectionDrawing: {
+            [self setViews:@[
+                self.penLabel,
+                self.penWidthSlider,
+                self.penWidthValueLabel,
+                self.penColorLabel,
+                self.penColorWell,
+                self.highlighterLabel,
+                self.highlighterWidthSlider,
+                self.highlighterWidthValueLabel,
+                self.highlighterColorLabel,
+                self.highlighterColorWell
+            ] hidden:NO];
+            [self setViews:self.penQuickButtons hidden:NO];
+            [self setViews:self.highlighterQuickButtons hidden:NO];
+
+            y = [self layoutToolSectionWithLabel:self.penLabel
+                                          slider:self.penWidthSlider
+                                     valueLabel:self.penWidthValueLabel
+                                    quickButtons:self.penQuickButtons
+                                     colorLabel:self.penColorLabel
+                                      colorWell:self.penColorWell
+                                             y:y
+                                   contentWidth:innerWidth
+                                        padding:innerX
+                                     labelWidth:rowLabelWidth
+                                     valueWidth:valueWidth];
+            y -= 18.0f;
+            if (y > contentBottom) {
+                y = [self layoutToolSectionWithLabel:self.highlighterLabel
+                                              slider:self.highlighterWidthSlider
+                                         valueLabel:self.highlighterWidthValueLabel
+                                        quickButtons:self.highlighterQuickButtons
+                                         colorLabel:self.highlighterColorLabel
+                                          colorWell:self.highlighterColorWell
+                                                 y:y
+                                       contentWidth:innerWidth
+                                            padding:innerX
+                                         labelWidth:rowLabelWidth
+                                         valueWidth:valueWidth];
+            }
+            break;
+        }
+
+        case STPreferencesSectionText: {
+            [self setViews:@[self.textColorLabel, self.textColorWell, self.textFontLabel, self.textFontSummaryLabel, self.textFontButton] hidden:NO];
+            CGFloat colorRowY = y - 30.0f;
+            [self.textColorLabel setFrame:NSMakeRect(innerX, colorRowY + 5.0f, rowLabelWidth, 20.0f)];
+            [self.textColorWell setFrame:NSMakeRect(innerX + rowLabelWidth + 16.0f, colorRowY - 1.0f, 54.0f, 32.0f)];
+            y = colorRowY - 24.0f;
+
+            CGFloat fontButtonWidth = 140.0f;
+            CGFloat fontRowY = y - 30.0f;
+            CGFloat summaryWidth = MAX(170.0f, innerWidth - rowLabelWidth - fontButtonWidth - 28.0f);
+            [self.textFontLabel setFrame:NSMakeRect(innerX, fontRowY + 5.0f, rowLabelWidth, 20.0f)];
+            [self.textFontSummaryLabel setFrame:NSMakeRect(innerX + rowLabelWidth + 16.0f, fontRowY + 5.0f, summaryWidth, 20.0f)];
+            [self.textFontButton setFrame:NSMakeRect(NSMaxX(cardRect) - cardInnerPadding - fontButtonWidth,
+                                                     fontRowY - 1.0f,
+                                                     fontButtonWidth,
+                                                     30.0f)];
+            break;
+        }
+
+        case STPreferencesSectionWorkspace: {
+            [self setViews:@[self.directoryLabel, self.saveDirectoryField, self.chooseDirectoryButton] hidden:NO];
+            [self.directoryLabel setFrame:NSMakeRect(innerX, y - 18.0f, innerWidth, 18.0f)];
+            y -= 28.0f;
+            CGFloat chooseWidth = 116.0f;
+            CGFloat fieldRowY = y - 30.0f;
+            CGFloat fieldWidth = MAX(180.0f, innerWidth - chooseWidth - 12.0f);
+            [self.saveDirectoryField setFrame:NSMakeRect(innerX, fieldRowY, fieldWidth, 30.0f)];
+            [self.chooseDirectoryButton setFrame:NSMakeRect(innerX + fieldWidth + 12.0f, fieldRowY - 1.0f, chooseWidth, 30.0f)];
+            break;
+        }
+    }
 }
 
 - (CGFloat)layoutToolSectionWithLabel:(NSTextField *)label
@@ -487,6 +683,7 @@ static const CGFloat STPreferencesHeight = 580.0f;
 }
 
 - (void)refresh {
+    [self applyThemeAppearance];
     id<PreferencesWindowControllerDelegate> delegate = self.delegate;
     if (!delegate) {
         return;
@@ -515,10 +712,17 @@ static const CGFloat STPreferencesHeight = 580.0f;
     BOOL showStatusBar = [delegate preferencesControllerShouldShowStatusBar:self];
     [self.statusBarCheckbox setState:showStatusBar ? NSControlStateValueOn : NSControlStateValueOff];
 
-    BOOL prefersDark = [delegate preferencesControllerPrefersDarkInterface:self];
-    NSInteger themeTag = prefersDark ? 1 : 0;
-    if ([self.interfaceThemePopUp indexOfItemWithTag:themeTag] != -1) {
-        [self.interfaceThemePopUp selectItemWithTag:themeTag];
+    NSString *preference = [[delegate preferencesControllerInterfaceThemePreference:self] lowercaseString];
+    if (preference.length == 0) {
+        preference = STInterfaceThemePreferenceAutoValue;
+    }
+    for (NSInteger idx = 0; idx < self.interfaceThemePopUp.numberOfItems; idx++) {
+        NSMenuItem *item = (NSMenuItem *)[self.interfaceThemePopUp itemAtIndex:idx];
+        NSString *candidate = item.representedObject;
+        if ([candidate isEqualToString:preference]) {
+            [self.interfaceThemePopUp selectItemAtIndex:idx];
+            break;
+        }
     }
 }
 
@@ -564,6 +768,16 @@ static const CGFloat STPreferencesHeight = 580.0f;
 }
 
 #pragma mark - Actions
+
+- (void)sectionSelectionChanged:(NSSegmentedControl *)sender {
+    NSInteger selectedSegment = sender.selectedSegment;
+    if (selectedSegment < STPreferencesSectionAppearance || selectedSegment > STPreferencesSectionWorkspace) {
+        return;
+    }
+    self.currentSection = (STPreferencesSection)selectedSegment;
+    [self applyThemeAppearance];
+    [self layoutContentView];
+}
 
 - (void)penWidthSliderChanged:(NSSlider *)sender {
     CGFloat value = MAX(STToolWidthMin, MIN(STToolWidthMax, roundf(sender.doubleValue)));
@@ -629,9 +843,11 @@ static const CGFloat STPreferencesHeight = 580.0f;
 }
 
 - (void)interfaceThemeSelectionChanged:(NSPopUpButton *)sender {
-    NSInteger tag = sender.selectedTag;
-    BOOL prefersDark = (tag == 1);
-    [self.delegate preferencesController:self didChangePrefersDarkInterface:prefersDark];
+    NSString *preference = sender.selectedItem.representedObject;
+    if (preference.length == 0) {
+        preference = STInterfaceThemePreferenceAutoValue;
+    }
+    [self.delegate preferencesController:self didChangeInterfaceThemePreference:preference];
 }
 
 - (void)restoreDefaultsPressed:(id)sender {

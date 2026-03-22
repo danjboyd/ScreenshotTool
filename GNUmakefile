@@ -146,10 +146,11 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/ScreenshotToolSettings.m \
 	Source/ToolSettingsPopoverController.m \
 	Source/TextToolPopoverController.m \
+	Source/ZoomPopoverController.m \
 	Source/PreferencesWindowController.m \
 	Source/STThemeUtilities.m
 
-CLANG_WRAPPER := $(shell pwd)/tools/clang-wrapper.sh
+CLANG_WRAPPER := $(shell pwd)/Tools/clang-wrapper.sh
 CC = $(CLANG_WRAPPER)
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
 ADDITIONAL_OBJCFLAGS += -DHAVE_MODE_T

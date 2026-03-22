@@ -6,11 +6,15 @@
 #import "ScreenshotToolSettings.h"
 #import "ToolSettingsPopoverController.h"
 #import "TextToolPopoverController.h"
+#import "ZoomPopoverController.h"
 #import "PreferencesWindowController.h"
 #import "STThemeUtilities.h"
 #import "STHudView.h"
 #if defined(ST_USE_OPENSAVE)
 #import <GSOpenSave.h>
+#endif
+#if defined(GNUSTEP)
+#import <AppKit/NSSegmentedCell.h>
 #endif
 
 #ifndef NSAboutPanelOptionApplicationIcon
@@ -36,9 +40,11 @@ static NSString * const ToolbarItemPen = @"com.screenshottool.toolbar.pen";
 static NSString * const ToolbarItemEraser = @"com.screenshottool.toolbar.eraser";
 static NSString * const ToolbarItemText = @"com.screenshottool.toolbar.text";
 static NSString * const ToolbarItemSelect = @"com.screenshottool.toolbar.select";
+static NSString * const ToolbarItemTools = @"com.screenshottool.toolbar.tools";
 static NSString * const ToolbarItemZoom = @"com.screenshottool.toolbar.zoom";
 static NSString * const ToolbarItemCopy = @"com.screenshottool.toolbar.copy";
 static NSString * const ToolbarItemPreferences = @"com.screenshottool.toolbar.preferences";
+static NSString * const ToolbarItemColor = @"com.screenshottool.toolbar.color";
 static const CGFloat StatusBarHeight = 24.0f;
 static const CGFloat STHudCornerRadius = 10.0f;
 static const CGFloat STHudHorizontalPadding = 20.0f;
@@ -47,6 +53,21 @@ static const CGFloat STHudMaxWidth = 360.0f;
 static const NSTimeInterval STHudFadeInDuration = 0.12;
 static const NSTimeInterval STHudFadeOutDuration = 0.20;
 static const CGFloat ToolbarIconDimension = 32.0f;
+#if defined(GNUSTEP)
+static const CGFloat STToolbarToolSegmentWidth = 46.0f;
+static const CGFloat STToolbarToolControlHeight = 32.0f;
+static const CGFloat STToolbarToolIconSize = 22.0f;
+static const CGFloat STToolbarColorControlWidth = 40.0f;
+static const CGFloat STToolbarColorControlHeight = 32.0f;
+static const CGFloat STToolbarUtilityButtonWidth = 40.0f;
+static const CGFloat STToolbarUtilityButtonHeight = 32.0f;
+static const CGFloat STToolbarUtilityIconSize = 20.0f;
+static const CGFloat STToolbarZoomControlHeight = 32.0f;
+static const CGFloat STToolbarZoomFontSize = 18.0f;
+static const CGFloat STToolbarZoomChevronWidth = 9.0f;
+static const CGFloat STToolbarZoomChevronSpacing = 8.0f;
+static const CGFloat STToolbarZoomHorizontalPadding = 12.0f;
+#endif
 static NSString * const ToolbarIdentifier = @"com.screenshottool.toolbar";
 
 static id STInfoValueForKey(NSString *key);
@@ -63,6 +84,21 @@ static NSString *STInfoStringForKey(NSString *key) {
     return nil;
 }
 
+#if defined(GNUSTEP)
+static NSFont *STToolbarZoomFont(void) {
+    return [NSFont systemFontOfSize:STToolbarZoomFontSize];
+}
+
+static CGFloat STToolbarZoomControlWidthForTitle(NSString *title) {
+    NSString *displayTitle = (title.length > 0) ? title : @"Zoom";
+    NSDictionary *attributes = @{ NSFontAttributeName: STToolbarZoomFont() };
+    NSSize titleSize = [displayTitle sizeWithAttributes:attributes];
+    CGFloat contentWidth = titleSize.width + STToolbarZoomChevronSpacing + STToolbarZoomChevronWidth;
+    return ceil(contentWidth + (STToolbarZoomHorizontalPadding * 2.0f));
+}
+#endif
+
+#if !defined(GNUSTEP)
 static NSImage *STRasterizeImage(NSSize size, void (^drawingBlock)(NSRect bounds)) {
     NSInteger width = MAX(1, (NSInteger)ceil(size.width));
     NSInteger height = MAX(1, (NSInteger)ceil(size.height));
@@ -97,6 +133,7 @@ static NSImage *STRasterizeImage(NSSize size, void (^drawingBlock)(NSRect bounds
     [image addRepresentation:bitmap];
     return image;
 }
+#endif
 
 #if defined(GNUSTEP)
 static NSBitmapImageRep *STBitmapRepresentationFromImage(NSImage *image) {
@@ -136,6 +173,97 @@ static NSBitmapImageRep *STBitmapRepresentationFromImage(NSImage *image) {
                 hints:nil];
     [NSGraphicsContext setCurrentContext:previousContext];
     return bitmap;
+}
+
+static NSBitmapImageRep *STDeviceBitmapRepresentationFromBitmapRep(NSBitmapImageRep *sourceRep) {
+    if (!sourceRep) {
+        return nil;
+    }
+    NSInteger width = sourceRep.pixelsWide;
+    NSInteger height = sourceRep.pixelsHigh;
+    if (width <= 0 || height <= 0) {
+        return nil;
+    }
+    NSBitmapImageRep *destRep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                                         pixelsWide:width
+                                                                         pixelsHigh:height
+                                                                      bitsPerSample:8
+                                                                    samplesPerPixel:4
+                                                                           hasAlpha:YES
+                                                                           isPlanar:NO
+                                                                     colorSpaceName:NSDeviceRGBColorSpace
+                                                                        bytesPerRow:0
+                                                                       bitsPerPixel:0];
+    if (!destRep) {
+        return nil;
+    }
+    for (NSInteger y = 0; y < height; y++) {
+        for (NSInteger x = 0; x < width; x++) {
+            NSColor *pixel = [sourceRep colorAtX:x y:y];
+            if (!pixel) {
+                pixel = [NSColor clearColor];
+            }
+            NSColor *devicePixel = [pixel colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: pixel;
+            [destRep setColor:devicePixel atX:x y:y];
+        }
+    }
+    [destRep setSize:sourceRep.size];
+    return destRep;
+}
+
+static NSBitmapImageRep *STDeviceBitmapRepresentationFromImage(NSImage *image) {
+    if (!image) {
+        return nil;
+    }
+    for (NSImageRep *representation in image.representations) {
+        if (![representation isKindOfClass:[NSBitmapImageRep class]]) {
+            continue;
+        }
+        NSBitmapImageRep *normalized = STDeviceBitmapRepresentationFromBitmapRep((NSBitmapImageRep *)representation);
+        if (normalized) {
+            return normalized;
+        }
+    }
+    NSBitmapImageRep *fallback = STBitmapRepresentationFromImage(image);
+    return STDeviceBitmapRepresentationFromBitmapRep(fallback);
+}
+
+static NSImage *STBitmapBackedImageFromBitmapRep(NSBitmapImageRep *bitmap, NSSize logicalSize) {
+    if (!bitmap) {
+        return nil;
+    }
+    [bitmap setSize:logicalSize];
+    NSData *tiffData = [bitmap TIFFRepresentation];
+    NSImage *image = tiffData ? [[NSImage alloc] initWithData:tiffData] : nil;
+    if (!image) {
+        image = [[NSImage alloc] initWithSize:logicalSize];
+        [image addRepresentation:bitmap];
+    }
+    [image setSize:logicalSize];
+    return image;
+}
+
+static NSImage *STBitmapBackedImageFromFile(NSString *path, NSSize logicalSize) {
+    if (path.length == 0) {
+        return nil;
+    }
+    NSData *data = [NSData dataWithContentsOfFile:path];
+    if (!data) {
+        return nil;
+    }
+    NSBitmapImageRep *sourceRep = [NSBitmapImageRep imageRepWithData:data];
+    if (!sourceRep) {
+        return nil;
+    }
+    NSBitmapImageRep *normalized = STDeviceBitmapRepresentationFromBitmapRep(sourceRep);
+    if (!normalized) {
+        return nil;
+    }
+    NSSize targetSize = logicalSize;
+    if (targetSize.width <= 0.0f || targetSize.height <= 0.0f) {
+        targetSize = sourceRep.size;
+    }
+    return STBitmapBackedImageFromBitmapRep(normalized, targetSize);
 }
 #else
 static NSBitmapImageRep *STBitmapRepresentationFromImage(NSImage *image) {
@@ -343,6 +471,461 @@ static NSString *STPathForToolbarResource(NSString *filename, NSString *extensio
 }
 
 @end
+
+@interface STToolbarGlyphView : NSView
+@property (nonatomic, strong) NSImage *displayImage;
+@property (nonatomic, weak) id target;
+@property (nonatomic, assign) SEL action;
+@property (nonatomic, assign, getter=isActive) BOOL active;
+- (void)setImage:(NSImage *)image;
+@end
+
+@implementation STToolbarGlyphView
+
+- (BOOL)isOpaque {
+    return NO;
+}
+
+- (void)setImage:(NSImage *)image {
+    self.displayImage = image;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setActive:(BOOL)active {
+    if (_active == active) {
+        return;
+    }
+    _active = active;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    if (!self.displayImage) {
+        return;
+    }
+    NSSize iconSize = self.displayImage.size;
+    if (iconSize.width <= 0.0f || iconSize.height <= 0.0f) {
+        iconSize = NSMakeSize(ToolbarIconDimension, ToolbarIconDimension);
+    }
+    NSRect bounds = self.bounds;
+    NSRect iconRect = NSMakeRect(floor((bounds.size.width - iconSize.width) * 0.5f),
+                                 floor((bounds.size.height - iconSize.height) * 0.5f),
+                                 iconSize.width,
+                                 iconSize.height);
+    if (self.active) {
+        CGFloat chipWidth = MIN(MAX(bounds.size.width - 8.0f, 22.0f), 26.0f);
+        CGFloat chipHeight = MIN(MAX(bounds.size.height - 6.0f, 16.0f), 18.0f);
+        NSRect chipRect = NSMakeRect(floor((bounds.size.width - chipWidth) * 0.5f),
+                                     floor((bounds.size.height - chipHeight) * 0.5f) + 0.5f,
+                                     chipWidth,
+                                     chipHeight);
+        NSBezierPath *chipPath = [NSBezierPath bezierPathWithRoundedRect:chipRect xRadius:6.0f yRadius:6.0f];
+        [[STThemeToolbarBackgroundColor(YES) colorWithAlphaComponent:0.98f] setFill];
+        [chipPath fill];
+        [[STThemeToolbarBorderColor(YES) colorWithAlphaComponent:0.75f] setStroke];
+        [chipPath setLineWidth:1.0f];
+        [chipPath stroke];
+    }
+    [self.displayImage drawInRect:iconRect
+                         fromRect:NSZeroRect
+                        operation:NSCompositeSourceOver
+                         fraction:1.0f
+                   respectFlipped:YES
+                            hints:nil];
+}
+
+- (void)mouseUp:(NSEvent *)event {
+    (void)event;
+    if (self.target && self.action) {
+        [NSApp sendAction:self.action to:self.target from:self];
+    }
+}
+
+@end
+
+@interface STToolbarColorWellView : NSView
+@property (nonatomic, strong) NSColor *color;
+@property (nonatomic, weak) id target;
+@property (nonatomic, assign) SEL action;
+@property (nonatomic, assign, getter=isEnabled) BOOL enabled;
+@end
+
+@interface STToolbarZoomButtonView : NSView
+@property (nonatomic, copy) NSString *title;
+@property (nonatomic, weak) id target;
+@property (nonatomic, assign) SEL action;
+@property (nonatomic, assign, getter=isEnabled) BOOL enabled;
+@end
+
+@interface STToolbarUtilityButtonView : NSView
+@property (nonatomic, strong) NSImage *image;
+@property (nonatomic, weak) id target;
+@property (nonatomic, assign) SEL action;
+@property (nonatomic, assign, getter=isEnabled) BOOL enabled;
+@end
+
+#if defined(GNUSTEP)
+static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin) {
+    if (!view || !view.superview) {
+        return proposedOrigin;
+    }
+    CGFloat centeredY = MAX(0.0f, floor((NSHeight(view.superview.bounds) - NSHeight(view.frame)) * 0.5f));
+    proposedOrigin.y = centeredY;
+    return proposedOrigin;
+}
+#endif
+
+@implementation STToolbarColorWellView
+
+- (BOOL)isOpaque {
+    return NO;
+}
+
+- (void)viewDidMoveToSuperview {
+    [super viewDidMoveToSuperview];
+#if defined(GNUSTEP)
+    if (self.superview) {
+        [super setFrameOrigin:STCenteredToolbarViewOrigin(self, self.frame.origin)];
+    }
+#endif
+}
+
+- (void)setFrameOrigin:(NSPoint)newOrigin {
+#if defined(GNUSTEP)
+    newOrigin = STCenteredToolbarViewOrigin(self, newOrigin);
+#endif
+    [super setFrameOrigin:newOrigin];
+}
+
+- (void)setColor:(NSColor *)color {
+    _color = color;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setEnabled:(BOOL)enabled {
+    if (_enabled == enabled) {
+        return;
+    }
+    _enabled = enabled;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSRect bounds = self.bounds;
+    CGFloat plateWidth = MIN(30.0f, MAX(20.0f, bounds.size.width - 10.0f));
+    CGFloat plateHeight = MIN(24.0f, MAX(18.0f, bounds.size.height - 8.0f));
+    NSRect plateRect = NSMakeRect(floor((bounds.size.width - plateWidth) * 0.5f),
+                                  floor((bounds.size.height - plateHeight) * 0.5f),
+                                  plateWidth,
+                                  plateHeight);
+    CGFloat plateRadius = MIN(7.0f, floor(plateHeight * 0.5f));
+    NSBezierPath *platePath = [NSBezierPath bezierPathWithRoundedRect:plateRect xRadius:plateRadius yRadius:plateRadius];
+    NSColor *plateFill = self.enabled
+        ? [STThemeToolbarBackgroundColor(NO) colorWithAlphaComponent:(STThemeIsDark() ? 0.82f : 0.90f)]
+        : [STThemeWindowBackgroundColor() colorWithAlphaComponent:(STThemeIsDark() ? 0.48f : 0.72f)];
+    [plateFill setFill];
+    [platePath fill];
+    [[STThemeToolbarBorderColor(NO) colorWithAlphaComponent:(self.enabled ? 0.58f : 0.30f)] setStroke];
+    [platePath setLineWidth:1.0f];
+    [platePath stroke];
+
+    NSRect swatchRect = NSInsetRect(plateRect, 5.0f, 4.0f);
+    CGFloat swatchRadius = MIN(5.0f, floor(MIN(NSWidth(swatchRect), NSHeight(swatchRect)) * 0.35f));
+    NSBezierPath *swatchPath = [NSBezierPath bezierPathWithRoundedRect:swatchRect xRadius:swatchRadius yRadius:swatchRadius];
+    NSColor *swatchColor = nil;
+    if (self.enabled && self.color) {
+        swatchColor = [self.color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: self.color;
+    } else {
+        swatchColor = [[STThemeSecondaryTextColor() colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] colorWithAlphaComponent:(self.enabled ? 0.20f : 0.14f)];
+    }
+    [swatchColor setFill];
+    [swatchPath fill];
+    [[NSColor colorWithCalibratedWhite:0.0f alpha:(self.enabled ? 0.18f : 0.08f)] setStroke];
+    [swatchPath setLineWidth:1.0f];
+    [swatchPath stroke];
+
+    if (!self.enabled) {
+        NSBezierPath *slashPath = [NSBezierPath bezierPath];
+        [slashPath moveToPoint:NSMakePoint(NSMinX(plateRect) + 5.0f, NSMaxY(plateRect) - 5.0f)];
+        [slashPath lineToPoint:NSMakePoint(NSMaxX(plateRect) - 5.0f, NSMinY(plateRect) + 5.0f)];
+        [[STThemeSecondaryTextColor() colorWithAlphaComponent:0.45f] setStroke];
+        [slashPath setLineWidth:1.5f];
+        [slashPath stroke];
+    }
+}
+
+- (void)mouseUp:(NSEvent *)event {
+    (void)event;
+    if (!self.enabled) {
+        return;
+    }
+    if (self.target && self.action) {
+        [NSApp sendAction:self.action to:self.target from:self];
+    }
+}
+
+@end
+
+@interface STToolbarSegmentedControl : NSSegmentedControl
+@property (nonatomic, assign) NSInteger clickedSegment;
+@property (nonatomic, assign) NSInteger lastClickCount;
+@end
+
+@implementation STToolbarSegmentedControl
+
+- (void)viewDidMoveToSuperview {
+    [super viewDidMoveToSuperview];
+#if defined(GNUSTEP)
+    if (self.superview) {
+        [super setFrameOrigin:STCenteredToolbarViewOrigin(self, self.frame.origin)];
+    }
+#endif
+}
+
+- (void)setFrameOrigin:(NSPoint)newOrigin {
+#if defined(GNUSTEP)
+    newOrigin = STCenteredToolbarViewOrigin(self, newOrigin);
+#endif
+    [super setFrameOrigin:newOrigin];
+}
+
+- (void)mouseDown:(NSEvent *)event {
+    NSPoint location = event ? [self convertPoint:event.locationInWindow fromView:nil] : NSZeroPoint;
+    NSInteger segmentCount = [self segmentCount];
+    CGFloat originX = 0.0f;
+    NSInteger hitSegment = -1;
+    for (NSInteger segment = 0; segment < segmentCount; segment++) {
+        CGFloat segmentWidth = [self widthForSegment:segment];
+        if (segmentWidth <= 0.0f) {
+            segmentWidth = floor(self.bounds.size.width / MAX((CGFloat)segmentCount, 1.0f));
+        }
+        NSRect segmentRect = NSMakeRect(originX, 0.0f, segmentWidth, self.bounds.size.height);
+        if (NSPointInRect(location, segmentRect)) {
+            hitSegment = segment;
+            break;
+        }
+        originX += segmentWidth;
+    }
+    if (hitSegment < 0) {
+        return;
+    }
+    self.clickedSegment = hitSegment;
+    self.lastClickCount = event ? event.clickCount : 0;
+    [self setSelectedSegment:hitSegment];
+    [self setNeedsDisplay:YES];
+    if (self.target && self.action) {
+        [NSApp sendAction:self.action to:self.target from:self];
+    }
+}
+
+@end
+
+@implementation STToolbarZoomButtonView
+
+- (instancetype)initWithFrame:(NSRect)frameRect {
+    self = [super initWithFrame:frameRect];
+    if (self) {
+        _enabled = YES;
+    }
+    return self;
+}
+
+- (BOOL)isOpaque {
+    return NO;
+}
+
+- (void)viewDidMoveToSuperview {
+    [super viewDidMoveToSuperview];
+#if defined(GNUSTEP)
+    if (self.superview) {
+        [super setFrameOrigin:STCenteredToolbarViewOrigin(self, self.frame.origin)];
+    }
+#endif
+}
+
+- (void)setFrameOrigin:(NSPoint)newOrigin {
+#if defined(GNUSTEP)
+    newOrigin = STCenteredToolbarViewOrigin(self, newOrigin);
+#endif
+    [super setFrameOrigin:newOrigin];
+}
+
+- (void)setTitle:(NSString *)title {
+    NSString *newTitle = (title.length > 0) ? [title copy] : @"";
+    if ((_title == newTitle) || [_title isEqualToString:newTitle]) {
+        return;
+    }
+    _title = newTitle;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setEnabled:(BOOL)enabled {
+    if (_enabled == enabled) {
+        return;
+    }
+    _enabled = enabled;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSRect bounds = self.bounds;
+    NSRect plateRect = NSInsetRect(bounds, 1.0f, 2.0f);
+    CGFloat radius = MIN(9.0f, floor(NSHeight(plateRect) * 0.45f));
+    NSBezierPath *platePath = [NSBezierPath bezierPathWithRoundedRect:plateRect xRadius:radius yRadius:radius];
+
+    NSColor *fillColor = nil;
+    NSColor *borderColor = nil;
+    if (self.enabled) {
+        fillColor = [STThemeToolbarBackgroundColor(NO) colorWithAlphaComponent:(STThemeIsDark() ? 0.90f : 0.96f)];
+        borderColor = [STThemeToolbarBorderColor(NO) colorWithAlphaComponent:0.72f];
+    } else {
+        fillColor = [STThemeWindowBackgroundColor() colorWithAlphaComponent:(STThemeIsDark() ? 0.48f : 0.72f)];
+        borderColor = [STThemeToolbarBorderColor(NO) colorWithAlphaComponent:0.24f];
+    }
+
+    [fillColor setFill];
+    [platePath fill];
+    [borderColor setStroke];
+    [platePath setLineWidth:1.0f];
+    [platePath stroke];
+
+    NSString *title = self.title.length > 0 ? self.title : @"Zoom";
+    NSColor *textColor = self.enabled ? STThemePrimaryTextColor() : [STThemeSecondaryTextColor() colorWithAlphaComponent:0.55f];
+    NSDictionary *attributes = @{
+        NSFontAttributeName: STToolbarZoomFont(),
+        NSForegroundColorAttributeName: textColor
+    };
+    NSSize titleSize = [title sizeWithAttributes:attributes];
+    CGFloat chevronWidth = STToolbarZoomChevronWidth;
+    CGFloat chevronSpacing = STToolbarZoomChevronSpacing;
+    CGFloat contentWidth = titleSize.width + chevronSpacing + chevronWidth;
+    CGFloat startX = floor((NSWidth(bounds) - contentWidth) * 0.5f);
+    CGFloat titleY = floor((NSHeight(bounds) - titleSize.height) * 0.5f);
+    [title drawAtPoint:NSMakePoint(startX, titleY) withAttributes:attributes];
+
+    CGFloat chevronX = startX + titleSize.width + chevronSpacing;
+    CGFloat chevronY = floor(NSMidY(bounds)) + 1.0f;
+    NSBezierPath *chevronPath = [NSBezierPath bezierPath];
+    [chevronPath moveToPoint:NSMakePoint(chevronX, chevronY)];
+    [chevronPath lineToPoint:NSMakePoint(chevronX + (chevronWidth * 0.5f), chevronY - 5.0f)];
+    [chevronPath lineToPoint:NSMakePoint(chevronX + chevronWidth, chevronY)];
+    [textColor setStroke];
+    [chevronPath setLineWidth:1.6f];
+    [chevronPath setLineJoinStyle:NSRoundLineJoinStyle];
+    [chevronPath setLineCapStyle:NSRoundLineCapStyle];
+    [chevronPath stroke];
+}
+
+- (void)mouseUp:(NSEvent *)event {
+    (void)event;
+    if (!self.enabled) {
+        return;
+    }
+    if (self.target && self.action) {
+        [NSApp sendAction:self.action to:self.target from:self];
+    }
+}
+
+@end
+
+@implementation STToolbarUtilityButtonView
+
+- (instancetype)initWithFrame:(NSRect)frameRect {
+    self = [super initWithFrame:frameRect];
+    if (self) {
+        _enabled = YES;
+    }
+    return self;
+}
+
+- (BOOL)isOpaque {
+    return NO;
+}
+
+- (void)viewDidMoveToSuperview {
+    [super viewDidMoveToSuperview];
+#if defined(GNUSTEP)
+    if (self.superview) {
+        [super setFrameOrigin:STCenteredToolbarViewOrigin(self, self.frame.origin)];
+    }
+#endif
+}
+
+- (void)setFrameOrigin:(NSPoint)newOrigin {
+#if defined(GNUSTEP)
+    newOrigin = STCenteredToolbarViewOrigin(self, newOrigin);
+#endif
+    [super setFrameOrigin:newOrigin];
+}
+
+- (void)setImage:(NSImage *)image {
+    _image = image;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setEnabled:(BOOL)enabled {
+    if (_enabled == enabled) {
+        return;
+    }
+    _enabled = enabled;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSRect bounds = self.bounds;
+    NSRect plateRect = NSInsetRect(bounds, 1.0f, 2.0f);
+    CGFloat radius = MIN(8.0f, floor(NSHeight(plateRect) * 0.45f));
+    NSBezierPath *platePath = [NSBezierPath bezierPathWithRoundedRect:plateRect xRadius:radius yRadius:radius];
+
+    NSColor *fillColor = nil;
+    NSColor *borderColor = nil;
+    if (self.enabled) {
+        fillColor = [STThemeToolbarBackgroundColor(NO) colorWithAlphaComponent:(STThemeIsDark() ? 0.90f : 0.96f)];
+        borderColor = [STThemeToolbarBorderColor(NO) colorWithAlphaComponent:0.72f];
+    } else {
+        fillColor = [STThemeWindowBackgroundColor() colorWithAlphaComponent:(STThemeIsDark() ? 0.48f : 0.72f)];
+        borderColor = [STThemeToolbarBorderColor(NO) colorWithAlphaComponent:0.24f];
+    }
+
+    [fillColor setFill];
+    [platePath fill];
+    [borderColor setStroke];
+    [platePath setLineWidth:1.0f];
+    [platePath stroke];
+
+    if (!self.image) {
+        return;
+    }
+
+    CGFloat iconDimension = MIN(STToolbarUtilityIconSize, MIN(NSWidth(bounds) - 10.0f, NSHeight(bounds) - 8.0f));
+    NSRect iconRect = NSMakeRect(floor((NSWidth(bounds) - iconDimension) * 0.5f),
+                                 floor((NSHeight(bounds) - iconDimension) * 0.5f),
+                                 iconDimension,
+                                 iconDimension);
+    [self.image drawInRect:iconRect
+                  fromRect:NSZeroRect
+                 operation:NSCompositeSourceOver
+                  fraction:(self.enabled ? 1.0f : 0.45f)
+            respectFlipped:YES
+                     hints:nil];
+}
+
+- (void)mouseUp:(NSEvent *)event {
+    (void)event;
+    if (!self.enabled) {
+        return;
+    }
+    if (self.target && self.action) {
+        [NSApp sendAction:self.action to:self.target from:self];
+    }
+}
+
+@end
+
 #endif
 #import <AppKit/NSInterfaceStyle.h>
 #include <math.h>
@@ -426,6 +1009,12 @@ static NSString *STDebugToolName(ScreenshotCanvasTool tool) {
     return @"Unknown";
 }
 
+static BOOL STToolUsesColor(ScreenshotCanvasTool tool) {
+    return (tool == ScreenshotCanvasToolPen ||
+            tool == ScreenshotCanvasToolHighlighter ||
+            tool == ScreenshotCanvasToolText);
+}
+
 static NSString *STDebugDescriptionForEvent(NSEvent *event) {
     if (!event) {
         return @"<no NSEvent>";
@@ -484,12 +1073,17 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 @end
 
-@interface AppDelegate () <NSToolbarDelegate, ToolSettingsPopoverControllerDelegate, TextToolPopoverControllerDelegate, PreferencesWindowControllerDelegate>
+@interface AppDelegate () <NSToolbarDelegate, ToolSettingsPopoverControllerDelegate, TextToolPopoverControllerDelegate, ZoomPopoverControllerDelegate, PreferencesWindowControllerDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NSScrollView *scrollView;
 @property (nonatomic, strong) ScreenshotCanvasView *canvasView;
 @property (nonatomic, strong) NSToolbar *toolbar;
 @property (nonatomic, strong) NSMutableDictionary<NSToolbarItemIdentifier, NSToolbarItem *> *toolbarItemsByIdentifier;
+#if defined(GNUSTEP)
+@property (nonatomic, strong) STToolbarSegmentedControl *toolbarToolSegmentedControl;
+@property (nonatomic, strong) STToolbarColorWellView *toolbarColorWellView;
+@property (nonatomic, strong) STToolbarZoomButtonView *zoomToolbarButtonView;
+#endif
 @property (nonatomic, strong) NSPopUpButton *zoomPopUpButton;
 @property (nonatomic, strong) NSView *zoomToolbarContainer;
 @property (nonatomic, strong) NSTextField *zoomToolbarLabel;
@@ -519,6 +1113,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) ToolSettingsPopoverController *penPopoverController;
 @property (nonatomic, strong) ToolSettingsPopoverController *highlighterPopoverController;
 @property (nonatomic, strong) TextToolPopoverController *textPopoverController;
+@property (nonatomic, strong) ZoomPopoverController *zoomPopoverController;
 @property (nonatomic, strong) PreferencesWindowController *preferencesWindowController;
 @property (nonatomic, assign) ScreenshotCanvasTool lastWidthTool;
 @property (nonatomic, copy) NSString *defaultSaveDirectory;
@@ -553,6 +1148,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 }
 
 - (NSString *)toolTipForIdentifier:(NSToolbarItemIdentifier)identifier {
+    if ([identifier isEqualToString:ToolbarItemTools]) {
+        return @"Tools";
+    }
     if ([identifier isEqualToString:ToolbarItemHighlighter]) {
         return @"Highlighter Tool — double-click to configure";
     }
@@ -567,6 +1165,31 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     }
     if ([identifier isEqualToString:ToolbarItemEraser]) {
         return @"Eraser Tool";
+    }
+    if ([identifier isEqualToString:ToolbarItemCopy]) {
+        return @"Copy Image";
+    }
+    if ([identifier isEqualToString:ToolbarItemPreferences]) {
+        return @"Preferences";
+    }
+    if ([identifier isEqualToString:ToolbarItemColor]) {
+        switch (self.canvasView.activeTool) {
+            case ScreenshotCanvasToolPen:
+                return @"Pen Color — click to configure";
+            case ScreenshotCanvasToolHighlighter:
+                return @"Highlighter Color — click to configure";
+            case ScreenshotCanvasToolText:
+                return @"Text Color and Font — click to configure";
+            default:
+                return @"Current tool has no color settings";
+        }
+    }
+    if ([identifier isEqualToString:ToolbarItemZoom]) {
+        if (![self.canvasView hasImage]) {
+            return @"Zoom unavailable until an image is loaded";
+        }
+        NSString *value = self.canvasView.isFitToWindow ? @"Fit to Window" : [self displayStringForScale:self.canvasView.zoomScale];
+        return [NSString stringWithFormat:@"Zoom: %@ — click to adjust", value];
     }
     return nil;
 }
@@ -723,6 +1346,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 - (BOOL)validateToolbarItem:(NSToolbarItem *)toolbarItem {
     NSString *identifier = toolbarItem.itemIdentifier;
     if ([identifier isEqualToString:ToolbarItemCopy]) {
+        return [self.canvasView hasImage];
+    }
+    if ([identifier isEqualToString:ToolbarItemZoom]) {
         return [self.canvasView hasImage];
     }
     return YES;
@@ -909,6 +1535,7 @@ static id STInfoValueForKey(NSString *key) {
                                                 backing:NSBackingStoreBuffered
                                                   defer:NO];
     [self.window setTitle:@"ScreenshotTool"];
+    [self.window setBackgroundColor:STThemeWindowBackgroundColor()];
     [self.window center];
     [self.window setDelegate:self];
     [self.window setAcceptsMouseMovedEvents:YES];
@@ -1035,17 +1662,13 @@ static id STInfoValueForKey(NSString *key) {
     if (!identifier) {
         return nil;
     }
-#if !defined(GNUSTEP)
     NSToolbarItem *cached = self.toolbarItemsByIdentifier[identifier];
     if (cached) {
         return cached;
     }
-#endif
     for (NSToolbarItem *item in self.toolbar.items) {
         if ([item.itemIdentifier isEqualToString:identifier]) {
-#if !defined(GNUSTEP)
             self.toolbarItemsByIdentifier[identifier] = item;
-#endif
             return item;
         }
     }
@@ -1184,13 +1807,20 @@ static id STInfoValueForKey(NSString *key) {
     NSToolbarItemIdentifier activeIdentifier = [self identifierForTool:self.canvasView.activeTool];
     ScreenshotToolAppendLog([NSString stringWithFormat:@"refreshToolButtonIcons: active=%@", activeIdentifier]);
 
+#if defined(GNUSTEP)
+    [self refreshToolbarToolsControl];
+    NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[ToolbarItemCopy, ToolbarItemPreferences];
+#else
     NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[
         ToolbarItemSelect,
         ToolbarItemHighlighter,
         ToolbarItemPen,
         ToolbarItemEraser,
-        ToolbarItemText
+        ToolbarItemText,
+        ToolbarItemCopy
+        ,ToolbarItemPreferences
     ];
+#endif
     for (NSToolbarItemIdentifier identifier in toolIdentifiers) {
         NSToolbarItem *item = [self toolbarItemForIdentifier:identifier];
         if (!item) {
@@ -1199,6 +1829,11 @@ static id STInfoValueForKey(NSString *key) {
         }
 
         [self applyToolTipToToolbarItem:item source:@"refresh-icons"];
+        BOOL isEnabled = YES;
+        if ([identifier isEqualToString:ToolbarItemCopy]) {
+            isEnabled = [self.canvasView hasImage];
+        }
+        item.enabled = isEnabled;
 
         BOOL isActive = (activeIdentifier && [identifier isEqualToString:activeIdentifier]);
         NSImage *icon = [self toolbarImageForIdentifier:identifier active:isActive];
@@ -1207,21 +1842,24 @@ static id STInfoValueForKey(NSString *key) {
             continue;
         }
 
-        NSColor *badgeColor = [self badgeColorForToolbarIdentifier:identifier];
-        if (badgeColor) {
-            ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ badge color %@", identifier, [self debugDescriptionForColor:badgeColor]]);
-        }
-
-        item.image = icon;
         if (item.view && [item.view respondsToSelector:@selector(setImage:)]) {
             id buttonView = item.view;
             if ([buttonView respondsToSelector:@selector(setImage:)]) {
                 [buttonView setImage:icon];
             }
+            if ([buttonView respondsToSelector:@selector(setActive:)]) {
+                [buttonView setActive:isActive];
+            }
+            if ([buttonView respondsToSelector:@selector(setEnabled:)]) {
+                [buttonView setEnabled:isEnabled];
+            }
         }
+        item.image = icon;
         NSString *state = isActive ? @"active" : @"inactive";
         ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ updated (%@)", identifier, state]);
     }
+    [self refreshToolbarColorControl];
+    [self refreshZoomToolbarControl];
 }
 
 - (void)rebuildToolbarBadges {
@@ -1237,6 +1875,16 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
+#if defined(GNUSTEP)
+    (void)toolbar;
+    return @[ToolbarItemTools,
+             ToolbarItemColor,
+             ToolbarItemCopy,
+             ToolbarItemPreferences,
+             ToolbarItemZoom,
+             NSToolbarSpaceItemIdentifier,
+             NSToolbarFlexibleSpaceItemIdentifier];
+#else
     return @[ToolbarItemSelect,
              ToolbarItemHighlighter,
              ToolbarItemPen,
@@ -1247,9 +1895,19 @@ static id STInfoValueForKey(NSString *key) {
              ToolbarItemZoom,
              NSToolbarSpaceItemIdentifier,
              NSToolbarFlexibleSpaceItemIdentifier];
+#endif
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
+#if defined(GNUSTEP)
+    (void)toolbar;
+    return @[ToolbarItemTools,
+             ToolbarItemColor,
+             NSToolbarFlexibleSpaceItemIdentifier,
+             ToolbarItemCopy,
+             ToolbarItemPreferences,
+             ToolbarItemZoom];
+#else
     return @[ToolbarItemSelect,
              ToolbarItemHighlighter,
              ToolbarItemPen,
@@ -1260,6 +1918,7 @@ static id STInfoValueForKey(NSString *key) {
              NSToolbarFlexibleSpaceItemIdentifier,
              ToolbarItemZoom,
              NSToolbarSpaceItemIdentifier];
+#endif
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
@@ -1271,6 +1930,11 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (NSToolbarItem *)baselineToolbarItemForIdentifier:(NSToolbarItemIdentifier)identifier {
+#if defined(GNUSTEP)
+    if ([identifier isEqualToString:ToolbarItemTools]) {
+        return [self toolbarItemForToolControl];
+    }
+#endif
     if ([identifier isEqualToString:ToolbarItemHighlighter]) {
         return [self baselineToolbarItemWithIdentifier:ToolbarItemHighlighter
                                                  label:@"Highlighter"
@@ -1307,6 +1971,11 @@ static id STInfoValueForKey(NSString *key) {
                                                 action:@selector(copy:)
                                              imageName:@"CopyImage"];
     }
+#if defined(GNUSTEP)
+    if ([identifier isEqualToString:ToolbarItemColor]) {
+        return [self toolbarItemForColorControl];
+    }
+#endif
     if ([identifier isEqualToString:ToolbarItemPreferences]) {
         return [self baselineToolbarItemWithIdentifier:ToolbarItemPreferences
                                                  label:@"Preferences"
@@ -1324,17 +1993,258 @@ static id STInfoValueForKey(NSString *key) {
                                               action:(SEL)selector
                                            imageName:(NSString *)imageName {
     NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:identifier];
-    item.label = label ?: @"";
-    item.paletteLabel = item.label;
-    item.toolTip = item.label;
+    item.paletteLabel = label ?: @"";
+#if defined(GNUSTEP)
+    item.label = @"";
+#else
+    item.label = item.paletteLabel;
+#endif
+    item.toolTip = item.paletteLabel;
     item.target = self;
     item.action = selector;
 
     BOOL isActive = [identifier isEqualToString:[self identifierForTool:self.canvasView.activeTool]];
     NSImage *image = [self baselineToolbarImageNamed:imageName active:isActive];
+#if defined(GNUSTEP)
+    BOOL usesUtilityButton = ([identifier isEqualToString:ToolbarItemCopy] ||
+                              [identifier isEqualToString:ToolbarItemPreferences]);
+    if (usesUtilityButton) {
+        STToolbarUtilityButtonView *utilityView = [[STToolbarUtilityButtonView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, STToolbarUtilityButtonWidth, STToolbarUtilityButtonHeight)];
+        utilityView.target = self;
+        utilityView.action = selector;
+        [utilityView setImage:image];
+        [utilityView setEnabled:![identifier isEqualToString:ToolbarItemCopy] || [self.canvasView hasImage]];
+        [utilityView setToolTip:item.toolTip];
+        STApplyAccessibilityLabel(utilityView, label);
+        item.view = utilityView;
+        item.minSize = utilityView.frame.size;
+        item.maxSize = utilityView.frame.size;
+        item.enabled = utilityView.enabled;
+    } else {
+        STToolbarGlyphView *glyphView = [[STToolbarGlyphView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, 32.0f, 24.0f)];
+        glyphView.target = self;
+        glyphView.action = selector;
+        [glyphView setImage:image];
+        [glyphView setActive:isActive];
+        [glyphView setToolTip:item.toolTip];
+        STApplyAccessibilityLabel(glyphView, label);
+        item.view = glyphView;
+        item.minSize = glyphView.frame.size;
+        item.maxSize = glyphView.frame.size;
+    }
+#else
     if (image) {
         item.image = image;
     }
+#endif
+    return item;
+}
+
+- (NSInteger)toolbarSegmentIndexForTool:(ScreenshotCanvasTool)tool {
+    switch (tool) {
+        case ScreenshotCanvasToolSelect:
+            return 0;
+        case ScreenshotCanvasToolHighlighter:
+            return 1;
+        case ScreenshotCanvasToolPen:
+            return 2;
+        case ScreenshotCanvasToolText:
+            return 3;
+        case ScreenshotCanvasToolEraser:
+            return 4;
+    }
+    return 0;
+}
+
+- (ScreenshotCanvasTool)toolbarToolForSegmentIndex:(NSInteger)index {
+    switch (index) {
+        case 1:
+            return ScreenshotCanvasToolHighlighter;
+        case 2:
+            return ScreenshotCanvasToolPen;
+        case 3:
+            return ScreenshotCanvasToolText;
+        case 4:
+            return ScreenshotCanvasToolEraser;
+        case 0:
+        default:
+            return ScreenshotCanvasToolSelect;
+    }
+}
+
+- (NSString *)toolbarTitleForTool:(ScreenshotCanvasTool)tool {
+    switch (tool) {
+        case ScreenshotCanvasToolSelect:
+            return @"Select";
+        case ScreenshotCanvasToolHighlighter:
+            return @"Highlighter";
+        case ScreenshotCanvasToolPen:
+            return @"Pen";
+        case ScreenshotCanvasToolText:
+            return @"Text";
+        case ScreenshotCanvasToolEraser:
+            return @"Eraser";
+    }
+    return @"Tool";
+}
+
+- (NSString *)toolbarSegmentToolTipForTool:(ScreenshotCanvasTool)tool {
+    if (tool == ScreenshotCanvasToolPen ||
+        tool == ScreenshotCanvasToolHighlighter ||
+        tool == ScreenshotCanvasToolText) {
+        return [NSString stringWithFormat:@"%@ Tool — double-click to configure", [self toolbarTitleForTool:tool]];
+    }
+    return [NSString stringWithFormat:@"%@ Tool", [self toolbarTitleForTool:tool]];
+}
+
+- (NSImage *)toolbarSegmentImageForTool:(ScreenshotCanvasTool)tool selected:(BOOL)selected {
+    (void)selected;
+    NSString *identifier = [self identifierForTool:tool];
+    NSString *stem = [self baseIconStemForToolbarIdentifier:identifier];
+    NSImage *image = [self baselineToolbarImageNamed:stem active:NO];
+    if (!image) {
+        return nil;
+    }
+    NSImage *copy = [image copy];
+    [copy setSize:NSMakeSize(STToolbarToolIconSize, STToolbarToolIconSize)];
+    return copy;
+}
+
+#if defined(GNUSTEP)
+- (void)adjustToolbarCustomViewVerticalOffset:(NSView *)view {
+    if (!view || !view.superview) {
+        return;
+    }
+    NSRect frame = view.frame;
+    CGFloat adjustedY = MAX(0.0f, floor((NSHeight(view.superview.bounds) - NSHeight(frame)) * 0.5f));
+    if (fabs(frame.origin.y - adjustedY) < 0.5f) {
+        return;
+    }
+    frame.origin.y = adjustedY;
+    [view setFrame:frame];
+}
+#endif
+
+- (NSToolbarItem *)toolbarItemForToolControl {
+    NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:ToolbarItemTools];
+    item.label = @"";
+    item.paletteLabel = @"Tools";
+    item.toolTip = [self toolTipForIdentifier:ToolbarItemTools];
+    item.target = self;
+    item.action = @selector(toolbarToolControlAction:);
+
+#if defined(GNUSTEP)
+    if (!self.toolbarToolSegmentedControl) {
+        CGFloat toolControlWidth = STToolbarToolSegmentWidth * 5.0f;
+        self.toolbarToolSegmentedControl = [[STToolbarSegmentedControl alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, toolControlWidth, STToolbarToolControlHeight)];
+        [self.toolbarToolSegmentedControl setSegmentCount:5];
+        [self.toolbarToolSegmentedControl setTarget:self];
+        [self.toolbarToolSegmentedControl setAction:@selector(toolbarToolControlAction:)];
+#ifdef NSSegmentStyleRounded
+        [self.toolbarToolSegmentedControl setSegmentStyle:NSSegmentStyleRounded];
+#endif
+        NSSegmentedCell *cell = (NSSegmentedCell *)[self.toolbarToolSegmentedControl cell];
+        [cell setTrackingMode:NSSegmentSwitchTrackingSelectOne];
+        for (NSInteger segment = 0; segment < 5; segment++) {
+            ScreenshotCanvasTool tool = [self toolbarToolForSegmentIndex:segment];
+            [self.toolbarToolSegmentedControl setWidth:STToolbarToolSegmentWidth forSegment:segment];
+            [self.toolbarToolSegmentedControl setLabel:@"" forSegment:segment];
+            [cell setToolTip:[self toolbarSegmentToolTipForTool:tool] forSegment:segment];
+        }
+        STApplyAccessibilityLabel(self.toolbarToolSegmentedControl, @"Tool switcher");
+    }
+    [self refreshToolbarToolsControl];
+    item.view = self.toolbarToolSegmentedControl;
+    item.minSize = self.toolbarToolSegmentedControl.frame.size;
+    item.maxSize = self.toolbarToolSegmentedControl.frame.size;
+#endif
+    return item;
+}
+
+- (void)refreshToolbarToolsControl {
+#if defined(GNUSTEP)
+    if (!self.toolbarToolSegmentedControl) {
+        return;
+    }
+    NSSegmentedCell *cell = (NSSegmentedCell *)[self.toolbarToolSegmentedControl cell];
+    NSInteger selectedSegment = [self toolbarSegmentIndexForTool:self.canvasView.activeTool];
+    for (NSInteger segment = 0; segment < 5; segment++) {
+        ScreenshotCanvasTool tool = [self toolbarToolForSegmentIndex:segment];
+        BOOL isSelected = (segment == selectedSegment);
+        NSImage *image = [self toolbarSegmentImageForTool:tool selected:isSelected];
+        if (image) {
+            [self.toolbarToolSegmentedControl setImage:image forSegment:segment];
+        }
+        [self.toolbarToolSegmentedControl setSelected:isSelected forSegment:segment];
+        [cell setToolTip:[self toolbarSegmentToolTipForTool:tool] forSegment:segment];
+    }
+    [self.toolbarToolSegmentedControl setSelectedSegment:selectedSegment];
+    [self.toolbarToolSegmentedControl setNeedsDisplay:YES];
+    [self adjustToolbarCustomViewVerticalOffset:self.toolbarToolSegmentedControl];
+#endif
+}
+
+- (void)toolbarToolControlAction:(id)sender {
+    if (![sender isKindOfClass:[STToolbarSegmentedControl class]]) {
+        return;
+    }
+    STToolbarSegmentedControl *control = (STToolbarSegmentedControl *)sender;
+    NSInteger selectedSegment = control.clickedSegment;
+    if (selectedSegment < 0) {
+        selectedSegment = [control selectedSegment];
+    }
+    ScreenshotCanvasTool tool = [self toolbarToolForSegmentIndex:selectedSegment];
+    NSEvent *event = [NSApp currentEvent];
+    BOOL openPopover = (control.lastClickCount >= 2);
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Segmented tool action tool=%@ clickCount=%ld event=%@",
+                             STDebugToolName(tool),
+                             (long)control.lastClickCount,
+                             STDebugDescriptionForEvent(event)]);
+    [self selectTool:tool];
+    if (openPopover && STToolUsesColor(tool)) {
+        NSView *anchorView = self.window.contentView;
+        if (anchorView) {
+            CGFloat segmentWidth = [control widthForSegment:selectedSegment];
+            if (segmentWidth <= 0.0f) {
+                segmentWidth = floor(control.bounds.size.width / MAX((CGFloat)[control segmentCount], 1.0f));
+            }
+            CGFloat originX = 0.0f;
+            for (NSInteger segment = 0; segment < selectedSegment; segment++) {
+                CGFloat width = [control widthForSegment:segment];
+                if (width <= 0.0f) {
+                    width = segmentWidth;
+                }
+                originX += width;
+            }
+            NSRect segmentRect = NSMakeRect(originX, 0.0f, segmentWidth, control.bounds.size.height);
+            NSPoint sourcePoint = NSMakePoint(NSMidX(segmentRect), NSMinY(segmentRect) + 2.0f);
+            NSPoint windowPoint = [control convertPoint:sourcePoint toView:nil];
+            NSPoint anchorPoint = [anchorView convertPoint:windowPoint fromView:nil];
+            NSRect anchor = NSMakeRect(anchorPoint.x - 2.0f, anchorPoint.y - 2.0f, 4.0f, 4.0f);
+            [self showToolSettingsPopoverForTool:tool anchorRect:anchor ofView:anchorView event:event];
+        }
+    }
+    control.clickedSegment = -1;
+}
+
+- (NSToolbarItem *)toolbarItemForColorControl {
+    NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:ToolbarItemColor];
+    item.label = @"";
+    item.paletteLabel = @"Color";
+    item.toolTip = [self toolTipForIdentifier:ToolbarItemColor];
+    item.target = self;
+    item.action = @selector(showActiveToolColorSettings:);
+
+#if defined(GNUSTEP)
+    if (!self.toolbarColorWellView) {
+        self.toolbarColorWellView = [[STToolbarColorWellView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, STToolbarColorControlWidth, STToolbarColorControlHeight)];
+        self.toolbarColorWellView.target = self;
+        self.toolbarColorWellView.action = @selector(showActiveToolColorSettings:);
+    }
+    item.view = self.toolbarColorWellView;
+    item.minSize = self.toolbarColorWellView.frame.size;
+    item.maxSize = self.toolbarColorWellView.frame.size;
+#endif
     return item;
 }
 
@@ -1358,6 +2268,35 @@ static id STInfoValueForKey(NSString *key) {
             item.image = image;
         }
     }
+}
+
+- (void)refreshToolbarColorControl {
+#if defined(GNUSTEP)
+    NSToolbarItem *item = nil;
+    for (NSToolbarItem *candidate in self.toolbar.items) {
+        if ([candidate.itemIdentifier isEqualToString:ToolbarItemColor]) {
+            item = candidate;
+            break;
+        }
+    }
+    if (!item || ![item.view isKindOfClass:[STToolbarColorWellView class]]) {
+        return;
+    }
+    STToolbarColorWellView *colorWellView = (STToolbarColorWellView *)item.view;
+    ScreenshotCanvasTool activeTool = self.canvasView.activeTool;
+    BOOL enabled = STToolUsesColor(activeTool);
+    NSColor *color = enabled ? [self currentColorForTool:activeTool] : nil;
+    [colorWellView setEnabled:enabled];
+    [colorWellView setColor:color];
+    item.enabled = enabled;
+    [self applyToolTipToToolbarItem:item source:@"refresh-color"];
+    [self adjustToolbarCustomViewVerticalOffset:colorWellView];
+    if (enabled) {
+        STApplyAccessibilityLabel(colorWellView, [NSString stringWithFormat:@"%@ color", STDebugToolName(activeTool)]);
+    } else {
+        STApplyAccessibilityLabel(colorWellView, @"Color settings unavailable for current tool");
+    }
+#endif
 }
 
 - (NSImage *)baselineToolbarImageNamed:(NSString *)name active:(BOOL)active {
@@ -1409,7 +2348,11 @@ static id STInfoValueForKey(NSString *key) {
         if (!path) {
             continue;
         }
+#if defined(GNUSTEP)
+        NSImage *image = STBitmapBackedImageFromFile(path, NSMakeSize(ToolbarIconDimension, ToolbarIconDimension));
+#else
         NSImage *image = [[NSImage alloc] initWithContentsOfFile:path];
+#endif
         if (image) {
             [image setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
             baselineToolbarCache[candidate] = image;
@@ -1443,33 +2386,6 @@ static id STInfoValueForKey(NSString *key) {
     if (!baseIcon) {
         return nil;
     }
-#if defined(GNUSTEP)
-    NSBitmapImageRep *debugRep = STBitmapRepresentationFromImage(baseIcon);
-    if (debugRep) {
-        NSInteger nz = 0;
-        for (NSInteger y = 0; y < debugRep.pixelsHigh; y++) {
-            for (NSInteger x = 0; x < debugRep.pixelsWide; x++) {
-                NSColor *px = [debugRep colorAtX:x y:y];
-                if ([px alphaComponent] > 0.05f) {
-                    nz++;
-                }
-            }
-        }
-        NSInteger sx = debugRep.pixelsWide / 2;
-        NSInteger sy = debugRep.pixelsHigh / 2;
-        NSColor *sample = [debugRep colorAtX:sx y:sy];
-        NSColor *deviceSample = [sample colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
-        printf("[ToolbarDebug] %s base center=%.2f %.2f %.2f a=%.2f\n",
-               [identifier UTF8String],
-               deviceSample.redComponent,
-               deviceSample.greenComponent,
-               deviceSample.blueComponent,
-               deviceSample.alphaComponent);
-        fflush(stdout);
-        printf("[ToolbarDebug] reps=%lu size=%.0fx%.0f nz=%ld\n", (unsigned long)baseIcon.representations.count, baseIcon.size.width, baseIcon.size.height, (long)nz);
-        fflush(stdout);
-    }
-#endif
     BOOL shouldApplyDarkFilter =
 #if defined(GNUSTEP)
         NO;
@@ -1482,8 +2398,13 @@ static id STInfoValueForKey(NSString *key) {
     NSImage *rendered = [baseIcon copy];
     NSColor *badgeColor = [self badgeColorForToolbarIdentifier:identifier];
     if (badgeColor) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ color %@", identifier, [self debugDescriptionForColor:badgeColor]]);
+    }
+#if !defined(GNUSTEP)
+    if (badgeColor && !active) {
         rendered = [self imageByAddingColorBadgeToImage:rendered color:badgeColor];
     }
+#endif
     [rendered setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
 #if defined(GNUSTEP)
     rendered = [self bitmapBackedToolbarImageFromImage:rendered];
@@ -1544,24 +2465,11 @@ static id STInfoValueForKey(NSString *key) {
     if (!image) {
         return nil;
     }
-    NSBitmapImageRep *bitmap = nil;
-    for (NSImageRep *representation in image.representations) {
-        if (![representation isKindOfClass:[NSBitmapImageRep class]]) {
-            continue;
-        }
-        bitmap = [(NSBitmapImageRep *)representation copy];
-        break;
-    }
-    if (!bitmap) {
-        bitmap = STBitmapRepresentationFromImage(image);
-    }
+    NSBitmapImageRep *bitmap = STDeviceBitmapRepresentationFromImage(image);
     if (!bitmap) {
         return image;
     }
-    [bitmap setSize:image.size];
-    NSImage *bitmapImage = [[NSImage alloc] initWithSize:image.size];
-    [bitmapImage addRepresentation:bitmap];
-    return bitmapImage;
+    return STBitmapBackedImageFromBitmapRep(bitmap, image.size);
 }
 #else
 - (NSImage *)darkThemeToolbarImageFromImage:(NSImage *)image active:(BOOL)active {
@@ -1619,6 +2527,25 @@ static id STInfoValueForKey(NSString *key) {
 #endif
 
 - (NSToolbarItem *)toolbarItemForZoomControl {
+#if defined(GNUSTEP)
+    if (!self.zoomToolbarButtonView) {
+        CGFloat initialWidth = STToolbarZoomControlWidthForTitle(@"100%");
+        self.zoomToolbarButtonView = [[STToolbarZoomButtonView alloc] initWithFrame:NSMakeRect(0, 0, initialWidth, STToolbarZoomControlHeight)];
+        self.zoomToolbarButtonView.target = self;
+        self.zoomToolbarButtonView.action = @selector(showZoomPopover:);
+        self.zoomToolbarButtonView.title = @"100%";
+        STApplyAccessibilityLabel(self.zoomToolbarButtonView, @"Zoom");
+    }
+
+    NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:ToolbarItemZoom];
+    item.label = @"";
+    item.paletteLabel = @"Zoom";
+    item.view = self.zoomToolbarButtonView;
+    item.minSize = self.zoomToolbarButtonView.frame.size;
+    item.maxSize = self.zoomToolbarButtonView.frame.size;
+    [self refreshZoomToolbarControl];
+    return item;
+#else
     if (!self.zoomPopUpButton) {
         self.zoomPopUpButton = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 160.0, 28.0) pullsDown:NO];
         [self.zoomPopUpButton setAutoenablesItems:NO];
@@ -1669,6 +2596,49 @@ static id STInfoValueForKey(NSString *key) {
     item.minSize = NSMakeSize(160.0, 32.0);
     item.maxSize = NSMakeSize(180.0, 32.0);
     return item;
+#endif
+}
+
+- (void)refreshZoomToolbarControl {
+#if defined(GNUSTEP)
+    if (!self.zoomToolbarButtonView) {
+        return;
+    }
+
+    BOOL hasImage = [self.canvasView hasImage];
+    NSString *title = @"100%";
+    if (hasImage) {
+        title = self.canvasView.isFitToWindow ? @"Fit" : [self displayStringForScale:self.canvasView.zoomScale];
+    }
+
+    self.zoomToolbarButtonView.title = title;
+    self.zoomToolbarButtonView.enabled = hasImage;
+    CGFloat targetWidth = STToolbarZoomControlWidthForTitle(title);
+    NSRect zoomFrame = self.zoomToolbarButtonView.frame;
+    if (fabs(zoomFrame.size.width - targetWidth) >= 0.5f ||
+        fabs(zoomFrame.size.height - STToolbarZoomControlHeight) >= 0.5f) {
+        zoomFrame.size = NSMakeSize(targetWidth, STToolbarZoomControlHeight);
+        [self.zoomToolbarButtonView setFrame:zoomFrame];
+    }
+    [self.zoomToolbarButtonView setNeedsDisplay:YES];
+
+    NSToolbarItem *item = nil;
+    for (NSToolbarItem *candidate in self.toolbar.items) {
+        if ([candidate.itemIdentifier isEqualToString:ToolbarItemZoom]) {
+            item = candidate;
+            break;
+        }
+    }
+    if (item) {
+        item.enabled = hasImage;
+        item.minSize = NSMakeSize(targetWidth, STToolbarZoomControlHeight);
+        item.maxSize = NSMakeSize(targetWidth, STToolbarZoomControlHeight);
+        [self applyToolTipToToolbarItem:item source:@"refresh-zoom"];
+    }
+    [self adjustToolbarCustomViewVerticalOffset:self.zoomToolbarButtonView];
+    NSString *accessibility = hasImage ? [NSString stringWithFormat:@"Zoom %@", title] : @"Zoom unavailable";
+    STApplyAccessibilityLabel(self.zoomToolbarButtonView, accessibility);
+#endif
 }
 
 #pragma mark - Status Bar
@@ -1869,21 +2839,37 @@ static id STInfoValueForKey(NSString *key) {
     [self layoutContentSubviews];
 }
 
-- (void)updateInterfaceThemePreference:(BOOL)prefersDark persist:(BOOL)persist {
+- (NSString *)currentInterfaceThemePreferenceValue {
+    NSString *preference = [[[NSUserDefaults standardUserDefaults] stringForKey:STDefaultsInterfaceThemeKey] lowercaseString];
+    if ([preference isEqualToString:STInterfaceThemePreferenceLightValue] ||
+        [preference isEqualToString:STInterfaceThemePreferenceDarkValue] ||
+        [preference isEqualToString:STInterfaceThemePreferenceAutoValue]) {
+        return preference;
+    }
+    return STInterfaceThemePreferenceAutoValue;
+}
+
+- (void)updateInterfaceThemePreference:(NSString *)preference persist:(BOOL)persist {
+    NSString *normalizedPreference = [preference lowercaseString];
+    if (![normalizedPreference isEqualToString:STInterfaceThemePreferenceLightValue] &&
+        ![normalizedPreference isEqualToString:STInterfaceThemePreferenceDarkValue] &&
+        ![normalizedPreference isEqualToString:STInterfaceThemePreferenceAutoValue]) {
+        normalizedPreference = STInterfaceThemePreferenceAutoValue;
+    }
     if (persist) {
         NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        NSString *value = prefersDark ? STInterfaceThemePreferenceDarkValue : STInterfaceThemePreferenceLightValue;
-        [defaults setObject:value forKey:STDefaultsInterfaceThemeKey];
+        if ([normalizedPreference isEqualToString:STInterfaceThemePreferenceAutoValue]) {
+            [defaults removeObjectForKey:STDefaultsInterfaceThemeKey];
+        } else {
+            [defaults setObject:normalizedPreference forKey:STDefaultsInterfaceThemeKey];
+        }
     }
-    self.usesDarkTheme = prefersDark;
+    self.usesDarkTheme = STThemeIsDark();
     [self refreshInterfaceThemeAppearance];
 }
 
 - (void)resetInterfaceThemePreferenceToDefault {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults removeObjectForKey:STDefaultsInterfaceThemeKey];
-    self.usesDarkTheme = STThemeIsDark();
-    [self refreshInterfaceThemeAppearance];
+    [self updateInterfaceThemePreference:STInterfaceThemePreferenceAutoValue persist:YES];
 }
 
 - (void)refreshInterfaceThemeAppearance {
@@ -1894,6 +2880,9 @@ static id STInfoValueForKey(NSString *key) {
         backgroundView.topBorderColor = STThemeStatusBarBorderColorForTheme(self.usesDarkTheme);
     }
 #endif
+    if (self.window) {
+        [self.window setBackgroundColor:STThemeWindowBackgroundColor()];
+    }
     if (self.statusTextField) {
         [self.statusTextField setTextColor:STThemeStatusPrimaryTextColor()];
     }
@@ -1919,6 +2908,11 @@ static id STInfoValueForKey(NSString *key) {
     }
     [self updateHUDAppearance];
     [self refreshToolButtonIcons];
+#if defined(GNUSTEP)
+    [self.zoomToolbarButtonView setNeedsDisplay:YES];
+#endif
+    [self.zoomPopoverController refresh];
+    [self.preferencesWindowController refresh];
 }
 
 - (void)loadToolSettingsFromDefaults {
@@ -2401,13 +3395,17 @@ static id STInfoValueForKey(NSString *key) {
     BOOL penWasShown = self.penPopoverController.isShown;
     BOOL highlighterWasShown = self.highlighterPopoverController.isShown;
     BOOL textWasShown = self.textPopoverController.isShown;
-    ScreenshotToolAppendLog([NSString stringWithFormat:@"closeActivePopovers called (penShown=%@ highlighterShown=%@ textShown=%@)",
+    BOOL zoomWasShown = self.zoomPopoverController.isShown;
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"closeActivePopovers called (penShown=%@ highlighterShown=%@ textShown=%@ zoomShown=%@)",
                              penWasShown ? @"YES" : @"NO",
                              highlighterWasShown ? @"YES" : @"NO",
-                             textWasShown ? @"YES" : @"NO"]);
+                             textWasShown ? @"YES" : @"NO",
+                             zoomWasShown ? @"YES" : @"NO"]);
     [self.penPopoverController close];
     [self.highlighterPopoverController close];
     [self.textPopoverController close];
+    [self.zoomPopoverController close];
+    [self refreshZoomToolbarControl];
 }
 
 - (ToolSettingsPopoverController *)popoverControllerForTool:(ScreenshotCanvasTool)tool {
@@ -2438,6 +3436,15 @@ static id STInfoValueForKey(NSString *key) {
         ScreenshotToolAppendLog(@"Created TextToolPopoverController");
     }
     return self.textPopoverController;
+}
+
+- (ZoomPopoverController *)zoomSettingsPopoverController {
+    if (!self.zoomPopoverController) {
+        self.zoomPopoverController = [[ZoomPopoverController alloc] init];
+        self.zoomPopoverController.delegate = self;
+        ScreenshotToolAppendLog(@"Created ZoomPopoverController");
+    }
+    return self.zoomPopoverController;
 }
 
 - (NSRect)anchorRectForEvent:(NSEvent *)event inView:(NSView *)view {
@@ -2481,6 +3488,20 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
     NSRect anchor = [self anchorRectForEvent:event inView:anchorView];
+    [self showToolSettingsPopoverForTool:tool anchorRect:anchor ofView:anchorView event:event];
+}
+
+- (void)showToolSettingsPopoverForTool:(ScreenshotCanvasTool)tool
+                            anchorRect:(NSRect)anchor
+                                ofView:(NSView *)anchorView
+                                 event:(NSEvent *)event {
+    if (!anchorView) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Skipping popover for %@: missing anchor view",
+                                 STDebugToolName(tool)]);
+        return;
+    }
+    [self.zoomPopoverController close];
+    [self refreshZoomToolbarControl];
     ScreenshotToolAppendLog([NSString stringWithFormat:@"Requesting %@ popover (anchorView=%@ rect=%@ event=%@)",
                              STDebugToolName(tool),
                              NSStringFromClass([anchorView class]),
@@ -2513,6 +3534,91 @@ static id STInfoValueForKey(NSString *key) {
     } else {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"No popover registered for %@", STDebugToolName(tool)]);
     }
+}
+
+- (NSRect)anchorRectForToolbarSubview:(NSView *)view inView:(NSView *)anchorView {
+    if (!view || !anchorView) {
+        return NSZeroRect;
+    }
+    NSPoint sourcePoint = NSMakePoint(NSMidX(view.bounds), NSMinY(view.bounds) + 2.0f);
+    NSPoint windowPoint = [view convertPoint:sourcePoint toView:nil];
+    NSPoint anchorPoint = [anchorView convertPoint:windowPoint fromView:nil];
+    return NSMakeRect(anchorPoint.x - 2.0f, anchorPoint.y - 2.0f, 4.0f, 4.0f);
+}
+
+- (void)showActiveToolColorSettings:(id)sender {
+    (void)sender;
+    ScreenshotCanvasTool activeTool = self.canvasView.activeTool;
+    if (!STToolUsesColor(activeTool)) {
+        return;
+    }
+    NSView *anchorView = self.window.contentView;
+    if (!anchorView) {
+        return;
+    }
+#if defined(GNUSTEP)
+    NSRect anchor = [self anchorRectForToolbarSubview:self.toolbarColorWellView inView:anchorView];
+#else
+    NSRect anchor = NSZeroRect;
+#endif
+    [self showToolSettingsPopoverForTool:activeTool anchorRect:anchor ofView:anchorView event:nil];
+}
+
+- (void)showZoomPopover:(id)sender {
+    (void)sender;
+    if (![self.canvasView hasImage]) {
+        return;
+    }
+
+    ZoomPopoverController *controller = [self zoomSettingsPopoverController];
+    BOOL wasShown = controller.isShown;
+    [self closeActivePopovers];
+    if (wasShown) {
+        return;
+    }
+
+    NSView *anchorView = self.window.contentView;
+    if (!anchorView) {
+        return;
+    }
+
+#if defined(GNUSTEP)
+    NSRect anchor = [self anchorRectForToolbarSubview:self.zoomToolbarButtonView inView:anchorView];
+#else
+    NSRect anchor = NSZeroRect;
+#endif
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Requesting zoom popover (anchorView=%@ rect=%@)",
+                             NSStringFromClass([anchorView class]),
+                             NSStringFromRect(anchor)]);
+    [controller showRelativeToRect:anchor ofView:anchorView preferredEdge:NSMaxYEdge];
+    [self refreshZoomToolbarControl];
+}
+
+#pragma mark - ZoomPopoverControllerDelegate
+
+- (BOOL)zoomPopoverHasImage:(ZoomPopoverController *)controller {
+    (void)controller;
+    return [self.canvasView hasImage];
+}
+
+- (BOOL)zoomPopoverIsFitToWindow:(ZoomPopoverController *)controller {
+    (void)controller;
+    return self.canvasView.isFitToWindow;
+}
+
+- (CGFloat)zoomPopoverCurrentScale:(ZoomPopoverController *)controller {
+    (void)controller;
+    return self.canvasView.zoomScale;
+}
+
+- (void)zoomPopover:(ZoomPopoverController *)controller didChangeScale:(CGFloat)scale {
+    (void)controller;
+    [self setZoomScale:scale];
+}
+
+- (void)zoomPopoverDidRequestFitToWindow:(ZoomPopoverController *)controller {
+    (void)controller;
+    [self zoomFitToWindow:nil];
 }
 
 #pragma mark - ToolSettingsPopoverControllerDelegate
@@ -2693,14 +3799,14 @@ static id STInfoValueForKey(NSString *key) {
     [self updateStatusBarVisibility];
 }
 
-- (BOOL)preferencesControllerPrefersDarkInterface:(PreferencesWindowController *)controller {
+- (NSString *)preferencesControllerInterfaceThemePreference:(PreferencesWindowController *)controller {
     (void)controller;
-    return self.usesDarkTheme;
+    return [self currentInterfaceThemePreferenceValue];
 }
 
-- (void)preferencesController:(PreferencesWindowController *)controller didChangePrefersDarkInterface:(BOOL)prefersDark {
+- (void)preferencesController:(PreferencesWindowController *)controller didChangeInterfaceThemePreference:(NSString *)preference {
     (void)controller;
-    [self updateInterfaceThemePreference:prefersDark persist:YES];
+    [self updateInterfaceThemePreference:preference persist:YES];
 }
 
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller {
@@ -2966,13 +4072,8 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
     self.hudView.font = [NSFont boldSystemFontOfSize:13.0f];
-    if (self.usesDarkTheme) {
-        self.hudView.fillColor = [NSColor colorWithCalibratedWhite:0.20f alpha:0.88f];
-        self.hudView.textColor = [NSColor colorWithCalibratedWhite:0.96f alpha:1.0f];
-    } else {
-        self.hudView.fillColor = [NSColor colorWithCalibratedWhite:0.10f alpha:0.85f];
-        self.hudView.textColor = [NSColor colorWithCalibratedWhite:0.97f alpha:1.0f];
-    }
+    self.hudView.fillColor = STThemeHUDBackgroundColor();
+    self.hudView.textColor = STThemeHUDTextColor();
     [self.hudView setNeedsDisplay:YES];
 }
 
@@ -3602,7 +4703,11 @@ static id STInfoValueForKey(NSString *key) {
         return placeholder;
     }
 
+#if defined(GNUSTEP)
+    NSImage *image = STBitmapBackedImageFromFile(path, NSMakeSize(ToolbarIconDimension, ToolbarIconDimension));
+#else
     NSImage *image = [[NSImage alloc] initWithContentsOfFile:path];
+#endif
     if (image) {
         cache[filename] = image;
         ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: loaded image %@", path]);
@@ -3747,6 +4852,10 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (void)reflectZoomSelection {
+#if defined(GNUSTEP)
+    [self refreshZoomToolbarControl];
+    [self.zoomPopoverController refresh];
+#else
     if (!self.zoomPopUpButton) {
         return;
     }
@@ -3776,6 +4885,7 @@ static id STInfoValueForKey(NSString *key) {
             [self.zoomPopUpButton selectItemAtIndex:existingIndex];
         }
     }
+#endif
 }
 
 - (BOOL)openImageAtURL:(NSURL *)url {

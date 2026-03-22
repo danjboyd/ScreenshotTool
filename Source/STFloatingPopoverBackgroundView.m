@@ -152,10 +152,10 @@ static inline CGFloat STFPClamp(CGFloat value, CGFloat minValue, CGFloat maxValu
             break;
     }
 
-    [[NSColor windowBackgroundColor] setFill];
+    [STThemePopoverBackgroundColor() setFill];
     [path fill];
 
-    [[NSColor colorWithCalibratedWhite:0.0 alpha:0.18] setStroke];
+    [STThemePopoverBorderColor() setStroke];
     [path setLineWidth:1.0];
     [path stroke];
 }

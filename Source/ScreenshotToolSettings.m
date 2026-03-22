@@ -22,6 +22,7 @@ NSString * const STDefaultsTextDefaultFontSizeKey = @"ScreenshotToolTextDefaultF
 NSString * const STDefaultsSaveDirectoryKey = @"ScreenshotToolSaveDirectory";
 NSString * const STDefaultsShowStatusBarKey = @"ScreenshotToolShowStatusBar";
 NSString * const STDefaultsInterfaceThemeKey = @"ScreenshotToolInterfaceTheme";
+NSString * const STInterfaceThemePreferenceAutoValue = @"auto";
 NSString * const STInterfaceThemePreferenceLightValue = @"light";
 NSString * const STInterfaceThemePreferenceDarkValue = @"dark";
 

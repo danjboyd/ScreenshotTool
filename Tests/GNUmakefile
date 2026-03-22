@@ -23,7 +23,12 @@ TOOL_NAME = ScreenshotToolTestsRunner
 ScreenshotToolTestsRunner_OBJC_FILES = TestRunner.m
 
 # XCTest sources (build directly to avoid missing XCTest runtime on Windows)
+LOCAL_XCTEST_SRC_DIR := $(abspath ../../gnustep/tools-xctest/XCTest)
+ifeq ($(wildcard $(LOCAL_XCTEST_SRC_DIR)/XCTestCase.m),)
 XCTEST_SRC_DIR ?= /c/Users/Support/git/gnustep/tools-xctest/XCTest
+else
+XCTEST_SRC_DIR ?= $(LOCAL_XCTEST_SRC_DIR)
+endif
 XCTEST_SRC_FILES = \
 	$(XCTEST_SRC_DIR)/XCTestCase.m \
 	$(XCTEST_SRC_DIR)/XCTestAssertions.m \
@@ -40,6 +45,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	CursorRectProbe_test.m \
 	HudCopyFeedbackProbe_test.m \
 	StatusBarToggleProbe_test.m \
+	ThemePreferenceProbe_test.m \
 	TextFontComboProbe_test.m \
 	ToolbarBadgeRefreshProbe_test.m \
 	ToolbarIconThemeProbe_test.m \
@@ -62,6 +68,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/ScreenshotToolSettings.m \
 	../Source/ToolSettingsPopoverController.m \
 	../Source/TextToolPopoverController.m \
+	../Source/ZoomPopoverController.m \
 	../Source/PreferencesWindowController.m \
 	../Source/STThemeUtilities.m
 

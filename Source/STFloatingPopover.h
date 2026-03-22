@@ -12,6 +12,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, assign) NSSize contentSize;
 @property (nonatomic, assign) CGFloat effectiveScaleFactor;
 
+- (void)beginTransientInteraction;
+- (void)endTransientInteraction;
 - (void)showRelativeToRect:(NSRect)rect ofView:(NSView *)view preferredEdge:(NSRectEdge)edge;
 - (void)close;
 - (BOOL)isShown;

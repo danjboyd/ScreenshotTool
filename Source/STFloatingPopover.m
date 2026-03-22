@@ -43,6 +43,7 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
 @property (nonatomic, strong) NSView *hostedView;
 @property (nonatomic, assign) NSRectEdge currentArrowEdge;
 @property (nonatomic, assign) NSPoint anchorCenterInScreen;
+@property (nonatomic, assign) NSInteger transientInteractionCount;
 @end
 
 @implementation STFloatingPopover
@@ -114,7 +115,8 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
 
 - (void)windowDidResignKey:(NSNotification *)notification {
     (void)notification;
-    [self close];
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(handleDeferredFocusLoss) object:nil];
+    [self performSelector:@selector(handleDeferredFocusLoss) withObject:nil afterDelay:0.0];
 }
 
 - (void)windowDidResize:(NSNotification *)notification {
@@ -349,10 +351,53 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
     [self.window makeKeyAndOrderFront:nil];
 }
 
+- (void)beginTransientInteraction {
+    self.transientInteractionCount += 1;
+}
+
+- (void)endTransientInteraction {
+    if (self.transientInteractionCount > 0) {
+        self.transientInteractionCount -= 1;
+    }
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(handleDeferredFocusLoss) object:nil];
+    [self performSelector:@selector(handleDeferredFocusLoss) withObject:nil afterDelay:0.0];
+}
+
+- (BOOL)shouldRemainOpenForActiveWindow:(NSWindow *)activeWindow {
+    if (!activeWindow) {
+        return NO;
+    }
+    if (activeWindow == self.window) {
+        return YES;
+    }
+    if (activeWindow.parentWindow == self.window) {
+        return YES;
+    }
+    if (self.window.parentWindow == activeWindow) {
+        return YES;
+    }
+    return NO;
+}
+
+- (void)handleDeferredFocusLoss {
+    if (!self.window || !self.window.isVisible) {
+        return;
+    }
+    if (self.transientInteractionCount > 0) {
+        return;
+    }
+    NSWindow *activeWindow = [NSApp keyWindow] ?: [NSApp mainWindow];
+    if ([self shouldRemainOpenForActiveWindow:activeWindow]) {
+        return;
+    }
+    [self close];
+}
+
 - (void)close {
     if (!self.window) {
         return;
     }
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(handleDeferredFocusLoss) object:nil];
     [self.window orderOut:nil];
 }
 

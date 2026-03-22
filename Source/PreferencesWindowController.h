@@ -18,8 +18,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)preferencesController:(PreferencesWindowController *)controller didChangeDefaultSaveDirectory:(NSString *)path;
 - (BOOL)preferencesControllerShouldShowStatusBar:(PreferencesWindowController *)controller;
 - (void)preferencesController:(PreferencesWindowController *)controller didToggleStatusBar:(BOOL)show;
-- (BOOL)preferencesControllerPrefersDarkInterface:(PreferencesWindowController *)controller;
-- (void)preferencesController:(PreferencesWindowController *)controller didChangePrefersDarkInterface:(BOOL)prefersDark;
+- (NSString *)preferencesControllerInterfaceThemePreference:(PreferencesWindowController *)controller;
+- (void)preferencesController:(PreferencesWindowController *)controller didChangeInterfaceThemePreference:(NSString *)preference;
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller;
 - (void)preferencesControllerDidRequestClose:(PreferencesWindowController *)controller;
 @end
