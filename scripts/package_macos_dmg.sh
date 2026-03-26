@@ -16,7 +16,7 @@ DMG_NAME="${DMG_NAME:-ScreenshotTool-macOS.dmg}"
 DMG_PATH="${ROOT_DIR}/Staging/${DMG_NAME}"
 
 if [[ ! -d "${APP_BUNDLE}" ]]; then
-  echo "Missing app bundle at ${APP_BUNDLE}. Build first (scripts/build_macos.sh)." >&2
+  echo "Missing app bundle at ${APP_BUNDLE}. Build first with scripts/build_cocoa.sh." >&2
   exit 1
 fi
 

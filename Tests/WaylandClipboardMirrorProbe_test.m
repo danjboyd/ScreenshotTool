@@ -128,8 +128,18 @@
     [_appDelegate copy:nil];
 
     NSString *capturePath = [_tempRoot stringByAppendingPathComponent:@"captured.png"];
-    NSData *captured = [NSData dataWithContentsOfFile:capturePath];
+    NSData *captured = nil;
+    for (NSUInteger attempt = 0; attempt < 20; attempt++) {
+        captured = [NSData dataWithContentsOfFile:capturePath];
+        if (captured.length > 8) {
+            break;
+        }
+        [NSThread sleepForTimeInterval:0.05];
+    }
     XCTAssertTrue(captured.length > 8, @"wl-copy should receive PNG payload");
+    if (captured.length <= 8 || captured.bytes == NULL) {
+        return;
+    }
 
     const unsigned char *bytes = captured.bytes;
     static const unsigned char pngSignature[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };

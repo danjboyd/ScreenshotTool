@@ -59,5 +59,5 @@ Add these exports to your shell (or source this in your CI) before building:
   export LD_LIBRARY_PATH="${GNUSTEP_SYSTEM_LIBRARY:-/usr/GNUstep/System}/Libraries:\${LD_LIBRARY_PATH:-}"
   export DYLD_LIBRARY_PATH="${GNUSTEP_SYSTEM_LIBRARY:-/usr/GNUstep/System}/Libraries:\${DYLD_LIBRARY_PATH:-}"
 
-Then invoke ./scripts/build_macos.sh to compile the app bundle.
+Then invoke ./scripts/build_cocoa.sh to compile the app bundle.
 EOF

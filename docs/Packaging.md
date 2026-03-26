@@ -32,4 +32,5 @@ DMG_NAME=ScreenshotTool-preview.dmg scripts/package_macos_dmg.sh build/cocoa/Scr
 - Output: `Staging/ScreenshotTool-macOS.dmg` (name overridable via `DMG_NAME`) plus SHA-256.
 
 ## CI Hooks
-- `.github/workflows/build.yml` builds on Ubuntu (AppImage) and macOS (DMG), uploads artifacts, and reuses the scripts above to keep the release flow aligned with local builds.
+- `.github/workflows/build.yml` currently builds the Ubuntu AppImage job and uploads the artifact.
+- The macOS DMG flow is scripted locally with `scripts/build_cocoa.sh` and `scripts/package_macos_dmg.sh`, but its CI job is still disabled.

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_PATH="./ScreenshotTool.app/"
-DEFAULT_IMAGE="$HOME/Pictures/Screenshots/Screenshot from 2025-10-23 11-00-05.png"
+DEFAULT_IMAGE="${ROOT_DIR}/Resources/ScreenshotToolIcon.png"
 IMAGE_PATH="${1:-$DEFAULT_IMAGE}"
 LOG_PATH="${2:-./debug.log}"
 

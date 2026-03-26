@@ -99,6 +99,64 @@ static NSString *STInfoStringForKey(NSString *key) {
     return nil;
 }
 
+static NSString *STHomeDirectory(void) {
+    NSString *home = NSHomeDirectory();
+    if (home.length > 0) {
+        return home;
+    }
+    NSString *temporaryDirectory = NSTemporaryDirectory();
+    if (temporaryDirectory.length > 0) {
+        return temporaryDirectory;
+    }
+    return @".";
+}
+
+static NSString *STDefaultLogFilePath(void) {
+#if !defined(GNUSTEP)
+    return [[STHomeDirectory() stringByAppendingPathComponent:@"Library/Logs/ScreenshotTool"]
+            stringByAppendingPathComponent:@"screenshottool.log"];
+#else
+    NSDictionary *env = [[NSProcessInfo processInfo] environment];
+    NSString *xdgStateHome = env[@"XDG_STATE_HOME"];
+    NSString *baseDirectory = (xdgStateHome.length > 0)
+        ? xdgStateHome
+        : [STHomeDirectory() stringByAppendingPathComponent:@".local/state"];
+    return [[baseDirectory stringByAppendingPathComponent:@"screenshottool"]
+            stringByAppendingPathComponent:@"screenshottool.log"];
+#endif
+}
+
+static NSString *STDefaultSaveDirectoryPath(void) {
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    NSString *home = STHomeDirectory();
+    NSArray<NSString *> *candidates = @[
+        [home stringByAppendingPathComponent:@"Pictures"],
+        home
+    ];
+
+    for (NSString *candidate in candidates) {
+        BOOL isDirectory = NO;
+        if ([fileManager fileExistsAtPath:candidate isDirectory:&isDirectory] && isDirectory) {
+            return candidate;
+        }
+    }
+
+    return home;
+}
+
+static NSArray<NSString *> *STOpenableImageFileTypes(void) {
+    NSArray<NSString *> *fileTypes = [NSImage imageFileTypes];
+    if (fileTypes.count > 0) {
+        return fileTypes;
+    }
+    return @[ @"png", @"jpg", @"jpeg", @"gif", @"bmp", @"tif", @"tiff", @"webp" ];
+}
+
+static BOOL STPathUsesTIFFExtension(NSString *path) {
+    NSString *extension = [[path pathExtension] lowercaseString];
+    return [extension isEqualToString:@"tif"] || [extension isEqualToString:@"tiff"];
+}
+
 #if defined(GNUSTEP)
 static NSFont *STToolbarZoomFont(void) {
     return [NSFont systemFontOfSize:STToolbarZoomFontSize];
@@ -509,6 +567,14 @@ static NSString *STPathForToolbarResource(NSString *filename, NSString *extensio
 
 - (BOOL)isOpaque {
     return NO;
+}
+
+- (NSImage *)displayedImage {
+    return self.displayImage;
+}
+
+- (NSImage *)image {
+    return self.displayImage;
 }
 
 - (void)setImage:(NSImage *)image {
@@ -964,7 +1030,7 @@ static NSString *ScreenshotToolLogFilePath(void) {
         if (custom.length > 0) {
             logPath = [custom stringByExpandingTildeInPath];
         } else {
-            logPath = [@"~/git/ScreenshotTool/screenshottool.log" stringByExpandingTildeInPath];
+            logPath = STDefaultLogFilePath();
         }
         logPath = [logPath copy];
     }
@@ -1015,23 +1081,27 @@ static BOOL STMirrorPNGDataToWaylandClipboard(NSData *pngData) {
         return NO;
     }
 
+    NSString *inputPath = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"screenshottool-wlcopy-%@.png", [NSUUID UUID].UUIDString]];
+    NSError *writeError = nil;
+    if (![pngData writeToFile:inputPath options:NSDataWritingAtomic error:&writeError]) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Wayland clipboard mirror could not stage PNG input at %@ (%@)",
+                                 inputPath,
+                                 writeError.localizedDescription ?: @"unknown error"]);
+        return NO;
+    }
+
     @try {
         NSTask *task = [[NSTask alloc] init];
-        NSPipe *inputPipe = [NSPipe pipe];
         NSPipe *errorPipe = [NSPipe pipe];
-        task.launchPath = wlCopyPath;
-        task.arguments = @[ @"--type", @"image/png" ];
-        task.standardInput = inputPipe;
+        task.launchPath = @"/bin/sh";
+        task.arguments = @[ @"-c", @"exec \"$1\" --type image/png < \"$2\"", @"sh", wlCopyPath, inputPath ];
         task.standardError = errorPipe;
         [task launch];
-
-        NSFileHandle *stdinHandle = [inputPipe fileHandleForWriting];
-        [stdinHandle writeData:pngData];
-        [stdinHandle closeFile];
 
         [task waitUntilExit];
         if (task.terminationStatus == 0) {
             ScreenshotToolAppendLog(@"Wayland clipboard mirror succeeded via wl-copy");
+            [[NSFileManager defaultManager] removeItemAtPath:inputPath error:NULL];
             return YES;
         }
 
@@ -1046,6 +1116,7 @@ static BOOL STMirrorPNGDataToWaylandClipboard(NSData *pngData) {
                                  exception.name ?: @"<no name>",
                                  exception.reason ?: @"<no reason>"]);
     }
+    [[NSFileManager defaultManager] removeItemAtPath:inputPath error:NULL];
 
     return NO;
 }
@@ -3291,7 +3362,7 @@ static id STInfoValueForKey(NSString *key) {
 
     NSString *savedDirectory = [defaults stringForKey:STDefaultsSaveDirectoryKey];
     if (savedDirectory.length == 0) {
-        savedDirectory = [@"~/Pictures/Screenshots" stringByExpandingTildeInPath];
+        savedDirectory = STDefaultSaveDirectoryPath();
         [defaults setObject:savedDirectory forKey:STDefaultsSaveDirectoryKey];
     }
     self.defaultSaveDirectory = savedDirectory;
@@ -4151,7 +4222,7 @@ static id STInfoValueForKey(NSString *key) {
     [self setDefaultTextFont:textFont];
     [self applyTextFont:textFont persist:YES];
 
-    NSString *fallbackDirectory = [@"~/Pictures/Screenshots" stringByExpandingTildeInPath];
+    NSString *fallbackDirectory = STDefaultSaveDirectoryPath();
     self.defaultSaveDirectory = fallbackDirectory;
     [[NSUserDefaults standardUserDefaults] setObject:fallbackDirectory forKey:STDefaultsSaveDirectoryKey];
     [self ensureDirectoryExistsAtPath:fallbackDirectory];
@@ -4561,7 +4632,7 @@ static id STInfoValueForKey(NSString *key) {
     NSOpenPanel *panel = [NSOpenPanel openPanel];
     [panel setAllowsMultipleSelection:NO];
     [panel setCanChooseDirectories:NO];
-    [panel setAllowedFileTypes:@[@"png", @"PNG"]];
+    [panel setAllowedFileTypes:STOpenableImageFileTypes()];
 
     if (self.currentImageURL) {
         [panel setDirectoryURL:self.currentImageURL.URLByDeletingLastPathComponent];
@@ -4636,7 +4707,7 @@ static id STInfoValueForKey(NSString *key) {
     }
 
     NSSavePanel *panel = [NSSavePanel savePanel];
-    [panel setAllowedFileTypes:@[@"png"]];
+    [panel setAllowedFileTypes:@[@"png", @"tif", @"tiff"]];
     [panel setCanCreateDirectories:YES];
 
     if (self.currentImageURL) {
@@ -4668,15 +4739,16 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
 
-    NSData *pngData = [self pngDataForImage:flattened];
-    if (!pngData) {
+    BOOL useTIFF = STPathUsesTIFFExtension(destination.path);
+    NSData *imageData = useTIFF ? [flattened TIFFRepresentation] : [self pngDataForImage:flattened];
+    if (!imageData) {
         return;
     }
 
     [self ensureDirectoryExistsAtPath:[destination.path stringByDeletingLastPathComponent]];
 
     NSError *error = nil;
-    if (![pngData writeToURL:destination options:NSDataWritingAtomic error:&error]) {
+    if (![imageData writeToURL:destination options:NSDataWritingAtomic error:&error]) {
         NSAlert *alert = [[NSAlert alloc] init];
         alert.messageText = @"Unable to Save Image";
         alert.informativeText = error.localizedDescription ?: @"An unknown error occurred.";

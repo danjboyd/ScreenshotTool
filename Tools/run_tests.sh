@@ -6,6 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 LOG_PATH="${1:-${ROOT_DIR}/tests.log}"
+TEST_HOME="${SCREENSHOT_TOOL_TEST_HOME:-${ROOT_DIR}/.tests_home}"
 
 GNUSTEP_SYSTEM_TOOLS=""
 GNUSTEP_SYSTEM_LIBRARY=""
@@ -21,8 +22,10 @@ LIB_PREFIX="${GNUSTEP_SYSTEM_LIBRARY:-/usr/GNUstep/System/Library}"
 export PATH="${TOOLS_PREFIX}:${PATH}"
 export LD_LIBRARY_PATH="${LIB_PREFIX}/Libraries:${LD_LIBRARY_PATH:-}"
 export DYLD_LIBRARY_PATH="${LIB_PREFIX}/Libraries:${DYLD_LIBRARY_PATH:-}"
+export HOME="${TEST_HOME}"
 
-# Ensure GNUstep defaults lock directory exists to avoid noisy warnings.
+# Keep GNUstep defaults isolated inside the repo so tests do not depend on the
+# caller's desktop session state or lock permissions.
 mkdir -p "${HOME}/GNUstep/Defaults/.lck"
 mkdir -p "$(dirname "${LOG_PATH}")"
 

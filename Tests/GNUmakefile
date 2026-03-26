@@ -22,13 +22,12 @@ BUNDLE_NAME = ScreenshotToolTests
 TOOL_NAME = ScreenshotToolTestsRunner
 ScreenshotToolTestsRunner_OBJC_FILES = TestRunner.m
 
-# XCTest sources (build directly to avoid missing XCTest runtime on Windows)
-LOCAL_XCTEST_SRC_DIR := $(abspath ../../gnustep/tools-xctest/XCTest)
-ifeq ($(wildcard $(LOCAL_XCTEST_SRC_DIR)/XCTestCase.m),)
-XCTEST_SRC_DIR ?= /c/Users/Support/git/gnustep/tools-xctest/XCTest
-else
-XCTEST_SRC_DIR ?= $(LOCAL_XCTEST_SRC_DIR)
+# Vendored tools-xctest sources keep the test bundle reproducible from a clean clone.
+XCTEST_SRC_DIR ?= $(abspath ../third_party/tools-xctest/XCTest)
+ifeq ($(wildcard $(XCTEST_SRC_DIR)/XCTestCase.m),)
+$(error Missing XCTest sources at $(XCTEST_SRC_DIR). Expected third_party/tools-xctest/XCTest)
 endif
+XCTEST_INCLUDE_DIR := $(dir $(XCTEST_SRC_DIR))
 XCTEST_SRC_FILES = \
 	$(XCTEST_SRC_DIR)/XCTestCase.m \
 	$(XCTEST_SRC_DIR)/XCTestAssertions.m \
@@ -81,6 +80,7 @@ ScreenshotToolTests_OBJC_FILES += $(XCTEST_SRC_FILES)
 
 # We need to tell the compiler where to find the source headers
 ADDITIONAL_OBJCFLAGS += -I../Source
+ADDITIONAL_OBJCFLAGS += -I$(XCTEST_INCLUDE_DIR)
 ADDITIONAL_OBJCFLAGS += -I$(XCTEST_SRC_DIR)
 ADDITIONAL_OBJCFLAGS += $(FONTCONFIG_CFLAGS)
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
@@ -88,7 +88,9 @@ ADDITIONAL_OBJCFLAGS += -DHAVE_MODE_T
 ADDITIONAL_LDFLAGS += -lstdc++
 ADDITIONAL_LDFLAGS += -lobjc
 ADDITIONAL_LDFLAGS += -lfontconfig -lfreetype -ldispatch
+ifneq ($(filter CLANG64,$(MSYSTEM)),)
 ADDITIONAL_LDFLAGS += -nostartfiles /clang64/lib/dllcrt2.o -Wl,--entry,DllMainCRTStartup
+endif
 
 # Include the bundle makefile
 include $(GNUSTEP_MAKEFILES)/bundle.make

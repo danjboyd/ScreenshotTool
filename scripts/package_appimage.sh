@@ -20,7 +20,7 @@ OUTPUT_NAME="${OUTPUT_NAME:-ScreenshotTool-x86_64.AppImage}"
 GNUSTEP_ROOT="${GNUSTEP_ROOT:-/usr/GNUstep}"
 
 if [[ ! -d "${APP_BUNDLE}" ]]; then
-  echo "App bundle missing at ${APP_BUNDLE}. Build first (make -j or scripts/build_macos.sh equivalent on Linux)." >&2
+  echo "App bundle missing at ${APP_BUNDLE}. Build first with make -j\"$(nproc)\"." >&2
   exit 1
 fi
 

@@ -190,7 +190,9 @@ tests:
 	@echo "Building test bundle..."
 	@$(MAKE) -C Tests
 	@echo "Running XCTest bundle..."
-	@Tests/obj/ScreenshotToolTestsRunner.exe Tests/ScreenshotToolTests.bundle
+	@runner="Tests/obj/ScreenshotToolTestsRunner"; \
+	if [ -x "$${runner}.exe" ]; then runner="$${runner}.exe"; fi; \
+	"$$runner" Tests/ScreenshotToolTests.bundle
 
 tests-only:
 	@$(MAKE) tests

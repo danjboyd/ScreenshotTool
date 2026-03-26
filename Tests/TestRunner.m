@@ -25,6 +25,9 @@ int main(int argc, const char *argv[]) {
         if (argc > 1 && argv[1]) {
             bundlePath = [NSString stringWithUTF8String:argv[1]];
         }
+        if (![bundlePath isAbsolutePath]) {
+            bundlePath = [[cwd stringByAppendingPathComponent:bundlePath] stringByStandardizingPath];
+        }
 
         NSBundle *bundle = [NSBundle bundleWithPath:bundlePath];
         if (!bundle || ![bundle load]) {
@@ -38,7 +41,8 @@ int main(int argc, const char *argv[]) {
             return 3;
         }
 
-        id runner = [[runnerClass alloc] init];
+        id (*sharedRunner)(id, SEL) = (id (*)(id, SEL))objc_msgSend;
+        id runner = sharedRunner(runnerClass, @selector(sharedRunner));
         BOOL (*runAll)(id, SEL) = (BOOL (*)(id, SEL))objc_msgSend;
         fprintf(stderr, "Running ScreenshotTool XCTest bundle...\n");
         BOOL ok = runAll(runner, @selector(runAll));
@@ -46,9 +50,6 @@ int main(int argc, const char *argv[]) {
         if (logFile) {
             fclose(logFile);
         }
-#if !__has_feature(objc_arc)
-        [runner release];
-#endif
         return ok ? 0 : 1;
     }
 }

@@ -197,7 +197,7 @@ jobs:
   #     - name: Install dependencies
   #       run: brew update && brew install gnustep pkg-config freetype fontconfig
   #     - name: Build ScreenshotTool (macOS)
-  #       run: scripts/build_macos.sh
+  #       run: scripts/build_cocoa.sh
   #     - name: Smoke launch
   #       run: scripts/smoke_macos_app.sh
   #     - name: Package DMG

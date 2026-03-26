@@ -31,7 +31,7 @@ OVERWRITE = os.environ.get("AI_ICON_OVERWRITE", "0") == "1"
 def require_api_key() -> str:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
-        sys.exit("OPENAI_API_KEY is not set. Source local.env first.")
+        sys.exit("OPENAI_API_KEY is not set. Export it in your shell before running this script.")
     return api_key
 
 
