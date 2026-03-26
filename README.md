@@ -22,9 +22,9 @@ Current build targets:
 
 Main editing window with an image loaded and the annotation toolbar visible.
 
-![Preferences window](docs/images/preferences-window.png)
+![Annotated demo page](docs/images/main-window-annotated-demo.png)
 
-Preferences for tool defaults, save location, and toolbar appearance.
+Example markup workflow on a simple demo page image.
 
 ## Build
 
