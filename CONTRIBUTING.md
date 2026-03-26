@@ -5,7 +5,7 @@ Please follow `WORKFLOW.md` for the expected build/test handoff. Additional cont
 ## Environment & Debugging
 - Cursor debug logging: `SCREENSHOT_CURSOR_DEBUG=1` before launch.
 - Tooltip debug logging: `SCREENSHOT_TOOL_DEBUG_TOOLTIPS=1` before launch.
-- Runtime log path: defaults to `./screenshottool.log`, override with `SCREENSHOT_TOOL_LOG_PATH`.
+- Runtime log path: defaults to `~/.local/state/screenshottool/screenshottool.log` on GNUstep/Linux and `~/Library/Logs/ScreenshotTool/screenshottool.log` on macOS; override with `SCREENSHOT_TOOL_LOG_PATH`.
 
 ## Code Map
 - `AppDelegate`: window management, toolbar wiring, status bar, preferences, persistence.

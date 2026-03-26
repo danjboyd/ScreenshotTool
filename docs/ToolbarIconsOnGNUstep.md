@@ -121,7 +121,7 @@ Without this change, dark-themed PNGs were considered empty and GNUstep painted 
    - `PATH=/usr/GNUstep/System/Tools:$PATH LD_LIBRARY_PATH=/usr/GNUstep/System/Library/Libraries:$LD_LIBRARY_PATH make -j$(nproc)`
 
 6. **Verify**
-   - Launch with `SCREENSHOT_TOOL_LOG_PATH=./debug.log openapp ./ScreenshotTool.app`
+   - Launch with `SCREENSHOT_TOOL_LOG_PATH=./debug.log ./ScreenshotTool.app/ScreenshotTool`
    - Inspect `debug.log` for `[ToolbarDebug] … nz=` (should be > 0) and confirm active glow toggles correctly.
 
 Following this process keeps GNUstep’s toolbar in lockstep with the PNGs you see in `Resources/`, including accurate active-state rendering.

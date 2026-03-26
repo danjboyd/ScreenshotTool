@@ -17,7 +17,7 @@ This document captures the current handoff contract between Codex (engineering) 
    ```
    This builds the test bundle under `Tests/` and runs it with GNUstep's `xctest` (from `tools-xctest`). All probes must pass before requesting manual testing. If tests become obsolete or redundant, delete or update them immediately so the suite stays lean and relevant.
 4. **Prepare the app for manual testing:**
-   - Truncate both runtime logs so the next launch starts fresh:
+   - Truncate both handoff logs so the next launch starts fresh:
      ```bash
      : > ./debug.log
      : > ./screenshottool.log
@@ -29,9 +29,10 @@ This document captures the current handoff contract between Codex (engineering) 
 ## User Workflow (Testing Hand-off)
 1. Launch the freshly-built app with the standardized scenario and capture logs:
    ```bash
-   openapp ./ScreenshotTool.app/ \
-           ~/Pictures/Screenshots/Screenshot\ from\ 2025-10-23\ 11-00-05.png \
-           2>&1 | tee ./debug.log
+   SCREENSHOT_TOOL_LOG_PATH=./screenshottool.log \
+   ./ScreenshotTool.app/ScreenshotTool \
+     ~/Pictures/Screenshots/Screenshot\ from\ 2025-10-23\ 11-00-05.png \
+     2>&1 | tee ./debug.log
    ```
 2. Report findings referencing timestamps/sections in `./debug.log` so Codex can cross-check quickly.
 
