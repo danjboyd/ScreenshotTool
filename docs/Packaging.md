@@ -20,7 +20,17 @@ LINUXDEPLOY=/path/to/linuxdeploy-x86_64.AppImage \
 LINUXDEPLOY_PLUGIN_APPIMAGE=/path/to/linuxdeploy-plugin-appimage-x86_64.AppImage \
 scripts/package_appimage.sh
 ```
-- Output: `Staging/ScreenshotTool-x86_64.AppImage` plus a SHA-256 checksum.
+- Output: `Staging/ScreenshotTool-x86_64.AppImage` plus `Staging/ScreenshotTool-x86_64.AppImage.sha256`.
+
+To smoke-test the packaged artifact:
+```bash
+scripts/smoke_appimage.sh Staging/ScreenshotTool-x86_64.AppImage
+```
+
+To emit a versioned filename for releases:
+```bash
+OUTPUT_NAME=ScreenshotTool-v0.1.0-x86_64.AppImage scripts/package_appimage.sh
+```
 
 ## Package a DMG (macOS)
 ```bash
@@ -32,5 +42,18 @@ DMG_NAME=ScreenshotTool-preview.dmg scripts/package_macos_dmg.sh build/cocoa/Scr
 - Output: `Staging/ScreenshotTool-macOS.dmg` (name overridable via `DMG_NAME`) plus SHA-256.
 
 ## CI Hooks
-- `.github/workflows/build.yml` currently builds the Ubuntu AppImage job and uploads the artifact.
+- `.github/workflows/build.yml` builds the Ubuntu AppImage job on pushes, pull requests, and manual dispatches, smoke-tests the resulting AppImage, and uploads it as a workflow artifact.
+- Pushing a version tag like `v0.1.0` also publishes the generated AppImage and `.sha256` file to a GitHub Release.
 - The macOS DMG flow is scripted locally with `scripts/build_cocoa.sh` and `scripts/package_macos_dmg.sh`, but its CI job is still disabled.
+
+## Release Flow
+1. Make sure the target commit on `main` is the one you want to publish.
+2. Create an annotated tag, for example:
+   ```bash
+   git tag -a v0.1.0 -m "v0.1.0"
+   ```
+3. Push the tag:
+   ```bash
+   git push origin v0.1.0
+   ```
+4. GitHub Actions will build `ScreenshotTool-v0.1.0-x86_64.AppImage`, smoke-test it, generate a checksum, and attach both files to the GitHub Release for that tag.

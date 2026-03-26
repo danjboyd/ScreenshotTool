@@ -13,11 +13,21 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 APP_BUNDLE="${ROOT_DIR}/ScreenshotTool.app"
 STAGING_DIR="${ROOT_DIR}/Staging"
 APPDIR="${STAGING_DIR}/AppDir"
-ARTIFACT="${STAGING_DIR}/ScreenshotTool-x86_64.AppImage"
 LINUXDEPLOY_BIN="${LINUXDEPLOY:-linuxdeploy}"
 APPIMAGE_PLUGIN="${LINUXDEPLOY_PLUGIN_APPIMAGE:-linuxdeploy-plugin-appimage}"
 OUTPUT_NAME="${OUTPUT_NAME:-ScreenshotTool-x86_64.AppImage}"
 GNUSTEP_ROOT="${GNUSTEP_ROOT:-/usr/GNUstep}"
+ARTIFACT="${STAGING_DIR}/${OUTPUT_NAME}"
+CHECKSUM_ARTIFACT="${ARTIFACT}.sha256"
+DESKTOP_TEMPLATE="${ROOT_DIR}/packaging/linux/screenshottool.desktop"
+APPSTREAM_TEMPLATE="${ROOT_DIR}/packaging/linux/screenshottool.appdata.xml"
+APP_ID="io.github.danjboyd.ScreenshotTool"
+DESKTOP_FILE_PATH="${APPDIR}/usr/share/applications/${APP_ID}.desktop"
+APPSTREAM_FILE_PATH="${APPDIR}/usr/share/metainfo/${APP_ID}.appdata.xml"
+
+# linuxdeploy and the plugin are distributed as AppImages; extracting and
+# running them avoids host FUSE configuration differences in CI and locally.
+export APPIMAGE_EXTRACT_AND_RUN="${APPIMAGE_EXTRACT_AND_RUN:-1}"
 
 if [[ ! -d "${APP_BUNDLE}" ]]; then
   echo "App bundle missing at ${APP_BUNDLE}. Build first with make -j\"$(nproc)\"." >&2
@@ -36,7 +46,11 @@ fi
 export LINUXDEPLOY_PLUGIN_APPIMAGE="${APPIMAGE_PLUGIN}"
 
 rm -rf "${APPDIR}"
-mkdir -p "${APPDIR}/usr/bin" "${APPDIR}/usr/lib" "${APPDIR}/usr/share/applications" "${APPDIR}/usr/share/icons/hicolor/256x256/apps"
+mkdir -p "${APPDIR}/usr/bin" \
+         "${APPDIR}/usr/lib" \
+         "${APPDIR}/usr/share/applications" \
+         "${APPDIR}/usr/share/icons/hicolor/256x256/apps" \
+         "${APPDIR}/usr/share/metainfo"
 
 echo "Staging GNUstep bundle into ${APPDIR}..."
 rsync -a --delete "${APP_BUNDLE}/" "${APPDIR}/usr/lib/ScreenshotTool.app/"
@@ -79,7 +93,10 @@ exec "${APP_DIR}/ScreenshotTool" "$@"
 EOF
 chmod +x "${APPDIR}/usr/bin/screenshottool"
 
-cat > "${APPDIR}/usr/share/applications/screenshottool.desktop" <<'EOF'
+if [[ -f "${DESKTOP_TEMPLATE}" ]]; then
+  install -m 0644 "${DESKTOP_TEMPLATE}" "${DESKTOP_FILE_PATH}"
+else
+  cat > "${DESKTOP_FILE_PATH}" <<'EOF'
 [Desktop Entry]
 Type=Application
 Name=ScreenshotTool
@@ -87,7 +104,14 @@ Comment=Annotate images with pen, highlighter, and text tools
 Exec=screenshottool %U
 Icon=screenshottool
 Categories=Graphics;
+StartupWMClass=ScreenshotTool
+Terminal=false
 EOF
+fi
+
+if [[ -f "${APPSTREAM_TEMPLATE}" ]]; then
+  install -m 0644 "${APPSTREAM_TEMPLATE}" "${APPSTREAM_FILE_PATH}"
+fi
 
 ICON_SRC="${APP_BUNDLE}/Resources/ScreenshotToolIcon.png"
 if [[ -f "${ICON_SRC}" ]]; then
@@ -101,7 +125,7 @@ chmod -x "${APPDIR}/usr/bin/screenshottool"
 pushd "${STAGING_DIR}" >/dev/null
 env OUTPUT="${OUTPUT_NAME}" "${LINUXDEPLOY_BIN}" \
   --appdir="${APPDIR}" \
-  --desktop-file="${APPDIR}/usr/share/applications/screenshottool.desktop" \
+  --desktop-file="${DESKTOP_FILE_PATH}" \
   --executable="${APPDIR}/usr/lib/ScreenshotTool.app/ScreenshotTool"
 popd >/dev/null
 chmod +x "${APPDIR}/usr/bin/screenshottool"
@@ -119,20 +143,17 @@ fi
 chmod +x "${APPIMAGETOOL_BIN}"
 popd >/dev/null
 
-rm -f "${STAGING_DIR:?}/${OUTPUT_NAME}"
+rm -f "${ARTIFACT}" "${CHECKSUM_ARTIFACT}"
 "${APPIMAGETOOL_BIN}" "${APPDIR}" "${STAGING_DIR}/${OUTPUT_NAME}"
 rm -rf "${TEMP_APPIMAGE_DIR}"
 
-if [[ ! -f "${STAGING_DIR}/${OUTPUT_NAME}" ]]; then
+if [[ ! -f "${ARTIFACT}" ]]; then
   echo "appimagetool did not emit ${OUTPUT_NAME}; inspect output above." >&2
   exit 1
 fi
 
 mkdir -p "${STAGING_DIR}"
-if [[ "${STAGING_DIR}/${OUTPUT_NAME}" != "${ARTIFACT}" ]]; then
-  mv "${STAGING_DIR}/${OUTPUT_NAME}" "${ARTIFACT}"
-fi
 chmod +x "${ARTIFACT}"
 
 echo "AppImage ready: ${ARTIFACT}"
-sha256sum "${ARTIFACT}" || true
+sha256sum "${ARTIFACT}" | tee "${CHECKSUM_ARTIFACT}" || true

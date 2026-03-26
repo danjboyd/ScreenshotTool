@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.danjboyd.ScreenshotTool.desktop</id>
+  <name>ScreenshotTool</name>
+  <summary>Annotate screenshots and other images on the desktop</summary>
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>GPL-2.0-or-later</project_license>
+  <launchable type="desktop-id">io.github.danjboyd.ScreenshotTool.desktop</launchable>
+  <developer id="io.github.danjboyd">
+    <name>Daniel Boyd</name>
+  </developer>
+  <description>
+    <p>
+      ScreenshotTool opens screenshots and other supported image formats for
+      quick annotation with pen, highlighter, eraser, and text tools.
+    </p>
+    <p>
+      It supports persistent defaults, copy-to-clipboard export, and PNG or
+      TIFF save output.
+    </p>
+  </description>
+  <url type="homepage">https://github.com/danjboyd</url>
+  <provides>
+    <binary>screenshottool</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+</component>

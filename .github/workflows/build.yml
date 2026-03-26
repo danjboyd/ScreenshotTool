@@ -8,10 +8,28 @@ on:
 jobs:
   linux-appimage:
     runs-on: ubuntu-24.04
+    outputs:
+      appimage_name: ${{ steps.naming.outputs.appimage_name }}
+      appimage_path: ${{ steps.naming.outputs.appimage_path }}
+      appimage_sha_name: ${{ steps.naming.outputs.appimage_sha_name }}
+      artifact_name: ${{ steps.naming.outputs.artifact_name }}
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Determine artifact names
+        id: naming
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            APPIMAGE_NAME="ScreenshotTool-${GITHUB_REF_NAME}-x86_64.AppImage"
+          else
+            APPIMAGE_NAME="ScreenshotTool-x86_64.AppImage"
+          fi
+          echo "appimage_name=${APPIMAGE_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "appimage_path=Staging/${APPIMAGE_NAME}" >> "${GITHUB_OUTPUT}"
+          echo "appimage_sha_name=${APPIMAGE_NAME}.sha256" >> "${GITHUB_OUTPUT}"
+          echo "artifact_name=${APPIMAGE_NAME}" >> "${GITHUB_OUTPUT}"
       - name: Install build dependencies
         run: |
           set -euo pipefail
@@ -180,15 +198,43 @@ jobs:
           chmod +x /tmp/linuxdeploy/linuxdeploy /tmp/linuxdeploy/linuxdeploy-plugin-appimage
       - name: Package AppImage
         env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
           LINUXDEPLOY: /tmp/linuxdeploy/linuxdeploy
           LINUXDEPLOY_PLUGIN_APPIMAGE: /tmp/linuxdeploy/linuxdeploy-plugin-appimage
           GNUSTEP_ROOT: /usr/GNUstep
+          OUTPUT_NAME: ${{ steps.naming.outputs.appimage_name }}
         run: scripts/package_appimage.sh
+      - name: Smoke test AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: scripts/smoke_appimage.sh "${{ steps.naming.outputs.appimage_path }}"
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ScreenshotTool-AppImage
-          path: Staging/ScreenshotTool-x86_64.AppImage
+          name: ${{ steps.naming.outputs.artifact_name }}
+          path: |
+            ${{ steps.naming.outputs.appimage_path }}
+            Staging/${{ steps.naming.outputs.appimage_sha_name }}
+
+  publish-appimage-release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: linux-appimage
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download AppImage artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.linux-appimage.outputs.artifact_name }}
+          path: release-assets
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-assets/${{ needs.linux-appimage.outputs.appimage_name }}
+            release-assets/${{ needs.linux-appimage.outputs.appimage_sha_name }}
 
   # macos-dmg:
   #   runs-on: macos-13

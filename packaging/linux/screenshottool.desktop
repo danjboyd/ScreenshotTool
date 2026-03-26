@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=ScreenshotTool
+Comment=Annotate images with pen, highlighter, and text tools
+Exec=screenshottool %U
+Icon=screenshottool
+Categories=Graphics;
+Keywords=screenshot;annotation;markup;image;
+StartupWMClass=ScreenshotTool
+Terminal=false
