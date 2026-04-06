@@ -1,0 +1,197 @@
+{
+  "schemaVersion": 1,
+  "profiles": [
+    "gnustep-gui"
+  ],
+  "package": {
+    "id": "com.danboyd.screenshottool",
+    "name": "ScreenshotTool",
+    "displayName": "ScreenshotTool",
+    "version": "0.1.0",
+    "manufacturer": "Daniel Boyd",
+    "summary": "Annotate screenshots and other images with pen, highlighter, and text tools.",
+    "description": "ScreenshotTool is a GNUstep desktop app for opening screenshots and other images, marking them up with pen, highlighter, eraser, and text tools, then saving or copying the annotated result.",
+    "license": "GPL-2.0-or-later",
+    "homepage": "https://github.com/danjboyd/ScreenshotTool"
+  },
+  "pipeline": {
+    "workingDirectory": "..",
+    "shell": {
+      "kind": "pwsh",
+      "bootstrapCommands": [],
+      "environment": {}
+    },
+    "build": {
+      "command": "./scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json -PackageVersion $env:GP_PACKAGE_VERSION_OVERRIDE"
+    },
+    "stage": {
+      "command": "./scripts/stage_release.ps1 -ManifestPath packaging/package.manifest.json -StageRoot dist/stage -PackageVersion $env:GP_PACKAGE_VERSION_OVERRIDE",
+      "outputRoot": "../dist/stage"
+    }
+  },
+  "payload": {
+    "layoutVersion": 1,
+    "stageRoot": "../dist/stage",
+    "appRoot": "app",
+    "runtimeRoot": "runtime",
+    "metadataRoot": "metadata",
+    "runtimeSeedPaths": [
+      "runtime/bin/defaults",
+      "runtime/bin/defaults.exe"
+    ]
+  },
+  "launch": {
+    "entryRelativePath": "app/ScreenshotTool.app/ScreenshotTool",
+    "workingDirectory": "app/ScreenshotTool.app",
+    "arguments": [],
+    "pathPrepend": [
+      "runtime/bin"
+    ],
+    "env": {
+      "GNUSTEP_PATHPREFIX_LIST": "{@runtimeRoot}",
+      "GNUSTEP_SYSTEM_ROOT": "{@runtimeRoot}/System",
+      "GNUSTEP_LOCAL_ROOT": "{@runtimeRoot}/System",
+      "GNUSTEP_NETWORK_ROOT": "{@runtimeRoot}/System",
+      "GNUSTEP_MAKEFILES": "{@runtimeRoot}/System/Library/Makefiles",
+      "LD_LIBRARY_PATH": "{@runtimeRoot}/lib:{@runtimeRoot}/System/Library/Libraries"
+    }
+  },
+  "outputs": {
+    "root": "../dist",
+    "packageRoot": "../dist/packages",
+    "logRoot": "../dist/logs",
+    "tempRoot": "../dist/tmp",
+    "validationRoot": "../dist/validation"
+  },
+  "validation": {
+    "smoke": {
+      "enabled": true,
+      "kind": "staged-layout",
+      "requiredPaths": [
+        "metadata/icons/ScreenshotToolIcon.png",
+        "metadata/licenses/ScreenshotTool.txt",
+        "metadata/licenses/gnustep-runtime.txt",
+        "runtime/bin"
+      ],
+      "timeoutSeconds": 30
+    },
+    "logs": {
+      "retainOnSuccess": true
+    }
+  },
+  "updates": {
+    "enabled": true,
+    "provider": "github-release-feed",
+    "channel": "stable",
+    "minimumCheckIntervalHours": 24,
+    "startupDelaySeconds": 15,
+    "github": {
+      "owner": "danjboyd",
+      "repo": "ScreenshotTool",
+      "tagPattern": "v{version}",
+      "releaseNotesUrlPattern": "https://github.com/{owner}/{repo}/releases/tag/{tag}"
+    }
+  },
+  "integrations": {
+    "shortcutName": "ScreenshotTool",
+    "categories": [
+      "Graphics",
+      "Utility"
+    ],
+    "fileAssociations": [
+      {
+        "kind": "extension",
+        "value": ".png",
+        "description": "PNG image"
+      },
+      {
+        "kind": "extension",
+        "value": ".jpg",
+        "description": "JPEG image"
+      },
+      {
+        "kind": "extension",
+        "value": ".jpeg",
+        "description": "JPEG image"
+      },
+      {
+        "kind": "extension",
+        "value": ".gif",
+        "description": "GIF image"
+      },
+      {
+        "kind": "extension",
+        "value": ".bmp",
+        "description": "Bitmap image"
+      },
+      {
+        "kind": "extension",
+        "value": ".tif",
+        "description": "TIFF image"
+      },
+      {
+        "kind": "extension",
+        "value": ".tiff",
+        "description": "TIFF image"
+      },
+      {
+        "kind": "extension",
+        "value": ".webp",
+        "description": "WebP image"
+      }
+    ]
+  },
+  "compliance": {
+    "runtimeNotices": [
+      {
+        "name": "ScreenshotTool",
+        "version": "0.1.0",
+        "license": "GPL-2.0-or-later",
+        "source": "ScreenshotTool application bundle",
+        "homepage": "https://github.com/danjboyd/ScreenshotTool",
+        "stageRelativePath": "metadata/licenses/ScreenshotTool.txt"
+      },
+      {
+        "name": "libs-OpenSave",
+        "license": "GPL-2.0-or-later",
+        "source": "Bundled Open/Save panel integration library",
+        "homepage": "https://github.com/danjboyd/ScreenshotTool/tree/main/third_party/libs-OpenSave",
+        "stageRelativePath": "metadata/licenses/libs-OpenSave.txt"
+      },
+      {
+        "name": "GNUstep Runtime",
+        "license": "LGPL-2.1-or-later",
+        "source": "Bundled GNUstep base/gui/back runtime payload",
+        "homepage": "https://gnustep.org/",
+        "stageRelativePath": "metadata/licenses/gnustep-runtime.txt"
+      }
+    ]
+  },
+  "backends": {
+    "msi": {
+      "enabled": true,
+      "upgradeCode": "202a62ea-703b-467d-a58f-5865640fdca9",
+      "installScope": "perUser",
+      "productName": "ScreenshotTool",
+      "shortcutName": "ScreenshotTool",
+      "installDirectoryName": "ScreenshotTool",
+      "launcherFileName": "ScreenshotTool.exe",
+      "updates": {
+        "feedUrl": "https://danjboyd.github.io/ScreenshotTool/updates/windows/stable.json"
+      }
+    },
+    "appimage": {
+      "enabled": true,
+      "desktopEntryName": "io.github.danjboyd.ScreenshotTool.desktop",
+      "iconRelativePath": "metadata/icons/ScreenshotToolIcon.png",
+      "updates": {
+        "feedUrl": "https://danjboyd.github.io/ScreenshotTool/updates/linux/stable.json",
+        "embedUpdateInformation": true,
+        "releaseSelector": "latest"
+      },
+      "smoke": {
+        "mode": "launch-only"
+      }
+    }
+  }
+}

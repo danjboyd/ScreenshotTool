@@ -1,61 +1,101 @@
 # Handoff
 
-Date: 2026-03-26
+Date: 2026-04-06
 
 ## Current State
 
-- `main` is prepared for a public FOSS release.
-- Latest AppImage packaging fix is commit `b449a8b` (`Fix AppImage GNUstep runtime packaging`).
-- Latest local test artifact:
-  - `Staging/ScreenshotTool-vtest-x86_64.AppImage`
-  - `Staging/ScreenshotTool-vtest-x86_64.AppImage.sha256`
-- Current AppImage SHA-256:
-  - `6ad815215d4f1cb3a9d071a40e7e517cdd768dbb7b78d3a6215b8ae5b7503982`
+- Phase 11 is in progress.
+- Phase `11A` through `11C` are implemented locally.
+- The repo now has a shared `gnustep-packager` manifest at `packaging/package.manifest.json`.
+- The repo now has cross-platform packaging helpers at `scripts/build_release.ps1` and `scripts/stage_release.ps1`.
+- The current worktree changes for this checkpoint are:
+  - `.gitignore`
+  - `docs/Handoff.md`
+  - `packaging/package.manifest.json`
+  - `scripts/build_release.ps1`
+  - `scripts/stage_release.ps1`
 
-## What Was Fixed Today
+## What Was Completed Today
 
-- The AppImage launcher now generates a runtime `GNUstep.conf` with absolute paths based on the mounted AppImage location.
-- The AppImage no longer depends on host GNUstep configuration files.
-- `linuxdeploy` now scans the GNUstep backend bundle (`libgnustep-back-032.bundle`) so backend-only dependencies are packaged too.
-- This specifically pulled in missing backend-side libraries such as `libXft`, `libXmu`, and `libXt`.
+- Added a single manifest for both `msi` and `appimage` packaging.
+- Defined package identity, feed URLs, update provider, tag pattern, and a permanent MSI `upgradeCode`.
+- Normalized the stage/output roots to repo-level `dist/` paths so `gnustep-packager` resolves the payload correctly.
+- Added a cross-platform build wrapper that:
+  - updates submodules
+  - builds on Linux through `GNUstep.sh`
+  - builds on Windows through MSYS2 `CLANG64`
+- Added a cross-platform stage wrapper that:
+  - copies the app bundle into a packager-compatible stage tree
+  - normalizes the launch entry path to `app/ScreenshotTool.app/ScreenshotTool`
+  - rewrites staged plist version fields from the requested package version
+  - stages icon and license metadata
+  - stages GNUstep runtime content for Linux and Windows
+- Added Linux dependency-closure harvesting for AppImage staging.
+- Added Windows runtime staging from MSYS2 `CLANG64`.
+- Wired package-version override handling so repo-defined `build` and `stage` steps stay aligned with `gnustep-packager` release versions.
 
 ## Validation Already Done
 
-- `scripts/smoke_appimage.sh Staging/ScreenshotTool-vtest-x86_64.AppImage`
-- Clean-environment launch:
-  - `env -i HOME=/tmp PATH=/usr/bin:/bin DISPLAY=:0 XAUTHORITY=... APPIMAGE_EXTRACT_AND_RUN=1 Staging/ScreenshotTool-vtest-x86_64.AppImage ...`
-- Both of those passed on the development machine after the final AppImage rebuild.
+- `pwsh -NoProfile -File scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json`
+  - passed on this Linux host
+- `pwsh -NoProfile -File scripts/stage_release.ps1 -ManifestPath packaging/package.manifest.json -StageRoot dist/stage`
+  - passed on this Linux host
+- `pwsh -NoProfile -File /home/danboyd/git/gnustep/gnustep-packager/scripts/gnustep-packager.ps1 -Command validate -Manifest /home/danboyd/git/ScreenshotTool/packaging/package.manifest.json`
+  - shared validation passed
+- `pwsh -NoProfile -File scripts/stage_release.ps1 -ManifestPath packaging/package.manifest.json -StageRoot dist/stage-versioncheck -PackageVersion 9.9.9-test`
+  - passed and confirmed staged plist versions follow the requested package version override
+
+## Known Gaps
+
+- `patchelf` is not installed on the current Linux machine.
+- Because of that, the staged Linux binary still carries a host `RUNPATH`:
+  - `/home/danboyd/git/ScreenshotTool/third_party/libs-OpenSave/Source/obj`
+- `scripts/stage_release.ps1` already detects this and will patch the runpath when `patchelf` is available.
+- Until `patchelf` is present on the release runner, AppImage backend validation and final AppImage packaging are expected to fail.
+- The Windows build/stage paths are implemented but were not exercised today because this machine is Linux.
+
+## Remaining Phase 11 Work
+
+- `11D`: integrate the updater into the app and add `Check for Updates...`
+- `11E`: add a tag-driven GitHub Actions release workflow for `msi` and `appimage`
+- `11F`: publish release assets and hosted stable feeds
+- `11G`: add signing, checksums, and release failure handling
+- `11H`: run full install/update validation and finish release docs
 
 ## First Step Tomorrow
 
-Validate the rebuilt AppImage on the Debian live USB:
+1. Make sure the Linux release environment has `patchelf`.
+2. Run backend validation for AppImage against the staged payload.
+3. If that passes, move directly into phase `11D` or `11E` depending on whether updater wiring or release automation should land first.
+
+## Useful Commands
+
+Rebuild and restage:
 
 ```bash
-cd /path/to/copied/files
-sha256sum -c ScreenshotTool-vtest-x86_64.AppImage.sha256
-chmod +x ScreenshotTool-vtest-x86_64.AppImage
-APPIMAGE_EXTRACT_AND_RUN=1 ./ScreenshotTool-vtest-x86_64.AppImage /usr/share/pixmaps/debian-logo.png
+pwsh -NoProfile -File scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json
+pwsh -NoProfile -File scripts/stage_release.ps1 -ManifestPath packaging/package.manifest.json -StageRoot dist/stage
 ```
 
-## Decision Tree
-
-- If the Debian live USB launch succeeds:
-  - AppImage packaging is in good shape.
-  - Next likely step is tagging a real release and verifying the GitHub Actions release flow uploads the AppImage asset.
-- If the Debian live USB launch fails:
-  - Capture the full terminal output.
-  - Compare it against the previous backend failure:
-    - `Unable to find backend back`
-  - The next debugging target is whatever dependency or runtime path the clean machine still lacks.
-
-## Useful Context
-
-- Release workflow support already exists from `c9770fc` (`Operationalize AppImage release packaging`).
-- The normal release flow is intended to be:
+Shared validation:
 
 ```bash
-git tag -a v0.1.0 -m "v0.1.0"
-git push origin v0.1.0
+pwsh -NoProfile -File /home/danboyd/git/gnustep/gnustep-packager/scripts/gnustep-packager.ps1 -Command validate -Manifest /home/danboyd/git/ScreenshotTool/packaging/package.manifest.json
 ```
 
-- Before any future push, keep using the `danjboyd` GitHub account as required by `AGENTS.md`.
+Version-override spot check:
+
+```bash
+pwsh -NoProfile -File scripts/stage_release.ps1 -ManifestPath packaging/package.manifest.json -StageRoot dist/stage-versioncheck -PackageVersion 9.9.9-test
+```
+
+AppImage runpath check:
+
+```bash
+readelf -d dist/stage/app/ScreenshotTool.app/ScreenshotTool | rg 'RUNPATH|RPATH'
+```
+
+## Notes
+
+- `runtimeSeedPaths` now includes both `runtime/bin/defaults` and `runtime/bin/defaults.exe` so the single manifest works for Linux and Windows staging.
+- The repo-level handoff note supersedes the older AppImage-only handoff state from March 2026.

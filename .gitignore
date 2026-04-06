@@ -20,6 +20,7 @@ console.log
 !*.env.example
 local.env
 build/
+dist/
 Staging/
 *.AppImage
 *.dmg
