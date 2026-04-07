@@ -551,6 +551,60 @@ function Find-FirstDirectoryByName {
   return $match.FullName
 }
 
+function Write-WindowsGNUstepConfig {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RuntimeRootPath
+  )
+
+  $runtimeBin = Ensure-Directory -Path (Join-Path $RuntimeRootPath "bin")
+  $configPath = Join-Path $runtimeBin "GNUstep.conf"
+  $systemRootRelative = "../System"
+  $configLines = @(
+    "GNUSTEP_USER_CONFIG_FILE=",
+    "GNUSTEP_SYSTEM_ROOT=$systemRootRelative",
+    "GNUSTEP_LOCAL_ROOT=$systemRootRelative",
+    "GNUSTEP_NETWORK_ROOT=$systemRootRelative",
+    "GNUSTEP_SYSTEM_APPS=$systemRootRelative/Applications",
+    "GNUSTEP_SYSTEM_ADMIN_APPS=$systemRootRelative/Applications/Admin",
+    "GNUSTEP_SYSTEM_WEB_APPS=$systemRootRelative/Library/WebApplications",
+    "GNUSTEP_SYSTEM_TOOLS=$systemRootRelative/Tools",
+    "GNUSTEP_SYSTEM_ADMIN_TOOLS=$systemRootRelative/Tools/Admin",
+    "GNUSTEP_SYSTEM_LIBRARY=$systemRootRelative/Library",
+    "GNUSTEP_SYSTEM_LIBRARIES=$systemRootRelative/Library/Libraries",
+    "GNUSTEP_SYSTEM_HEADERS=$systemRootRelative/Library/Headers",
+    "GNUSTEP_SYSTEM_DOC=$systemRootRelative/Library/Documentation",
+    "GNUSTEP_SYSTEM_DOC_MAN=$systemRootRelative/Library/Documentation/man",
+    "GNUSTEP_SYSTEM_DOC_INFO=$systemRootRelative/Library/Documentation/info",
+    "GNUSTEP_NETWORK_APPS=$systemRootRelative/Applications",
+    "GNUSTEP_NETWORK_ADMIN_APPS=$systemRootRelative/Applications/Admin",
+    "GNUSTEP_NETWORK_WEB_APPS=$systemRootRelative/Library/WebApplications",
+    "GNUSTEP_NETWORK_TOOLS=$systemRootRelative/Tools",
+    "GNUSTEP_NETWORK_ADMIN_TOOLS=$systemRootRelative/Tools/Admin",
+    "GNUSTEP_NETWORK_LIBRARY=$systemRootRelative/Library",
+    "GNUSTEP_NETWORK_LIBRARIES=$systemRootRelative/Library/Libraries",
+    "GNUSTEP_NETWORK_HEADERS=$systemRootRelative/Library/Headers",
+    "GNUSTEP_NETWORK_DOC=$systemRootRelative/Library/Documentation",
+    "GNUSTEP_NETWORK_DOC_MAN=$systemRootRelative/Library/Documentation/man",
+    "GNUSTEP_NETWORK_DOC_INFO=$systemRootRelative/Library/Documentation/info",
+    "GNUSTEP_LOCAL_APPS=$systemRootRelative/Applications",
+    "GNUSTEP_LOCAL_ADMIN_APPS=$systemRootRelative/Applications/Admin",
+    "GNUSTEP_LOCAL_WEB_APPS=$systemRootRelative/Library/WebApplications",
+    "GNUSTEP_LOCAL_TOOLS=$systemRootRelative/Tools",
+    "GNUSTEP_LOCAL_ADMIN_TOOLS=$systemRootRelative/Tools/Admin",
+    "GNUSTEP_LOCAL_LIBRARY=$systemRootRelative/Library",
+    "GNUSTEP_LOCAL_LIBRARIES=$systemRootRelative/Library/Libraries",
+    "GNUSTEP_LOCAL_HEADERS=$systemRootRelative/Library/Headers",
+    "GNUSTEP_LOCAL_DOC=$systemRootRelative/Library/Documentation",
+    "GNUSTEP_LOCAL_DOC_MAN=$systemRootRelative/Library/Documentation/man",
+    "GNUSTEP_LOCAL_DOC_INFO=$systemRootRelative/Library/Documentation/info",
+    "GNUSTEP_MAKEFILES=$systemRootRelative/Library/Makefiles"
+  )
+
+  Set-Content -Path $configPath -Value $configLines -Encoding ascii
+  Write-StageLog "Wrote Windows GNUstep runtime config to $configPath"
+}
+
 function Stage-WindowsRuntime {
   param(
     [Parameter(Mandatory = $true)]
@@ -635,6 +689,8 @@ function Stage-WindowsRuntime {
     [void](Copy-FileIfPresent -Source $library.FullName -Destination (Join-Path $runtimeBin $library.Name))
     [void](Copy-FileIfPresent -Source $library.FullName -Destination (Join-Path $runtimeSystemLib $library.Name))
   }
+
+  Write-WindowsGNUstepConfig -RuntimeRootPath $RuntimeRootPath
 }
 
 function Write-LicenseFiles {
