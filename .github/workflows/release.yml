@@ -35,6 +35,8 @@ jobs:
       manifest-path: packaging/package.manifest.json
       backend: msi
       package-version: ${{ needs.resolve-version.outputs.package-version }}
+      packager-repository: danjboyd/gnustep-packager
+      packager-ref: main
       msys2-packages: >-
         mingw-w64-clang-x86_64-cmark
       run-validation: true
@@ -54,6 +56,8 @@ jobs:
       manifest-path: packaging/package.manifest.json
       backend: appimage
       package-version: ${{ needs.resolve-version.outputs.package-version }}
+      packager-repository: danjboyd/gnustep-packager
+      packager-ref: main
       skip-default-host-setup: true
       preflight-shell: bash
       preflight-command: bash ./scripts/bootstrap_gnustep_linux_ci.sh
