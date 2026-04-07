@@ -190,7 +190,9 @@ function Normalize-StagedAppEntry {
 
   $withoutExtension = Join-Path $BundleRoot "ScreenshotTool"
   $withExe = Join-Path $BundleRoot "ScreenshotTool.exe"
-  if (-not (Test-Path $withoutExtension) -and (Test-Path $withExe)) {
+  if ($IsWindows -and (Test-Path $withExe)) {
+    Copy-Item -Path $withExe -Destination $withoutExtension -Force
+  } elseif (-not (Test-Path $withoutExtension) -and (Test-Path $withExe)) {
     Copy-Item -Path $withExe -Destination $withoutExtension -Force
   }
 
