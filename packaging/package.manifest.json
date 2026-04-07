@@ -41,7 +41,7 @@
     ]
   },
   "launch": {
-    "entryRelativePath": "app/ScreenshotTool.app/ScreenshotTool",
+    "entryRelativePath": "app/ScreenshotTool.app/ScreenshotTool.exe",
     "workingDirectory": "app/ScreenshotTool.app",
     "arguments": [],
     "pathPrepend": [
@@ -71,7 +71,8 @@
         "metadata/icons/ScreenshotToolIcon.png",
         "metadata/licenses/ScreenshotTool.txt",
         "metadata/licenses/gnustep-runtime.txt",
-        "runtime/bin"
+        "runtime/bin",
+        "runtime/lib/GNUstep/Themes/WinUXTheme.theme/WinUXTheme.dll"
       ],
       "timeoutSeconds": 30
     },

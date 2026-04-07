@@ -521,6 +521,23 @@ function Resolve-MsysRoot {
   throw "MSYS2 root not found. Set MSYS2_LOCATION before staging Windows packaging payloads."
 }
 
+function Convert-ToMsysPath {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$WindowsPath
+  )
+
+  $fullPath = [System.IO.Path]::GetFullPath($WindowsPath)
+  $normalized = $fullPath -replace "\\", "/"
+  if ($normalized -match "^([A-Za-z]):(/.*)?$") {
+    $drive = $Matches[1].ToLowerInvariant()
+    $rest = if ($Matches[2]) { $Matches[2] } else { "" }
+    return "/$drive$rest"
+  }
+
+  throw "Unable to convert Windows path to MSYS2 path: $WindowsPath"
+}
+
 function Get-FirstMatch {
   param(
     [Parameter(Mandatory = $true)]
@@ -534,6 +551,36 @@ function Get-FirstMatch {
   }
 
   return $null
+}
+
+function Invoke-MsysCommand {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$MsysRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$WorkingDirectory,
+    [Parameter(Mandatory = $true)]
+    [string]$InnerCommand
+  )
+
+  $envExe = Join-Path $MsysRoot "usr\bin\env.exe"
+  if (-not (Test-Path $envExe)) {
+    throw "MSYS2 env.exe not found at $envExe"
+  }
+
+  $workingDirectoryMsys = Convert-ToMsysPath -WindowsPath $WorkingDirectory
+  $bootstrap = @(
+    "source /etc/profile",
+    "source /clang64/share/GNUstep/Makefiles/GNUstep.sh",
+    "export PATH=/usr/bin:/clang64/bin:/mingw64/bin:`$PATH",
+    ("cd '{0}'" -f $workingDirectoryMsys),
+    $InnerCommand
+  ) -join "; "
+
+  & $envExe 'MSYSTEM=CLANG64' 'CHERE_INVOKING=1' '/usr/bin/bash' '-lc' $bootstrap
+  if ($LASTEXITCODE -ne 0) {
+    throw "MSYS2 command failed with exit code $LASTEXITCODE"
+  }
 }
 
 function Find-FirstDirectoryByName {
@@ -551,6 +598,52 @@ function Find-FirstDirectoryByName {
     return $null
   }
   return $match.FullName
+}
+
+function Ensure-WindowsThemeBundle {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$MsysRoot
+  )
+
+  $workspaceCandidates = @(
+    (Join-Path $RepoRoot "..\gnustep\plugins-themes-WinUXTheme"),
+    (Join-Path $RepoRoot "..\..\gnustep\plugins-themes-WinUXTheme"),
+    (Join-Path $RepoRoot ".theme-inputs\plugins-themes-WinUXTheme")
+  ) | ForEach-Object {
+    if ([string]::IsNullOrWhiteSpace($_)) { return $null }
+    [System.IO.Path]::GetFullPath($_)
+  } | Where-Object { $_ -and (Test-Path (Join-Path $_ "GNUmakefile")) }
+
+  $themeRepo = $workspaceCandidates | Select-Object -First 1
+  if ([string]::IsNullOrWhiteSpace($themeRepo)) {
+    $themeRepo = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot ".theme-inputs\plugins-themes-WinUXTheme"))
+    if (-not (Test-Path $themeRepo)) {
+      Ensure-Directory -Path ([System.IO.Path]::GetDirectoryName($themeRepo)) | Out-Null
+      & git clone --depth 1 https://github.com/gnustep/plugins-themes-WinUXTheme.git $themeRepo
+      if ($LASTEXITCODE -ne 0) {
+        throw "Failed to clone WinUXTheme into $themeRepo"
+      }
+    }
+  }
+
+  Invoke-MsysCommand -MsysRoot $MsysRoot -WorkingDirectory $themeRepo -InnerCommand "make install GNUSTEP_INSTALLATION_DOMAIN=USER"
+
+  $candidateRoots = @(
+    (Join-Path $env:USERPROFILE "GNUstep\Library\Themes"),
+    (Join-Path $MsysRoot ("home\" + $env:USERNAME + "\GNUstep\Library\Themes"))
+  ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+
+  foreach ($candidateRoot in $candidateRoots) {
+    $bundlePath = Join-Path $candidateRoot "WinUXTheme.theme"
+    if (Test-Path (Join-Path $bundlePath "WinUXTheme.dll")) {
+      return [System.IO.Path]::GetFullPath($bundlePath)
+    }
+  }
+
+  throw "Installed WinUXTheme bundle was not found under the GNUstep user theme roots."
 }
 
 function Write-WindowsGNUstepConfig {
@@ -626,6 +719,7 @@ function Stage-WindowsRuntime {
 
   $runtimeBin = Ensure-Directory -Path (Join-Path $RuntimeRootPath "bin")
   $runtimeEtcFonts = Ensure-Directory -Path (Join-Path $RuntimeRootPath "etc\fonts")
+  $runtimeLibGNUstepThemes = Ensure-Directory -Path (Join-Path $RuntimeRootPath "lib\GNUstep\Themes")
   $runtimeSystemLib = Ensure-Directory -Path (Join-Path $RuntimeRootPath "System\Library\Libraries")
   $runtimeSystemBundles = Ensure-Directory -Path (Join-Path $RuntimeRootPath "System\Library\Bundles")
   $runtimeSystemThemes = Ensure-Directory -Path (Join-Path $RuntimeRootPath "System\Library\Themes")
@@ -676,6 +770,10 @@ function Stage-WindowsRuntime {
       break
     }
   }
+
+  $winUXThemeBundle = Ensure-WindowsThemeBundle -RepoRoot $RepoRoot -MsysRoot $msysRoot
+  [void](Copy-DirectoryTree -Source $winUXThemeBundle -Destination (Join-Path $runtimeLibGNUstepThemes "WinUXTheme.theme"))
+  [void](Copy-DirectoryTree -Source $winUXThemeBundle -Destination (Join-Path $runtimeSystemThemes "WinUXTheme.theme"))
 
   foreach ($makefilesDir in @(
     (Join-Path $clang64Root "share\GNUstep\Makefiles"),

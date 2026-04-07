@@ -59,6 +59,12 @@ int main(int argc, const char *argv[]) {
     STBootstrapLog("main: entry argc=%d", argc);
     @try {
         @autoreleasepool {
+#if defined(_WIN32)
+            if (getenv("GSTheme") == NULL) {
+                _putenv("GSTheme=WinUXTheme");
+                STBootstrapLog("main: defaulted GSTheme=WinUXTheme");
+            }
+#endif
             STBootstrapLog("main: before sharedApplication");
             [NSApplication sharedApplication];
             STBootstrapLog("main: after sharedApplication");
