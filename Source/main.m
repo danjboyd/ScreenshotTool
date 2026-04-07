@@ -20,14 +20,69 @@
 
 #import <AppKit/AppKit.h>
 #import "AppDelegate.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+
+static const char *STBootstrapLogPath(void) {
+    const char *override = getenv("SCREENSHOT_TOOL_BOOTSTRAP_LOG");
+    if (override && override[0] != '\0') {
+        return override;
+    }
+#if defined(_WIN32)
+    const char *localAppData = getenv("LOCALAPPDATA");
+    if (localAppData && localAppData[0] != '\0') {
+        static char path[1024];
+        snprintf(path, sizeof(path), "%s\\ScreenshotTool-bootstrap.log", localAppData);
+        return path;
+    }
+#endif
+    return "ScreenshotTool-bootstrap.log";
+}
+
+static void STBootstrapLog(const char *format, ...) {
+    const char *path = STBootstrapLogPath();
+    FILE *fp = fopen(path, "a");
+    if (!fp) {
+        return;
+    }
+
+    va_list args;
+    va_start(args, format);
+    vfprintf(fp, format, args);
+    va_end(args);
+    fputc('\n', fp);
+    fclose(fp);
+}
 
 int main(int argc, const char *argv[]) {
-    @autoreleasepool {
-        [NSApplication sharedApplication];
-        [NSUserDefaults standardUserDefaults];
-        AppDelegate *delegate = [[AppDelegate alloc] init];
-        [NSApp setDelegate:delegate];
-        [NSApp run];
-        return 0;
+    STBootstrapLog("main: entry argc=%d", argc);
+    @try {
+        @autoreleasepool {
+            STBootstrapLog("main: before sharedApplication");
+            [NSApplication sharedApplication];
+            STBootstrapLog("main: after sharedApplication");
+
+            [NSUserDefaults standardUserDefaults];
+            STBootstrapLog("main: after standardUserDefaults");
+
+            AppDelegate *delegate = [[AppDelegate alloc] init];
+            STBootstrapLog("main: after AppDelegate init delegate=%p", delegate);
+
+            [NSApp setDelegate:delegate];
+            STBootstrapLog("main: after setDelegate");
+
+            [NSApp run];
+            STBootstrapLog("main: after NSApp run");
+            return 0;
+        }
+    } @catch (NSException *exception) {
+        STBootstrapLog("main: caught NSException name=%s reason=%s",
+                       [[exception name] UTF8String] ?: "<nil>",
+                       [[exception reason] UTF8String] ?: "<nil>");
+        @throw;
+    } @catch (id exceptionObject) {
+        STBootstrapLog("main: caught non-NSException Objective-C object=%p", exceptionObject);
+        @throw;
     }
 }
