@@ -176,6 +176,11 @@ ADDITIONAL_GUI_LIBS += -lOpenSave
 ADDITIONAL_LDFLAGS += -Wl,-rpath,$(OPENSAVE_LIB_DIR)
 endif
 
+OPENSAVE_SUBMAKE_FLAGS :=
+ifneq (,$(findstring mingw,$(GNUSTEP_HOST_OS)))
+OPENSAVE_SUBMAKE_FLAGS += ADDITIONAL_OBJCFLAGS=-DHAVE_MODE_T
+endif
+
 
 
 include $(GNUSTEP_MAKEFILES)/application.make
@@ -192,7 +197,7 @@ opensave-lib:
 		exit 1; \
 	fi
 	@echo "Building libs-OpenSave..."
-	@$(MAKE) -C "$(OPENSAVE_SOURCE_DIR)"
+	@$(MAKE) -C "$(OPENSAVE_SOURCE_DIR)" $(OPENSAVE_SUBMAKE_FLAGS)
 endif
 
 before-all:: updater-core updater-ui updater-helper
