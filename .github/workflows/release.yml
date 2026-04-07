@@ -30,7 +30,7 @@ jobs:
 
   package-windows:
     needs: resolve-version
-    uses: gnustep/gnustep-packager/.github/workflows/package-gnustep-app.yml@main
+    uses: danjboyd/gnustep-packager/.github/workflows/package-gnustep-app.yml@main
     with:
       manifest-path: packaging/package.manifest.json
       backend: msi
@@ -49,7 +49,7 @@ jobs:
 
   package-linux:
     needs: resolve-version
-    uses: gnustep/gnustep-packager/.github/workflows/package-gnustep-app.yml@main
+    uses: danjboyd/gnustep-packager/.github/workflows/package-gnustep-app.yml@main
     with:
       manifest-path: packaging/package.manifest.json
       backend: appimage
