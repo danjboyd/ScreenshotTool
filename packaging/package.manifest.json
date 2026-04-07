@@ -176,6 +176,17 @@
       "shortcutName": "ScreenshotTool",
       "installDirectoryName": "ScreenshotTool",
       "launcherFileName": "ScreenshotTool.exe",
+      "ignoredRuntimeDependencies": [
+        "dbghelp.dll",
+        "DNSAPI.dll",
+        "DWrite.dll",
+        "IPHLPAPI.DLL",
+        "MSIMG32.dll",
+        "OPENGL32.dll",
+        "PSAPI.DLL",
+        "USP10.dll",
+        "WINSPOOL.DRV"
+      ],
       "signing": {
         "enabled": false,
         "timestampUrl": "http://timestamp.digicert.com",
