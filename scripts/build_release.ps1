@@ -102,7 +102,10 @@ if (-not (Test-Path (Join-Path $repoRoot "third_party\libs-OpenSave\Source\GNUma
   throw "libs-OpenSave submodule is missing. Run: git submodule update --init --recursive"
 }
 
-Invoke-LoggedCommand -FilePath "git" -ArgumentList @("-C", $repoRoot, "submodule", "update", "--init", "--recursive")
+$gitMetadataPath = Join-Path $repoRoot ".git"
+if (Test-Path $gitMetadataPath) {
+  Invoke-LoggedCommand -FilePath "git" -ArgumentList @("-C", $repoRoot, "submodule", "update", "--init", "--recursive")
+}
 
 if ($IsLinux) {
   $bashExe = Get-Command bash -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -135,6 +138,7 @@ if ($IsWindows) {
     throw "MSYS2 CLANG64 root not found at $clang64Root."
   }
 
+  $env:MSYSTEM = "CLANG64"
   $gnustepSh = Resolve-WindowsGNUstepSh -Clang64Root $clang64Root
   Invoke-BashBuild -BashExe $bashExe -RepoRoot $repoRoot -GNUstepSh $gnustepSh
   exit 0
