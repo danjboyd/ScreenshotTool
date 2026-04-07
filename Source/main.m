@@ -61,8 +61,8 @@ int main(int argc, const char *argv[]) {
         @autoreleasepool {
 #if defined(_WIN32)
             if (getenv("GSTheme") == NULL) {
-                _putenv("GSTheme=WinUXTheme");
-                STBootstrapLog("main: defaulted GSTheme=WinUXTheme");
+                _putenv("GSTheme=WinUITheme");
+                STBootstrapLog("main: defaulted GSTheme=WinUITheme");
             }
 #endif
             STBootstrapLog("main: before sharedApplication");

@@ -600,50 +600,122 @@ function Find-FirstDirectoryByName {
   return $match.FullName
 }
 
-function Ensure-WindowsThemeBundle {
+function Resolve-WindowsThemeRepo {
   param(
     [Parameter(Mandatory = $true)]
     [string]$RepoRoot,
     [Parameter(Mandatory = $true)]
-    [string]$MsysRoot
+    [string]$RepoName,
+    [string]$RepoUrl
   )
 
   $workspaceCandidates = @(
-    (Join-Path $RepoRoot "..\gnustep\plugins-themes-WinUXTheme"),
-    (Join-Path $RepoRoot "..\..\gnustep\plugins-themes-WinUXTheme"),
-    (Join-Path $RepoRoot ".theme-inputs\plugins-themes-WinUXTheme")
+    (Join-Path $RepoRoot ("..\gnustep\{0}" -f $RepoName)),
+    (Join-Path $RepoRoot ("..\..\gnustep\{0}" -f $RepoName)),
+    (Join-Path $RepoRoot (".theme-inputs\{0}" -f $RepoName))
   ) | ForEach-Object {
     if ([string]::IsNullOrWhiteSpace($_)) { return $null }
     [System.IO.Path]::GetFullPath($_)
   } | Where-Object { $_ -and (Test-Path (Join-Path $_ "GNUmakefile")) }
 
   $themeRepo = $workspaceCandidates | Select-Object -First 1
-  if ([string]::IsNullOrWhiteSpace($themeRepo)) {
-    $themeRepo = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot ".theme-inputs\plugins-themes-WinUXTheme"))
-    if (-not (Test-Path $themeRepo)) {
-      Ensure-Directory -Path ([System.IO.Path]::GetDirectoryName($themeRepo)) | Out-Null
-      & git clone --depth 1 https://github.com/gnustep/plugins-themes-WinUXTheme.git $themeRepo
-      if ($LASTEXITCODE -ne 0) {
-        throw "Failed to clone WinUXTheme into $themeRepo"
-      }
+  if (-not [string]::IsNullOrWhiteSpace($themeRepo)) {
+    return $themeRepo
+  }
+
+  $themeRepo = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot (".theme-inputs\{0}" -f $RepoName)))
+  if (-not (Test-Path $themeRepo)) {
+    Ensure-Directory -Path ([System.IO.Path]::GetDirectoryName($themeRepo)) | Out-Null
+    & git clone --depth 1 $RepoUrl $themeRepo
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to clone $RepoName into $themeRepo"
     }
   }
 
-  Invoke-MsysCommand -MsysRoot $MsysRoot -WorkingDirectory $themeRepo -InnerCommand "make install GNUSTEP_INSTALLATION_DOMAIN=USER"
+  return $themeRepo
+}
 
-  $candidateRoots = @(
+function Resolve-WindowsThemeBundle {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$MsysRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$ThemeName
+  )
+
+  foreach ($candidateRoot in @(
     (Join-Path $env:USERPROFILE "GNUstep\Library\Themes"),
     (Join-Path $MsysRoot ("home\" + $env:USERNAME + "\GNUstep\Library\Themes"))
-  ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-
-  foreach ($candidateRoot in $candidateRoots) {
-    $bundlePath = Join-Path $candidateRoot "WinUXTheme.theme"
-    if (Test-Path (Join-Path $bundlePath "WinUXTheme.dll")) {
+  ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }) {
+    $bundlePath = Join-Path $candidateRoot ("{0}.theme" -f $ThemeName)
+    if (Test-Path (Join-Path $bundlePath ("{0}.dll" -f $ThemeName))) {
       return [System.IO.Path]::GetFullPath($bundlePath)
     }
   }
 
-  throw "Installed WinUXTheme bundle was not found under the GNUstep user theme roots."
+  return $null
+}
+
+function Ensure-WindowsThemeBundle {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$MsysRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$ThemeName,
+    [Parameter(Mandatory = $true)]
+    [string]$RepoName,
+    [Parameter(Mandatory = $true)]
+    [string]$RepoUrl
+  )
+
+  $themeRepo = Resolve-WindowsThemeRepo -RepoRoot $RepoRoot -RepoName $RepoName -RepoUrl $RepoUrl
+
+  $extraEnvironment = @{}
+  $compatScriptCandidates = @(
+    (Join-Path $themeRepo "Scripts\Prepare-GNUstepCompat.ps1"),
+    (Join-Path $themeRepo "scripts\Prepare-GNUstepCompat.ps1")
+  )
+  $compatScript = $compatScriptCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+  if ($compatScript) {
+    $compatDir = & $compatScript
+    if ($LASTEXITCODE -ne 0) {
+      throw "Theme compatibility setup failed for $themeRepo"
+    }
+    if (-not [string]::IsNullOrWhiteSpace([string]$compatDir)) {
+      $extraEnvironment = @{
+        LIBRARY_PATH = ((Convert-ToMsysPath -WindowsPath ([string]$compatDir)) + ":/clang64/lib")
+      }
+    }
+  }
+
+  $bootstrap = @(
+    "source /etc/profile",
+    "source /clang64/share/GNUstep/Makefiles/GNUstep.sh",
+    "export PATH=/usr/bin:/clang64/bin:/mingw64/bin:`$PATH"
+  )
+  foreach ($entry in $extraEnvironment.GetEnumerator()) {
+    $escapedValue = ([string]$entry.Value).Replace("'", "'\''")
+    $bootstrap += ("export {0}='{1}'" -f $entry.Key, $escapedValue)
+  }
+  $bootstrap += @(
+    ("cd '{0}'" -f (Convert-ToMsysPath -WindowsPath $themeRepo)),
+    "make install GNUSTEP_INSTALLATION_DOMAIN=USER"
+  )
+
+  $envExe = Join-Path $MsysRoot "usr\bin\env.exe"
+  & $envExe 'MSYSTEM=CLANG64' 'CHERE_INVOKING=1' '/usr/bin/bash' '-lc' ($bootstrap -join "; ")
+  if ($LASTEXITCODE -ne 0) {
+    throw "MSYS2 command failed with exit code $LASTEXITCODE"
+  }
+
+  $bundlePath = Resolve-WindowsThemeBundle -MsysRoot $MsysRoot -ThemeName $ThemeName
+  if ($null -eq $bundlePath) {
+    throw "Installed $ThemeName bundle was not found under the GNUstep user theme roots."
+  }
+
+  return $bundlePath
 }
 
 function Write-WindowsGNUstepConfig {
@@ -771,9 +843,14 @@ function Stage-WindowsRuntime {
     }
   }
 
-  $winUXThemeBundle = Ensure-WindowsThemeBundle -RepoRoot $RepoRoot -MsysRoot $msysRoot
-  [void](Copy-DirectoryTree -Source $winUXThemeBundle -Destination (Join-Path $runtimeLibGNUstepThemes "WinUXTheme.theme"))
-  [void](Copy-DirectoryTree -Source $winUXThemeBundle -Destination (Join-Path $runtimeSystemThemes "WinUXTheme.theme"))
+  $winUIThemeBundle = Ensure-WindowsThemeBundle `
+    -RepoRoot $RepoRoot `
+    -MsysRoot $msysRoot `
+    -ThemeName "WinUITheme" `
+    -RepoName "plugins-themes-winuitheme" `
+    -RepoUrl "https://github.com/danjboyd/plugins-themes-winuitheme.git"
+  [void](Copy-DirectoryTree -Source $winUIThemeBundle -Destination (Join-Path $runtimeLibGNUstepThemes "WinUITheme.theme"))
+  [void](Copy-DirectoryTree -Source $winUIThemeBundle -Destination (Join-Path $runtimeSystemThemes "WinUITheme.theme"))
 
   foreach ($makefilesDir in @(
     (Join-Path $clang64Root "share\GNUstep\Makefiles"),

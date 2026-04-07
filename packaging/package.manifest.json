@@ -49,6 +49,10 @@
     ],
     "env": {
       "GNUSTEP_PATHPREFIX_LIST": "{@runtimeRoot}",
+      "GSTheme": {
+        "value": "WinUITheme",
+        "policy": "ifUnset"
+      },
       "GNUSTEP_SYSTEM_ROOT": "{@runtimeRoot}/System",
       "GNUSTEP_LOCAL_ROOT": "{@runtimeRoot}/System",
       "GNUSTEP_NETWORK_ROOT": "{@runtimeRoot}/System",
@@ -72,7 +76,7 @@
         "metadata/licenses/ScreenshotTool.txt",
         "metadata/licenses/gnustep-runtime.txt",
         "runtime/bin",
-        "runtime/lib/GNUstep/Themes/WinUXTheme.theme/WinUXTheme.dll"
+        "runtime/lib/GNUstep/Themes/WinUITheme.theme/WinUITheme.dll"
       ],
       "timeoutSeconds": 30
     },
