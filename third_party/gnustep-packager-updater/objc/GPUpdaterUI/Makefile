@@ -5,6 +5,7 @@ $(error gnustep-config not found. Install GNUstep GUI development tools before b
 endif
 
 OBJCFLAGS := $(shell $(GNUSTEP_CONFIG) --objc-flags)
+OBJCFLAGS += -DHAVE_MODE_T
 LIB_NAME := libGPUpdaterUI.a
 INCLUDE_DIR := Headers
 CORE_INCLUDE_DIR := ../GPUpdaterCore/Headers
