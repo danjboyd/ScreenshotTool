@@ -800,8 +800,13 @@ static BOOL STRasterizeTextUsingFreeType(MarkupText *text,
         return NO;
     }
 
+    const char *fontPathBytes = [fontPath UTF8String];
+    if (fontPathBytes == NULL) {
+        return NO;
+    }
+
     FT_Face face = NULL;
-    if (FT_New_Face(STFTLibrary, fontPath.fileSystemRepresentation, 0, &face) != 0) {
+    if (FT_New_Face(STFTLibrary, fontPathBytes, 0, &face) != 0) {
         return NO;
     }
 
