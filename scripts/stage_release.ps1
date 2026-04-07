@@ -127,6 +127,12 @@ function Copy-FileIfPresent {
     return $false
   }
 
+  $sourceFullPath = [System.IO.Path]::GetFullPath($Source)
+  $destinationFullPath = [System.IO.Path]::GetFullPath($Destination)
+  if ($sourceFullPath.Equals($destinationFullPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+    return $true
+  }
+
   Ensure-Directory -Path (Split-Path -Parent $Destination) | Out-Null
   Copy-Item -Path $Source -Destination $Destination -Force
   return $true
@@ -200,6 +206,58 @@ function Normalize-StagedAppEntry {
   }
 
   return $withoutExtension
+}
+
+function Resolve-UpdaterHelperSourcePath {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$BundleRoot
+  )
+
+  foreach ($candidate in @(
+    (Join-Path $BundleRoot "gp-update-helper"),
+    (Join-Path $BundleRoot "gp-update-helper.exe"),
+    (Join-Path $RepoRoot "third_party\gnustep-packager-updater\objc\gp-update-helper\gp-update-helper"),
+    (Join-Path $RepoRoot "third_party\gnustep-packager-updater\objc\gp-update-helper\gp-update-helper.exe")
+  )) {
+    if (Test-Path $candidate) {
+      return $candidate
+    }
+  }
+
+  return $null
+}
+
+function Stage-UpdaterHelper {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$BundleRoot
+  )
+
+  $source = Resolve-UpdaterHelperSourcePath -RepoRoot $RepoRoot -BundleRoot $BundleRoot
+  if ([string]::IsNullOrWhiteSpace($source)) {
+    Write-Warning "gp-update-helper was not found in the build output or vendored updater tree."
+    return
+  }
+
+  $helperPath = Join-Path $BundleRoot "gp-update-helper"
+  [void](Copy-FileIfPresent -Source $source -Destination $helperPath)
+  if ($IsWindows -or $source.EndsWith(".exe", [System.StringComparison]::OrdinalIgnoreCase)) {
+    [void](Copy-FileIfPresent -Source $source -Destination (Join-Path $BundleRoot "gp-update-helper.exe"))
+  }
+
+  if ($IsLinux) {
+    & chmod +x $helperPath
+    if ($LASTEXITCODE -ne 0) {
+      throw "Failed to mark staged updater helper executable: $helperPath"
+    }
+  }
+
+  Write-StageLog "Staged updater helper from $source"
 }
 
 function Update-InfoPlistVersion {
@@ -648,6 +706,7 @@ if (-not (Copy-DirectoryTree -Source $appSourceRoot -Destination $appStageRoot))
 }
 
 $normalizedEntryPath = Normalize-StagedAppEntry -BundleRoot $appStageRoot
+Stage-UpdaterHelper -RepoRoot $repoRoot -BundleRoot $appStageRoot
 Update-StagedBundleVersion -BundleRoot $appStageRoot -Version $version
 Write-StageLog "Staged app bundle entry: $normalizedEntryPath"
 

@@ -176,6 +176,11 @@
       "shortcutName": "ScreenshotTool",
       "installDirectoryName": "ScreenshotTool",
       "launcherFileName": "ScreenshotTool.exe",
+      "signing": {
+        "enabled": false,
+        "timestampUrl": "http://timestamp.digicert.com",
+        "description": "ScreenshotTool installer"
+      },
       "updates": {
         "feedUrl": "https://danjboyd.github.io/ScreenshotTool/updates/windows/stable.json"
       }

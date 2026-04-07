@@ -1,0 +1,117 @@
+name: package-release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      package-version: ${{ steps.version.outputs.package_version }}
+      release-tag: ${{ steps.version.outputs.release_tag }}
+    steps:
+      - name: Resolve package version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag_name="${GITHUB_REF_NAME}"
+          package_version="${tag_name#v}"
+          echo "release_tag=${tag_name}" >> "${GITHUB_OUTPUT}"
+          echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
+
+  package-windows:
+    needs: resolve-version
+    uses: gnustep/gnustep-packager/.github/workflows/package-gnustep-app.yml@main
+    with:
+      manifest-path: packaging/package.manifest.json
+      backend: msi
+      package-version: ${{ needs.resolve-version.outputs.package-version }}
+      msys2-packages: >-
+        mingw-w64-clang-x86_64-cmark
+      run-validation: true
+      run-smoke: true
+      artifact-name: screenshottool-windows
+      sign-artifacts: true
+      sign-timestamp-url: http://timestamp.digicert.com
+    secrets:
+      sign_pfx_base64: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}
+      sign_pfx_password: ${{ secrets.WINDOWS_SIGN_PFX_PASSWORD }}
+      sign_cert_sha1: ${{ secrets.WINDOWS_SIGN_CERT_SHA1 }}
+
+  package-linux:
+    needs: resolve-version
+    uses: gnustep/gnustep-packager/.github/workflows/package-gnustep-app.yml@main
+    with:
+      manifest-path: packaging/package.manifest.json
+      backend: appimage
+      package-version: ${{ needs.resolve-version.outputs.package-version }}
+      skip-default-host-setup: true
+      preflight-shell: bash
+      preflight-command: bash ./scripts/bootstrap_gnustep_linux_ci.sh
+      run-validation: true
+      run-smoke: true
+      artifact-name: screenshottool-linux
+
+  publish-release-assets:
+    needs:
+      - resolve-version
+      - package-windows
+      - package-linux
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - name: Download Windows package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: screenshottool-windows-packages
+          path: dist/windows
+
+      - name: Download Linux package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: screenshottool-linux-packages
+          path: dist/linux
+
+      - name: Stage release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets site/updates/windows site/updates/linux
+          cp dist/windows/* release-assets/
+          cp dist/linux/* release-assets/
+          cp dist/windows/*.update-feed.json site/updates/windows/stable.json
+          cp dist/linux/*.update-feed.json site/updates/linux/stable.json
+          sha256sum release-assets/* > release-assets/SHA256SUMS
+
+      - name: Publish draft GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.resolve-version.outputs.release-tag }}
+          generate_release_notes: true
+          draft: true
+          files: release-assets/*
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy Pages
+        id: deploy-pages
+        uses: actions/deploy-pages@v4
+
+      - name: Publish final GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "${{ needs.resolve-version.outputs.release-tag }}" --draft=false

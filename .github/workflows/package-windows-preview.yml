@@ -1,0 +1,34 @@
+name: package-windows-preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_version:
+        description: Override package version, for example 0.1.0-rc1
+        required: false
+        default: ""
+        type: string
+      sign_artifacts:
+        description: Sign the MSI using configured repository secrets
+        required: true
+        default: false
+        type: boolean
+
+jobs:
+  package-windows:
+    uses: gnustep/gnustep-packager/.github/workflows/package-gnustep-app.yml@main
+    with:
+      manifest-path: packaging/package.manifest.json
+      backend: msi
+      package-version: ${{ inputs.package_version }}
+      msys2-packages: >-
+        mingw-w64-clang-x86_64-cmark
+      run-validation: true
+      run-smoke: true
+      artifact-name: screenshottool-windows-preview
+      sign-artifacts: ${{ inputs.sign_artifacts }}
+      sign-timestamp-url: http://timestamp.digicert.com
+    secrets:
+      sign_pfx_base64: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}
+      sign_pfx_password: ${{ secrets.WINDOWS_SIGN_PFX_PASSWORD }}
+      sign_cert_sha1: ${{ secrets.WINDOWS_SIGN_CERT_SHA1 }}

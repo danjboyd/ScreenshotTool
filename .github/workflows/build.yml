@@ -2,6 +2,8 @@ name: build-and-package
 
 on:
   push:
+    tags-ignore:
+      - "v*"
   pull_request:
   workflow_dispatch:
 
@@ -30,166 +32,14 @@ jobs:
           echo "appimage_path=Staging/${APPIMAGE_NAME}" >> "${GITHUB_OUTPUT}"
           echo "appimage_sha_name=${APPIMAGE_NAME}.sha256" >> "${GITHUB_OUTPUT}"
           echo "artifact_name=${APPIMAGE_NAME}" >> "${GITHUB_OUTPUT}"
-      - name: Install build dependencies
-        run: |
-          set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y \
-            ninja-build cmake make clang llvm-dev gcc-multilib libc6-dev \
-            libicu-dev libxml2-dev libxslt1-dev libffi-dev libgmp-dev \
-            libavahi-client-dev libgnutls28-dev libudev-dev \
-            libpng-dev libtiff-dev libjpeg-dev libfreetype6-dev \
-            libx11-dev libxext-dev libxrandr-dev libxft-dev libxmu-dev \
-            libxrender-dev libxtst-dev libxt-dev libxcomposite-dev \
-            libxcursor-dev libcups2-dev libsndfile1-dev libdbus-1-dev \
-            rsync imagemagick patchelf curl
-      - name: Build GNUstep stack (clang, ld)
+      - name: Bootstrap GNUstep Linux toolchain
         env:
           PREFIX: /usr/GNUstep
-          CC: clang
-          CXX: clang++
-          cc_flags: -fblocks -fobjc-nonfragile-abi
-          LDFLAGS: ""
-          LD_LIBRARY_PATH: ""
-          PKG_CONFIG_PATH: ""
-          CPPFLAGS: ""
         run: |
-          set -euo pipefail
-          export CC CXX
-          export PREFIX
-          export MAKE="make -j$(nproc)"
-          export LDFLAGS="-L${PREFIX}/lib -fuse-ld=ld"
-          export LD_LIBRARY_PATH="${PREFIX}/lib"
-          export PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig"
-          export CPPFLAGS="-I${PREFIX}/include"
-          export PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}"
-          export GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles"
-          export ZSH_VERSION=""
-          export GNUSTEP_CONFIG_FILE=""
-          export GNUSTEP_USER_CONFIG_FILE=""
-          export GNUSTEP_CONFIG_FILE=""
-
-          source_gnustep_env() {
-            set +u
-            . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
-            set -u
-            export PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}"
-            export GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles"
-          }
-
-          # Bootstrap libobjc2 first so clang blocks support is available before gnustep-make config.
-          git clone https://github.com/gnustep/libobjc2.git
-          pushd libobjc2
-          mkdir -p Build && cd Build
-          cmake -G Ninja .. \
-            -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER="${CC}" \
-            -DCMAKE_CXX_COMPILER="${CXX}" \
-            -DCMAKE_OBJC_COMPILER="${CC}" \
-            -DCMAKE_EXE_LINKER_FLAGS="${LDFLAGS}" \
-            -DCMAKE_SHARED_LINKER_FLAGS="${LDFLAGS}" \
-            -DTESTS=OFF
-          ninja
-          sudo ninja install
-          popd
-
-          # libdispatch (needed by base; matches clang flow)
-          git clone https://github.com/apple/swift-corelibs-libdispatch.git libdispatch
-          pushd libdispatch
-          mkdir -p Build && cd Build
-          cmake -G Ninja .. \
-            -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_C_COMPILER="${CC}" \
-            -DCMAKE_CXX_COMPILER="${CXX}" \
-            -DCMAKE_EXE_LINKER_FLAGS="${LDFLAGS}" \
-            -DCMAKE_SHARED_LINKER_FLAGS="${LDFLAGS}" \
-            -DENABLE_TESTING=OFF \
-            -DWITH_LIBKQUEUE=ON \
-            -DWITH_BLOCKS_RUNTIME=ON
-          ninja
-          sudo ninja install
-          popd
-
-          # gnustep-make (first in compile-all; runs after objc/dispatch so blocks symbols exist)
-          # gnustep-make
-          git clone https://github.com/gnustep/tools-make.git gnustep-make
-          pushd gnustep-make
-          CCFLAGS="${cc_flags}" CXX="${CXX}" CC="${CC}" \
-            ./configure --prefix="${PREFIX}" --with-library-combo=ng-gnu-gnu \
-                        --enable-objc-arc --enable-native-objc-exceptions \
-                        --with-layout=gnustep
-          ${MAKE}
-          sudo ${MAKE} install
-          source_gnustep_env
-          popd
-
-          # gnustep-base
-          git clone https://github.com/gnustep/libs-base.git
-          pushd libs-base
-          source_gnustep_env
-          ./configure --disable-newkvo --prefix="${PREFIX}"
-          PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
-            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
-            LDFLAGS="${LDFLAGS} -ldispatch" \
-            ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
-          sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
-            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
-            make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
-          popd
-
-          # gnustep-gui
-          git clone https://github.com/gnustep/libs-gui.git
-          pushd libs-gui
-          source_gnustep_env
-          ./configure --enable-imagemagick --prefix="${PREFIX}"
-          PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
-            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
-            ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
-          sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
-            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
-            make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
-          popd
-
-          # gnustep-back
-          git clone https://github.com/gnustep/libs-back.git
-          pushd libs-back
-          source_gnustep_env
-          PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
-            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
-            ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
-          sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
-            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
-            make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
-          popd
-
-          # Sombre theme
-          git clone https://github.com/gnustep/plugins-themes-sombre.git
-          pushd plugins-themes-sombre
-          source_gnustep_env
-          PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
-            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
-            ${MAKE} messages=yes
-          sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
-            GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
-            make install
-          popd
-
+          chmod +x ./scripts/bootstrap_gnustep_linux_ci.sh
+          ./scripts/bootstrap_gnustep_linux_ci.sh
       - name: Build ScreenshotTool (GNUstep)
-        env:
-          PREFIX: /usr/GNUstep
-        run: |
-          set -euo pipefail
-          export PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}"
-          export GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles"
-          export LD_LIBRARY_PATH="${PREFIX}/lib:${LD_LIBRARY_PATH:-}"
-          set +u
-          . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
-          set -u
-          export PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}"
-          export GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles"
-          make -j"$(nproc)"
+        run: pwsh -NoProfile -File scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json
       - name: Download linuxdeploy
         run: |
           mkdir -p /tmp/linuxdeploy
@@ -215,26 +65,6 @@ jobs:
           path: |
             ${{ steps.naming.outputs.appimage_path }}
             Staging/${{ steps.naming.outputs.appimage_sha_name }}
-
-  publish-appimage-release:
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    needs: linux-appimage
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - name: Download AppImage artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.linux-appimage.outputs.artifact_name }}
-          path: release-assets
-      - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
-        with:
-          generate_release_notes: true
-          files: |
-            release-assets/${{ needs.linux-appimage.outputs.appimage_name }}
-            release-assets/${{ needs.linux-appimage.outputs.appimage_sha_name }}
 
   # macos-dmg:
   #   runs-on: macos-13

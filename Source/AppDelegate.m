@@ -10,6 +10,7 @@
 #import "PreferencesWindowController.h"
 #import "STThemeUtilities.h"
 #import "STHudView.h"
+#import "GPStandardUpdaterController.h"
 #if defined(ST_USE_OPENSAVE)
 #import <GSOpenSave.h>
 #endif
@@ -1293,7 +1294,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 @end
 
-@interface AppDelegate () <NSToolbarDelegate, ToolSettingsPopoverControllerDelegate, TextToolPopoverControllerDelegate, ZoomPopoverControllerDelegate, PreferencesWindowControllerDelegate>
+@interface AppDelegate () <NSToolbarDelegate, ToolSettingsPopoverControllerDelegate, TextToolPopoverControllerDelegate, ZoomPopoverControllerDelegate, PreferencesWindowControllerDelegate, GPStandardUpdaterControllerDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NSScrollView *scrollView;
 @property (nonatomic, strong) ScreenshotCanvasView *canvasView;
@@ -1345,6 +1346,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSUndoManager *undoManager;
 @property (nonatomic, assign) BOOL usesDarkTheme;
 @property (nonatomic, assign) BOOL toolWidthMenuCanReset;
+@property (nonatomic, strong) GPStandardUpdaterController *updaterController;
 - (NSData *)clipboardPNGDataForPasteAsNewImage;
 - (NSURL *)temporaryClipboardImageURLForPNGData:(NSData *)pngData;
 - (BOOL)launchNewWindowForImageAtURL:(NSURL *)url;
@@ -1626,6 +1628,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     [self loadToolSettingsFromDefaults];
     [self.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
+    [self configureUpdater];
 
     [self selectTool:ScreenshotCanvasToolHighlighter];
     [self reflectZoomSelection];
@@ -1658,6 +1661,31 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         }
     }
 
+}
+
+- (void)configureUpdater {
+    NSError *error = nil;
+    self.updaterController = [[GPStandardUpdaterController alloc] initWithPackagedConfiguration:&error];
+    if (self.updaterController == nil) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Updater disabled: %@",
+                                 error.localizedDescription ?: @"unknown error"]);
+        return;
+    }
+
+    self.updaterController.delegate = self;
+    self.updaterController.parentWindow = self.window;
+    [self.updaterController start];
+    ScreenshotToolAppendLog(@"Updater initialized");
+}
+
+- (IBAction)checkForUpdates:(id)sender {
+    if (self.updaterController == nil) {
+        ScreenshotToolAppendLog(@"Manual update check requested, but updater is unavailable");
+        NSBeep();
+        return;
+    }
+
+    [self.updaterController checkForUpdates:sender];
 }
 
 - (BOOL)application:(NSApplication *)sender openFile:(NSString *)filename {
@@ -1708,6 +1736,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         action == @selector(zoomIn:) ||
         action == @selector(zoomOut:)) {
         return [self.canvasView hasImage];
+    }
+    if (action == @selector(checkForUpdates:)) {
+        return (self.updaterController != nil);
     }
     return YES;
 }
@@ -1769,6 +1800,13 @@ static id STInfoValueForKey(NSString *key) {
     [preferencesItem setTarget:self];
     [preferencesItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
     [appMenu addItem:preferencesItem];
+
+    NSMenuItem *checkForUpdatesItem = [[NSMenuItem alloc] initWithTitle:@"Check for Updates…"
+                                                                 action:@selector(checkForUpdates:)
+                                                          keyEquivalent:@""];
+    [checkForUpdatesItem setTarget:self];
+    [appMenu addItem:checkForUpdatesItem];
+
     [appMenu addItem:[NSMenuItem separatorItem]];
 
     NSString *quitTitle = [NSString stringWithFormat:@"Quit %@", appName];

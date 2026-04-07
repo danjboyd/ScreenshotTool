@@ -23,6 +23,10 @@ USE_OPENSAVE ?= 1
 OPENSAVE_DIR := $(CURDIR)/third_party/libs-OpenSave
 OPENSAVE_SOURCE_DIR := $(OPENSAVE_DIR)/Source
 OPENSAVE_LIB_DIR := $(OPENSAVE_SOURCE_DIR)/obj
+UPDATER_ROOT := $(CURDIR)/third_party/gnustep-packager-updater/objc
+UPDATER_CORE_DIR := $(UPDATER_ROOT)/GPUpdaterCore
+UPDATER_UI_DIR := $(UPDATER_ROOT)/GPUpdaterUI
+UPDATER_HELPER_DIR := $(UPDATER_ROOT)/gp-update-helper
 
 ScreenshotTool_RESOURCE_DIRS =
 ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
@@ -155,6 +159,11 @@ CC = $(CLANG_WRAPPER)
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
 ADDITIONAL_OBJCFLAGS += -DHAVE_MODE_T
 ScreenshotTool_CPPFLAGS += $(FONTCONFIG_CFLAGS)
+ADDITIONAL_INCLUDE_DIRS += -I$(UPDATER_CORE_DIR)/Headers
+ADDITIONAL_INCLUDE_DIRS += -I$(UPDATER_UI_DIR)/Headers
+ADDITIONAL_LIB_DIRS += -L$(UPDATER_CORE_DIR)
+ADDITIONAL_LIB_DIRS += -L$(UPDATER_UI_DIR)
+ADDITIONAL_GUI_LIBS += -lGPUpdaterUI -lGPUpdaterCore
 ADDITIONAL_LDFLAGS += $(FONTCONFIG_LDFLAGS)
 ADDITIONAL_LDFLAGS += -lstdc++
 ADDITIONAL_LDFLAGS += -lobjc
@@ -171,7 +180,7 @@ endif
 
 include $(GNUSTEP_MAKEFILES)/application.make
 
-.PHONY: tests tests-only clean-tests opensave-lib
+.PHONY: tests tests-only clean-tests opensave-lib updater-core updater-ui updater-helper
 
 ifeq ($(USE_OPENSAVE),1)
 before-all:: opensave-lib
@@ -185,6 +194,29 @@ opensave-lib:
 	@echo "Building libs-OpenSave..."
 	@$(MAKE) -C "$(OPENSAVE_SOURCE_DIR)"
 endif
+
+before-all:: updater-core updater-ui updater-helper
+
+updater-core:
+	@if [ ! -f "$(UPDATER_CORE_DIR)/Makefile" ]; then \
+		echo "Vendored GPUpdaterCore sources are missing."; \
+		exit 1; \
+	fi
+	@$(MAKE) -C "$(UPDATER_CORE_DIR)"
+
+updater-ui:
+	@if [ ! -f "$(UPDATER_UI_DIR)/Makefile" ]; then \
+		echo "Vendored GPUpdaterUI sources are missing."; \
+		exit 1; \
+	fi
+	@$(MAKE) -C "$(UPDATER_UI_DIR)"
+
+updater-helper:
+	@if [ ! -f "$(UPDATER_HELPER_DIR)/Makefile" ]; then \
+		echo "Vendored gp-update-helper sources are missing."; \
+		exit 1; \
+	fi
+	@$(MAKE) -C "$(UPDATER_HELPER_DIR)"
 
 tests:
 	@echo "Building test bundle..."
@@ -207,9 +239,26 @@ after-all:: Resources/Info-gnustep.plist
 	else \
 		echo "Warning: could not locate bundle Resources directory to copy Info-gnustep.plist"; \
 	fi
+	@helper_source=""; \
+	if [ -x "$(UPDATER_HELPER_DIR)/gp-update-helper" ]; then \
+		helper_source="$(UPDATER_HELPER_DIR)/gp-update-helper"; \
+	elif [ -x "$(UPDATER_HELPER_DIR)/gp-update-helper.exe" ]; then \
+		helper_source="$(UPDATER_HELPER_DIR)/gp-update-helper.exe"; \
+	fi; \
+	if [ -n "$$helper_source" ]; then \
+		cp "$$helper_source" ScreenshotTool.app/gp-update-helper; \
+		if printf '%s' "$$helper_source" | grep -q '\.exe$$'; then \
+			cp "$$helper_source" ScreenshotTool.app/gp-update-helper.exe; \
+		fi; \
+	else \
+		echo "Warning: gp-update-helper was not built; packaged updater integration will be incomplete"; \
+	fi
 
 clean-tests:
 	@echo "Cleaning test bundle..."
 	@$(MAKE) -C Tests clean
 
 clean:: clean-tests
+	@$(MAKE) -C "$(UPDATER_HELPER_DIR)" clean
+	@$(MAKE) -C "$(UPDATER_UI_DIR)" clean
+	@$(MAKE) -C "$(UPDATER_CORE_DIR)" clean

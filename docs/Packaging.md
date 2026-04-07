@@ -1,59 +1,201 @@
-# Packaging (AppImage & macOS DMG)
+# Packaging
 
-## Prerequisites
-- GNUstep toolchain (gnustep-make/base/gui/back) and build deps installed.
-- Linux AppImage: `linuxdeploy` + `linuxdeploy-plugin-appimage` must be available and executable.
-- macOS DMG: Xcode command line tools installed. No GNUstep runtime needed when using the Cocoa build.
+## Current Packaging Model
 
-## Build the App Bundles
-- Linux: `git submodule update --init --recursive && make -j"$(nproc)"` to produce `ScreenshotTool.app/` (GNUstep with `libs-OpenSave` enabled by default).
-  - Fallback GNUstep-only build: `make USE_OPENSAVE=0 -j"$(nproc)"`.
-- macOS (Cocoa-native): `scripts/build_cocoa.sh` → `build/cocoa/ScreenshotTool.app/`.
+ScreenshotTool now has two packaging paths:
 
-## Smoke Test on macOS
-- `scripts/smoke_macos_app.sh [path/to/ScreenshotTool.app]`  
-  Runs the binary for a few seconds and writes startup logs to `screenshottool-smoke.log`.
+- legacy local AppImage packaging through `scripts/package_appimage.sh`
+- release packaging through `gnustep-packager` using:
+  - `packaging/package.manifest.json`
+  - `scripts/build_release.ps1`
+  - `scripts/stage_release.ps1`
+  - `.github/workflows/release.yml`
 
-## Package an AppImage (Linux)
+The release path is the authoritative one for phase 11. It is responsible for:
+
+- Windows MSI packaging
+- Linux AppImage packaging
+- updater runtime config emission
+- `.update-feed.json` sidecar generation
+- GitHub Release asset publication
+- GitHub Pages feed publication
+
+## Local Build And Stage
+
+Build the GNUstep app plus updater components:
+
 ```bash
-LINUXDEPLOY=/path/to/linuxdeploy-x86_64.AppImage \
-LINUXDEPLOY_PLUGIN_APPIMAGE=/path/to/linuxdeploy-plugin-appimage-x86_64.AppImage \
-scripts/package_appimage.sh
-```
-- Output: `Staging/ScreenshotTool-x86_64.AppImage` plus `Staging/ScreenshotTool-x86_64.AppImage.sha256`.
-
-To smoke-test the packaged artifact:
-```bash
-scripts/smoke_appimage.sh Staging/ScreenshotTool-x86_64.AppImage
-```
-
-To emit a versioned filename for releases:
-```bash
-OUTPUT_NAME=ScreenshotTool-v0.1.0-x86_64.AppImage scripts/package_appimage.sh
+pwsh -NoProfile -File scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json
 ```
 
-## Package a DMG (macOS)
+That builds:
+
+- `third_party/libs-OpenSave`
+- `third_party/gnustep-packager-updater/objc/GPUpdaterCore`
+- `third_party/gnustep-packager-updater/objc/GPUpdaterUI`
+- `third_party/gnustep-packager-updater/objc/gp-update-helper`
+- `ScreenshotTool.app`
+
+The built app bundle should contain:
+
 ```bash
-scripts/package_macos_dmg.sh build/cocoa/ScreenshotTool.app
-DMG_NAME=ScreenshotTool-preview.dmg scripts/package_macos_dmg.sh build/cocoa/ScreenshotTool.app
+find ScreenshotTool.app -maxdepth 1 -name 'gp-update-helper*' | sort
 ```
-- Optional codesign: set `CODESIGN_IDENTITY="Developer ID Application: …"` to deep-sign the app and DMG.
-- Optional notarization: set `NOTARIZE_APPLE_ID`, `NOTARIZE_TEAM_ID`, and `NOTARIZE_PASSWORD` to submit and staple.
-- Output: `Staging/ScreenshotTool-macOS.dmg` (name overridable via `DMG_NAME`) plus SHA-256.
 
-## CI Hooks
-- `.github/workflows/build.yml` builds the Ubuntu AppImage job on pushes, pull requests, and manual dispatches, smoke-tests the resulting AppImage, and uploads it as a workflow artifact.
-- Pushing a version tag like `v0.1.0` also publishes the generated AppImage and `.sha256` file to a GitHub Release.
-- The macOS DMG flow is scripted locally with `scripts/build_cocoa.sh` and `scripts/package_macos_dmg.sh`, but its CI job is still disabled.
+Stage the release payload:
 
-## Release Flow
-1. Make sure the target commit on `main` is the one you want to publish.
-2. Create an annotated tag, for example:
-   ```bash
-   git tag -a v0.1.0 -m "v0.1.0"
-   ```
-3. Push the tag:
-   ```bash
-   git push origin v0.1.0
-   ```
-4. GitHub Actions will build `ScreenshotTool-v0.1.0-x86_64.AppImage`, smoke-test it, generate a checksum, and attach both files to the GitHub Release for that tag.
+```bash
+pwsh -NoProfile -File scripts/stage_release.ps1 -ManifestPath packaging/package.manifest.json -StageRoot dist/stage
+```
+
+This produces the shared packager layout:
+
+- `dist/stage/app/`
+- `dist/stage/runtime/`
+- `dist/stage/metadata/`
+
+The staged app bundle should contain:
+
+```bash
+find dist/stage/app/ScreenshotTool.app -maxdepth 1 -name 'gp-update-helper*' | sort
+```
+
+## Local Validation
+
+Shared layout validation:
+
+```bash
+pwsh -NoProfile -File /home/danboyd/git/gnustep/gnustep-packager/scripts/gnustep-packager.ps1 -Command validate -Manifest /home/danboyd/git/ScreenshotTool/packaging/package.manifest.json
+```
+
+Version-override spot check:
+
+```bash
+pwsh -NoProfile -File /home/danboyd/git/gnustep/gnustep-packager/scripts/gnustep-packager.ps1 -Command resolve-manifest -Manifest /home/danboyd/git/ScreenshotTool/packaging/package.manifest.json -PackageVersion 1.2.3
+```
+
+Linux runpath spot check:
+
+```bash
+readelf -d dist/stage/app/ScreenshotTool.app/ScreenshotTool | rg 'RUNPATH|RPATH'
+```
+
+Important local limitation:
+
+- this development machine does not currently have `patchelf`
+- `scripts/stage_release.ps1` therefore warns and leaves the host `RUNPATH` in place locally
+- the CI bootstrap script installs `patchelf`, so release CI should not inherit that local limitation
+
+## CI Workflows
+
+### `build.yml`
+
+`.github/workflows/build.yml` is now a non-tag build job:
+
+- runs on pushes, pull requests, and manual dispatches
+- ignores `v*` tags
+- bootstraps GNUstep on Linux
+- builds the app with `scripts/build_release.ps1`
+- still produces the legacy AppImage artifact path for general CI feedback
+
+### `release.yml`
+
+`.github/workflows/release.yml` is the release workflow:
+
+- triggers on `v*` tags and manual dispatch
+- strips the leading `v` and passes the normalized package version into `gnustep-packager`
+- packages:
+  - `msi`
+  - `appimage`
+- publishes package artifacts to GitHub Releases
+- publishes updater feeds to GitHub Pages at:
+  - `updates/windows/stable.json`
+  - `updates/linux/stable.json`
+
+## Release Artifacts
+
+The release workflow expects and publishes:
+
+- `.msi`
+- `.AppImage`
+- `.AppImage.zsync`
+- `.update-feed.json`
+- backend diagnostics sidecars when present
+- `SHA256SUMS`
+
+The packaged updater reads the stable feed URLs from the packaged runtime config.
+The feed documents themselves are published to GitHub Pages, while the asset URLs
+inside those feed documents point back to GitHub Release downloads.
+
+## Required Secrets
+
+The Windows MSI path supports signing through the reusable packager workflow.
+
+Configure these repository secrets before expecting signed MSI releases:
+
+- `WINDOWS_SIGN_PFX_BASE64`
+- `WINDOWS_SIGN_PFX_PASSWORD`
+- `WINDOWS_SIGN_CERT_SHA1`
+
+Current MSI signing metadata is declared in `packaging/package.manifest.json`.
+
+## Failure Handling
+
+The release workflow is designed to fail closed for feed publication:
+
+- it first publishes release assets as a draft release
+- it then uploads and deploys the GitHub Pages feed content
+- it only undrafts the GitHub release after Pages deployment succeeds
+
+If Pages deployment fails:
+
+- the workflow fails
+- the release stays draft
+- the release must be fixed and rerun before being considered published
+
+## Release Checklist
+
+1. Make sure the target commit on `main` is the one you want to ship.
+2. Confirm the manifest feed URLs still point at:
+   - `https://danjboyd.github.io/ScreenshotTool/updates/windows/stable.json`
+   - `https://danjboyd.github.io/ScreenshotTool/updates/linux/stable.json`
+3. Confirm Windows signing secrets are present if a signed MSI is required.
+4. Create an annotated tag:
+
+```bash
+git tag -a v0.1.0 -m "v0.1.0"
+git push origin v0.1.0
+```
+
+5. In GitHub Actions, verify:
+   - `package-windows` succeeded
+   - `package-linux` succeeded
+   - `publish-release-assets` succeeded
+6. In the published release, verify:
+   - `.msi` is attached
+   - `.AppImage` is attached
+   - `.AppImage.zsync` is attached
+   - `SHA256SUMS` is attached
+7. In Pages, verify:
+   - `/updates/windows/stable.json` exists
+   - `/updates/linux/stable.json` exists
+8. Smoke-test:
+   - fresh MSI install
+   - fresh AppImage launch
+   - in-app `Check for Updates…` against a newer release when available
+
+## Validation Gaps
+
+What has been validated locally:
+
+- updater components build and link
+- `gp-update-helper` lands in the app bundle
+- `gp-update-helper` lands in the staged bundle
+- shared manifest validation passes
+
+What still needs CI or cross-platform confirmation:
+
+- end-to-end Windows MSI packaging on `windows-latest`
+- end-to-end AppImage packaging through `release.yml`
+- GitHub Pages feed deployment
+- full upgrade flow on both platforms

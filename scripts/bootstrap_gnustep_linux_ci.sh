@@ -1,0 +1,150 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PREFIX="${PREFIX:-/usr/GNUstep}"
+BOOTSTRAP_ROOT="${BOOTSTRAP_ROOT:-$PWD/.ci/gnustep-bootstrap}"
+MAKE_CMD="${MAKE_CMD:-make -j$(nproc)}"
+CC="${CC:-clang}"
+CXX="${CXX:-clang++}"
+CC_FLAGS="${CC_FLAGS:--fblocks -fobjc-nonfragile-abi}"
+
+sudo apt-get update
+sudo apt-get install -y \
+  ninja-build cmake make clang llvm-dev gcc-multilib libc6-dev \
+  libicu-dev libxml2-dev libxslt1-dev libffi-dev libgmp-dev \
+  libavahi-client-dev libgnutls28-dev libudev-dev \
+  libpng-dev libtiff-dev libjpeg-dev libfreetype6-dev \
+  libx11-dev libxext-dev libxrandr-dev libxft-dev libxmu-dev \
+  libxrender-dev libxtst-dev libxt-dev libxcomposite-dev \
+  libxcursor-dev libcups2-dev libsndfile1-dev libdbus-1-dev \
+  rsync imagemagick patchelf curl git pkg-config ca-certificates \
+  squashfs-tools desktop-file-utils
+
+mkdir -p "${BOOTSTRAP_ROOT}"
+cd "${BOOTSTRAP_ROOT}"
+
+export PREFIX
+export CC
+export CXX
+export MAKE="${MAKE_CMD}"
+export LDFLAGS="-L${PREFIX}/lib -fuse-ld=ld"
+export LD_LIBRARY_PATH="${PREFIX}/lib"
+export PKG_CONFIG_PATH="${PREFIX}/lib/pkgconfig"
+export CPPFLAGS="-I${PREFIX}/include"
+export PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}"
+export GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles"
+export ZSH_VERSION=""
+export GNUSTEP_CONFIG_FILE=""
+export GNUSTEP_USER_CONFIG_FILE=""
+
+source_gnustep_env() {
+  set +u
+  . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
+  set -u
+  export PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}"
+  export GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles"
+}
+
+clone_or_refresh() {
+  local repo_url="$1"
+  local dir_name="$2"
+  if [ -d "${dir_name}/.git" ]; then
+    git -C "${dir_name}" fetch --depth 1 origin
+    git -C "${dir_name}" reset --hard FETCH_HEAD
+  else
+    git clone --depth 1 "${repo_url}" "${dir_name}"
+  fi
+}
+
+clone_or_refresh https://github.com/gnustep/libobjc2.git libobjc2
+pushd libobjc2 >/dev/null
+mkdir -p Build
+cd Build
+cmake -G Ninja .. \
+  -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER="${CC}" \
+  -DCMAKE_CXX_COMPILER="${CXX}" \
+  -DCMAKE_OBJC_COMPILER="${CC}" \
+  -DCMAKE_EXE_LINKER_FLAGS="${LDFLAGS}" \
+  -DCMAKE_SHARED_LINKER_FLAGS="${LDFLAGS}" \
+  -DTESTS=OFF
+ninja
+sudo ninja install
+popd >/dev/null
+
+clone_or_refresh https://github.com/apple/swift-corelibs-libdispatch.git libdispatch
+pushd libdispatch >/dev/null
+mkdir -p Build
+cd Build
+cmake -G Ninja .. \
+  -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER="${CC}" \
+  -DCMAKE_CXX_COMPILER="${CXX}" \
+  -DCMAKE_EXE_LINKER_FLAGS="${LDFLAGS}" \
+  -DCMAKE_SHARED_LINKER_FLAGS="${LDFLAGS}" \
+  -DENABLE_TESTING=OFF \
+  -DWITH_LIBKQUEUE=ON \
+  -DWITH_BLOCKS_RUNTIME=ON
+ninja
+sudo ninja install
+popd >/dev/null
+
+clone_or_refresh https://github.com/gnustep/tools-make.git gnustep-make
+pushd gnustep-make >/dev/null
+CCFLAGS="${CC_FLAGS}" CXX="${CXX}" CC="${CC}" \
+  ./configure --prefix="${PREFIX}" --with-library-combo=ng-gnu-gnu \
+              --enable-objc-arc --enable-native-objc-exceptions \
+              --with-layout=gnustep
+${MAKE}
+sudo ${MAKE} install
+source_gnustep_env
+popd >/dev/null
+
+clone_or_refresh https://github.com/gnustep/libs-base.git libs-base
+pushd libs-base >/dev/null
+source_gnustep_env
+./configure --disable-newkvo --prefix="${PREFIX}"
+PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+  GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+  LDFLAGS="${LDFLAGS} -ldispatch" \
+  ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
+sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+  GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+  make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
+popd >/dev/null
+
+clone_or_refresh https://github.com/gnustep/libs-gui.git libs-gui
+pushd libs-gui >/dev/null
+source_gnustep_env
+./configure --enable-imagemagick --prefix="${PREFIX}"
+PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+  GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+  ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
+sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+  GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+  make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
+popd >/dev/null
+
+clone_or_refresh https://github.com/gnustep/libs-back.git libs-back
+pushd libs-back >/dev/null
+source_gnustep_env
+PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+  GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+  ${MAKE} GNUSTEP_INSTALLATION_DOMAIN=SYSTEM debug=yes
+sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+  GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+  make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
+popd >/dev/null
+
+clone_or_refresh https://github.com/gnustep/plugins-themes-sombre.git plugins-themes-sombre
+pushd plugins-themes-sombre >/dev/null
+source_gnustep_env
+PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+  GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+  ${MAKE} messages=yes
+sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+  GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+  make install
+popd >/dev/null
