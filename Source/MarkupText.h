@@ -38,7 +38,7 @@ NS_ASSUME_NONNULL_BEGIN
                       boxSize:(NSSize)boxSize;
 
 - (NSAttributedString *)attributedString;
-- (void)drawInCanvas;
+- (void)drawInCanvasAtScale:(CGFloat)scale;
 - (void)renderInContext:(NSGraphicsContext *)context canvasSize:(NSSize)canvasSize;
 - (BOOL)containsPoint:(NSPoint)point;
 - (void)updateMeasuredSize;

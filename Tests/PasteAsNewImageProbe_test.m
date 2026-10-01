@@ -6,6 +6,7 @@
 #import <XCTest/XCTest.h>
 #import <AppKit/AppKit.h>
 #import "AppDelegate.h"
+#import "ScreenshotToolSettings.h"
 #import "TestEnvironmentHelpers.h"
 
 @interface AppDelegate (PasteAsNewImageTesting)
@@ -13,6 +14,11 @@
 - (NSData *)clipboardPNGDataForPasteAsNewImage;
 - (BOOL)launchNewWindowForImageAtURL:(NSURL *)url;
 - (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
+- (void)setupWindowAndContent;
+- (BOOL)openImageAtURL:(NSURL *)url;
+- (NSWindow *)window;
+- (NSURL *)currentImageURL;
+- (void)setupMenus;
 @end
 
 @interface PasteAsNewImageProbeAppDelegate : AppDelegate
@@ -109,6 +115,50 @@
 
     XCTAssertNil(_appDelegate.launchedImageURL, @"Missing clipboard image should not launch a new window");
     XCTAssertEqualObjects(_appDelegate.lastTransientFeedbackMessage, @"Clipboard does not contain an image");
+}
+
+- (void)testPastedImageOpensAsUntitledDocument {
+    _appDelegate.probeClipboardPNGData = [self onePixelPNGData];
+    [_appDelegate pasteAsNewImage:nil];
+    NSURL *temporaryURL = _appDelegate.launchedImageURL;
+    XCTAssertNotNil(temporaryURL);
+
+    // The launched instance opens the temp file like any other path.
+    AppDelegate *pastedInstance = [[AppDelegate alloc] init];
+    @try {
+        [pastedInstance setupWindowAndContent];
+    } @catch (NSException *exception) {
+        NSLog(@"Skipping test: failed to connect to window server (%@)", [exception reason]);
+        return;
+    }
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsRecentDocumentsKey];
+
+    XCTAssertTrue([pastedInstance openImageAtURL:temporaryURL], @"Pasted image should open");
+    XCTAssertEqualObjects(pastedInstance.window.title, @"Pasted Image", @"Window should not be titled with the temp path");
+    XCTAssertNil(pastedInstance.currentImageURL, @"Pasted image should be untitled so Save As uses the save folder");
+    NSArray *recents = [[NSUserDefaults standardUserDefaults] arrayForKey:STDefaultsRecentDocumentsKey];
+    XCTAssertFalse([recents containsObject:temporaryURL.path], @"Temp file should not be added to Open Recent");
+    XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:temporaryURL.path], @"Temp file should be removed once loaded");
+}
+
+- (void)testPasteAsNewImageShortcutUsesCommandModifier {
+    [_appDelegate setupMenus];
+    NSMenuItem *pasteItem = nil;
+    for (NSMenuItem *topItem in [[NSApp mainMenu] itemArray]) {
+        NSInteger index = [topItem.submenu indexOfItemWithTitle:@"Paste as New Image"];
+        if (index >= 0) {
+            pasteItem = [topItem.submenu itemAtIndex:index];
+            break;
+        }
+    }
+    XCTAssertNotNil(pasteItem, @"Edit menu should contain Paste as New Image");
+
+    // GNUstep sends the Ctrl key as Command, like every other shortcut in the app.
+    NSUInteger mask = pasteItem.keyEquivalentModifierMask;
+    XCTAssertTrue((mask & NSEventModifierFlagCommand) != 0, @"Shortcut should use the Command modifier");
+    XCTAssertTrue((mask & NSEventModifierFlagShift) != 0, @"Shortcut should use Shift");
+    XCTAssertTrue((mask & NSEventModifierFlagControl) == 0, @"A Control mask is unreachable from the Ctrl key on GNUstep");
+    XCTAssertEqualObjects(pasteItem.keyEquivalent.lowercaseString, @"v");
 }
 
 @end

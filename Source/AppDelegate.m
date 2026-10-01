@@ -128,6 +128,12 @@ static NSString *STDefaultLogFilePath(void) {
 #endif
 }
 
+static NSString *const STPastedImageTitle = @"Pasted Image";
+
+static NSString *STTemporaryClipboardDirectory(void) {
+    return [NSTemporaryDirectory() stringByAppendingPathComponent:@"ScreenshotToolClipboard"];
+}
+
 static NSString *STDefaultSaveDirectoryPath(void) {
     NSFileManager *fileManager = [NSFileManager defaultManager];
     NSString *home = STHomeDirectory();
@@ -1350,6 +1356,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) GPStandardUpdaterController *updaterController;
 - (NSData *)clipboardPNGDataForPasteAsNewImage;
 - (NSURL *)temporaryClipboardImageURLForPNGData:(NSData *)pngData;
+- (BOOL)isTemporaryClipboardImageURL:(NSURL *)url;
 - (BOOL)launchNewWindowForImageAtURL:(NSURL *)url;
 - (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
 @end
@@ -1883,11 +1890,9 @@ static id STInfoValueForKey(NSString *key) {
                                                             action:@selector(pasteAsNewImage:)
                                                      keyEquivalent:@"V"];
     [pasteAsNewItem setTarget:self];
-#if defined(GNUSTEP)
-    [pasteAsNewItem setKeyEquivalentModifierMask:(NSEventModifierFlagControl | NSEventModifierFlagShift)];
-#else
+    // Command like every other shortcut: GNUstep maps the Ctrl key to Command, so a Control mask
+    // made the displayed Ctrl+Shift+V unreachable.
     [pasteAsNewItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
-#endif
     [editMenu addItem:pasteAsNewItem];
 
     NSMenuItem *cropSelectionItem = [[NSMenuItem alloc] initWithTitle:@"Crop to Selection"
@@ -4775,11 +4780,14 @@ static id STInfoValueForKey(NSString *key) {
     if (self.currentImageURL) {
         [panel setDirectoryURL:self.currentImageURL.URLByDeletingLastPathComponent];
         [panel setNameFieldStringValue:self.currentImageURL.lastPathComponent];
-    } else if (self.defaultSaveDirectory.length > 0) {
-        NSURL *dirURL = [NSURL fileURLWithPath:self.defaultSaveDirectory];
-        if (dirURL) {
-            [panel setDirectoryURL:dirURL];
+    } else {
+        if (self.defaultSaveDirectory.length > 0) {
+            NSURL *dirURL = [NSURL fileURLWithPath:self.defaultSaveDirectory];
+            if (dirURL) {
+                [panel setDirectoryURL:dirURL];
+            }
         }
+        [panel setNameFieldStringValue:[STPastedImageTitle stringByAppendingPathExtension:@"png"]];
     }
 
     if ([panel runModal] != NSModalResponseOK) {
@@ -4923,12 +4931,20 @@ static id STInfoValueForKey(NSString *key) {
     return nil;
 }
 
+- (BOOL)isTemporaryClipboardImageURL:(NSURL *)url {
+    if (!url.isFileURL) {
+        return NO;
+    }
+    NSString *directory = [[url.path stringByDeletingLastPathComponent] stringByStandardizingPath];
+    return [directory isEqualToString:[STTemporaryClipboardDirectory() stringByStandardizingPath]];
+}
+
 - (NSURL *)temporaryClipboardImageURLForPNGData:(NSData *)pngData {
     if (pngData.length == 0) {
         return nil;
     }
 
-    NSString *root = [NSTemporaryDirectory() stringByAppendingPathComponent:@"ScreenshotToolClipboard"];
+    NSString *root = STTemporaryClipboardDirectory();
     NSError *error = nil;
     if (![[NSFileManager defaultManager] createDirectoryAtPath:root
                                    withIntermediateDirectories:YES
@@ -5594,10 +5610,17 @@ static id STInfoValueForKey(NSString *key) {
                              url.path ?: url.absoluteString ?: @"<unknown>",
                              size.width,
                              size.height]);
-    self.currentImageURL = url;
-    [self addRecentDocumentURL:url];
     [self.canvasView loadImage:image];
-    [self.window setTitleWithRepresentedFilename:url.path];
+    if ([self isTemporaryClipboardImageURL:url]) {
+        // Paste as New Image hands us a temp file; present it as an untitled document instead.
+        self.currentImageURL = nil;
+        [self.window setTitle:STPastedImageTitle];
+        [[NSFileManager defaultManager] removeItemAtURL:url error:NULL];
+    } else {
+        self.currentImageURL = url;
+        [self addRecentDocumentURL:url];
+        [self.window setTitleWithRepresentedFilename:url.path];
+    }
     [self resizeWindowToImageSize:image.size];
     [self.canvasView updateForEnclosingBoundsChange];
     [self reflectZoomSelection];

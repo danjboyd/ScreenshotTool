@@ -2349,6 +2349,8 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
     [textView setBackgroundColor:background];
 #endif
+    // No padding, so text sits at the box origin as it will once committed and exported.
+    [[textView textContainer] setLineFragmentPadding:0.0];
     [textView setTextColor:entry.color];
     [textView setFont:[self scaledFontForEditingWithBaseFont:entry.font]];
     [textView setInsertionPointColor:entry.color];
@@ -2476,18 +2478,19 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     [self.currentStroke drawPath];
 
+    [NSGraphicsContext restoreGraphicsState];
+
+    // Text draws in view coordinates with a zoomed font so it matches the editing text view.
     BOOL isEditingExistingText = (self.activeTextView && self.currentTextEntry && [self.texts containsObject:self.currentTextEntry]);
     for (MarkupText *text in self.texts) {
         if (isEditingExistingText && text == self.currentTextEntry) {
             continue; // Hide stored text while editing to avoid double draw.
         }
-        [text drawInCanvas];
+        [text drawInCanvasAtScale:self.zoomScale];
     }
     if (self.currentTextEntry && !self.activeTextView) {
-        [self.currentTextEntry drawInCanvas];
+        [self.currentTextEntry drawInCanvasAtScale:self.zoomScale];
     }
-
-    [NSGraphicsContext restoreGraphicsState];
 
     if (self.activeTool == ScreenshotCanvasToolText) {
         [self drawTextGuides];
