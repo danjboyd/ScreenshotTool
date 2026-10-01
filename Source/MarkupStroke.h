@@ -41,6 +41,7 @@ typedef NS_ENUM(NSInteger, MarkupStrokeType) {
 - (BOOL)containsPoint:(NSPoint)point tolerance:(CGFloat)tolerance;
 - (NSBezierPath *)path;
 - (void)renderInContext:(NSGraphicsContext *)context canvasSize:(NSSize)size;
-- (void)translateByOffset:(NSPoint)offset clampToSize:(NSSize)size;
+- (NSRect)bounds;
+- (void)translateByOffset:(NSPoint)offset;
 
 @end

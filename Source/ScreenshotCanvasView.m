@@ -1102,7 +1102,6 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) CGFloat selectionDashPhase;
 @property (nonatomic, assign) NSTrackingRectTag cursorTrackingTag;
 @property (nonatomic, assign) BOOL mouseInsideCanvas;
-@property (nonatomic, assign) NSSize fitToWindowBaselineClipSize;
 @end
 
 @implementation ScreenshotCanvasView
@@ -1147,7 +1146,6 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
         _selectionDashPhase = 0.0f;
         _cursorTrackingTag = 0;
         _mouseInsideCanvas = NO;
-        _fitToWindowBaselineClipSize = NSZeroSize;
         [self setPostsFrameChangedNotifications:YES];
     }
     return self;
@@ -2000,7 +1998,6 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [self clearSelection];
     _zoomScale = 1.0;
     self.fitToWindow = YES;
-    self.fitToWindowBaselineClipSize = NSZeroSize;
     [self updateForEnclosingBoundsChange];
     [self setNeedsDisplay:YES];
 }
@@ -2037,9 +2034,6 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         return;
     }
     _fitToWindow = fitToWindow;
-    if (fitToWindow) {
-        self.fitToWindowBaselineClipSize = NSZeroSize;
-    }
     if (fitToWindow) {
         [self updateForEnclosingBoundsChange];
     }
@@ -2430,28 +2424,24 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         return;
     }
 
-    NSClipView *clipView = self.hostScrollView.contentView;
-    NSRect clipBounds = clipView.bounds;
     NSSize imageSize = self.image.size;
     if (imageSize.width <= 0.0 || imageSize.height <= 0.0) {
         return;
     }
 
-    if (self.fitToWindowBaselineClipSize.width <= 0.0 || self.fitToWindowBaselineClipSize.height <= 0.0) {
-        self.fitToWindowBaselineClipSize = clipBounds.size;
+    // Measure the viewport as if no scrollers were shown. Autohiding scrollers appear while a
+    // previous zoom overflows and would otherwise leave Fit a few pixels short of 100%.
+    NSSize available = [NSScrollView contentSizeForFrameSize:self.hostScrollView.frame.size
+                                       hasHorizontalScroller:NO
+                                         hasVerticalScroller:NO
+                                                  borderType:self.hostScrollView.borderType];
+    if (available.width <= 0.0 || available.height <= 0.0) {
+        return;
     }
 
-    CGFloat scaleX = clipBounds.size.width / imageSize.width;
-    CGFloat scaleY = clipBounds.size.height / imageSize.height;
-    CGFloat newScale = MIN(scaleX, scaleY);
-    if (fabs(scaleX - scaleY) < 0.0005f) {
-        newScale = scaleX;
-    }
-    BOOL clipExpanded = (clipBounds.size.width - self.fitToWindowBaselineClipSize.width > 0.5f) ||
-                        (clipBounds.size.height - self.fitToWindowBaselineClipSize.height > 0.5f);
-    CGFloat maxScale = clipExpanded ? 8.0f : 1.0f;
-    newScale = MIN(newScale, maxScale);
-    newScale = MAX(0.05, MIN(newScale, 8.0));
+    // Fit only ever shrinks: upscaling a screenshot just blurs it.
+    CGFloat newScale = MIN(available.width / imageSize.width, available.height / imageSize.height);
+    newScale = MAX(0.05, MIN(newScale, 1.0));
     _zoomScale = newScale;
     [self updateFrameSize];
     [self setNeedsDisplay:YES];
@@ -3118,11 +3108,14 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
 
     NSPoint offset = clipRect.origin;
-    NSSize newSize = croppedImage.size;
 
+    // Drop annotations entirely outside the crop; partially covered ones are clipped when drawn.
     NSMutableArray<MarkupStroke *> *updatedStrokes = [[NSMutableArray alloc] initWithCapacity:self.strokes.count];
     for (MarkupStroke *stroke in self.strokes) {
-        [stroke translateByOffset:offset clampToSize:newSize];
+        if (!NSIntersectsRect([stroke bounds], clipRect)) {
+            continue;
+        }
+        [stroke translateByOffset:offset];
         [updatedStrokes addObject:stroke];
     }
     self.strokes = updatedStrokes;
@@ -3132,7 +3125,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         if (!NSIntersectsRect([text bounds], clipRect)) {
             continue;
         }
-        [text translateByOffset:offset clampToSize:newSize];
+        [text translateByOffset:offset];
         [updatedTexts addObject:text];
     }
     self.texts = updatedTexts;
@@ -3163,6 +3156,58 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
 - (void)restoreSnapshotForUndo:(NSDictionary *)snapshot {
     [self restoreCanvasStateFromSnapshot:snapshot registeringUndo:YES];
+}
+
+@end
+
+@implementation STCanvasClipView
+
+- (instancetype)initWithFrame:(NSRect)frameRect {
+    self = [super initWithFrame:frameRect];
+    if (self) {
+        [self setDrawsBackground:YES];
+        [self setBackgroundColor:STThemeCanvasBackdropColor()];
+    }
+    return self;
+}
+
+- (NSPoint)centeredOrigin:(NSPoint)origin forClipSize:(NSSize)clipSize {
+    NSView *documentView = self.documentView;
+    if (!documentView) {
+        return origin;
+    }
+    NSRect documentFrame = documentView.frame;
+    if (documentFrame.size.width < clipSize.width) {
+        origin.x = floor(NSMinX(documentFrame) - ((clipSize.width - documentFrame.size.width) * 0.5));
+    }
+    if (documentFrame.size.height < clipSize.height) {
+        origin.y = floor(NSMinY(documentFrame) - ((clipSize.height - documentFrame.size.height) * 0.5));
+    }
+    return origin;
+}
+
+// GNUstep routes every scroll, resize and document frame change through this.
+- (NSPoint)constrainScrollPoint:(NSPoint)proposedNewOrigin {
+    NSPoint constrained = [super constrainScrollPoint:proposedNewOrigin];
+    return [self centeredOrigin:constrained forClipSize:self.bounds.size];
+}
+
+#if !defined(GNUSTEP)
+- (NSRect)constrainBoundsRect:(NSRect)proposedBounds {
+    NSRect constrained = [super constrainBoundsRect:proposedBounds];
+    constrained.origin = [self centeredOrigin:constrained.origin forClipSize:constrained.size];
+    return constrained;
+}
+#endif
+
+- (void)drawRect:(NSRect)dirtyRect {
+    [super drawRect:dirtyRect];
+    NSView *documentView = self.documentView;
+    if (!documentView || NSContainsRect(documentView.frame, self.bounds)) {
+        return;
+    }
+    [STThemeCanvasImageBorderColor() setFill];
+    NSFrameRectWithWidth(NSInsetRect(documentView.frame, -1.0, -1.0), 1.0);
 }
 
 @end

@@ -17,6 +17,7 @@
 #import <Foundation/NSTask.h>
 #if defined(GNUSTEP)
 #import <AppKit/NSSegmentedCell.h>
+#import <GNUstepGUI/GSTheme.h>
 #endif
 
 #ifndef NSAboutPanelOptionApplicationIcon
@@ -1622,6 +1623,12 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     STConfigureOpenSaveModeFromEnvironment();
 #endif
     self.usesDarkTheme = STThemeIsDark();
+#if defined(GNUSTEP)
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(themeDidActivate:)
+                                                 name:GSThemeDidActivateNotification
+                                               object:nil];
+#endif
     [self setupWindowAndContent];
     [self setupToolbar];
     self.lastWidthTool = ScreenshotCanvasToolHighlighter;
@@ -1986,6 +1993,8 @@ static id STInfoValueForKey(NSString *key) {
     [self.scrollView setAutohidesScrollers:YES];
     [self.scrollView setBorderType:NSNoBorder];
     [self.scrollView setDrawsBackground:NO];
+    STCanvasClipView *clipView = [[STCanvasClipView alloc] initWithFrame:self.scrollView.contentView.frame];
+    [self.scrollView setContentView:clipView];
 
     self.canvasView = [[ScreenshotCanvasView alloc] initWithFrame:self.scrollView.contentView.bounds];
     self.canvasView.hostScrollView = self.scrollView;
@@ -3296,6 +3305,17 @@ static id STInfoValueForKey(NSString *key) {
     [self refreshInterfaceThemeAppearance];
 }
 
+#if defined(GNUSTEP)
+- (void)themeDidActivate:(NSNotification *)notification {
+    // A newly activated theme can change whether Auto resolves to the light or dark icons.
+    BOOL dark = STThemeIsDark();
+    if (dark != self.usesDarkTheme) {
+        self.usesDarkTheme = dark;
+        [self refreshInterfaceThemeAppearance];
+    }
+}
+#endif
+
 - (void)resetInterfaceThemePreferenceToDefault {
     [self updateInterfaceThemePreference:STInterfaceThemePreferenceAutoValue persist:YES];
 }
@@ -3330,6 +3350,10 @@ static id STInfoValueForKey(NSString *key) {
     }
     if (self.canvasView) {
         [self.canvasView setNeedsDisplay:YES];
+    }
+    if ([self.scrollView.contentView isKindOfClass:[STCanvasClipView class]]) {
+        [self.scrollView.contentView setBackgroundColor:STThemeCanvasBackdropColor()];
+        [self.scrollView.contentView setNeedsDisplay:YES];
     }
     if (self.window.contentView) {
         [self.window.contentView setNeedsDisplay:YES];

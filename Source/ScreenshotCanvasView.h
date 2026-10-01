@@ -60,6 +60,11 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 
 @end
 
+/// Clip view for the canvas scroll view: centres an image smaller than the viewport on a
+/// contrasting backdrop and outlines it, so the image edge stays visible on any screenshot.
+@interface STCanvasClipView : NSClipView
+@end
+
 NS_ASSUME_NONNULL_END
 #import <AppKit/AppKit.h>
 

@@ -43,7 +43,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)containsPoint:(NSPoint)point;
 - (void)updateMeasuredSize;
 - (NSRect)bounds;
-- (void)translateByOffset:(NSPoint)offset clampToSize:(NSSize)size;
+- (void)translateByOffset:(NSPoint)offset;
 
 @end
 

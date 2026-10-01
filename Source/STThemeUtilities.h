@@ -4,8 +4,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 BOOL STThemeIsDark(void);
 BOOL STDefaultInterfaceThemeIsDark(void);
+BOOL STThemeBackgroundColorIsDark(NSColor *color);
 
 NSColor *STThemeCanvasBackgroundColor(void);
+NSColor *STThemeCanvasBackdropColor(void);
+NSColor *STThemeCanvasImageBorderColor(void);
 NSColor *STThemeWindowBackgroundColor(void);
 NSColor *STThemeCardBackgroundColor(void);
 NSColor *STThemeInsetBackgroundColor(void);
