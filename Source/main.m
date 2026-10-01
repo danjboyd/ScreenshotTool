@@ -36,12 +36,18 @@ static const char *STBootstrapLogPath(void) {
         snprintf(path, sizeof(path), "%s\\ScreenshotTool-bootstrap.log", localAppData);
         return path;
     }
-#endif
     return "ScreenshotTool-bootstrap.log";
+#else
+    // Elsewhere the regular log covers startup; only write this trace when asked to.
+    return NULL;
+#endif
 }
 
 static void STBootstrapLog(const char *format, ...) {
     const char *path = STBootstrapLogPath();
+    if (!path) {
+        return;
+    }
     FILE *fp = fopen(path, "a");
     if (!fp) {
         return;
