@@ -39,8 +39,10 @@ ScreenshotToolTests_OBJC_FILES = \
 	CursorAssetProbe_test.m \
 	ClipboardHighlighterOpacityProbe_test.m \
 	ClipboardHighlighterProbe_test.m \
+	CropClipsAnnotationsProbe_test.m \
 	CropUndoProbe_test.m \
 	CropUndoWindowProbe_test.m \
+	FitToWindowProbe_test.m \
 	CursorRectProbe_test.m \
 	HudCopyFeedbackProbe_test.m \
 	OpenImageToolbarRefreshProbe_test.m \
@@ -85,6 +87,12 @@ ADDITIONAL_OBJCFLAGS += -I$(XCTEST_SRC_DIR)
 ADDITIONAL_OBJCFLAGS += $(FONTCONFIG_CFLAGS)
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
 ADDITIONAL_OBJCFLAGS += -DHAVE_MODE_T
+# AppDelegate links the vendored updater; the top-level build compiles these static libs first.
+UPDATER_ROOT := $(abspath ../third_party/gnustep-packager-updater/objc)
+ADDITIONAL_OBJCFLAGS += -I$(UPDATER_ROOT)/GPUpdaterCore/Headers
+ADDITIONAL_OBJCFLAGS += -I$(UPDATER_ROOT)/GPUpdaterUI/Headers
+ADDITIONAL_LIB_DIRS += -L$(UPDATER_ROOT)/GPUpdaterUI -L$(UPDATER_ROOT)/GPUpdaterCore
+ScreenshotToolTests_BUNDLE_LIBS += -lGPUpdaterUI -lGPUpdaterCore
 ADDITIONAL_LDFLAGS += -lstdc++
 ADDITIONAL_LDFLAGS += -lobjc
 ADDITIONAL_LDFLAGS += -lfontconfig -lfreetype -ldispatch

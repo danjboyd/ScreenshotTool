@@ -140,15 +140,8 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
     return copy;
 }
 
-- (void)translateByOffset:(NSPoint)offset clampToSize:(NSSize)size {
-    NSPoint newOrigin = NSMakePoint(self.origin.x - offset.x,
-                                    self.origin.y - offset.y);
-    newOrigin.x = MAX(0.0, MIN(size.width - MAX(1.0f, self.boxSize.width), newOrigin.x));
-    newOrigin.y = MAX(0.0, MIN(size.height - MAX(1.0f, self.boxSize.height), newOrigin.y));
-    self.origin = newOrigin;
-    self.boxSize = NSMakeSize(MAX(1.0f, MIN(self.boxSize.width, size.width)),
-                              MAX(1.0f, MIN(self.boxSize.height, size.height)));
-    [self updateMeasuredSize];
+- (void)translateByOffset:(NSPoint)offset {
+    self.origin = NSMakePoint(self.origin.x - offset.x, self.origin.y - offset.y);
 }
 
 @end

@@ -190,7 +190,24 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     return copy;
 }
 
-- (void)translateByOffset:(NSPoint)offset clampToSize:(NSSize)size {
+- (NSRect)bounds {
+    if (self.mutablePoints.count == 0) {
+        return NSZeroRect;
+    }
+    NSPoint first = [[self.mutablePoints firstObject] pointValue];
+    CGFloat minX = first.x, maxX = first.x, minY = first.y, maxY = first.y;
+    for (NSValue *value in self.mutablePoints) {
+        NSPoint p = value.pointValue;
+        minX = MIN(minX, p.x);
+        maxX = MAX(maxX, p.x);
+        minY = MIN(minY, p.y);
+        maxY = MAX(maxY, p.y);
+    }
+    CGFloat inset = MAX(self.lineWidth, 1.0f) * 0.5f;
+    return NSMakeRect(minX - inset, minY - inset, (maxX - minX) + inset * 2.0f, (maxY - minY) + inset * 2.0f);
+}
+
+- (void)translateByOffset:(NSPoint)offset {
     if (self.mutablePoints.count == 0) {
         return;
     }
@@ -199,12 +216,14 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     [newPath setLineCapStyle:NSRoundLineCapStyle];
     [newPath setLineWidth:self.lineWidth];
 
+    // Points are not clamped: anything past the new edges is clipped when drawn, so strokes keep
+    // their shape instead of collapsing onto the border.
     NSMutableArray<NSValue *> *updatedPoints = [[NSMutableArray alloc] initWithCapacity:self.mutablePoints.count];
     BOOL first = YES;
     for (NSValue *value in self.mutablePoints) {
         NSPoint p = value.pointValue;
-        p.x = MAX(0.0, MIN(size.width, p.x - offset.x));
-        p.y = MAX(0.0, MIN(size.height, p.y - offset.y));
+        p.x -= offset.x;
+        p.y -= offset.y;
         if (first) {
             [newPath moveToPoint:p];
             first = NO;

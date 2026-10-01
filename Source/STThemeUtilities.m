@@ -93,9 +93,22 @@ static NSString *STNormalizedInterfaceThemePreference(void) {
     return [[[defaults stringForKey:STDefaultsInterfaceThemeKey] lowercaseString] copy] ?: @"";
 }
 
+BOOL STThemeBackgroundColorIsDark(NSColor *color) {
+    NSColor *background = [color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
+    if (!background) {
+        return NO;
+    }
+    CGFloat red = 1.0f, green = 1.0f, blue = 1.0f, alpha = 1.0f;
+    [background getRed:&red green:&green blue:&blue alpha:&alpha];
+    CGFloat luminance = (0.2126f * red) + (0.7152f * green) + (0.0722f * blue);
+    return luminance < 0.45f;
+}
+
 BOOL STDefaultInterfaceThemeIsDark(void) {
+    // Themes such as Adwaita keep one name and switch palettes with the desktop's colour scheme,
+    // so the active window background is checked as well as the theme's name.
     NSString *theme = STCurrentThemeName();
-    return STThemeNameIndicatesDark(theme);
+    return STThemeNameIndicatesDark(theme) || STThemeBackgroundColorIsDark([NSColor windowBackgroundColor]);
 }
 
 BOOL STThemeIsDark(void) {
@@ -175,6 +188,18 @@ NSColor *STThemeCanvasBackgroundColor(void) {
     return STBlendColors(STThemeWindowBackgroundColor(),
                          STThemeCardBackgroundColor(),
                          STThemeIsDark() ? 0.18f : 0.38f);
+}
+
+NSColor *STThemeCanvasBackdropColor(void) {
+    // Darker than the window in both schemes so white and near-black screenshots both stand out.
+    return STBlendColors(STThemeWindowBackgroundColor(),
+                         STRGB(0.0f, 0.0f, 0.0f, 1.0f),
+                         STThemeIsDark() ? 0.35f : 0.10f);
+}
+
+NSColor *STThemeCanvasImageBorderColor(void) {
+    return STThemeIsDark() ? STRGB(255.0f, 255.0f, 255.0f, 0.16f)
+                           : STRGB(0.0f, 0.0f, 0.0f, 0.18f);
 }
 
 NSColor *STThemeStatusBarBackgroundColorForTheme(BOOL darkTheme) {

@@ -654,6 +654,10 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
         quickButtonWidth = (availableQuickWidth - (quickSpacing * (count - 1))) / (CGFloat)count;
         quickButtonWidth = MIN(64.0f, MAX(44.0f, quickButtonWidth));
     }
+    // Never narrower than the theme needs for the widest title, or two-digit widths get clipped.
+    for (NSButton *button in quickButtons) {
+        quickButtonWidth = MAX(quickButtonWidth, ceil([[button cell] cellSize].width));
+    }
     CGFloat quickX = quickStartX;
     for (NSButton *button in quickButtons) {
         [button setFrame:NSMakeRect(quickX, quickRowY, quickButtonWidth, quickHeight)];

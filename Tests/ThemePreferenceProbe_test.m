@@ -63,4 +63,14 @@
     XCTAssertFalse(STThemeIsDark(), @"Auto preference should follow a light GNUstep theme");
 }
 
+- (void)testDarkPaletteIsDetectedFromWindowBackground {
+    // Adwaita keeps its name in both colour schemes, so Auto must also read the palette.
+    XCTAssertTrue(STThemeBackgroundColorIsDark([NSColor colorWithDeviceRed:0.14 green:0.14 blue:0.14 alpha:1.0]),
+                  @"Adwaita's dark window background should count as dark");
+    XCTAssertFalse(STThemeBackgroundColorIsDark([NSColor colorWithDeviceRed:0.98 green:0.98 blue:0.98 alpha:1.0]),
+                   @"Adwaita's light window background should count as light");
+    XCTAssertFalse(STThemeBackgroundColorIsDark([NSColor colorWithDeviceWhite:0.83 alpha:1.0]),
+                   @"GNUstep's default grey should count as light");
+}
+
 @end
