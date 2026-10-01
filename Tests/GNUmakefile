@@ -47,6 +47,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	HudCopyFeedbackProbe_test.m \
 	OpenImageToolbarRefreshProbe_test.m \
 	OpenRecentProbe_test.m \
+	PasteAsNewImageProbe_test.m \
 	StatusBarToggleProbe_test.m \
 	TextFontFacePopupProbe_test.m \
 	ThemePreferenceProbe_test.m \

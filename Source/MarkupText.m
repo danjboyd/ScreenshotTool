@@ -66,8 +66,12 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
 }
 
 - (NSAttributedString *)attributedString {
+    return [self attributedStringWithFont:self.font ?: [NSFont systemFontOfSize:18.0]];
+}
+
+- (NSAttributedString *)attributedStringWithFont:(NSFont *)font {
     NSMutableDictionary<NSAttributedStringKey, id> *attributes = [[NSMutableDictionary alloc] init];
-    attributes[NSFontAttributeName] = self.font ?: [NSFont systemFontOfSize:18.0];
+    attributes[NSFontAttributeName] = font;
     attributes[NSForegroundColorAttributeName] = self.color ?: [NSColor whiteColor];
     NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
     style.lineBreakMode = NSLineBreakByWordWrapping;
@@ -108,13 +112,20 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
     return [self textRectForCanvas];
 }
 
-- (void)drawInCanvas {
-    if (self.text.length == 0) {
+- (void)drawInCanvasAtScale:(CGFloat)scale {
+    if (self.text.length == 0 || scale <= 0.0) {
         return;
     }
-    NSAttributedString *attr = [self attributedString];
+    // Lay out with a font scaled to the zoom, as the editing text view does, rather than scaling
+    // 1x glyph advances through a transform: hinted advances don't scale evenly and spacing breaks.
+    NSFont *baseFont = self.font ?: [NSFont systemFontOfSize:18.0];
+    NSFont *font = baseFont;
+    if (fabs(scale - 1.0) > 0.0001) {
+        font = [NSFont fontWithName:baseFont.fontName size:MAX(1.0, baseFont.pointSize * scale)] ?: baseFont;
+    }
     NSRect rect = [self textRectForCanvas];
-    [attr drawInRect:rect];
+    rect = NSMakeRect(rect.origin.x * scale, rect.origin.y * scale, rect.size.width * scale, rect.size.height * scale);
+    [[self attributedStringWithFont:font] drawInRect:rect];
 }
 
 - (void)renderInContext:(NSGraphicsContext *)context canvasSize:(NSSize)canvasSize {
