@@ -37,6 +37,19 @@ export ZSH_VERSION=""
 export GNUSTEP_CONFIG_FILE=""
 export GNUSTEP_USER_CONFIG_FILE=""
 
+# GNUstep installs its libraries outside the dynamic linker's search path, and sudo drops
+# LD_LIBRARY_PATH, so tools that installers run as root (libs-gui's GSspell -RegisterOnly)
+# can't find libobjc. Register the directories and refresh the cache after each install.
+register_gnustep_libraries() {
+  printf '%s\n' \
+    "${PREFIX}/lib" \
+    "${PREFIX}/lib64" \
+    "${PREFIX}/System/Library/Libraries" \
+    "${PREFIX}/Local/Library/Libraries" \
+    | sudo tee /etc/ld.so.conf.d/gnustep.conf >/dev/null
+  sudo ldconfig
+}
+
 source_gnustep_env() {
   set +u
   . "${PREFIX}/System/Library/Makefiles/GNUstep.sh"
@@ -71,6 +84,7 @@ cmake -G Ninja .. \
   -DTESTS=OFF
 ninja
 sudo ninja install
+register_gnustep_libraries
 popd >/dev/null
 
 clone_or_refresh https://github.com/apple/swift-corelibs-libdispatch.git libdispatch
@@ -89,6 +103,7 @@ cmake -G Ninja .. \
   -DWITH_BLOCKS_RUNTIME=ON
 ninja
 sudo ninja install
+register_gnustep_libraries
 popd >/dev/null
 
 clone_or_refresh https://github.com/gnustep/tools-make.git gnustep-make
@@ -99,6 +114,7 @@ CCFLAGS="${CC_FLAGS}" CXX="${CXX}" CC="${CC}" \
               --with-layout=gnustep
 ${MAKE}
 sudo ${MAKE} install
+register_gnustep_libraries
 source_gnustep_env
 popd >/dev/null
 
@@ -113,6 +129,7 @@ PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
 sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
   GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
   make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
+register_gnustep_libraries
 popd >/dev/null
 
 clone_or_refresh https://github.com/gnustep/libs-gui.git libs-gui
@@ -125,6 +142,7 @@ PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
 sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
   GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
   make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
+register_gnustep_libraries
 popd >/dev/null
 
 clone_or_refresh https://github.com/gnustep/libs-back.git libs-back
@@ -136,6 +154,7 @@ PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
 sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
   GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
   make GNUSTEP_INSTALLATION_DOMAIN=SYSTEM install
+register_gnustep_libraries
 popd >/dev/null
 
 clone_or_refresh https://github.com/gnustep/plugins-themes-sombre.git plugins-themes-sombre
@@ -147,4 +166,5 @@ PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
 sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
   GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
   make install
+register_gnustep_libraries
 popd >/dev/null
