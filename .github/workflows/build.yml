@@ -40,6 +40,18 @@ jobs:
           ./scripts/bootstrap_gnustep_linux_ci.sh
       - name: Build ScreenshotTool (GNUstep)
         run: pwsh -NoProfile -File scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json
+      - name: Unit tests
+        # Many tests need a window server; under Xvfb they run instead of skipping.
+        run: xvfb-run -a Tools/run_tests.sh
+      - name: Upload unit test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-tests-log
+          path: |
+            tests.log
+            tests_runner.log
+          if-no-files-found: ignore
       - name: Download linuxdeploy
         run: |
           mkdir -p /tmp/linuxdeploy

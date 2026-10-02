@@ -46,7 +46,7 @@
     @try {
         [NSApplication sharedApplication];
     } @catch (NSException *exception) {
-        NSLog(@"Skipping popover scale tests: %@", exception.reason);
+        NSLog(@"Skipping popover scale tests: failed to connect to window server (%@)", exception.reason);
         _shouldSkip = YES;
     }
 }

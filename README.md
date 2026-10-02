@@ -78,8 +78,13 @@ location.
 Run the automated probes with:
 
 ```bash
+make                 # the test bundle links libraries the app build produces
 Tools/run_tests.sh
 ```
+
+Most tests need a window server. Without a desktop session (as in CI), run them
+under a virtual display with `xvfb-run -a Tools/run_tests.sh`; the script fails
+if tests had to skip for lack of a display.
 
 ## Usage Tips
 - Double-click toolbar buttons to open tool popovers.
