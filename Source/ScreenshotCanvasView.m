@@ -131,6 +131,8 @@ typedef struct {
 } STBitmapBuffer;
 
 static const CGFloat STSelectionHandleSize = 10.0f;
+// The editor has no text padding, so the guide sits outside the text instead of on it.
+static const CGFloat STTextGuideOutset = 4.0f;
 
 static CGFloat STReadGSScaleFactor(void) {
     const char *rawValue = getenv("GSScaleFactor");
@@ -2516,21 +2518,37 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
 
     if (self.activeTextView && self.currentTextEntry) {
-        NSRect viewRect = [self viewRectForImageRect:self.currentTextEntry.bounds];
+        NSRect viewRect = [self activeTextGuideRectInView];
         NSBezierPath *path = [NSBezierPath bezierPathWithRect:viewRect];
         [path setLineWidth:1.0f];
         [path setLineDash:dashPattern count:dashCount phase:phase];
         [outline setStroke];
         [path stroke];
 
-        NSRect handle = NSMakeRect(NSMaxX(viewRect) - STSelectionHandleSize,
-                                   NSMaxY(viewRect) - STSelectionHandleSize,
-                                   STSelectionHandleSize,
-                                   STSelectionHandleSize);
+        NSRect handle = [self activeTextHandleRectInView];
         [[outline colorWithAlphaComponent:0.8f] setFill];
         NSBezierPath *handlePath = [NSBezierPath bezierPathWithRect:handle];
         [handlePath fill];
     }
+}
+
+- (NSRect)activeTextGuideRectInView {
+    if (!self.currentTextEntry) {
+        return NSZeroRect;
+    }
+    return NSInsetRect([self viewRectForImageRect:self.currentTextEntry.bounds], -STTextGuideOutset, -STTextGuideOutset);
+}
+
+- (NSRect)activeTextHandleRectInView {
+    NSRect guideRect = [self activeTextGuideRectInView];
+    if (NSIsEmptyRect(guideRect)) {
+        return NSZeroRect;
+    }
+    // Centred on the guide's corner so it covers the outline, not the text.
+    return NSMakeRect(NSMaxX(guideRect) - (STSelectionHandleSize * 0.5),
+                      NSMaxY(guideRect) - (STSelectionHandleSize * 0.5),
+                      STSelectionHandleSize,
+                      STSelectionHandleSize);
 }
 
 - (NSRect)selectionHandleRectInView {
@@ -2618,11 +2636,8 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     NSPoint locationInView = [self convertPoint:event.locationInWindow fromView:nil];
     if (self.activeTool == ScreenshotCanvasToolText) {
         if (self.activeTextView && self.currentTextEntry) {
-            NSRect activeRect = [self viewRectForImageRect:self.currentTextEntry.bounds];
-            NSRect handleRect = NSMakeRect(NSMaxX(activeRect) - STSelectionHandleSize,
-                                           NSMaxY(activeRect) - STSelectionHandleSize,
-                                           STSelectionHandleSize,
-                                           STSelectionHandleSize);
+            NSRect activeRect = [self activeTextGuideRectInView];
+            NSRect handleRect = [self activeTextHandleRectInView];
             if (NSPointInRect(locationInView, handleRect)) {
                 self.isResizingTextBox = YES;
                 self.textResizeStartImagePoint = imagePoint;
