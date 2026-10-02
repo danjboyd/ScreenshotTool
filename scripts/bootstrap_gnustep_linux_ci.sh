@@ -59,16 +59,25 @@ source_gnustep_env() {
   export GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles"
 }
 
+# Optional third argument: a tag or branch to build instead of the default branch.
 clone_or_refresh() {
   local repo_url="$1"
   local dir_name="$2"
+  local ref="${3:-}"
   if [ -d "${dir_name}/.git" ]; then
-    git -C "${dir_name}" fetch --depth 1 origin
+    git -C "${dir_name}" fetch --depth 1 origin ${ref:+"${ref}"}
     git -C "${dir_name}" reset --hard FETCH_HEAD
   else
-    git clone --depth 1 "${repo_url}" "${dir_name}"
+    git clone --depth 1 ${ref:+--branch "${ref}"} "${repo_url}" "${dir_name}"
   fi
 }
+
+# Pin the GNUstep libraries to releases. Upstream master draws exported images incorrectly
+# (blank annotations under cairo, near-invisible text under xlib; #45), and these releases
+# match the packages the app is developed and tested against.
+LIBS_BASE_REF="${LIBS_BASE_REF:-base-1_31_1}"
+LIBS_GUI_REF="${LIBS_GUI_REF:-gui-0_32_0}"
+LIBS_BACK_REF="${LIBS_BACK_REF:-back-0_32_0}"
 
 clone_or_refresh https://github.com/gnustep/libobjc2.git libobjc2
 pushd libobjc2 >/dev/null
@@ -119,7 +128,7 @@ register_gnustep_libraries
 source_gnustep_env
 popd >/dev/null
 
-clone_or_refresh https://github.com/gnustep/libs-base.git libs-base
+clone_or_refresh https://github.com/gnustep/libs-base.git libs-base "${LIBS_BASE_REF}"
 pushd libs-base >/dev/null
 source_gnustep_env
 ./configure --disable-newkvo --prefix="${PREFIX}"
@@ -133,7 +142,7 @@ sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
 register_gnustep_libraries
 popd >/dev/null
 
-clone_or_refresh https://github.com/gnustep/libs-gui.git libs-gui
+clone_or_refresh https://github.com/gnustep/libs-gui.git libs-gui "${LIBS_GUI_REF}"
 pushd libs-gui >/dev/null
 source_gnustep_env
 ./configure --enable-imagemagick --prefix="${PREFIX}"
@@ -146,7 +155,7 @@ sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
 register_gnustep_libraries
 popd >/dev/null
 
-clone_or_refresh https://github.com/gnustep/libs-back.git libs-back
+clone_or_refresh https://github.com/gnustep/libs-back.git libs-back "${LIBS_BACK_REF}"
 pushd libs-back >/dev/null
 source_gnustep_env
 PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
