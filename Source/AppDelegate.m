@@ -1741,11 +1741,11 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         return YES;
     }
     if (action == @selector(undo:)) {
-        NSUndoManager *undo = self.window.undoManager;
+        NSUndoManager *undo = [self activeUndoManager];
         return (undo && [undo canUndo]);
     }
     if (action == @selector(redo:)) {
-        NSUndoManager *undo = self.window.undoManager;
+        NSUndoManager *undo = [self activeUndoManager];
         return (undo && [undo canRedo]);
     }
     if (action == @selector(zoomFitToWindow:) ||
@@ -2015,6 +2015,14 @@ static id STInfoValueForKey(NSString *key) {
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(canvasViewDidRestoreState:)
                                                  name:ScreenshotCanvasViewDidRestoreStateNotification
+                                               object:self.canvasView];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(canvasViewRequestsTool:)
+                                                 name:ScreenshotCanvasViewRequestsToolNotification
+                                               object:self.canvasView];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(canvasViewDidBeginTextEditing:)
+                                                 name:ScreenshotCanvasViewDidBeginTextEditingNotification
                                                object:self.canvasView];
 
     [self.scrollView setDocumentView:self.canvasView];
@@ -2542,13 +2550,48 @@ static id STInfoValueForKey(NSString *key) {
     return @"Tool";
 }
 
+- (NSString *)toolbarShortcutForTool:(ScreenshotCanvasTool)tool {
+    switch (tool) {
+        case ScreenshotCanvasToolSelect:
+            return @"S";
+        case ScreenshotCanvasToolHighlighter:
+            return @"H";
+        case ScreenshotCanvasToolPen:
+            return @"P";
+        case ScreenshotCanvasToolText:
+            return @"T";
+        case ScreenshotCanvasToolEraser:
+            return @"E";
+    }
+    return @"";
+}
+
 - (NSString *)toolbarSegmentToolTipForTool:(ScreenshotCanvasTool)tool {
+    NSString *title = [NSString stringWithFormat:@"%@ Tool (%@)", [self toolbarTitleForTool:tool], [self toolbarShortcutForTool:tool]];
     if (tool == ScreenshotCanvasToolPen ||
         tool == ScreenshotCanvasToolHighlighter ||
         tool == ScreenshotCanvasToolText) {
-        return [NSString stringWithFormat:@"%@ Tool — double-click to configure", [self toolbarTitleForTool:tool]];
+        return [title stringByAppendingString:@" — double-click to configure"];
     }
-    return [NSString stringWithFormat:@"%@ Tool", [self toolbarTitleForTool:tool]];
+    return title;
+}
+
+- (void)canvasViewRequestsTool:(NSNotification *)notification {
+    NSNumber *tool = notification.userInfo[ScreenshotCanvasViewToolKey];
+    if (tool) {
+        [self selectTool:(ScreenshotCanvasTool)tool.integerValue];
+    }
+}
+
+- (void)canvasViewDidBeginTextEditing:(NSNotification *)notification {
+    (void)notification;
+    // Once per launch: enough to learn it without nagging on every label.
+    static BOOL shownHint = NO;
+    if (shownHint) {
+        return;
+    }
+    shownHint = YES;
+    [self showTransientFeedbackMessage:@"Ctrl+Return or Esc to finish · Return for a new line" duration:3.5];
 }
 
 - (NSImage *)toolbarSegmentImageForTool:(ScreenshotCanvasTool)tool selected:(BOOL)selected {
@@ -5737,21 +5780,24 @@ static id STInfoValueForKey(NSString *key) {
     return self.undoManager;
 }
 
+/// While a text box is open, Undo/Redo act on its typing; otherwise on the canvas (#28).
 - (NSUndoManager *)activeUndoManager {
-    return self.undoManager;
+    return [self.canvasView activeTextUndoManager] ?: self.undoManager;
 }
 
 - (void)undo:(id)sender {
     (void)sender;
-    if ([self.undoManager canUndo]) {
-        [self.undoManager undo];
+    NSUndoManager *undo = [self activeUndoManager];
+    if ([undo canUndo]) {
+        [undo undo];
     }
 }
 
 - (void)redo:(id)sender {
     (void)sender;
-    if ([self.undoManager canRedo]) {
-        [self.undoManager redo];
+    NSUndoManager *undo = [self activeUndoManager];
+    if ([undo canRedo]) {
+        [undo redo];
     }
 }
 

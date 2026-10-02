@@ -51,6 +51,8 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 @property (nonatomic, assign) STTextSizePreset textSizePreset;
 /// textFont at the preset's size for the current image, or textFont itself for Exact.
 - (NSFont *)effectiveTextFont;
+/// The undo history for typing in the open text box, or nil when no box is being edited.
+- (nullable NSUndoManager *)activeTextUndoManager;
 @property (nonatomic, assign) CGFloat zoomScale;
 @property (nonatomic, assign, getter=isFitToWindow) BOOL fitToWindow;
 @property (nonatomic, weak, nullable) NSScrollView *hostScrollView;
@@ -77,3 +79,8 @@ NS_ASSUME_NONNULL_END
 #import <AppKit/AppKit.h>
 
 extern NSString * const _Nonnull ScreenshotCanvasViewDidRestoreStateNotification;
+/// Posted when a tool shortcut key (S, H, P, T, E) is pressed on the canvas; userInfo[ScreenshotCanvasViewToolKey] is the tool.
+extern NSString * const _Nonnull ScreenshotCanvasViewRequestsToolNotification;
+extern NSString * const _Nonnull ScreenshotCanvasViewToolKey;
+/// Posted when a text box opens for editing.
+extern NSString * const _Nonnull ScreenshotCanvasViewDidBeginTextEditingNotification;
