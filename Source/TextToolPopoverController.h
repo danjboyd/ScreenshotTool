@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "MarkupText.h"
+#import "ScreenshotToolSettings.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -15,6 +16,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (MarkupTextStyle)textToolPopoverCurrentStyle:(TextToolPopoverController *)controller;
 - (MarkupTextStyle)textToolPopoverDefaultStyle:(TextToolPopoverController *)controller;
 - (void)textToolPopover:(TextToolPopoverController *)controller didChangeStyle:(MarkupTextStyle)style;
+- (STTextSizePreset)textToolPopoverCurrentSizePreset:(TextToolPopoverController *)controller;
+- (STTextSizePreset)textToolPopoverDefaultSizePreset:(TextToolPopoverController *)controller;
+- (void)textToolPopover:(TextToolPopoverController *)controller didChangeSizePreset:(STTextSizePreset)preset;
 - (void)textToolPopoverDidRequestReset:(TextToolPopoverController *)controller;
 - (void)textToolPopoverDidRequestSetDefault:(TextToolPopoverController *)controller;
 @end

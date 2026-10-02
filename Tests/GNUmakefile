@@ -46,6 +46,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	CursorRectProbe_test.m \
 	HudCopyFeedbackProbe_test.m \
 	OpenImageToolbarRefreshProbe_test.m \
+	ObjectSelectionProbe_test.m \
 	OpenRecentProbe_test.m \
 	PasteAsNewImageProbe_test.m \
 	StatusBarToggleProbe_test.m \

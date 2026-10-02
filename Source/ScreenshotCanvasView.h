@@ -20,6 +20,7 @@
 
 #import <AppKit/AppKit.h>
 #import "MarkupText.h"
+#import "ScreenshotToolSettings.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -46,6 +47,10 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 @property (nonatomic, strong) NSFont *textFont;
 /// Style for new text annotations; changing it restyles the box being edited.
 @property (nonatomic, assign) MarkupTextStyle textStyle;
+/// Size preset for new text; anything but Exact sizes the font from the image (#27).
+@property (nonatomic, assign) STTextSizePreset textSizePreset;
+/// textFont at the preset's size for the current image, or textFont itself for Exact.
+- (NSFont *)effectiveTextFont;
 @property (nonatomic, assign) CGFloat zoomScale;
 @property (nonatomic, assign, getter=isFitToWindow) BOOL fitToWindow;
 @property (nonatomic, weak, nullable) NSScrollView *hostScrollView;

@@ -820,6 +820,12 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) BOOL isCreatingTextBox;
 @property (nonatomic, assign) BOOL isResizingTextBox;
 @property (nonatomic, assign) BOOL textClickOnlyCommitted;
+// Object selection (#25): strokes and texts picked with the Select tool.
+@property (nonatomic, strong) NSMutableArray<id> *selectedAnnotations;
+@property (nonatomic, assign) BOOL isMovingAnnotations;
+@property (nonatomic, assign) BOOL annotationsMoved;
+@property (nonatomic, assign) NSPoint annotationMoveLastPoint;
+@property (nonatomic, strong, nullable) NSDictionary *annotationMoveSnapshot;
 @property (nonatomic, assign) BOOL activeTextOverflowsImage;
 @property (nonatomic, assign) NSRect pendingTextRect;
 @property (nonatomic, assign) NSPoint textDragStartImagePoint;
@@ -1046,6 +1052,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 
     self.strokes = [snapshot[@"strokes"] mutableCopy] ?: [[NSMutableArray alloc] init];
     self.texts = [snapshot[@"texts"] mutableCopy] ?: [[NSMutableArray alloc] init];
+    [self clearAnnotationSelection];
 
     BOOL hasSelection = [snapshot[@"hasSelection"] boolValue];
     NSRect selection = hasSelection ? [snapshot[@"selectionRect"] rectValue] : NSZeroRect;
@@ -1155,6 +1162,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         [self commitActiveTextIfNeeded];
     }
     _activeTool = activeTool;
+    if (_activeTool != ScreenshotCanvasToolSelect) {
+        [self clearAnnotationSelection];
+    }
     if (_activeTool != ScreenshotCanvasToolText) {
         [self commitActiveTextIfNeeded];
         self.isCreatingTextBox = NO;
@@ -1736,6 +1746,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     self.image = image;
     [self clearMarkup];
     [self clearSelection];
+    [self clearAnnotationSelection];
     _zoomScale = 1.0;
     self.fitToWindow = YES;
     [self updateForEnclosingBoundsChange];
@@ -1804,6 +1815,27 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [self setNeedsDisplay:YES];
 }
 
+- (void)setTextSizePreset:(STTextSizePreset)textSizePreset {
+    if (_textSizePreset == textSizePreset) {
+        return;
+    }
+    _textSizePreset = textSizePreset;
+    if (self.currentTextEntry) {
+        self.currentTextEntry.font = [self effectiveTextFont];
+    }
+    [self updateActiveTextViewFrame];
+    [self setNeedsDisplay:YES];
+}
+
+- (NSFont *)effectiveTextFont {
+    NSFont *font = self.textFont ?: [NSFont systemFontOfSize:24.0f];
+    CGFloat presetSize = self.image ? STTextPointSizeForPreset(self.textSizePreset, self.image.size) : 0.0;
+    if (presetSize <= 0.0) {
+        return font;
+    }
+    return [NSFont fontWithName:font.fontName size:presetSize] ?: [NSFont systemFontOfSize:presetSize];
+}
+
 - (void)setTextFont:(NSFont *)textFont {
     NSFont *resolved = textFont ?: [NSFont systemFontOfSize:24.0f];
     if ([_textFont isEqual:resolved]) {
@@ -1811,7 +1843,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
     _textFont = resolved;
     if (self.currentTextEntry) {
-        self.currentTextEntry.font = _textFont;
+        self.currentTextEntry.font = [self effectiveTextFont];
     }
     [self updateActiveTextViewFrame];
     [self setNeedsDisplay:YES];
@@ -1880,6 +1912,234 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     self.editingTextIndex = NSNotFound;
     self.editingTextSnapshot = nil;
     [self cancelActiveTextEntry];
+}
+
+#pragma mark - Annotation selection
+
+- (NSArray *)selectedAnnotationObjects {
+    // Drop anything that has left the canvas since it was selected (eraser, undo).
+    NSMutableArray *live = [[NSMutableArray alloc] init];
+    for (id annotation in self.selectedAnnotations) {
+        if ([self.strokes indexOfObjectIdenticalTo:annotation] != NSNotFound ||
+            [self.texts indexOfObjectIdenticalTo:annotation] != NSNotFound) {
+            [live addObject:annotation];
+        }
+    }
+    return live;
+}
+
+- (BOOL)hasAnnotationSelection {
+    return [self selectedAnnotationObjects].count > 0;
+}
+
+- (void)clearAnnotationSelection {
+    if (self.selectedAnnotations.count == 0) {
+        return;
+    }
+    [self.selectedAnnotations removeAllObjects];
+    [self setNeedsDisplay:YES];
+}
+
+- (BOOL)isAnnotationSelected:(id)annotation {
+    return [self.selectedAnnotations indexOfObjectIdenticalTo:annotation] != NSNotFound;
+}
+
+- (void)selectAnnotation:(id)annotation extending:(BOOL)extending {
+    if (!self.selectedAnnotations) {
+        self.selectedAnnotations = [[NSMutableArray alloc] init];
+    }
+    if (extending) {
+        NSUInteger index = [self.selectedAnnotations indexOfObjectIdenticalTo:annotation];
+        if (index != NSNotFound) {
+            [self.selectedAnnotations removeObjectAtIndex:index];
+        } else {
+            [self.selectedAnnotations addObject:annotation];
+        }
+    } else if (![self isAnnotationSelected:annotation]) {
+        [self.selectedAnnotations removeAllObjects];
+        [self.selectedAnnotations addObject:annotation];
+    }
+    [self setNeedsDisplay:YES];
+}
+
+/// The topmost annotation under a point: texts draw above strokes, later ones above earlier.
+- (nullable id)annotationAtImagePoint:(NSPoint)point {
+    for (MarkupText *text in [self.texts reverseObjectEnumerator]) {
+        if ([text containsPoint:point]) {
+            return text;
+        }
+    }
+    CGFloat tolerance = 4.0 / MAX(self.zoomScale, 0.05);
+    for (MarkupStroke *stroke in [self.strokes reverseObjectEnumerator]) {
+        if ([stroke containsPoint:point tolerance:tolerance]) {
+            return stroke;
+        }
+    }
+    return nil;
+}
+
+- (NSRect)boundsOfAnnotation:(id)annotation {
+    if ([annotation isKindOfClass:[MarkupText class]]) {
+        return [(MarkupText *)annotation decoratedBounds];
+    }
+    if ([annotation isKindOfClass:[MarkupStroke class]]) {
+        return [(MarkupStroke *)annotation bounds];
+    }
+    return NSZeroRect;
+}
+
+- (void)translateAnnotations:(NSArray *)annotations byDelta:(NSPoint)delta {
+    NSPoint offset = NSMakePoint(-delta.x, -delta.y);
+    for (id annotation in annotations) {
+        if ([annotation respondsToSelector:@selector(translateByOffset:)]) {
+            [annotation translateByOffset:offset];
+        }
+    }
+}
+
+// Moves and deletes only touch annotations, so their undo snapshots leave the image alone (a full
+// canvas restore also resizes and recentres the window).
+- (NSDictionary *)annotationSnapshot {
+    NSMutableArray *strokes = [[NSMutableArray alloc] initWithCapacity:self.strokes.count];
+    for (MarkupStroke *stroke in self.strokes) {
+        [strokes addObject:[stroke copy]];
+    }
+    NSMutableArray *texts = [[NSMutableArray alloc] initWithCapacity:self.texts.count];
+    for (MarkupText *text in self.texts) {
+        [texts addObject:[text copy]];
+    }
+    return @{ @"strokes": strokes, @"texts": texts };
+}
+
+- (void)restoreAnnotationSnapshot:(NSDictionary *)snapshot {
+    NSDictionary *current = [self annotationSnapshot];
+    [self cancelActiveTextEntry];
+    self.strokes = [snapshot[@"strokes"] mutableCopy] ?: [[NSMutableArray alloc] init];
+    self.texts = [snapshot[@"texts"] mutableCopy] ?: [[NSMutableArray alloc] init];
+    [self clearAnnotationSelection];
+    [self setNeedsDisplay:YES];
+    NSUndoManager *undo = [self undoManager];
+    [[undo prepareWithInvocationTarget:self] restoreAnnotationSnapshot:current];
+}
+
+- (void)registerAnnotationUndoWithSnapshot:(NSDictionary *)snapshot actionName:(NSString *)actionName {
+    NSUndoManager *undo = [self undoManager];
+    if (!undo || !snapshot) {
+        return;
+    }
+    [[undo prepareWithInvocationTarget:self] restoreAnnotationSnapshot:snapshot];
+    [undo setActionName:actionName];
+}
+
+- (BOOL)nudgeSelectedAnnotationsBy:(NSPoint)delta {
+    NSArray *selected = [self selectedAnnotationObjects];
+    if (selected.count == 0) {
+        return NO;
+    }
+    NSDictionary *before = [self annotationSnapshot];
+    [self translateAnnotations:selected byDelta:delta];
+    [self registerAnnotationUndoWithSnapshot:before actionName:@"Move"];
+    [self setNeedsDisplay:YES];
+    return YES;
+}
+
+- (BOOL)deleteSelectedAnnotations {
+    NSArray *selected = [self selectedAnnotationObjects];
+    if (selected.count == 0) {
+        return NO;
+    }
+    NSDictionary *before = [self annotationSnapshot];
+    for (id annotation in selected) {
+        NSUInteger index = [self.strokes indexOfObjectIdenticalTo:annotation];
+        if (index != NSNotFound) {
+            [self.strokes removeObjectAtIndex:index];
+        }
+        index = [self.texts indexOfObjectIdenticalTo:annotation];
+        if (index != NSNotFound) {
+            [self.texts removeObjectAtIndex:index];
+        }
+    }
+    [self clearAnnotationSelection];
+    [self registerAnnotationUndoWithSnapshot:before actionName:(selected.count == 1 ? @"Delete" : @"Delete Annotations")];
+    [self setNeedsDisplay:YES];
+    return YES;
+}
+
+- (BOOL)editSelectedText {
+    NSArray *selected = [self selectedAnnotationObjects];
+    if (selected.count != 1 || ![selected.firstObject isKindOfClass:[MarkupText class]]) {
+        return NO;
+    }
+    MarkupText *text = selected.firstObject;
+    [self clearAnnotationSelection];
+    [self beginTextEntryWithImageRect:[text bounds] existingText:text];
+    return YES;
+}
+
+- (void)keyDown:(NSEvent *)event {
+    NSString *characters = event.charactersIgnoringModifiers;
+    unichar key = characters.length > 0 ? [characters characterAtIndex:0] : 0;
+    BOOL shift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
+    CGFloat step = shift ? 10.0 : 1.0;
+
+    switch (key) {
+        case NSUpArrowFunctionKey:
+            if ([self nudgeSelectedAnnotationsBy:NSMakePoint(0.0, -step)]) return;
+            break;
+        case NSDownArrowFunctionKey:
+            if ([self nudgeSelectedAnnotationsBy:NSMakePoint(0.0, step)]) return;
+            break;
+        case NSLeftArrowFunctionKey:
+            if ([self nudgeSelectedAnnotationsBy:NSMakePoint(-step, 0.0)]) return;
+            break;
+        case NSRightArrowFunctionKey:
+            if ([self nudgeSelectedAnnotationsBy:NSMakePoint(step, 0.0)]) return;
+            break;
+        case NSDeleteCharacter:
+        case NSBackspaceCharacter:
+        case NSDeleteFunctionKey:
+            if ([self deleteSelectedAnnotations]) return;
+            break;
+        case NSCarriageReturnCharacter:
+        case NSEnterCharacter:
+        case NSNewlineCharacter:
+            if ([self editSelectedText]) return;
+            break;
+        case 0x1b:
+            if ([self hasAnnotationSelection]) {
+                [self clearAnnotationSelection];
+                return;
+            }
+            break;
+        default:
+            break;
+    }
+    [super keyDown:event];
+}
+
+- (void)drawAnnotationSelection {
+    NSArray *selected = [self selectedAnnotationObjects];
+    if (selected.count == 0) {
+        return;
+    }
+    NSColor *outline = [NSColor keyboardFocusIndicatorColor] ?: [NSColor grayColor];
+    CGFloat dashPattern[] = {5.0f, 3.0f};
+    for (id annotation in selected) {
+        NSRect viewRect = NSInsetRect([self viewRectForImageRect:[self boundsOfAnnotation:annotation]], -4.0, -4.0);
+        NSBezierPath *path = [NSBezierPath bezierPathWithRect:viewRect];
+        [path setLineWidth:1.0f];
+        [path setLineDash:dashPattern count:2 phase:0.0];
+        [outline setStroke];
+        [path stroke];
+        // Corner marks show it's an object that can be moved, without suggesting resize handles.
+        [[outline colorWithAlphaComponent:0.9f] setFill];
+        CGFloat mark = 5.0f;
+        for (NSInteger corner = 0; corner < 4; corner++) {
+            CGFloat x = (corner % 2 == 0) ? NSMinX(viewRect) : NSMaxX(viewRect);
+            CGFloat y = (corner < 2) ? NSMinY(viewRect) : NSMaxY(viewRect);
+            NSRectFill(NSMakeRect(x - mark * 0.5, y - mark * 0.5, mark, mark));
+        }
+    }
 }
 
 - (void)clearSelection {
@@ -2040,7 +2300,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
                        widthIsFixed:(BOOL)widthIsFixed {
     [self commitActiveTextIfNeeded];
 
-    NSFont *baseFont = self.textFont ?: [NSFont systemFontOfSize:24.0f];
+    NSFont *baseFont = [self effectiveTextFont];
     NSColor *baseColor = self.textColor ?: [NSColor whiteColor];
     MarkupText *entry = existingText;
     NSInteger existingIndex = NSNotFound;
@@ -2248,9 +2508,10 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         [self.currentTextEntry drawAtScale:self.zoomScale unflippedHeight:0.0 decorationsOnly:YES];
     }
 
-    if (self.activeTool == ScreenshotCanvasToolText) {
+    if (self.activeTool == ScreenshotCanvasToolText || self.activeTextView) {
         [self drawTextGuides];
     }
+    [self drawAnnotationSelection];
 
     if (self.activeTool == ScreenshotCanvasToolSelect || self.hasSelectionRect || self.isCreatingSelection) {
         [self drawSelectionOverlay];
@@ -2440,7 +2701,6 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         [self commitActiveTextIfNeeded];
 
         if (self.hasSelectionRect) {
-            NSRect selectionViewRect = [self viewRectForImageRect:self.selectionRect];
             NSRect handleRect = [self selectionHandleRectInView];
             if (NSPointInRect(locationInView, handleRect)) {
                 self.isResizingSelection = YES;
@@ -2451,6 +2711,34 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
                 [self updateSelectionAnimationState];
                 return;
             }
+        }
+
+        // Annotations under the pointer are picked before the region selection (#25).
+        BOOL extending = (event.modifierFlags & NSEventModifierFlagShift) != 0;
+        id hit = [self annotationAtImagePoint:imagePoint];
+        if (hit) {
+            if (!extending && event.clickCount >= 2 && [hit isKindOfClass:[MarkupText class]]) {
+                [self clearAnnotationSelection];
+                [self clearSelection];
+                [self beginTextEntryWithImageRect:[(MarkupText *)hit bounds] existingText:(MarkupText *)hit];
+                return;
+            }
+            [self clearSelection];
+            [self selectAnnotation:hit extending:extending];
+            if ([self isAnnotationSelected:hit]) {
+                self.isMovingAnnotations = YES;
+                self.annotationsMoved = NO;
+                self.annotationMoveLastPoint = imagePoint;
+                self.annotationMoveSnapshot = [self annotationSnapshot];
+            }
+            return;
+        }
+        if (!extending) {
+            [self clearAnnotationSelection];
+        }
+
+        if (self.hasSelectionRect) {
+            NSRect selectionViewRect = [self viewRectForImageRect:self.selectionRect];
             if (NSPointInRect(locationInView, selectionViewRect)) {
                 self.isMovingSelection = YES;
                 self.isResizingSelection = NO;
@@ -2532,6 +2820,17 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
 
     if (self.activeTool == ScreenshotCanvasToolSelect) {
+        if (self.isMovingAnnotations) {
+            NSPoint delta = NSMakePoint(imagePoint.x - self.annotationMoveLastPoint.x,
+                                        imagePoint.y - self.annotationMoveLastPoint.y);
+            if (fabs(delta.x) > 0.0 || fabs(delta.y) > 0.0) {
+                [self translateAnnotations:[self selectedAnnotationObjects] byDelta:delta];
+                self.annotationMoveLastPoint = imagePoint;
+                self.annotationsMoved = YES;
+                [self setNeedsDisplay:YES];
+            }
+            return;
+        }
         if (self.isCreatingSelection) {
             NSRect rect = [self normalizedImageRectFromStart:self.selectionDragStartImagePoint end:imagePoint];
             rect = [self clampedImageRect:rect];
@@ -2614,6 +2913,15 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
 
     if (self.activeTool == ScreenshotCanvasToolSelect) {
+        if (self.isMovingAnnotations) {
+            self.isMovingAnnotations = NO;
+            if (self.annotationsMoved) {
+                [self registerAnnotationUndoWithSnapshot:self.annotationMoveSnapshot actionName:@"Move"];
+            }
+            self.annotationMoveSnapshot = nil;
+            self.annotationsMoved = NO;
+            return;
+        }
         if (self.isCreatingSelection) {
             self.isCreatingSelection = NO;
             self.selectionRect = [self clampedImageRect:self.selectionRect];
@@ -2899,6 +3207,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     self.texts = updatedTexts;
 
     self.image = croppedImage;
+    [self clearAnnotationSelection];
     [self clearSelection];
 
     [self updateFrameSize];
