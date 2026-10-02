@@ -52,6 +52,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	StatusBarToggleProbe_test.m \
 	TextFontFacePopupProbe_test.m \
 	ThemePreferenceProbe_test.m \
+	TextKeyboardPointerProbe_test.m \
 	TextToolProbe_test.m \
 	TextStyleExportProbe_test.m \
 	TextFontComboProbe_test.m \

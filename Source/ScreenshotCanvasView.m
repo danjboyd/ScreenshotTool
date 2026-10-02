@@ -39,6 +39,9 @@
 #endif
 
 NSString * const ScreenshotCanvasViewDidRestoreStateNotification = @"ScreenshotCanvasViewDidRestoreStateNotification";
+NSString * const ScreenshotCanvasViewRequestsToolNotification = @"ScreenshotCanvasViewRequestsToolNotification";
+NSString * const ScreenshotCanvasViewToolKey = @"tool";
+NSString * const ScreenshotCanvasViewDidBeginTextEditingNotification = @"ScreenshotCanvasViewDidBeginTextEditingNotification";
 #if ST_ENABLE_GNUSTEP_WORKAROUNDS
 BOOL ScreenshotUndoLoggingEnabled(void) __attribute__((weak));
 #else
@@ -49,6 +52,9 @@ static BOOL ScreenshotUndoLoggingEnabled(void) {
 
 #if ST_ENABLE_GNUSTEP_WORKAROUNDS
 @interface STTransparentTextView : NSTextView
+/// Modifiers of the key event being handled, so key commands (Ctrl+Return) can see them
+/// without relying on -[NSApp currentEvent].
+@property (nonatomic, assign) NSEventModifierFlags handlingKeyModifierFlags;
 @end
 
 @implementation STTransparentTextView
@@ -62,6 +68,21 @@ static BOOL ScreenshotUndoLoggingEnabled(void) {
 
 - (void)drawViewBackgroundInRect:(NSRect)rect {
     // Skip GNUstep's default background fill so the text box stays transparent.
+}
+
+- (void)keyDown:(NSEvent *)event {
+    self.handlingKeyModifierFlags = event.modifierFlags;
+    NSString *characters = event.charactersIgnoringModifiers;
+    unichar key = characters.length > 0 ? [characters characterAtIndex:0] : 0;
+    BOOL isReturn = (key == NSCarriageReturnCharacter || key == NSEnterCharacter || key == NSNewlineCharacter);
+    if (isReturn && (event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl)) != 0) {
+        // GNUstep's key bindings have no command for Control+Return; send the one the delegate
+        // reads as "finish" so Ctrl+Return works whichever modifier the Ctrl key maps to.
+        [self doCommandBySelector:@selector(insertNewline:)];
+    } else {
+        [super keyDown:event];
+    }
+    self.handlingKeyModifierFlags = 0;
 }
 @end
 #endif
@@ -820,6 +841,11 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) BOOL isCreatingTextBox;
 @property (nonatomic, assign) BOOL isResizingTextBox;
 @property (nonatomic, assign) BOOL textClickOnlyCommitted;
+// Typing has its own undo history while a box is open, so Ctrl+Z undoes keystrokes, not canvas
+// actions, and nothing from a closed editor is left on the canvas's undo stack (#28).
+@property (nonatomic, strong, nullable) NSUndoManager *textEditingUndoManager;
+// The annotation under the pointer, outlined on hover (#29).
+@property (nonatomic, weak, nullable) id hoverAnnotation;
 // Object selection (#25): strokes and texts picked with the Select tool.
 @property (nonatomic, strong) NSMutableArray<id> *selectedAnnotations;
 @property (nonatomic, assign) BOOL isMovingAnnotations;
@@ -1162,6 +1188,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         [self commitActiveTextIfNeeded];
     }
     _activeTool = activeTool;
+    self.hoverAnnotation = nil;
     if (_activeTool != ScreenshotCanvasToolSelect) {
         [self clearAnnotationSelection];
     }
@@ -1189,7 +1216,8 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         case ScreenshotCanvasToolSelect:
             return [NSCursor crosshairCursor];
         case ScreenshotCanvasToolText:
-            return [NSCursor IBeamCursor];
+            // Over empty canvas a click creates a box; text under the pointer shows an I-beam (#29).
+            return [NSCursor crosshairCursor];
         default:
             return [NSCursor arrowCursor];
     }
@@ -1298,6 +1326,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 - (void)mouseExited:(NSEvent *)event {
     [super mouseExited:event];
     self.mouseInsideCanvas = NO;
+    [self setHoverAnnotationIfChanged:nil];
     ScreenshotCursorLog(@"[CursorEvent] event=mouseExited point=%@", NSStringFromPoint(event.locationInWindow));
     [self updateCursorForActiveTool];
 }
@@ -1316,6 +1345,85 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
                             inside);
         [self updateCursorForActiveTool];
     }
+    [self updateHoverAtViewPoint:localPoint];
+}
+
+/// What the pointer is over, and the cursor that says what a click there will do (#29).
+- (void)updateHoverAtViewPoint:(NSPoint)viewPoint {
+    if (!self.image || !self.mouseInsideCanvas) {
+        [self setHoverAnnotationIfChanged:nil];
+        return;
+    }
+    NSPoint imagePoint = NSMakePoint(viewPoint.x / self.zoomScale, viewPoint.y / self.zoomScale);
+    id hover = nil;
+    if (self.activeTool == ScreenshotCanvasToolText || self.activeTool == ScreenshotCanvasToolSelect) {
+        hover = [self annotationAtImagePoint:imagePoint];
+        if (self.activeTool == ScreenshotCanvasToolText && ![hover isKindOfClass:[MarkupText class]]) {
+            hover = nil;
+        }
+        if (hover == self.currentTextEntry && self.activeTextView) {
+            hover = nil;
+        }
+    }
+    [self setHoverAnnotationIfChanged:hover];
+    if ([self shouldShowCanvasCursor]) {
+        NSCursor *cursor = [self contextCursorAtViewPoint:viewPoint hover:hover];
+        if (cursor && [NSCursor currentCursor] != cursor) {
+            [cursor set];
+        }
+    }
+}
+
+- (void)setHoverAnnotationIfChanged:(nullable id)hover {
+    if (self.hoverAnnotation == hover) {
+        return;
+    }
+    self.hoverAnnotation = hover;
+    [self setNeedsDisplay:YES];
+}
+
+- (nullable NSCursor *)contextCursorAtViewPoint:(NSPoint)viewPoint hover:(nullable id)hover {
+    switch (self.activeTool) {
+        case ScreenshotCanvasToolText:
+            if (self.activeTextView && NSPointInRect(viewPoint, [self activeTextHandleHitRectInView])) {
+                return [NSCursor resizeLeftRightCursor];
+            }
+            if (self.activeTextView && NSPointInRect(viewPoint, [self activeTextGuideRectInView])) {
+                return [NSCursor IBeamCursor];
+            }
+            return hover ? [NSCursor IBeamCursor] : [NSCursor crosshairCursor];
+        case ScreenshotCanvasToolSelect:
+            if (self.isMovingAnnotations) {
+                return [NSCursor closedHandCursor];
+            }
+            return hover ? [NSCursor openHandCursor] : [NSCursor crosshairCursor];
+        default:
+            return nil;
+    }
+}
+
+/// The drawn handle is small; give it a few extra points to hit at any zoom.
+- (NSRect)activeTextHandleHitRectInView {
+    NSRect handle = [self activeTextHandleRectInView];
+    return NSIsEmptyRect(handle) ? handle : NSInsetRect(handle, -3.0, -3.0);
+}
+
+- (void)drawHoverOutline {
+    id hover = self.hoverAnnotation;
+    if (!hover || [self isAnnotationSelected:hover] || (hover == self.currentTextEntry && self.activeTextView)) {
+        return;
+    }
+    if ([self.texts indexOfObjectIdenticalTo:hover] == NSNotFound &&
+        [self.strokes indexOfObjectIdenticalTo:hover] == NSNotFound) {
+        return;
+    }
+    NSRect viewRect = NSInsetRect([self viewRectForImageRect:[self boundsOfAnnotation:hover]], -4.0, -4.0);
+    NSBezierPath *path = [NSBezierPath bezierPathWithRect:viewRect];
+    CGFloat dashPattern[] = {3.0f, 3.0f};
+    [path setLineWidth:1.0f];
+    [path setLineDash:dashPattern count:2 phase:0.0];
+    [[[NSColor keyboardFocusIndicatorColor] ?: [NSColor grayColor] colorWithAlphaComponent:0.55f] setStroke];
+    [path stroke];
 }
 
 - (void)refreshCursor {
@@ -1856,6 +1964,8 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     self.activeTextView.delegate = nil;
     [self.activeTextView removeFromSuperview];
     self.activeTextView = nil;
+    [self.textEditingUndoManager removeAllActions];
+    self.textEditingUndoManager = nil;
     self.activeTextOverflowsImage = NO;
     NSWindow *window = self.window;
     if (window && (window.firstResponder == nil || window.firstResponder == window)) {
@@ -1909,6 +2019,21 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         }
     }
 
+    if (trimmed.length == 0) {
+        // Emptying a label and committing deletes it; make that an undoable step (#30).
+        if (editingIndex != NSNotFound && self.editingTextSnapshot) {
+            NSUInteger insertIndex = (NSUInteger)MIN(MAX(0, editingIndex), (NSInteger)self.texts.count);
+            NSUndoManager *undo = [self undoManager];
+            [[undo prepareWithInvocationTarget:self] insertText:[self.editingTextSnapshot copy]
+                                                        atIndex:insertIndex
+                                                registeringUndo:YES
+                                                     actionName:@"Delete Text"];
+            [undo setActionName:@"Delete Text"];
+        } else if (existingIndex != NSNotFound) {
+            [self removeTextAtIndex:existingIndex registeringUndo:YES actionName:@"Delete Text"];
+        }
+    }
+
     self.editingTextIndex = NSNotFound;
     self.editingTextSnapshot = nil;
     [self cancelActiveTextEntry];
@@ -1941,6 +2066,10 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 }
 
 - (BOOL)isAnnotationSelected:(id)annotation {
+    // Messaging nil would return 0, which is not NSNotFound.
+    if (!annotation || self.selectedAnnotations.count == 0) {
+        return NO;
+    }
     return [self.selectedAnnotations indexOfObjectIdenticalTo:annotation] != NSNotFound;
 }
 
@@ -2112,9 +2241,38 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
             }
             break;
         default:
+            if ([self requestToolForShortcutEvent:event]) {
+                return;
+            }
             break;
     }
     [super keyDown:event];
+}
+
+/// S, H, P, T and E switch tools. They only reach the canvas when no text is being edited, and
+/// only plain letters count, so menu shortcuts and typing are unaffected.
+- (BOOL)requestToolForShortcutEvent:(NSEvent *)event {
+    NSEventModifierFlags flags = event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl |
+                                                        NSEventModifierFlagOption | NSEventModifierFlagShift);
+    NSString *characters = event.charactersIgnoringModifiers.lowercaseString;
+    if (flags != 0 || characters.length != 1) {
+        return NO;
+    }
+    NSDictionary<NSString *, NSNumber *> *shortcuts = @{
+        @"s": @(ScreenshotCanvasToolSelect),
+        @"h": @(ScreenshotCanvasToolHighlighter),
+        @"p": @(ScreenshotCanvasToolPen),
+        @"t": @(ScreenshotCanvasToolText),
+        @"e": @(ScreenshotCanvasToolEraser),
+    };
+    NSNumber *tool = shortcuts[characters];
+    if (!tool) {
+        return NO;
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewRequestsToolNotification
+                                                        object:self
+                                                      userInfo:@{ ScreenshotCanvasViewToolKey: tool }];
+    return YES;
 }
 
 - (void)drawAnnotationSelection {
@@ -2376,6 +2534,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         [container setContainerSize:NSMakeSize(viewRect.size.width, FLT_MAX)];
     }
 
+    self.textEditingUndoManager = [[NSUndoManager alloc] init];
     [self addSubview:textView];
     self.activeTextView = textView;
 
@@ -2387,6 +2546,18 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [self updateActiveTextViewFrame];
     [self setNeedsDisplay:YES]; // Redraw to hide the stored text while the live editor is visible.
     [self updateSelectionAnimationState];
+    [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewDidBeginTextEditingNotification object:self];
+}
+
+- (nullable NSUndoManager *)activeTextUndoManager {
+    return self.activeTextView ? self.textEditingUndoManager : nil;
+}
+
+- (NSUndoManager *)undoManagerForTextView:(NSTextView *)textView {
+    if (textView == self.activeTextView && self.textEditingUndoManager) {
+        return self.textEditingUndoManager;
+    }
+    return [self undoManager];
 }
 
 #pragma mark - NSTextViewDelegate
@@ -2413,6 +2584,22 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
     // GNUstep binds Escape to complete: (DefaultKeyBindings.dict); Cocoa sends cancelOperation:.
     // Compare with sel_isEqual: libobjc2 can hand us a typed selector that isn't == the literal.
+    // Return adds a line; Ctrl+Return (Cmd+Return on macOS) finishes, like clicking away or Escape.
+    if (sel_isEqual(commandSelector, @selector(insertNewline:)) ||
+        sel_isEqual(commandSelector, @selector(insertLineBreak:)) ||
+        sel_isEqual(commandSelector, @selector(insertNewlineIgnoringFieldEditor:))) {
+        NSEventModifierFlags flags = [[NSApp currentEvent] modifierFlags];
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
+        if ([textView isKindOfClass:[STTransparentTextView class]]) {
+            flags |= [(STTransparentTextView *)textView handlingKeyModifierFlags];
+        }
+#endif
+        if ((flags & (NSEventModifierFlagCommand | NSEventModifierFlagControl)) != 0) {
+            [self performSelector:@selector(commitActiveTextIfNeeded) withObject:nil afterDelay:0.0];
+            return YES;
+        }
+        return NO;
+    }
     if (sel_isEqual(commandSelector, @selector(cancelOperation:)) || sel_isEqual(commandSelector, @selector(complete:))) {
         // Commit after this key event: committing removes and releases the text view, which is
         // still running its own -keyDown: here.
@@ -2511,6 +2698,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (self.activeTool == ScreenshotCanvasToolText || self.activeTextView) {
         [self drawTextGuides];
     }
+    [self drawHoverOutline];
     [self drawAnnotationSelection];
 
     if (self.activeTool == ScreenshotCanvasToolSelect || self.hasSelectionRect || self.isCreatingSelection) {
@@ -2657,7 +2845,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (self.activeTool == ScreenshotCanvasToolText) {
         if (self.activeTextView && self.currentTextEntry) {
             NSRect activeRect = [self activeTextGuideRectInView];
-            NSRect handleRect = [self activeTextHandleRectInView];
+            NSRect handleRect = [self activeTextHandleHitRectInView];
             if (NSPointInRect(locationInView, handleRect)) {
                 self.isResizingTextBox = YES;
                 self.textResizeStartImagePoint = imagePoint;
@@ -2728,6 +2916,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
             if ([self isAnnotationSelected:hit]) {
                 self.isMovingAnnotations = YES;
                 self.annotationsMoved = NO;
+                [[NSCursor closedHandCursor] set];
                 self.annotationMoveLastPoint = imagePoint;
                 self.annotationMoveSnapshot = [self annotationSnapshot];
             }
