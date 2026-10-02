@@ -15,6 +15,8 @@
 - (NSWindow *)window;
 - (NSScrollView *)scrollView;
 - (ScreenshotCanvasView *)canvasView;
+- (void)resizeWindowToImageSize:(NSSize)size;
+- (CGFloat)statusBarHeight;
 @end
 
 @interface FitToWindowProbeTests : XCTestCase {
@@ -109,5 +111,20 @@
     XCTAssertEqualWithAccuracy(NSMidX(canvasInClip), NSMidX(clipBounds), 1.0, @"Image should be centred horizontally");
     XCTAssertEqualWithAccuracy(NSMidY(canvasInClip), NSMidY(clipBounds), 1.0, @"Image should be centred vertically");
 }
+
+- (void)testTinyImageGetsAUsableWindow {
+    if (_shouldSkip) return;
+
+    [_appDelegate.canvasView loadImage:[self imageOfSize:NSMakeSize(16.0, 16.0)]];
+    [_appDelegate resizeWindowToImageSize:NSMakeSize(16.0, 16.0)];
+
+    NSSize content = [_appDelegate.window.contentView frame].size;
+    CGFloat barHeight = [_appDelegate statusBarHeight];
+    XCTAssertTrue(content.width >= 576.0 - 0.5, @"A 16x16 image should still get a window wide enough for the toolbar (got %.0f)", content.width);
+    XCTAssertTrue(content.height - barHeight >= 240.0 - 0.5, @"A 16x16 image should still get a usable canvas height (got %.0f)", content.height - barHeight);
+    XCTAssertTrue(_appDelegate.window.contentMinSize.width >= 576.0 - 0.5, @"Manual resizing should not go below the minimum either");
+    XCTAssertEqualWithAccuracy(_appDelegate.canvasView.zoomScale, 1.0, 0.0001, @"The tiny image itself stays at 100%%");
+}
+
 
 @end
