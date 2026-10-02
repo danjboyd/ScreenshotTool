@@ -39,6 +39,7 @@
 @property (nonatomic, strong) NSTextField *fontSizeField;
 @property (nonatomic, strong) NSStepper *fontSizeStepper;
 @property (nonatomic, strong) NSSegmentedControl *styleControl;
+@property (nonatomic, strong) NSSegmentedControl *sizePresetControl;
 @property (nonatomic, strong) STHyperlinkButton *resetButton;
 @property (nonatomic, strong) STHyperlinkButton *defaultButton;
 @property (nonatomic, strong) NSArray<NSButton *> *colorSwatchButtons;
@@ -125,9 +126,20 @@
     MarkupTextStyle defaultStyle = [delegate textToolPopoverDefaultStyle:self];
     [self.styleControl setSelectedSegment:(NSInteger)style];
 
+    STTextSizePreset sizePreset = [delegate textToolPopoverCurrentSizePreset:self];
+    STTextSizePreset defaultSizePreset = [delegate textToolPopoverDefaultSizePreset:self];
+    if (sizePreset == STTextSizePresetExact) {
+        // No segment selected: an exact size is in use.
+        for (NSInteger segment = 0; segment < self.sizePresetControl.segmentCount; segment++) {
+            [self.sizePresetControl setSelected:NO forSegment:segment];
+        }
+    } else {
+        [self.sizePresetControl setSelectedSegment:(NSInteger)sizePreset - 1];
+    }
+
     BOOL canResetColor = ![self colorsEqual:color other:defaultColor];
     BOOL canResetFont = ![self fontsEqual:font other:defaultFont];
-    BOOL enableActions = (canResetColor || canResetFont || style != defaultStyle);
+    BOOL enableActions = (canResetColor || canResetFont || style != defaultStyle || sizePreset != defaultSizePreset);
     [self.resetButton setEnabled:enableActions];
     [self.defaultButton setEnabled:enableActions];
 }
@@ -249,6 +261,27 @@
     [self.fontSizeStepper setIncrement:1.0];
     [self.fontSizeStepper setTarget:self];
     [self.fontSizeStepper setAction:@selector(fontSizeStepperChanged:)];
+
+    // S / M / L / XL size from the image (#27); the exact field and stepper sit to their left.
+    CGFloat presetX = NSMaxX(self.fontSizeStepper.frame) + (10.0f * scaleFactor);
+    NSSegmentedControl *sizePresets = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(presetX,
+                                                                                          y - (2.0f * scaleFactor),
+                                                                                          padding + contentWidth - presetX,
+                                                                                          24.0f * scaleFactor)];
+    NSArray<NSString *> *presetTitles = @[@"S", @"M", @"L", @"XL"];
+    [sizePresets setSegmentCount:(NSInteger)presetTitles.count];
+    [sizePresets setFont:[NSFont systemFontOfSize:11.0f * scaleFactor]];
+    CGFloat presetWidth = floor(NSWidth(sizePresets.frame) / presetTitles.count);
+    for (NSUInteger idx = 0; idx < presetTitles.count; idx++) {
+        [sizePresets setLabel:presetTitles[idx] forSegment:(NSInteger)idx];
+        [sizePresets setWidth:presetWidth forSegment:(NSInteger)idx];
+    }
+    [sizePresets setToolTip:@"Size relative to the image"];
+    [sizePresets setTarget:self];
+    [sizePresets setAction:@selector(sizePresetChanged:)];
+    [sizePresets setAutoresizingMask:NSViewMaxYMargin];
+    [self.contentView addSubview:sizePresets];
+    self.sizePresetControl = sizePresets;
     [self.fontSizeStepper setAutoresizingMask:NSViewMaxYMargin];
     [self.contentView addSubview:self.fontSizeStepper];
 
@@ -778,14 +811,36 @@
     size = MAX(STTextPopoverMinFontSize, MIN(STTextPopoverMaxFontSize, size));
     [self.fontSizeField setStringValue:[NSString stringWithFormat:@"%.0f", roundf(size)]]; 
     [self.fontSizeStepper setDoubleValue:size];
-    [self applyFontSelectionChange];
+    [self applyExactSizeIfChanged:size];
 }
 
 - (void)fontSizeStepperChanged:(NSStepper *)sender {
     CGFloat size = MAX(STTextPopoverMinFontSize, MIN(STTextPopoverMaxFontSize, sender.doubleValue));
     [self.fontSizeField setStringValue:[NSString stringWithFormat:@"%.0f", roundf(size)]];
     [self.fontSizeStepper setDoubleValue:size];
+    [self applyExactSizeIfChanged:size];
+}
+
+/// Typing or stepping a new size switches to an exact size. The field also ends editing when it
+/// merely loses focus, so an unchanged size must leave a preset in place.
+- (void)applyExactSizeIfChanged:(CGFloat)size {
+    NSFont *current = [self.delegate textToolPopoverCurrentFont:self];
+    if (current && fabs(current.pointSize - size) < 0.5) {
+        return;
+    }
+    if ([self.delegate textToolPopoverCurrentSizePreset:self] != STTextSizePresetExact) {
+        [self.delegate textToolPopover:self didChangeSizePreset:STTextSizePresetExact];
+    }
     [self applyFontSelectionChange];
+}
+
+- (void)sizePresetChanged:(NSSegmentedControl *)sender {
+    NSInteger selected = [sender selectedSegment];
+    if (selected < 0) {
+        return;
+    }
+    [self.delegate textToolPopover:self didChangeSizePreset:(STTextSizePreset)(selected + 1)];
+    [self refresh];
 }
 
 - (void)fontFaceChanged:(id)sender {

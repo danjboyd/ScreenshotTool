@@ -1343,6 +1343,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSColor *textDefaultColor;
 @property (nonatomic, strong) NSFont *textDefaultFont;
 @property (nonatomic, assign) MarkupTextStyle textDefaultStyle;
+@property (nonatomic, assign) STTextSizePreset textDefaultSizePreset;
 @property (nonatomic, strong) ToolSettingsPopoverController *penPopoverController;
 @property (nonatomic, strong) ToolSettingsPopoverController *highlighterPopoverController;
 @property (nonatomic, strong) TextToolPopoverController *textPopoverController;
@@ -3422,6 +3423,7 @@ static id STInfoValueForKey(NSString *key) {
                                               fallback:STDefaultTextFont()
                                    registerIfMissing:YES];
     self.textDefaultStyle = (MarkupTextStyle)STStoredTextStyle(STDefaultsTextDefaultStyleKey, STDefaultTextStyle());
+    self.textDefaultSizePreset = STStoredTextSizePreset(STDefaultsTextDefaultSizePresetKey, STDefaultTextSizePreset());
 
     NSColor *penColor = [self storedColorForKey:STDefaultsPenColorKey
                                        fallback:self.penDefaultColor
@@ -3442,6 +3444,7 @@ static id STInfoValueForKey(NSString *key) {
     self.canvasView.textColor = textColor;
     self.canvasView.textFont = textFont;
     self.canvasView.textStyle = (MarkupTextStyle)STStoredTextStyle(STDefaultsTextStyleKey, self.textDefaultStyle);
+    self.canvasView.textSizePreset = STStoredTextSizePreset(STDefaultsTextSizePresetKey, self.textDefaultSizePreset);
     [self.canvasView refreshCursor];
     [self refreshToolButtonIcons];
     [self updateToolWidthControls];
@@ -3852,6 +3855,19 @@ static id STInfoValueForKey(NSString *key) {
     [self.canvasView setNeedsDisplay:YES];
 }
 
+- (void)applyTextSizePreset:(STTextSizePreset)preset persist:(BOOL)persist {
+    self.canvasView.textSizePreset = preset;
+    if (persist) {
+        [[NSUserDefaults standardUserDefaults] setInteger:preset forKey:STDefaultsTextSizePresetKey];
+    }
+    [self.canvasView setNeedsDisplay:YES];
+}
+
+- (void)setDefaultTextSizePreset:(STTextSizePreset)preset {
+    self.textDefaultSizePreset = preset;
+    [[NSUserDefaults standardUserDefaults] setInteger:preset forKey:STDefaultsTextDefaultSizePresetKey];
+}
+
 - (void)setDefaultTextStyle:(MarkupTextStyle)style {
     self.textDefaultStyle = style;
     [[NSUserDefaults standardUserDefaults] setInteger:style forKey:STDefaultsTextDefaultStyleKey];
@@ -4182,7 +4198,23 @@ static id STInfoValueForKey(NSString *key) {
 
 - (NSFont *)textToolPopoverCurrentFont:(TextToolPopoverController *)controller {
     (void)controller;
-    return self.canvasView.textFont ?: STDefaultTextFont();
+    // At the preset's size for the current image, so the size field shows what new text gets.
+    return [self.canvasView effectiveTextFont] ?: STDefaultTextFont();
+}
+
+- (STTextSizePreset)textToolPopoverCurrentSizePreset:(TextToolPopoverController *)controller {
+    (void)controller;
+    return self.canvasView.textSizePreset;
+}
+
+- (STTextSizePreset)textToolPopoverDefaultSizePreset:(TextToolPopoverController *)controller {
+    (void)controller;
+    return self.textDefaultSizePreset;
+}
+
+- (void)textToolPopover:(TextToolPopoverController *)controller didChangeSizePreset:(STTextSizePreset)preset {
+    (void)controller;
+    [self applyTextSizePreset:preset persist:YES];
 }
 
 - (NSFont *)textToolPopoverDefaultFont:(TextToolPopoverController *)controller {
@@ -4215,6 +4247,7 @@ static id STInfoValueForKey(NSString *key) {
     [self applyColor:self.textDefaultColor toTool:ScreenshotCanvasToolText persist:YES];
     [self applyTextFont:self.textDefaultFont persist:YES];
     [self applyTextStyle:self.textDefaultStyle persist:YES];
+    [self applyTextSizePreset:self.textDefaultSizePreset persist:YES];
     [self showStatusMessage:@"Text defaults restored" duration:2.0];
 }
 
@@ -4225,6 +4258,7 @@ static id STInfoValueForKey(NSString *key) {
     [self setDefaultColor:color forTool:ScreenshotCanvasToolText];
     [self setDefaultTextFont:font];
     [self setDefaultTextStyle:self.canvasView.textStyle];
+    [self setDefaultTextSizePreset:self.canvasView.textSizePreset];
     [self showStatusMessage:@"Text defaults updated" duration:2.0];
 }
 

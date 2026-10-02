@@ -21,6 +21,8 @@ NSString * const STDefaultsTextDefaultFontNameKey = @"ScreenshotToolTextDefaultF
 NSString * const STDefaultsTextDefaultFontSizeKey = @"ScreenshotToolTextDefaultFontSize";
 NSString * const STDefaultsTextStyleKey = @"ScreenshotToolTextStyle";
 NSString * const STDefaultsTextDefaultStyleKey = @"ScreenshotToolTextDefaultStyle";
+NSString * const STDefaultsTextSizePresetKey = @"ScreenshotToolTextSizePreset";
+NSString * const STDefaultsTextDefaultSizePresetKey = @"ScreenshotToolTextDefaultSizePreset";
 NSString * const STDefaultsSaveDirectoryKey = @"ScreenshotToolSaveDirectory";
 NSString * const STDefaultsRecentDocumentsKey = @"ScreenshotToolRecentDocuments";
 NSString * const STDefaultsShowStatusBarKey = @"ScreenshotToolShowStatusBar";
@@ -56,6 +58,36 @@ NSInteger STStoredTextStyle(NSString *key, NSInteger fallback) {
     }
     NSInteger value = [stored integerValue];
     return (value >= 0 && value <= 3) ? value : fallback;
+}
+
+STTextSizePreset STDefaultTextSizePreset(void) {
+    return STTextSizePresetMedium;
+}
+
+STTextSizePreset STStoredTextSizePreset(NSString *key, STTextSizePreset fallback) {
+    id stored = [[NSUserDefaults standardUserDefaults] objectForKey:key];
+    if (![stored respondsToSelector:@selector(integerValue)]) {
+        return fallback;
+    }
+    NSInteger value = [stored integerValue];
+    return (value >= STTextSizePresetExact && value <= STTextSizePresetExtraLarge) ? (STTextSizePreset)value : fallback;
+}
+
+CGFloat STTextPointSizeForPreset(STTextSizePreset preset, NSSize imageSize) {
+    CGFloat multiplier = 0.0;
+    CGFloat minimum = 0.0;
+    switch (preset) {
+        case STTextSizePresetSmall:      multiplier = 0.7;  minimum = 11.0; break;
+        case STTextSizePresetMedium:     multiplier = 1.0;  minimum = 14.0; break;
+        case STTextSizePresetLarge:      multiplier = 1.45; minimum = 20.0; break;
+        case STTextSizePresetExtraLarge: multiplier = 2.1;  minimum = 28.0; break;
+        case STTextSizePresetExact:
+        default:
+            return 0.0;
+    }
+    CGFloat scale = sqrt(MAX(imageSize.width, 1.0) * MAX(imageSize.height, 1.0));
+    CGFloat size = round(scale * 0.019 * multiplier);
+    return MIN(240.0, MAX(minimum, size));
 }
 
 NSString *STEncodeColor(NSColor *color) {
