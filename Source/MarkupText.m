@@ -112,6 +112,56 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
     return [self textRectForCanvas];
 }
 
+- (NSRect)textBounds {
+    return NSMakeRect(self.origin.x, self.origin.y, self.measuredSize.width, self.measuredSize.height);
+}
+
+- (CGFloat)lineHeight {
+    return STTextLineHeight(self.font);
+}
+
+- (NSSize)measuredSizeForWrapWidth:(CGFloat)wrapWidth {
+    NSAttributedString *attr = [self attributedString];
+    CGFloat lineHeight = STTextLineHeight(self.font);
+    if (attr.length == 0) {
+        return NSMakeSize(MAX(1.0f, lineHeight * 0.8f), lineHeight);
+    }
+    NSRect bounding = [attr boundingRectWithSize:NSMakeSize(MAX(1.0f, wrapWidth), FLT_MAX)
+                                         options:(NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading)];
+    return NSMakeSize(ceil(MAX(bounding.size.width, 1.0)), ceil(MAX(bounding.size.height, lineHeight)));
+}
+
+- (BOOL)fitToTextWithinCanvasSize:(NSSize)canvasSize {
+    CGFloat lineHeight = STTextLineHeight(self.font);
+    CGFloat pointSize = self.font.pointSize > 0.0 ? self.font.pointSize : 18.0;
+    NSPoint origin = self.origin;
+
+    // Keep a few characters of room at the right edge rather than wrapping every glyph.
+    CGFloat minWrapWidth = MIN(MAX(canvasSize.width, 1.0), MAX(lineHeight * 2.0, pointSize * 3.0));
+    origin.x = MAX(0.0, MIN(origin.x, canvasSize.width - minWrapWidth));
+    origin.y = MAX(0.0, MIN(origin.y, canvasSize.height - lineHeight));
+    CGFloat availableWidth = MAX(minWrapWidth, canvasSize.width - origin.x);
+
+    CGFloat wrapWidth = self.widthIsFixed ? MIN(MAX(self.boxSize.width, minWrapWidth), availableWidth) : availableWidth;
+    NSSize measured = [self measuredSizeForWrapWidth:wrapWidth];
+
+    CGFloat width = wrapWidth;
+    if (!self.widthIsFixed) {
+        // Slack keeps zoom-scaled fonts, whose hinted advances run slightly wider, from re-wrapping.
+        CGFloat slack = ceil(pointSize * 0.25) + 2.0;
+        width = MIN(availableWidth, MAX(lineHeight, measured.width + slack));
+    }
+    CGFloat height = MAX(measured.height, lineHeight);
+    if (origin.y + height > canvasSize.height) {
+        origin.y = MAX(0.0, canvasSize.height - height);
+    }
+
+    _origin = origin;
+    _boxSize = NSMakeSize(ceil(width), ceil(height));
+    self.measuredSize = measured;
+    return height <= canvasSize.height + 0.5;
+}
+
 - (void)drawInCanvasAtScale:(CGFloat)scale {
     if (self.text.length == 0 || scale <= 0.0) {
         return;
@@ -139,7 +189,8 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
 }
 
 - (BOOL)containsPoint:(NSPoint)point {
-    return NSPointInRect(point, [self bounds]);
+    // Hit the text itself (with a little tolerance), not empty space in a wide box.
+    return NSPointInRect(point, NSInsetRect([self textBounds], -4.0, -4.0));
 }
 
 - (id)copyWithZone:(NSZone *)zone {
@@ -148,6 +199,7 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
                                                                  color:self.color
                                                                 origin:self.origin
                                                                 boxSize:self.boxSize];
+    copy.widthIsFixed = self.widthIsFixed;
     return copy;
 }
 

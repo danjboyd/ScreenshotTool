@@ -19,6 +19,7 @@
  */
 
 #import "ScreenshotCanvasView.h"
+#import <objc/runtime.h>
 #import "MarkupStroke.h"
 #import "MarkupText.h"
 #import "STThemeUtilities.h"
@@ -833,7 +834,6 @@ static BOOL STRasterizeTextUsingFreeType(MarkupText *text,
     double sg = [color greenComponent];
     double sb = [color blueComponent];
 
-    double maxHeight = text.boxSize.height;
     double topY = text.origin.y;
     double baselineOffset = ascent;
 
@@ -841,9 +841,6 @@ static BOOL STRasterizeTextUsingFreeType(MarkupText *text,
 
     for (NSUInteger lineIndex = 0; lineIndex < lines.count; lineIndex++) {
         double lineTop = topY + lineHeight * lineIndex;
-        if (maxHeight > 0.0 && (lineTop - topY) >= maxHeight) {
-            break;
-        }
 
         NSString *line = lines[lineIndex];
         double baselineImageY = lineTop + baselineOffset;
@@ -1087,6 +1084,8 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, strong, nullable) NSTextView *activeTextView;
 @property (nonatomic, assign) BOOL isCreatingTextBox;
 @property (nonatomic, assign) BOOL isResizingTextBox;
+@property (nonatomic, assign) BOOL textClickOnlyCommitted;
+@property (nonatomic, assign) BOOL activeTextOverflowsImage;
 @property (nonatomic, assign) NSRect pendingTextRect;
 @property (nonatomic, assign) NSPoint textDragStartImagePoint;
 @property (nonatomic, assign) NSPoint textResizeStartImagePoint;
@@ -1109,7 +1108,9 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @implementation ScreenshotCanvasView
 
 - (BOOL)acceptsFirstResponder {
-    return YES;
+    // GNUstep's NSWindow makes the clicked view first responder before -mouseDown:. Taking it
+    // from an open text editor would commit the text before the click can reach the handle.
+    return self.activeTextView == nil;
 }
 
 - (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
@@ -1259,6 +1260,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
     target.font = snapshot.font;
     target.origin = snapshot.origin;
     target.boxSize = snapshot.boxSize;
+    target.widthIsFixed = snapshot.widthIsFixed;
     [target updateMeasuredSize];
 
     [self setNeedsDisplay:YES];
@@ -2077,6 +2079,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     self.activeTextView.delegate = nil;
     [self.activeTextView removeFromSuperview];
     self.activeTextView = nil;
+    self.activeTextOverflowsImage = NO;
+    NSWindow *window = self.window;
+    if (window && (window.firstResponder == nil || window.firstResponder == window)) {
+        [window makeFirstResponder:self];
+    }
     if (self.editingTextIndex != NSNotFound && self.editingTextSnapshot) {
         NSUInteger insertIndex = (NSUInteger)MIN(MAX(0, self.editingTextIndex), (NSInteger)self.texts.count);
         [self.texts insertObject:self.editingTextSnapshot atIndex:insertIndex];
@@ -2104,12 +2111,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         entry.text = submitted;
         NSColor *submittedColor = self.activeTextView.textColor ?: entry.color ?: [NSColor whiteColor];
         entry.color = submittedColor;
-        NSRect viewFrame = self.activeTextView.frame;
-        entry.origin = NSMakePoint(viewFrame.origin.x / self.zoomScale,
-                                   viewFrame.origin.y / self.zoomScale);
-        entry.boxSize = NSMakeSize(viewFrame.size.width / self.zoomScale,
-                                   viewFrame.size.height / self.zoomScale);
-        [entry updateMeasuredSize];
+        [entry fitToTextWithinCanvasSize:self.image.size];
 
         if (editingIndex != NSNotFound) {
             NSUInteger insertIndex = (NSUInteger)MIN(MAX(0, editingIndex), (NSInteger)self.texts.count);
@@ -2265,34 +2267,34 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         return;
     }
 
-    NSSize boxSize = self.currentTextEntry.boxSize;
-    CGFloat minWidth = MAX(40.0f, boxSize.width);
-    CGFloat requiredHeight = MAX(self.currentTextEntry.measuredSize.height, boxSize.height);
-    NSPoint origin = [self viewPointForImagePoint:self.currentTextEntry.origin];
-    NSRect frame = NSMakeRect(origin.x,
-                              origin.y,
-                              minWidth * self.zoomScale,
-                              requiredHeight * self.zoomScale);
+    MarkupText *entry = self.currentTextEntry;
+    BOOL fits = self.image ? [entry fitToTextWithinCanvasSize:self.image.size] : YES;
+    self.activeTextOverflowsImage = !fits;
+
+    NSRect frame = [self viewRectForImageRect:entry.bounds];
     [self.activeTextView setFrame:frame];
     [self.activeTextView setMaxSize:NSMakeSize(frame.size.width, FLT_MAX)];
 
     NSTextContainer *container = self.activeTextView.textContainer;
     if (container) {
-        NSSize containerSize = NSMakeSize(frame.size.width, FLT_MAX);
-        [container setContainerSize:containerSize];
+        [container setContainerSize:NSMakeSize(frame.size.width, FLT_MAX)];
         [container setWidthTracksTextView:YES];
     }
 
-    NSFont *editingFont = self.currentTextEntry.font ?: self.textFont;
+    NSFont *editingFont = entry.font ?: self.textFont;
     [self.activeTextView setFont:[self scaledFontForEditingWithBaseFont:editingFont]];
-    NSColor *editingColor = self.currentTextEntry.color ?: self.textColor ?: [NSColor whiteColor];
+    NSColor *editingColor = entry.color ?: self.textColor ?: [NSColor whiteColor];
     [self.activeTextView setTextColor:editingColor];
     [self.activeTextView setInsertionPointColor:editingColor];
-
-    self.currentTextEntry.boxSize = NSMakeSize(minWidth, requiredHeight);
 }
 
 - (void)beginTextEntryWithImageRect:(NSRect)imageRect existingText:(MarkupText * _Nullable)existingText {
+    [self beginTextEntryWithImageRect:imageRect existingText:existingText widthIsFixed:NO];
+}
+
+- (void)beginTextEntryWithImageRect:(NSRect)imageRect
+                       existingText:(MarkupText * _Nullable)existingText
+                       widthIsFixed:(BOOL)widthIsFixed {
     [self commitActiveTextIfNeeded];
 
     NSFont *baseFont = self.textFont ?: [NSFont systemFontOfSize:24.0f];
@@ -2305,6 +2307,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
                                            color:baseColor
                                           origin:imageRect.origin
                                           boxSize:imageRect.size];
+        entry.widthIsFixed = widthIsFixed;
     } else {
         entry.origin = imageRect.origin;
         entry.boxSize = imageRect.size;
@@ -2404,8 +2407,12 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (textView != self.activeTextView) {
         return NO;
     }
-    if (commandSelector == @selector(cancelOperation:)) {
-        [self cancelActiveTextEntry];
+    // GNUstep binds Escape to complete: (DefaultKeyBindings.dict); Cocoa sends cancelOperation:.
+    // Compare with sel_isEqual: libobjc2 can hand us a typed selector that isn't == the literal.
+    if (sel_isEqual(commandSelector, @selector(cancelOperation:)) || sel_isEqual(commandSelector, @selector(complete:))) {
+        // Commit after this key event: committing removes and releases the text view, which is
+        // still running its own -keyDown: here.
+        [self performSelector:@selector(commitActiveTextIfNeeded) withObject:nil afterDelay:0.0];
         return YES;
     }
     return NO;
@@ -2522,6 +2529,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         NSBezierPath *path = [NSBezierPath bezierPathWithRect:viewRect];
         [path setLineWidth:1.0f];
         [path setLineDash:dashPattern count:dashCount phase:phase];
+        if (self.activeTextOverflowsImage) {
+            outline = [NSColor colorWithDeviceRed:0.88 green:0.11 blue:0.14 alpha:1.0];
+        }
         [outline setStroke];
         [path stroke];
 
@@ -2656,7 +2666,10 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         }
 
         if (self.activeTextView) {
+            // Clicking away finishes the text; the next click starts a new box.
             [self commitActiveTextIfNeeded];
+            self.textClickOnlyCommitted = YES;
+            return;
         }
 
         MarkupText *hitText = [self textOverlayContainingImagePoint:imagePoint];
@@ -2737,6 +2750,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     NSPoint imagePoint = [self imagePointForEvent:event];
     if (self.activeTool == ScreenshotCanvasToolText) {
+        if (self.textClickOnlyCommitted) {
+            return;
+        }
         if (self.isCreatingTextBox) {
             NSRect rect = [self normalizedImageRectFromStart:self.textDragStartImagePoint end:imagePoint];
             if (self.image) {
@@ -2751,19 +2767,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
             return;
         }
         if (self.isResizingTextBox && self.currentTextEntry) {
+            // The handle sets the wrap width; the height always follows the text.
             CGFloat deltaX = imagePoint.x - self.textResizeStartImagePoint.x;
-            CGFloat deltaY = imagePoint.y - self.textResizeStartImagePoint.y;
-            CGFloat newWidth = MAX(40.0f, self.textResizeStartBoxSize.width + deltaX);
-            CGFloat newHeight = MAX(30.0f, self.textResizeStartBoxSize.height + deltaY);
-            if (self.image) {
-                NSSize canvas = self.image.size;
-                CGFloat maxWidth = MAX(1.0f, canvas.width - self.currentTextEntry.origin.x);
-                CGFloat maxHeight = MAX(1.0f, canvas.height - self.currentTextEntry.origin.y);
-                newWidth = MIN(MAX(newWidth, 40.0f), maxWidth);
-                newHeight = MIN(MAX(newHeight, 30.0f), maxHeight);
-            }
-            self.currentTextEntry.boxSize = NSMakeSize(newWidth, newHeight);
-            [self.currentTextEntry updateMeasuredSize];
+            MarkupText *entry = self.currentTextEntry;
+            entry.widthIsFixed = YES;
+            entry.boxSize = NSMakeSize(MAX(1.0f, self.textResizeStartBoxSize.width + deltaX), entry.boxSize.height);
             [self updateActiveTextViewFrame];
             [self setNeedsDisplay:YES];
             return;
@@ -2822,28 +2830,21 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
 
     if (self.activeTool == ScreenshotCanvasToolText) {
+        if (self.textClickOnlyCommitted) {
+            self.textClickOnlyCommitted = NO;
+            return;
+        }
         if (self.isCreatingTextBox) {
             NSRect rect = self.pendingTextRect;
             self.isCreatingTextBox = NO;
             self.pendingTextRect = NSZeroRect;
-            if (rect.size.width < 5.0f && rect.size.height < 5.0f) {
-                rect = NSMakeRect(self.textDragStartImagePoint.x,
-                                  self.textDragStartImagePoint.y,
-                                  220.0f,
-                                  80.0f);
+            // A click starts a box at the click point that grows with the text; a horizontal
+            // drag sets the wrap width. Either way the height follows the text.
+            BOOL dragged = rect.size.width >= 5.0f;
+            if (!dragged) {
+                rect = NSMakeRect(self.textDragStartImagePoint.x, self.textDragStartImagePoint.y, 1.0f, 1.0f);
             }
-            rect.size.width = MAX(40.0f, rect.size.width);
-            rect.size.height = MAX(30.0f, rect.size.height);
-            if (self.image) {
-                NSSize canvas = self.image.size;
-                CGFloat maxWidth = MAX(1.0f, canvas.width - rect.origin.x);
-                CGFloat maxHeight = MAX(1.0f, canvas.height - rect.origin.y);
-                rect.size.width = MIN(MAX(rect.size.width, 40.0f), maxWidth);
-                rect.size.height = MIN(MAX(rect.size.height, 30.0f), maxHeight);
-                rect.origin.x = MAX(0.0f, MIN(rect.origin.x, canvas.width - rect.size.width));
-                rect.origin.y = MAX(0.0f, MIN(rect.origin.y, canvas.height - rect.size.height));
-            }
-            [self beginTextEntryWithImageRect:rect existingText:nil];
+            [self beginTextEntryWithImageRect:rect existingText:nil widthIsFixed:dragged];
             [self setNeedsDisplay:YES];
             return;
         }
@@ -3140,7 +3141,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     NSMutableArray<MarkupText *> *updatedTexts = [[NSMutableArray alloc] init];
     for (MarkupText *text in self.texts) {
-        if (!NSIntersectsRect([text bounds], clipRect)) {
+        if (!NSIntersectsRect([text textBounds], clipRect)) {
             continue;
         }
         [text translateByOffset:offset];
