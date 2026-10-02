@@ -45,6 +45,11 @@ ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
 	Resources/PenTool-dark.png \
 	Resources/PenTool-light-gnustep.png \
 	Resources/PenTool-dark-gnustep.png \
+	Resources/Arrow.png \
+	Resources/Arrow-light.png \
+	Resources/Arrow-dark.png \
+	Resources/Arrow-light-gnustep.png \
+	Resources/Arrow-dark-gnustep.png \
 	Resources/PenChangeColor.png \
 	Resources/Eraser.png \
 	Resources/Eraser-light.png \

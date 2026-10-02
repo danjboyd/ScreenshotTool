@@ -13,7 +13,7 @@
 
 static const CGFloat STTextOptionsBarHeight = 40.0;
 static const CGFloat STTextOptionsBarPadding = 10.0;
-static const CGFloat STTextOptionsBarGroupGap = 12.0;
+static const CGFloat STTextOptionsBarGroupGap = 10.0;
 static const CGFloat STTextOptionsBarControlHeight = 26.0;
 
 /// A round colour swatch with a ring when it's the current colour.
@@ -51,6 +51,7 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
 @property (nonatomic, strong) NSButton *smallerButton;
 @property (nonatomic, strong) NSButton *biggerButton;
 @property (nonatomic, strong) NSPopUpButton *stylePopUp;
+@property (nonatomic, strong) NSButton *pointerButton;
 @property (nonatomic, strong) NSPopUpButton *fontPopUp;
 @property (nonatomic, strong) NSButton *boldButton;
 @property (nonatomic, strong) NSButton *italicButton;
@@ -93,7 +94,7 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
 }
 
 - (NSButton *)smallButtonWithTitle:(NSString *)title action:(SEL)action toolTip:(NSString *)toolTip {
-    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 30.0, STTextOptionsBarControlHeight)];
+    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 28.0, STTextOptionsBarControlHeight)];
     [button setTitle:title];
     [button setBezelStyle:NSRoundedBezelStyle];
     [button setFont:[NSFont systemFontOfSize:12.0]];
@@ -113,7 +114,7 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
     ];
     NSMutableArray<STTextOptionsSwatch *> *swatches = [[NSMutableArray alloc] init];
     for (NSUInteger idx = 0; idx < colors.count; idx++) {
-        STTextOptionsSwatch *swatch = [[STTextOptionsSwatch alloc] initWithFrame:NSMakeRect(0.0, 0.0, 24.0, 24.0)];
+        STTextOptionsSwatch *swatch = [[STTextOptionsSwatch alloc] initWithFrame:NSMakeRect(0.0, 0.0, 22.0, 24.0)];
         [swatch setBordered:NO];
         swatch.swatchColor = colors[idx];
         swatch.tag = (NSInteger)idx;
@@ -123,26 +124,31 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
     }
     self.swatches = swatches;
 
-    self.sizePresets = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(0.0, 0.0, 120.0, STTextOptionsBarControlHeight)];
+    self.sizePresets = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(0.0, 0.0, 112.0, STTextOptionsBarControlHeight)];
     NSArray<NSString *> *presetTitles = @[@"S", @"M", @"L", @"XL"];
     [self.sizePresets setSegmentCount:(NSInteger)presetTitles.count];
     [self.sizePresets setFont:[NSFont systemFontOfSize:11.0]];
     for (NSUInteger idx = 0; idx < presetTitles.count; idx++) {
         [self.sizePresets setLabel:presetTitles[idx] forSegment:(NSInteger)idx];
-        [self.sizePresets setWidth:30.0 forSegment:(NSInteger)idx];
+        [self.sizePresets setWidth:28.0 forSegment:(NSInteger)idx];
     }
     [self.sizePresets setAction:@selector(sizePresetChanged:)];
     [self prepareControl:self.sizePresets toolTip:@"Size relative to the image"];
     self.smallerButton = [self smallButtonWithTitle:@"A-" action:@selector(smallerPressed:) toolTip:@"Smaller (Ctrl+Shift+<)"];
     self.biggerButton = [self smallButtonWithTitle:@"A+" action:@selector(biggerPressed:) toolTip:@"Bigger (Ctrl+Shift+>)"];
 
-    self.stylePopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 96.0, STTextOptionsBarControlHeight) pullsDown:NO];
+    self.stylePopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 88.0, STTextOptionsBarControlHeight) pullsDown:NO];
     [self.stylePopUp addItemsWithTitles:@[@"Plain", @"Outline", @"Shadow", @"Box"]];
     [self.stylePopUp setFont:[NSFont systemFontOfSize:12.0]];
     [self.stylePopUp setAction:@selector(styleChanged:)];
     [self prepareControl:self.stylePopUp toolTip:@"Text style"];
 
-    self.fontPopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 130.0, STTextOptionsBarControlHeight) pullsDown:NO];
+    self.pointerButton = [self smallButtonWithTitle:@"Pointer" action:@selector(pointerPressed:) toolTip:@"Callout pointer — drag its handle to aim it"];
+    [self.pointerButton setFrameSize:NSMakeSize(60.0, STTextOptionsBarControlHeight)];
+    [self.pointerButton setFont:[NSFont systemFontOfSize:11.0]];
+    [self.pointerButton setButtonType:NSPushOnPushOffButton];
+
+    self.fontPopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 110.0, STTextOptionsBarControlHeight) pullsDown:NO];
     NSArray<NSString *> *families = [[[NSFontManager sharedFontManager] availableFontFamilies]
         sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
     [self.fontPopUp addItemsWithTitles:families ?: @[]];
@@ -156,13 +162,13 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
     self.italicButton = [self smallButtonWithTitle:@"I" action:@selector(italicPressed:) toolTip:@"Italic (Ctrl+I)"];
     [self.italicButton setButtonType:NSPushOnPushOffButton];
 
-    self.alignmentControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(0.0, 0.0, 132.0, STTextOptionsBarControlHeight)];
+    self.alignmentControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(0.0, 0.0, 126.0, STTextOptionsBarControlHeight)];
     NSArray<NSString *> *alignTitles = @[@"Left", @"Centre", @"Right"];
     [self.alignmentControl setSegmentCount:(NSInteger)alignTitles.count];
     [self.alignmentControl setFont:[NSFont systemFontOfSize:11.0]];
     for (NSUInteger idx = 0; idx < alignTitles.count; idx++) {
         [self.alignmentControl setLabel:alignTitles[idx] forSegment:(NSInteger)idx];
-        [self.alignmentControl setWidth:44.0 forSegment:(NSInteger)idx];
+        [self.alignmentControl setWidth:42.0 forSegment:(NSInteger)idx];
     }
     [self.alignmentControl setAction:@selector(alignmentChanged:)];
     [self prepareControl:self.alignmentControl toolTip:@"Alignment"];
@@ -170,7 +176,7 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
     self.groups = @[
         self.swatches,
         @[self.sizePresets, self.smallerButton, self.biggerButton],
-        @[self.stylePopUp],
+        @[self.stylePopUp, self.pointerButton],
         @[self.fontPopUp],
         @[self.boldButton, self.italicButton],
         @[self.alignmentControl],
@@ -314,6 +320,16 @@ static BOOL STTextOptionsColorsMatch(NSColor *a, NSColor *b) {
 
 - (void)styleChanged:(NSPopUpButton *)sender {
     [self.delegate textOptionsBar:self didPickStyle:(MarkupTextStyle)[sender indexOfSelectedItem]];
+}
+
+- (void)setPointerOn:(BOOL)on available:(BOOL)available {
+    [self.pointerButton setState:on ? NSOnState : NSOffState];
+    [self.pointerButton setEnabled:available];
+}
+
+- (void)pointerPressed:(id)sender {
+    (void)sender;
+    [self.delegate textOptionsBarDidTogglePointer:self];
 }
 
 - (void)fontChanged:(NSPopUpButton *)sender {

@@ -46,6 +46,10 @@ typedef NS_ENUM(NSInteger, MarkupTextStyle) {
 @property (nonatomic, assign) MarkupTextStyle style;
 /// Left, centre or right; lines align within the box (#31).
 @property (nonatomic, assign) NSTextAlignment alignment;
+/// A callout pointer from the label to pointerTarget (image coordinates) (#33). On a Box label
+/// it's a tail in the box colour; otherwise a line with an arrowhead.
+@property (nonatomic, assign) BOOL hasPointer;
+@property (nonatomic, assign) NSPoint pointerTarget;
 
 - (instancetype)initWithText:(NSString *)text
                         font:(NSFont *)font
@@ -63,8 +67,12 @@ typedef NS_ENUM(NSInteger, MarkupTextStyle) {
 - (NSColor *)glyphColor;
 /// How far the style draws outside the text, in image points.
 - (CGFloat)decorationOutset;
-/// The text plus its outline, shadow or background: what is visible and can be hit.
+/// The text plus its outline, shadow or background (not the pointer).
+- (NSRect)decoratedTextBounds;
+/// Everything drawn, pointer included: what export and selection outlines cover.
 - (NSRect)decoratedBounds;
+/// Where the pointer leaves the label: the point on its edge nearest the target.
+- (NSPoint)pointerAnchor;
 - (void)renderInContext:(NSGraphicsContext *)context canvasSize:(NSSize)canvasSize;
 - (BOOL)containsPoint:(NSPoint)point;
 - (void)updateMeasuredSize;
@@ -77,6 +85,10 @@ typedef NS_ENUM(NSInteger, MarkupTextStyle) {
 /// Returns NO when the text is taller than the canvas and must overflow.
 - (BOOL)fitToTextWithinCanvasSize:(NSSize)canvasSize;
 - (void)translateByOffset:(NSPoint)offset;
+
+/// A property-list form for project files (#32), and back. Returns nil for malformed input.
+- (NSDictionary *)projectRepresentation;
++ (nullable instancetype)textWithProjectRepresentation:(NSDictionary *)dictionary;
 
 @end
 

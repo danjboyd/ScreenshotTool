@@ -155,6 +155,8 @@ static NSString *STCursorToolName(ScreenshotCanvasTool tool) {
             return @"select";
         case ScreenshotCanvasToolText:
             return @"text";
+        case ScreenshotCanvasToolArrow:
+            return @"arrow";
         default:
             return @"unknown";
     }
@@ -642,6 +644,8 @@ static void STRasterizeHighlighterStrokeOntoBitmap(MarkupStroke *stroke,
     }
 }
 
+static void STRasterizeArrowOntoBitmap(MarkupStroke *stroke, STBitmapBuffer *buffer, NSSize canvasSize);
+
 static void STRasterizeStrokeOntoBitmap(MarkupStroke *stroke,
                                         STBitmapBuffer *buffer,
                                         NSSize canvasSize) {
@@ -657,6 +661,10 @@ static void STRasterizeStrokeOntoBitmap(MarkupStroke *stroke,
 
     if (stroke.type == MarkupStrokeTypeHighlighter) {
         STRasterizeHighlighterStrokeOntoBitmap(stroke, buffer, canvasSize);
+        return;
+    }
+    if (stroke.type == MarkupStrokeTypeArrow) {
+        STRasterizeArrowOntoBitmap(stroke, buffer, canvasSize);
         return;
     }
 
@@ -708,16 +716,18 @@ static void STRasterizeStrokeOntoBitmap(MarkupStroke *stroke,
 }
 
 // GNUstep draws no glyphs into an NSBitmapImageRep graphics context (GNUSTEP_BUG_REPORT.md), but
-// it does into a locked NSImage. So each annotation is drawn there with the canvas's own drawing
-// code, read back, and composited, which keeps export identical to the screen (styles included).
-static void STRasterizeTextOntoBitmap(MarkupText *text,
-                                      STBitmapBuffer *buffer,
-                                      NSSize canvasSize) {
-    if (!text || !buffer || !buffer->data || text.text.length == 0) {
+// it does into a locked NSImage. Annotations whose look depends on AppKit drawing (text, arrows)
+// are drawn there with the canvas's own code, read back, and composited, so export matches the
+// screen. `draw` receives the unflipped height to map canvas coordinates into that image.
+static void STRasterizeDrawingOntoBitmap(NSRect canvasArea,
+                                         STBitmapBuffer *buffer,
+                                         NSSize canvasSize,
+                                         void (^draw)(CGFloat unflippedHeight)) {
+    if (!buffer || !buffer->data || !draw) {
         return;
     }
 
-    NSRect area = NSIntersectionRect(NSIntegralRect([text decoratedBounds]),
+    NSRect area = NSIntersectionRect(NSIntegralRect(canvasArea),
                                      NSMakeRect(0.0, 0.0, canvasSize.width, canvasSize.height));
     NSInteger width = (NSInteger)NSWidth(area);
     NSInteger height = (NSInteger)NSHeight(area);
@@ -731,13 +741,13 @@ static void STRasterizeTextOntoBitmap(MarkupText *text,
     @try {
         [[NSColor clearColor] set];
         NSRectFillUsingOperation(NSMakeRect(0.0, 0.0, width, height), NSCompositeCopy);
-        // Shift the annotation into this small image: x by translation, y through the unflipped
+        // Shift the drawing into this small image: x by translation, y through the unflipped
         // mapping, so a top-down canvas y of area.origin.y lands on the image's top row.
         [NSGraphicsContext saveGraphicsState];
         NSAffineTransform *shift = [NSAffineTransform transform];
         [shift translateXBy:-NSMinX(area) yBy:0.0];
         [shift concat];
-        [text drawAtScale:1.0 unflippedHeight:(height + NSMinY(area)) decorationsOnly:NO];
+        draw(height + NSMinY(area));
         [NSGraphicsContext restoreGraphicsState];
         rep = [[NSBitmapImageRep alloc] initWithFocusedViewRect:NSMakeRect(0.0, 0.0, width, height)];
     } @finally {
@@ -788,6 +798,25 @@ static void STRasterizeTextOntoBitmap(MarkupText *text,
             STBlendPixel(buffer, destX, destY, sr, sg, sb, alpha);
         }
     }
+}
+
+static void STRasterizeTextOntoBitmap(MarkupText *text,
+                                      STBitmapBuffer *buffer,
+                                      NSSize canvasSize) {
+    if (!text || text.text.length == 0) {
+        return;
+    }
+    STRasterizeDrawingOntoBitmap([text decoratedBounds], buffer, canvasSize, ^(CGFloat unflippedHeight) {
+        [text drawAtScale:1.0 unflippedHeight:unflippedHeight decorationsOnly:NO];
+    });
+}
+
+static void STRasterizeArrowOntoBitmap(MarkupStroke *stroke,
+                                       STBitmapBuffer *buffer,
+                                       NSSize canvasSize) {
+    STRasterizeDrawingOntoBitmap([stroke bounds], buffer, canvasSize, ^(CGFloat unflippedHeight) {
+        [stroke drawArrowWithUnflippedHeight:unflippedHeight];
+    });
 }
 
 static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect clipRect, NSSize canvasSize) {
@@ -875,6 +904,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, strong, nullable) NSTextView *activeTextView;
 @property (nonatomic, assign) BOOL isCreatingTextBox;
 @property (nonatomic, assign) BOOL isResizingTextBox;
+@property (nonatomic, assign) BOOL isDraggingPointer;
 @property (nonatomic, assign) BOOL textClickOnlyCommitted;
 // Typing has its own undo history while a box is open, so Ctrl+Z undoes keystrokes, not canvas
 // actions, and nothing from a closed editor is left on the canvas's undo stack (#28).
@@ -1065,6 +1095,8 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
     target.widthIsFixed = snapshot.widthIsFixed;
     target.style = snapshot.style;
     target.alignment = snapshot.alignment;
+    target.hasPointer = snapshot.hasPointer;
+    target.pointerTarget = snapshot.pointerTarget;
     [target updateMeasuredSize];
 
     [self setNeedsDisplay:YES];
@@ -1250,6 +1282,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
             return cursor ?: [NSCursor pointingHandCursor];
         }
         case ScreenshotCanvasToolSelect:
+        case ScreenshotCanvasToolArrow:
             return [NSCursor crosshairCursor];
         case ScreenshotCanvasToolText:
             // Over empty canvas a click creates a box; text under the pointer shows an I-beam (#29).
@@ -1421,6 +1454,12 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 - (nullable NSCursor *)contextCursorAtViewPoint:(NSPoint)viewPoint hover:(nullable id)hover {
     switch (self.activeTool) {
         case ScreenshotCanvasToolText:
+            if (self.isDraggingPointer) {
+                return [NSCursor closedHandCursor];
+            }
+            if (self.activeTextView && NSPointInRect(viewPoint, NSInsetRect([self activePointerHandleRectInView], -3.0, -3.0))) {
+                return [NSCursor openHandCursor];
+            }
             if (self.activeTextView && NSPointInRect(viewPoint, [self activeTextHandleHitRectInView])) {
                 return [NSCursor resizeLeftRightCursor];
             }
@@ -2298,7 +2337,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [super keyDown:event];
 }
 
-/// S, H, P, T and E switch tools. They only reach the canvas when no text is being edited, and
+/// S, H, P, A, T and E switch tools. They only reach the canvas when no text is being edited, and
 /// only plain letters count, so menu shortcuts and typing are unaffected.
 - (BOOL)requestToolForShortcutEvent:(NSEvent *)event {
     NSEventModifierFlags flags = event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl |
@@ -2313,6 +2352,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         @"p": @(ScreenshotCanvasToolPen),
         @"t": @(ScreenshotCanvasToolText),
         @"e": @(ScreenshotCanvasToolEraser),
+        @"a": @(ScreenshotCanvasToolArrow),
     };
     NSNumber *tool = shortcuts[characters];
     if (!tool) {
@@ -2604,6 +2644,146 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     return self.activeTextView ? self.currentTextEntry : nil;
 }
 
+#pragma mark - Project files (#32)
+
+static NSString * const STProjectFormat = @"screenshottool-project";
+
+static NSError *STProjectError(NSString *message) {
+    return [NSError errorWithDomain:@"ScreenshotToolProject" code:1 userInfo:@{ NSLocalizedDescriptionKey: message }];
+}
+
+- (NSData *)projectDataWithError:(NSError **)error {
+    [self commitActiveTextIfNeeded];
+    if (!self.image) {
+        if (error) *error = STProjectError(@"There is no image to save.");
+        return nil;
+    }
+    // The original image, not the flattened one, so the annotations stay editable.
+    NSBitmapImageRep *rep = [NSBitmapImageRep imageRepWithData:[self.image TIFFRepresentation]];
+    NSData *png = [rep representationUsingType:NSPNGFileType properties:@{}];
+    if (png.length == 0) {
+        if (error) *error = STProjectError(@"The image could not be encoded.");
+        return nil;
+    }
+    NSMutableArray *strokes = [[NSMutableArray alloc] initWithCapacity:self.strokes.count];
+    for (MarkupStroke *stroke in self.strokes) {
+        [strokes addObject:[stroke projectRepresentation]];
+    }
+    NSMutableArray *texts = [[NSMutableArray alloc] initWithCapacity:self.texts.count];
+    for (MarkupText *text in self.texts) {
+        [texts addObject:[text projectRepresentation]];
+    }
+    NSDictionary *project = @{ @"format": STProjectFormat,
+                               @"version": @1,
+                               @"imageSize": @[@(self.image.size.width), @(self.image.size.height)],
+                               @"image": [png base64EncodedStringWithOptions:0],
+                               @"strokes": strokes,
+                               @"texts": texts };
+    return [NSJSONSerialization dataWithJSONObject:project options:NSJSONWritingPrettyPrinted error:error];
+}
+
+- (NSData *)annotationFingerprint {
+    NSMutableArray *strokes = [[NSMutableArray alloc] initWithCapacity:self.strokes.count];
+    for (MarkupStroke *stroke in self.strokes) {
+        [strokes addObject:[stroke projectRepresentation]];
+    }
+    NSMutableArray *texts = [[NSMutableArray alloc] initWithCapacity:self.texts.count];
+    for (MarkupText *text in self.texts) {
+        [texts addObject:[text projectRepresentation]];
+    }
+    // A label being edited counts with what's typed so far.
+    MarkupText *editing = [self activeTextEntry];
+    if (editing && self.activeTextView) {
+        NSMutableDictionary *live = [[editing projectRepresentation] mutableCopy];
+        live[@"text"] = self.activeTextView.string ?: @"";
+        [texts addObject:live];
+    }
+    NSSize size = self.image ? self.image.size : NSZeroSize;
+    NSDictionary *state = @{ @"imageSize": @[@(size.width), @(size.height)], @"strokes": strokes, @"texts": texts };
+    return [NSJSONSerialization dataWithJSONObject:state options:0 error:NULL] ?: [NSData data];
+}
+
+- (BOOL)loadProjectData:(NSData *)data error:(NSError **)error {
+    id object = data ? [NSJSONSerialization JSONObjectWithData:data options:0 error:NULL] : nil;
+    NSDictionary *project = [object isKindOfClass:[NSDictionary class]] ? object : nil;
+    if (![project[@"format"] isEqual:STProjectFormat] || [project[@"version"] integerValue] < 1) {
+        if (error) *error = STProjectError(@"This isn't a ScreenshotTool project.");
+        return NO;
+    }
+    if ([project[@"version"] integerValue] > 1) {
+        if (error) *error = STProjectError(@"This project was saved by a newer version of ScreenshotTool.");
+        return NO;
+    }
+    NSString *base64 = [project[@"image"] isKindOfClass:[NSString class]] ? project[@"image"] : nil;
+    NSData *png = base64 ? [[NSData alloc] initWithBase64EncodedString:base64 options:0] : nil;
+    NSBitmapImageRep *rep = png ? [NSBitmapImageRep imageRepWithData:png] : nil;
+    if (!rep || rep.pixelsWide <= 0 || rep.pixelsHigh <= 0) {
+        if (error) *error = STProjectError(@"The project's image is missing or damaged.");
+        return NO;
+    }
+
+    NSMutableArray<MarkupStroke *> *strokes = [[NSMutableArray alloc] init];
+    for (NSDictionary *item in ([project[@"strokes"] isKindOfClass:[NSArray class]] ? project[@"strokes"] : @[])) {
+        MarkupStroke *stroke = [MarkupStroke strokeWithProjectRepresentation:item];
+        if (!stroke) {
+            if (error) *error = STProjectError(@"The project contains a damaged drawing.");
+            return NO;
+        }
+        [strokes addObject:stroke];
+    }
+    NSMutableArray<MarkupText *> *texts = [[NSMutableArray alloc] init];
+    for (NSDictionary *item in ([project[@"texts"] isKindOfClass:[NSArray class]] ? project[@"texts"] : @[])) {
+        MarkupText *text = [MarkupText textWithProjectRepresentation:item];
+        if (!text) {
+            if (error) *error = STProjectError(@"The project contains a damaged label.");
+            return NO;
+        }
+        [texts addObject:text];
+    }
+
+    // One image pixel per point, as when opening an image file.
+    NSSize size = NSMakeSize((CGFloat)rep.pixelsWide, (CGFloat)rep.pixelsHigh);
+    NSImage *image = [[NSImage alloc] initWithSize:size];
+    [rep setSize:size];
+    [image addRepresentation:rep];
+    [self loadImage:image];
+    self.strokes = strokes;
+    self.texts = texts;
+    [self setNeedsDisplay:YES];
+    return YES;
+}
+
+- (BOOL)toggleActiveTextPointer {
+    MarkupText *entry = [self activeTextEntry];
+    if (!entry) {
+        return NO;
+    }
+    entry.hasPointer = !entry.hasPointer;
+    if (entry.hasPointer && NSPointInRect(entry.pointerTarget, NSInsetRect([entry decoratedTextBounds], -4.0, -4.0))) {
+        // Start the pointer below and to the left of the label, inside the image; drag its handle to aim it.
+        NSRect box = [entry decoratedTextBounds];
+        NSSize size = self.image ? self.image.size : NSMakeSize(NSMaxX(box) + 60.0, NSMaxY(box) + 60.0);
+        NSPoint target = NSMakePoint(NSMinX(box) - 40.0, NSMaxY(box) + 50.0);
+        if (target.y > size.height - 4.0) {
+            target.y = NSMinY(box) - 50.0;
+        }
+        target.x = MAX(4.0, MIN(size.width - 4.0, target.x));
+        target.y = MAX(4.0, MIN(size.height - 4.0, target.y));
+        entry.pointerTarget = target;
+    }
+    [self setNeedsDisplay:YES];
+    return YES;
+}
+
+- (NSRect)activePointerHandleRectInView {
+    MarkupText *entry = [self activeTextEntry];
+    if (!entry.hasPointer) {
+        return NSZeroRect;
+    }
+    NSPoint target = [self viewPointForImagePoint:entry.pointerTarget];
+    return NSMakeRect(target.x - 6.0, target.y - 6.0, 12.0, 12.0);
+}
+
 - (NSRect)activeTextRectInView {
     return self.activeTextView ? [self activeTextGuideRectInView] : NSZeroRect;
 }
@@ -2767,6 +2947,15 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
 - (void)drawTextGuides {
     NSColor *outline = [NSColor keyboardFocusIndicatorColor] ?: [NSColor grayColor];
+    NSRect pointerHandle = [self activePointerHandleRectInView];
+    if (!NSIsEmptyRect(pointerHandle)) {
+        [[NSColor whiteColor] setFill];
+        [[NSBezierPath bezierPathWithOvalInRect:pointerHandle] fill];
+        [outline setStroke];
+        NSBezierPath *ring = [NSBezierPath bezierPathWithOvalInRect:NSInsetRect(pointerHandle, 1.0, 1.0)];
+        [ring setLineWidth:2.0];
+        [ring stroke];
+    }
     CGFloat dashPattern[] = {6.0f, 4.0f};
     const NSInteger dashCount = 2;
     CGFloat phase = self.selectionDashPhase;
@@ -2902,6 +3091,13 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     NSPoint imagePoint = [self imagePointForEvent:event];
     NSPoint locationInView = [self convertPoint:event.locationInWindow fromView:nil];
     if (self.activeTool == ScreenshotCanvasToolText) {
+        if (self.activeTextView && self.currentTextEntry &&
+            NSPointInRect(locationInView, NSInsetRect([self activePointerHandleRectInView], -3.0, -3.0))) {
+            // Drag the callout's pointer to its target (#33).
+            self.isDraggingPointer = YES;
+            [[NSCursor closedHandCursor] set];
+            return;
+        }
         if (self.activeTextView && self.currentTextEntry) {
             NSRect activeRect = [self activeTextGuideRectInView];
             NSRect handleRect = [self activeTextHandleHitRectInView];
@@ -3018,6 +3214,10 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     MarkupStrokeType strokeType = (self.activeTool == ScreenshotCanvasToolHighlighter)
         ? MarkupStrokeTypeHighlighter
         : MarkupStrokeTypePen;
+    if (self.activeTool == ScreenshotCanvasToolArrow) {
+        // Arrows share the pen's colour and width.
+        strokeType = MarkupStrokeTypeArrow;
+    }
     NSColor *strokeColor = (strokeType == MarkupStrokeTypeHighlighter) ? self.highlighterColor : self.penColor;
     CGFloat width = (strokeType == MarkupStrokeTypeHighlighter) ? self.highlighterLineWidth : self.penLineWidth;
 
@@ -3036,6 +3236,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     NSPoint imagePoint = [self imagePointForEvent:event];
     if (self.activeTool == ScreenshotCanvasToolText) {
         if (self.textClickOnlyCommitted) {
+            return;
+        }
+        if (self.isDraggingPointer && self.currentTextEntry) {
+            self.currentTextEntry.pointerTarget = imagePoint;
+            [self setNeedsDisplay:YES];
             return;
         }
         if (self.isCreatingTextBox) {
@@ -3116,8 +3321,27 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         return;
     }
 
+    if (self.currentStroke.type == MarkupStrokeTypeArrow) {
+        [self.currentStroke setEndPoint:[self arrowEndForPoint:imagePoint event:event]];
+        [self setNeedsDisplay:YES];
+        return;
+    }
     [self.currentStroke addPoint:imagePoint];
     [self setNeedsDisplay:YES];
+}
+
+/// With Shift held, the arrow snaps to the nearest multiple of 45 degrees.
+- (NSPoint)arrowEndForPoint:(NSPoint)point event:(NSEvent *)event {
+    NSArray<NSValue *> *points = [self.currentStroke points];
+    if (points.count == 0 || (event.modifierFlags & NSEventModifierFlagShift) == 0) {
+        return point;
+    }
+    NSPoint start = points.firstObject.pointValue;
+    CGFloat dx = point.x - start.x;
+    CGFloat dy = point.y - start.y;
+    CGFloat length = hypot(dx, dy);
+    CGFloat angle = round(atan2(dy, dx) / (M_PI / 4.0)) * (M_PI / 4.0);
+    return NSMakePoint(start.x + cos(angle) * length, start.y + sin(angle) * length);
 }
 
 - (void)mouseUp:(NSEvent *)event {
@@ -3128,6 +3352,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (self.activeTool == ScreenshotCanvasToolText) {
         if (self.textClickOnlyCommitted) {
             self.textClickOnlyCommitted = NO;
+            return;
+        }
+        if (self.isDraggingPointer) {
+            self.isDraggingPointer = NO;
+            [self setNeedsDisplay:YES];
             return;
         }
         if (self.isCreatingTextBox) {
@@ -3207,10 +3436,30 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
 
     NSPoint imagePoint = [self imagePointForEvent:event];
-    [self.currentStroke addPoint:imagePoint];
     MarkupStroke *finalStroke = self.currentStroke;
     self.currentStroke = nil;
+    if (finalStroke.type == MarkupStrokeTypeArrow) {
+        [finalStroke setEndPoint:[self arrowEndForStroke:finalStroke point:imagePoint event:event]];
+        NSArray<NSValue *> *points = [finalStroke points];
+        NSPoint start = points.firstObject.pointValue;
+        NSPoint end = points.lastObject.pointValue;
+        if (points.count < 2 || hypot(end.x - start.x, end.y - start.y) < 4.0) {
+            [self setNeedsDisplay:YES]; // too short to be an arrow; a stray click
+            return;
+        }
+        [self insertStroke:finalStroke atIndex:self.strokes.count registeringUndo:YES actionName:@"Draw Arrow"];
+        return;
+    }
+    [finalStroke addPoint:imagePoint];
     [self insertStroke:finalStroke atIndex:self.strokes.count registeringUndo:YES actionName:@"Draw Stroke"];
+}
+
+- (NSPoint)arrowEndForStroke:(MarkupStroke *)stroke point:(NSPoint)point event:(NSEvent *)event {
+    MarkupStroke *previous = self.currentStroke;
+    self.currentStroke = stroke;
+    NSPoint end = [self arrowEndForPoint:point event:event];
+    self.currentStroke = previous;
+    return end;
 }
 
 - (NSImage *)flattenedImageWithinRect:(NSRect)clipRect {

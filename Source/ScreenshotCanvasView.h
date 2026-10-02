@@ -32,7 +32,9 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
     ScreenshotCanvasToolPen = 1,
     ScreenshotCanvasToolEraser = 2,
     ScreenshotCanvasToolText = 3,
-    ScreenshotCanvasToolSelect = 4
+    ScreenshotCanvasToolSelect = 4,
+    /// Straight arrows (#33); shares the pen's colour and width.
+    ScreenshotCanvasToolArrow = 5
 };
 
 @interface ScreenshotCanvasView : NSView
@@ -58,6 +60,14 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 - (nullable MarkupText *)activeTextEntry;
 /// The box being edited, in this view's coordinates, or NSZeroRect.
 - (NSRect)activeTextRectInView;
+/// Adds or removes a callout pointer on the label being edited; NO when nothing is being edited.
+- (BOOL)toggleActiveTextPointer;
+/// The image (unflattened) and its annotations as a ScreenshotTool project file (#32).
+- (nullable NSData *)projectDataWithError:(NSError **)error;
+/// Replaces the canvas with a project's image and editable annotations.
+- (BOOL)loadProjectData:(NSData *)data error:(NSError **)error;
+/// A snapshot of the annotations and image size, compared to tell whether there are unsaved changes.
+- (NSData *)annotationFingerprint;
 /// textFont at the preset's size for the current image, or textFont itself for Exact.
 - (NSFont *)effectiveTextFont;
 /// The undo history for typing in the open text box, or nil when no box is being edited.
@@ -88,7 +98,7 @@ NS_ASSUME_NONNULL_END
 #import <AppKit/AppKit.h>
 
 extern NSString * const _Nonnull ScreenshotCanvasViewDidRestoreStateNotification;
-/// Posted when a tool shortcut key (S, H, P, T, E) is pressed on the canvas; userInfo[ScreenshotCanvasViewToolKey] is the tool.
+/// Posted when a tool shortcut key (S, H, P, A, T, E) is pressed on the canvas; userInfo[ScreenshotCanvasViewToolKey] is the tool.
 extern NSString * const _Nonnull ScreenshotCanvasViewRequestsToolNotification;
 extern NSString * const _Nonnull ScreenshotCanvasViewToolKey;
 /// Posted when a text box opens for editing.

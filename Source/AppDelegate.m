@@ -41,6 +41,9 @@
 #endif
 static NSString * const ToolbarItemHighlighter = @"com.screenshottool.toolbar.highlighter";
 static NSString * const ToolbarItemPen = @"com.screenshottool.toolbar.pen";
+static NSString * const ToolbarItemArrow = @"com.screenshottool.toolbar.arrow";
+/// Select, Highlighter, Pen, Arrow, Text, Eraser.
+static const NSInteger STToolbarToolSegmentCount = 6;
 static NSString * const ToolbarItemEraser = @"com.screenshottool.toolbar.eraser";
 static NSString * const ToolbarItemText = @"com.screenshottool.toolbar.text";
 static NSString * const ToolbarItemSelect = @"com.screenshottool.toolbar.select";
@@ -163,6 +166,18 @@ static NSArray<NSString *> *STOpenableImageFileTypes(void) {
         return fileTypes;
     }
     return @[ @"png", @"jpg", @"jpeg", @"gif", @"bmp", @"tif", @"tiff", @"webp" ];
+}
+
+static NSString * const STProjectFileExtension = @"screenshottool";
+
+typedef NS_ENUM(NSInteger, STUnsavedChangesChoice) {
+    STUnsavedChangesChoiceSave = 0,
+    STUnsavedChangesChoiceDiscard = 1,
+    STUnsavedChangesChoiceCancel = 2,
+};
+
+static BOOL STURLIsProject(NSURL *url) {
+    return [[[url pathExtension] lowercaseString] isEqualToString:STProjectFileExtension];
 }
 
 static BOOL STPathUsesTIFFExtension(NSString *path) {
@@ -1238,6 +1253,8 @@ static NSString *STDebugToolName(ScreenshotCanvasTool tool) {
             return @"Text";
         case ScreenshotCanvasToolSelect:
             return @"Select";
+        case ScreenshotCanvasToolArrow:
+            return @"Arrow";
     }
     return @"Unknown";
 }
@@ -1245,7 +1262,13 @@ static NSString *STDebugToolName(ScreenshotCanvasTool tool) {
 static BOOL STToolUsesColor(ScreenshotCanvasTool tool) {
     return (tool == ScreenshotCanvasToolPen ||
             tool == ScreenshotCanvasToolHighlighter ||
-            tool == ScreenshotCanvasToolText);
+            tool == ScreenshotCanvasToolText ||
+            tool == ScreenshotCanvasToolArrow);
+}
+
+/// Arrows draw with the pen's colour and width, so their settings are the pen's (#33).
+static ScreenshotCanvasTool STSettingsToolForTool(ScreenshotCanvasTool tool) {
+    return (tool == ScreenshotCanvasToolArrow) ? ScreenshotCanvasToolPen : tool;
 }
 
 static NSString *STDebugDescriptionForEvent(NSEvent *event) {
@@ -1357,6 +1380,10 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) BOOL statusBarVisiblePreference;
 @property (nonatomic, copy) NSString *pendingOpenPath;
 @property (nonatomic, strong) NSURL *currentImageURL;
+/// The project file this window was opened from or last saved to (#32).
+@property (nonatomic, strong, nullable) NSURL *currentProjectURL;
+/// The canvas's fingerprint when it was last opened or saved; a different one means unsaved changes.
+@property (nonatomic, strong, nullable) NSData *savedAnnotationFingerprint;
 @property (nonatomic, strong) NSMutableArray<NSString *> *recentDocumentPaths;
 @property (nonatomic, strong) NSMenu *openRecentMenu;
 @property (nonatomic, strong) NSUndoManager *undoManager;
@@ -1401,6 +1428,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     }
     if ([identifier isEqualToString:ToolbarItemPen]) {
         return @"Pen Tool — double-click to configure";
+    }
+    if ([identifier isEqualToString:ToolbarItemArrow]) {
+        return @"Arrow Tool — double-click to configure";
     }
     if ([identifier isEqualToString:ToolbarItemText]) {
         return @"Text Tool — double-click to configure";
@@ -1718,6 +1748,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"Canvas not ready; deferring open for %@", filename ?: @"<nil>"]);
         return YES;
     }
+    if (![self confirmProceedingWithUnsavedChanges]) {
+        return NO;
+    }
     BOOL opened = [self openImageAtURL:[NSURL fileURLWithPath:filename]];
     ScreenshotToolAppendLog([NSString stringWithFormat:@"application:openFile: %@ %@", opened ? @"opened" : @"failed",
                              filename ?: @"<nil>"]);
@@ -1733,7 +1766,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 - (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
     SEL action = menuItem.action;
-    if (action == @selector(saveDocumentAs:) || action == @selector(copy:) ||
+    if (action == @selector(saveDocumentAs:) || action == @selector(saveProject:) || action == @selector(copy:) ||
         action == @selector(zoomIn:) || action == @selector(zoomOut:)) {
         return [self.canvasView hasImage];
     }
@@ -1865,6 +1898,14 @@ static id STInfoValueForKey(NSString *key) {
     [saveAsItem setTarget:self];
     [saveAsItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
     [fileMenu addItem:saveAsItem];
+
+    // Keeps annotations editable: the original image plus the annotations, reopened as layers (#32).
+    NSMenuItem *saveProjectItem = [[NSMenuItem alloc] initWithTitle:@"Save Project…"
+                                                             action:@selector(saveProject:)
+                                                      keyEquivalent:@"S"];
+    [saveProjectItem setTarget:self];
+    [saveProjectItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
+    [fileMenu addItem:saveProjectItem];
 
     NSMenuItem *fileMenuItem = [[NSMenuItem alloc] initWithTitle:@"File" action:NULL keyEquivalent:@""];
     [fileMenuItem setSubmenu:fileMenu];
@@ -2112,6 +2153,8 @@ static id STInfoValueForKey(NSString *key) {
 
 - (NSToolbarItemIdentifier)identifierForTool:(ScreenshotCanvasTool)tool {
     switch (tool) {
+        case ScreenshotCanvasToolArrow:
+            return ToolbarItemArrow;
         case ScreenshotCanvasToolHighlighter:
             return ToolbarItemHighlighter;
         case ScreenshotCanvasToolPen:
@@ -2163,6 +2206,9 @@ static id STInfoValueForKey(NSString *key) {
     }
     if ([identifier isEqualToString:ToolbarItemPen]) {
         return @"PenTool";
+    }
+    if ([identifier isEqualToString:ToolbarItemArrow]) {
+        return @"Arrow";
     }
     if ([identifier isEqualToString:ToolbarItemEraser]) {
         return @"Eraser";
@@ -2288,6 +2334,7 @@ static id STInfoValueForKey(NSString *key) {
         ToolbarItemSelect,
         ToolbarItemHighlighter,
         ToolbarItemPen,
+        ToolbarItemArrow,
         ToolbarItemEraser,
         ToolbarItemText,
         ToolbarItemCopy
@@ -2361,6 +2408,7 @@ static id STInfoValueForKey(NSString *key) {
     return @[ToolbarItemSelect,
              ToolbarItemHighlighter,
              ToolbarItemPen,
+             ToolbarItemArrow,
              ToolbarItemText,
              ToolbarItemEraser,
              ToolbarItemCopy,
@@ -2384,6 +2432,7 @@ static id STInfoValueForKey(NSString *key) {
     return @[ToolbarItemSelect,
              ToolbarItemHighlighter,
              ToolbarItemPen,
+             ToolbarItemArrow,
              ToolbarItemText,
              ToolbarItemEraser,
              ToolbarItemCopy,
@@ -2419,6 +2468,12 @@ static id STInfoValueForKey(NSString *key) {
                                                  label:@"Pen"
                                                 action:@selector(activatePen:)
                                              imageName:@"PenTool"];
+    }
+    if ([identifier isEqualToString:ToolbarItemArrow]) {
+        return [self baselineToolbarItemWithIdentifier:ToolbarItemArrow
+                                                 label:@"Arrow"
+                                                action:@selector(activateArrow:)
+                                             imageName:@"Arrow"];
     }
     if ([identifier isEqualToString:ToolbarItemText]) {
         return [self baselineToolbarItemWithIdentifier:ToolbarItemText
@@ -2521,10 +2576,12 @@ static id STInfoValueForKey(NSString *key) {
             return 1;
         case ScreenshotCanvasToolPen:
             return 2;
-        case ScreenshotCanvasToolText:
+        case ScreenshotCanvasToolArrow:
             return 3;
-        case ScreenshotCanvasToolEraser:
+        case ScreenshotCanvasToolText:
             return 4;
+        case ScreenshotCanvasToolEraser:
+            return 5;
     }
     return 0;
 }
@@ -2536,8 +2593,10 @@ static id STInfoValueForKey(NSString *key) {
         case 2:
             return ScreenshotCanvasToolPen;
         case 3:
-            return ScreenshotCanvasToolText;
+            return ScreenshotCanvasToolArrow;
         case 4:
+            return ScreenshotCanvasToolText;
+        case 5:
             return ScreenshotCanvasToolEraser;
         case 0:
         default:
@@ -2557,6 +2616,8 @@ static id STInfoValueForKey(NSString *key) {
             return @"Text";
         case ScreenshotCanvasToolEraser:
             return @"Eraser";
+        case ScreenshotCanvasToolArrow:
+            return @"Arrow";
     }
     return @"Tool";
 }
@@ -2573,15 +2634,15 @@ static id STInfoValueForKey(NSString *key) {
             return @"T";
         case ScreenshotCanvasToolEraser:
             return @"E";
+        case ScreenshotCanvasToolArrow:
+            return @"A";
     }
     return @"";
 }
 
 - (NSString *)toolbarSegmentToolTipForTool:(ScreenshotCanvasTool)tool {
     NSString *title = [NSString stringWithFormat:@"%@ Tool (%@)", [self toolbarTitleForTool:tool], [self toolbarShortcutForTool:tool]];
-    if (tool == ScreenshotCanvasToolPen ||
-        tool == ScreenshotCanvasToolHighlighter ||
-        tool == ScreenshotCanvasToolText) {
+    if (STToolUsesColor(tool)) {
         return [title stringByAppendingString:@" — double-click to configure"];
     }
     return title;
@@ -2657,6 +2718,8 @@ static id STInfoValueForKey(NSString *key) {
               alignment:self.canvasView.textAlignment
           boldAvailable:![bold.fontName isEqualToString:font.fontName]
         italicAvailable:![italic.fontName isEqualToString:font.fontName]];
+    MarkupText *entry = [self.canvasView activeTextEntry];
+    [bar setPointerOn:entry.hasPointer available:(entry != nil)];
 }
 
 - (void)textSettingsChangedFromBar {
@@ -2709,6 +2772,12 @@ static id STInfoValueForKey(NSString *key) {
     (void)bar;
     [self applyTextStyle:style persist:YES];
     [self textSettingsChangedFromBar];
+}
+
+- (void)textOptionsBarDidTogglePointer:(STTextOptionsBar *)bar {
+    (void)bar;
+    [self.canvasView toggleActiveTextPointer];
+    [self refreshTextOptionsBar];
 }
 
 - (void)textOptionsBar:(STTextOptionsBar *)bar didPickFontFamily:(NSString *)family {
@@ -2794,9 +2863,9 @@ static id STInfoValueForKey(NSString *key) {
 
 #if defined(GNUSTEP)
     if (!self.toolbarToolSegmentedControl) {
-        CGFloat toolControlWidth = STToolbarToolSegmentWidth * 5.0f;
+        CGFloat toolControlWidth = STToolbarToolSegmentWidth * (CGFloat)STToolbarToolSegmentCount;
         self.toolbarToolSegmentedControl = [[STToolbarSegmentedControl alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, toolControlWidth, STToolbarToolControlHeight)];
-        [self.toolbarToolSegmentedControl setSegmentCount:5];
+        [self.toolbarToolSegmentedControl setSegmentCount:STToolbarToolSegmentCount];
         [self.toolbarToolSegmentedControl setTarget:self];
         [self.toolbarToolSegmentedControl setAction:@selector(toolbarToolControlAction:)];
 #ifdef NSSegmentStyleRounded
@@ -2804,7 +2873,7 @@ static id STInfoValueForKey(NSString *key) {
 #endif
         NSSegmentedCell *cell = (NSSegmentedCell *)[self.toolbarToolSegmentedControl cell];
         [cell setTrackingMode:NSSegmentSwitchTrackingSelectOne];
-        for (NSInteger segment = 0; segment < 5; segment++) {
+        for (NSInteger segment = 0; segment < STToolbarToolSegmentCount; segment++) {
             ScreenshotCanvasTool tool = [self toolbarToolForSegmentIndex:segment];
             [self.toolbarToolSegmentedControl setWidth:STToolbarToolSegmentWidth forSegment:segment];
             [self.toolbarToolSegmentedControl setLabel:@"" forSegment:segment];
@@ -2827,7 +2896,7 @@ static id STInfoValueForKey(NSString *key) {
     }
     NSSegmentedCell *cell = (NSSegmentedCell *)[self.toolbarToolSegmentedControl cell];
     NSInteger selectedSegment = [self toolbarSegmentIndexForTool:self.canvasView.activeTool];
-    for (NSInteger segment = 0; segment < 5; segment++) {
+    for (NSInteger segment = 0; segment < STToolbarToolSegmentCount; segment++) {
         ScreenshotCanvasTool tool = [self toolbarToolForSegmentIndex:segment];
         BOOL isSelected = (segment == selectedSegment);
         NSImage *image = [self toolbarSegmentImageForTool:tool selected:isSelected];
@@ -3028,7 +3097,7 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (NSColor *)badgeColorForToolbarIdentifier:(NSToolbarItemIdentifier)identifier {
-    if ([identifier isEqualToString:ToolbarItemPen]) {
+    if ([identifier isEqualToString:ToolbarItemPen] || [identifier isEqualToString:ToolbarItemArrow]) {
         return self.canvasView.penColor;
     }
     if ([identifier isEqualToString:ToolbarItemHighlighter]) {
@@ -3769,6 +3838,8 @@ static id STInfoValueForKey(NSString *key) {
     switch (tool) {
         case ScreenshotCanvasToolPen:
             return @"Pen Width";
+        case ScreenshotCanvasToolArrow:
+            return @"Arrow Width";
         case ScreenshotCanvasToolHighlighter:
             return @"Highlighter Width";
         default:
@@ -3778,6 +3849,7 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (CGFloat)currentWidthForTool:(ScreenshotCanvasTool)tool {
+    tool = STSettingsToolForTool(tool);
     switch (tool) {
         case ScreenshotCanvasToolPen:
             return [self clampedWidth:self.canvasView.penLineWidth];
@@ -3789,6 +3861,7 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (CGFloat)defaultWidthForTool:(ScreenshotCanvasTool)tool {
+    tool = STSettingsToolForTool(tool);
     switch (tool) {
         case ScreenshotCanvasToolPen:
             return [self clampedWidth:self.penDefaultWidth];
@@ -3850,6 +3923,7 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (void)setDefaultWidth:(CGFloat)width forTool:(ScreenshotCanvasTool)tool {
+    tool = STSettingsToolForTool(tool);
     CGFloat clamped = [self clampedWidth:width];
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     switch (tool) {
@@ -3869,6 +3943,7 @@ static id STInfoValueForKey(NSString *key) {
 - (void)applyWidth:(CGFloat)width
            toTool:(ScreenshotCanvasTool)tool
           persist:(BOOL)persist {
+    tool = STSettingsToolForTool(tool);
     CGFloat clamped = [self clampedWidth:width];
     switch (tool) {
         case ScreenshotCanvasToolPen:
@@ -3972,6 +4047,7 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (NSColor *)currentColorForTool:(ScreenshotCanvasTool)tool {
+    tool = STSettingsToolForTool(tool);
     switch (tool) {
         case ScreenshotCanvasToolPen:
             return self.canvasView.penColor;
@@ -3985,6 +4061,7 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (NSColor *)defaultColorForTool:(ScreenshotCanvasTool)tool {
+    tool = STSettingsToolForTool(tool);
     switch (tool) {
         case ScreenshotCanvasToolPen:
             return self.penDefaultColor ?: STDefaultPenColor();
@@ -3998,6 +4075,7 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (void)setDefaultColor:(NSColor *)color forTool:(ScreenshotCanvasTool)tool {
+    tool = STSettingsToolForTool(tool);
     NSColor *resolved = color ?: STDefaultPenColor();
     switch (tool) {
         case ScreenshotCanvasToolPen:
@@ -4018,6 +4096,7 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (void)applyColor:(NSColor *)color toTool:(ScreenshotCanvasTool)tool persist:(BOOL)persist {
+    tool = STSettingsToolForTool(tool);
     NSColor *resolved = color ?: [self defaultColorForTool:tool];
     switch (tool) {
         case ScreenshotCanvasToolPen:
@@ -4134,6 +4213,7 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (ToolSettingsPopoverController *)popoverControllerForTool:(ScreenshotCanvasTool)tool {
+    tool = STSettingsToolForTool(tool);
     switch (tool) {
         case ScreenshotCanvasToolPen:
             if (!self.penPopoverController) {
@@ -5031,10 +5111,13 @@ static id STInfoValueForKey(NSString *key) {
 #pragma mark - Actions
 
 - (void)openDocument:(id)sender {
+    if (![self confirmProceedingWithUnsavedChanges]) {
+        return;
+    }
     NSOpenPanel *panel = [NSOpenPanel openPanel];
     [panel setAllowsMultipleSelection:NO];
     [panel setCanChooseDirectories:NO];
-    [panel setAllowedFileTypes:STOpenableImageFileTypes()];
+    [panel setAllowedFileTypes:[STOpenableImageFileTypes() arrayByAddingObject:STProjectFileExtension]];
 
     if (self.currentImageURL) {
         [panel setDirectoryURL:self.currentImageURL.URLByDeletingLastPathComponent];
@@ -5071,6 +5154,9 @@ static id STInfoValueForKey(NSString *key) {
     if (path.length == 0) {
         return;
     }
+    if (![self confirmProceedingWithUnsavedChanges]) {
+        return;
+    }
 
     BOOL isDirectory = NO;
     if (![[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDirectory] || isDirectory) {
@@ -5104,8 +5190,13 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (void)saveDocumentAs:(id)sender {
+    (void)sender;
+    [self saveImageWithPanel];
+}
+
+- (BOOL)saveImageWithPanel {
     if (![self.canvasView hasImage]) {
-        return;
+        return NO;
     }
 
     NSSavePanel *panel = [NSSavePanel savePanel];
@@ -5115,6 +5206,10 @@ static id STInfoValueForKey(NSString *key) {
     if (self.currentImageURL) {
         [panel setDirectoryURL:self.currentImageURL.URLByDeletingLastPathComponent];
         [panel setNameFieldStringValue:self.currentImageURL.lastPathComponent];
+    } else if (self.currentProjectURL) {
+        [panel setDirectoryURL:self.currentProjectURL.URLByDeletingLastPathComponent];
+        NSString *base = [self.currentProjectURL.lastPathComponent stringByDeletingPathExtension];
+        [panel setNameFieldStringValue:[base stringByAppendingPathExtension:@"png"]];
     } else {
         if (self.defaultSaveDirectory.length > 0) {
             NSURL *dirURL = [NSURL fileURLWithPath:self.defaultSaveDirectory];
@@ -5126,7 +5221,7 @@ static id STInfoValueForKey(NSString *key) {
     }
 
     if ([panel runModal] != NSModalResponseOK) {
-        return;
+        return NO;
     }
 
     NSURL *destination = panel.URL;
@@ -5137,17 +5232,17 @@ static id STInfoValueForKey(NSString *key) {
         alert.informativeText = @"The selected save destination could not be resolved from the save dialog.";
         [alert addButtonWithTitle:@"OK"];
         [alert runModal];
-        return;
+        return NO;
     }
     NSImage *flattened = [self.canvasView flattenedImage];
     if (!flattened) {
-        return;
+        return NO;
     }
 
     BOOL useTIFF = STPathUsesTIFFExtension(destination.path);
     NSData *imageData = useTIFF ? [flattened TIFFRepresentation] : [self pngDataForImage:flattened];
     if (!imageData) {
-        return;
+        return NO;
     }
 
     [self ensureDirectoryExistsAtPath:[destination.path stringByDeletingLastPathComponent]];
@@ -5159,12 +5254,14 @@ static id STInfoValueForKey(NSString *key) {
         alert.informativeText = error.localizedDescription ?: @"An unknown error occurred.";
         [alert addButtonWithTitle:@"OK"];
         [alert runModal];
-        return;
+        return NO;
     }
 
     self.currentImageURL = destination;
     [self addRecentDocumentURL:destination];
     [self.window setTitleWithRepresentedFilename:destination.path];
+    [self markAnnotationsSaved];
+    return YES;
 }
 
 - (void)copy:(id)sender {
@@ -5587,6 +5684,11 @@ static id STInfoValueForKey(NSString *key) {
     }
 }
 
+- (void)activateArrow:(id)sender {
+    (void)sender;
+    [self selectTool:ScreenshotCanvasToolArrow];
+}
+
 - (void)activatePen:(id)sender {
     NSEvent *event = [NSApp currentEvent];
     ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action fired (sender=%@, event=%@)",
@@ -5844,10 +5946,13 @@ static id STInfoValueForKey(NSString *key) {
         case ScreenshotCanvasToolSelect:
             selectedIdentifier = ToolbarItemSelect;
             break;
+        case ScreenshotCanvasToolArrow:
+            selectedIdentifier = ToolbarItemArrow;
+            break;
     }
 
-    if (tool == ScreenshotCanvasToolPen || tool == ScreenshotCanvasToolHighlighter) {
-        self.lastWidthTool = tool;
+    if (tool == ScreenshotCanvasToolPen || tool == ScreenshotCanvasToolHighlighter || tool == ScreenshotCanvasToolArrow) {
+        self.lastWidthTool = STSettingsToolForTool(tool);
     }
     [self updateToolWidthControls];
 
@@ -5906,6 +6011,9 @@ static id STInfoValueForKey(NSString *key) {
         ScreenshotToolAppendLog(@"openImageAtURL invoked with nil URL");
         return NO;
     }
+    if (STURLIsProject(url)) {
+        return [self openProjectAtURL:url];
+    }
 
     NSImage *image = nil;
     @try {
@@ -5960,6 +6068,8 @@ static id STInfoValueForKey(NSString *key) {
     [self.canvasView updateForEnclosingBoundsChange];
     [self reflectZoomSelection];
     [self refreshToolButtonIcons];
+    self.currentProjectURL = nil;
+    [self markAnnotationsSaved];
     return YES;
 }
 
@@ -6013,6 +6123,142 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 #pragma mark - NSWindowDelegate
+
+- (BOOL)windowShouldClose:(id)sender {
+    (void)sender;
+    return [self confirmProceedingWithUnsavedChanges];
+}
+
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
+    (void)sender;
+    return [self confirmProceedingWithUnsavedChanges] ? NSTerminateNow : NSTerminateCancel;
+}
+
+#pragma mark - Unsaved changes (#32)
+
+- (BOOL)hasUnsavedChanges {
+    if (![self.canvasView hasImage]) {
+        return NO;
+    }
+    NSData *current = [self.canvasView annotationFingerprint];
+    return self.savedAnnotationFingerprint ? ![current isEqualToData:self.savedAnnotationFingerprint] : NO;
+}
+
+- (void)markAnnotationsSaved {
+    self.savedAnnotationFingerprint = [self.canvasView annotationFingerprint];
+}
+
+/// Save… / Don't Save / Cancel. Separate so tests can answer without a modal alert.
+- (STUnsavedChangesChoice)askAboutUnsavedChanges {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Save your annotations?";
+    alert.informativeText = @"Your changes will be lost if you don't save them. To keep annotations editable, use File ▸ Save Project…; Save… flattens them into an image.";
+    [alert addButtonWithTitle:@"Save…"];
+    [alert addButtonWithTitle:@"Don't Save"];
+    [alert addButtonWithTitle:@"Cancel"];
+    NSModalResponse response = [alert runModal];
+    if (response == NSAlertFirstButtonReturn) {
+        return STUnsavedChangesChoiceSave;
+    }
+    if (response == NSAlertSecondButtonReturn) {
+        return STUnsavedChangesChoiceDiscard;
+    }
+    return STUnsavedChangesChoiceCancel;
+}
+
+/// YES when it's fine to replace or close the current image: nothing unsaved, the user saved, or
+/// chose not to.
+- (BOOL)confirmProceedingWithUnsavedChanges {
+    if (![self hasUnsavedChanges]) {
+        return YES;
+    }
+    switch ([self askAboutUnsavedChanges]) {
+        case STUnsavedChangesChoiceSave:
+            return self.currentProjectURL ? [self writeProjectToURL:self.currentProjectURL] : [self saveImageWithPanel];
+        case STUnsavedChangesChoiceDiscard:
+            return YES;
+        case STUnsavedChangesChoiceCancel:
+        default:
+            return NO;
+    }
+}
+
+#pragma mark - Projects (#32)
+
+- (void)saveProject:(id)sender {
+    (void)sender;
+    [self saveProjectWithPanel];
+}
+
+- (BOOL)saveProjectWithPanel {
+    if (![self.canvasView hasImage]) {
+        return NO;
+    }
+    NSSavePanel *panel = [NSSavePanel savePanel];
+    [panel setAllowedFileTypes:@[STProjectFileExtension]];
+    [panel setCanCreateDirectories:YES];
+    NSURL *nameSource = self.currentProjectURL ?: self.currentImageURL;
+    if (nameSource) {
+        [panel setDirectoryURL:nameSource.URLByDeletingLastPathComponent];
+        NSString *base = [nameSource.lastPathComponent stringByDeletingPathExtension];
+        [panel setNameFieldStringValue:[base stringByAppendingPathExtension:STProjectFileExtension]];
+    } else {
+        if (self.defaultSaveDirectory.length > 0) {
+            [panel setDirectoryURL:[NSURL fileURLWithPath:self.defaultSaveDirectory]];
+        }
+        [panel setNameFieldStringValue:[STPastedImageTitle stringByAppendingPathExtension:STProjectFileExtension]];
+    }
+    if ([panel runModal] != NSModalResponseOK || !panel.URL) {
+        return NO;
+    }
+    NSURL *destination = panel.URL;
+    if (!STURLIsProject(destination)) {
+        destination = [destination URLByAppendingPathExtension:STProjectFileExtension];
+    }
+    return [self writeProjectToURL:destination];
+}
+
+- (BOOL)writeProjectToURL:(NSURL *)url {
+    NSError *error = nil;
+    NSData *data = [self.canvasView projectDataWithError:&error];
+    [self ensureDirectoryExistsAtPath:[url.path stringByDeletingLastPathComponent]];
+    if (!data || ![data writeToURL:url options:NSDataWritingAtomic error:&error]) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Unable to Save Project";
+        alert.informativeText = error.localizedDescription ?: @"An unknown error occurred.";
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+        return NO;
+    }
+    self.currentProjectURL = url;
+    [self addRecentDocumentURL:url];
+    [self.window setTitleWithRepresentedFilename:url.path];
+    [self markAnnotationsSaved];
+    return YES;
+}
+
+- (BOOL)openProjectAtURL:(NSURL *)url {
+    NSError *error = nil;
+    NSData *data = [NSData dataWithContentsOfURL:url];
+    if (![self.canvasView loadProjectData:data error:&error]) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Unable to Open Project";
+        alert.informativeText = error.localizedDescription ?: url.path;
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+        return NO;
+    }
+    self.currentImageURL = nil;
+    self.currentProjectURL = url;
+    [self addRecentDocumentURL:url];
+    [self.window setTitleWithRepresentedFilename:url.path];
+    [self resizeWindowToImageSize:self.canvasView.image.size];
+    [self.canvasView updateForEnclosingBoundsChange];
+    [self reflectZoomSelection];
+    [self refreshToolButtonIcons];
+    [self markAnnotationsSaved];
+    return YES;
+}
 
 - (void)windowDidResize:(NSNotification *)notification {
     [self layoutContentSubviews];
