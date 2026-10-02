@@ -42,7 +42,7 @@
         [_appDelegate toolbarItemForZoomControl];
 #endif
     } @catch (NSException *exception) {
-        NSLog(@"Skipping zoom toolbar width test: %@", exception.reason);
+        NSLog(@"Skipping zoom toolbar width test: failed to connect to window server (%@)", exception.reason);
         _shouldSkip = YES;
     }
 }
