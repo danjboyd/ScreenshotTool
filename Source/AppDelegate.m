@@ -49,6 +49,10 @@ static NSString * const ToolbarItemCopy = @"com.screenshottool.toolbar.copy";
 static NSString * const ToolbarItemPreferences = @"com.screenshottool.toolbar.preferences";
 static NSString * const ToolbarItemColor = @"com.screenshottool.toolbar.color";
 static const CGFloat StatusBarHeight = 24.0f;
+// Smallest canvas area a window gets, so tiny images still leave room for the title and the
+// whole icon-only toolbar (it overflows below about 556pt with the Adwaita theme).
+static const CGFloat STMinimumCanvasWidth = 576.0f;
+static const CGFloat STMinimumCanvasHeight = 240.0f;
 static const CGFloat STHudCornerRadius = 10.0f;
 static const CGFloat STHudHorizontalPadding = 20.0f;
 static const CGFloat STHudVerticalPadding = 12.0f;
@@ -2067,7 +2071,13 @@ static id STInfoValueForKey(NSString *key) {
     self.toolbar.allowsUserCustomization = NO;
     self.toolbar.autosavesConfiguration = NO;
     self.toolbar.sizeMode = NSToolbarSizeModeRegular;
+#if defined(GNUSTEP)
+    // Items have no labels on GNUstep, and libs-gui reserves label space in icon-and-label mode,
+    // which made the toolbar 62px tall for 30px buttons.
+    self.toolbar.displayMode = NSToolbarDisplayModeIconOnly;
+#else
     self.toolbar.displayMode = NSToolbarDisplayModeIconAndLabel;
+#endif
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                          selector:@selector(toolbarWillAddItemNotification:)
@@ -3273,6 +3283,12 @@ static id STInfoValueForKey(NSString *key) {
             NSSize contentSize = contentView.frame.size;
             CGFloat delta = targetHeight - previousHeight;
             if (fabs(delta) > 0.5f) {
+                // The minimum includes the status bar, so it moves with it.
+                NSSize minimumSize = self.window.contentMinSize;
+                if (minimumSize.height > 1.0f) {
+                    minimumSize.height = MAX(1.0f, minimumSize.height + delta);
+                    [self.window setContentMinSize:minimumSize];
+                }
                 CGFloat newHeight = MAX(1.0f, contentSize.height + delta);
                 [self.window setContentSize:NSMakeSize(contentSize.width, newHeight)];
             }
@@ -4682,9 +4698,13 @@ static id STInfoValueForKey(NSString *key) {
         contentHeight = MAX(1.0f, contentHeight);
     }
 
-    CGFloat targetWidth = contentWidth;
-    CGFloat targetHeight = contentHeight + barHeight;
+    // Tiny images get a usable window; the canvas centres them on its backdrop.
+    CGFloat minimumWidth = MIN(STMinimumCanvasWidth, maxWidth);
+    CGFloat minimumHeight = MIN(STMinimumCanvasHeight, maxContentHeight);
+    CGFloat targetWidth = MAX(contentWidth, minimumWidth);
+    CGFloat targetHeight = MAX(contentHeight, minimumHeight) + barHeight;
 
+    [self.window setContentMinSize:NSMakeSize(minimumWidth, minimumHeight + barHeight)];
     [self.window setContentSize:NSMakeSize(targetWidth, targetHeight)];
     [self layoutContentSubviews];
     if (self.canvasView.isFitToWindow) {
