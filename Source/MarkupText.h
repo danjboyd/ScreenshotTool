@@ -30,6 +30,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, assign) NSPoint origin;
 @property (nonatomic, assign) NSSize boxSize;
 @property (nonatomic, assign, readonly) NSSize measuredSize;
+/// YES when the user set the wrap width by dragging or resizing; otherwise the box hugs the text.
+@property (nonatomic, assign) BOOL widthIsFixed;
 
 - (instancetype)initWithText:(NSString *)text
                         font:(NSFont *)font
@@ -43,6 +45,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)containsPoint:(NSPoint)point;
 - (void)updateMeasuredSize;
 - (NSRect)bounds;
+/// The area the laid-out text covers, which can be smaller than a fixed-width box.
+- (NSRect)textBounds;
+- (CGFloat)lineHeight;
+/// Sizes the box to the text: one line tall at least, width from the text unless fixed, kept
+/// inside the canvas by wrapping at the right edge and moving up from the bottom edge.
+/// Returns NO when the text is taller than the canvas and must overflow.
+- (BOOL)fitToTextWithinCanvasSize:(NSSize)canvasSize;
 - (void)translateByOffset:(NSPoint)offset;
 
 @end
