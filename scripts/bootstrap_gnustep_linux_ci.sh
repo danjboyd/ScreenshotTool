@@ -18,7 +18,7 @@ sudo apt-get install -y \
   libxrender-dev libxtst-dev libxt-dev libxcomposite-dev \
   libxcursor-dev libcups2-dev libsndfile1-dev libdbus-1-dev \
   rsync imagemagick patchelf curl git pkg-config ca-certificates \
-  squashfs-tools desktop-file-utils
+  squashfs-tools desktop-file-utils xvfb xauth
 
 mkdir -p "${BOOTSTRAP_ROOT}"
 cd "${BOOTSTRAP_ROOT}"

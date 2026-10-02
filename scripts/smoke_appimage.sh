@@ -28,13 +28,12 @@ fi
 
 rm -f "${LOG_PATH}"
 
+# Capture the real exit status: inside `if ! cmd; then`, $? is always 0, which hid crashes.
 status=0
-if ! timeout "${TIMEOUT_SECONDS}s" env \
+timeout "${TIMEOUT_SECONDS}s" env \
     APPIMAGE_EXTRACT_AND_RUN="${APPIMAGE_EXTRACT_AND_RUN:-1}" \
     SCREENSHOT_TOOL_LOG_PATH="${LOG_PATH}" \
-    "${APPIMAGE_PATH}" "${IMAGE_PATH}"; then
-  status=$?
-fi
+    "${APPIMAGE_PATH}" "${IMAGE_PATH}" || status=$?
 
 if [[ "${status}" -ne 0 && "${status}" -ne 124 ]]; then
   echo "AppImage failed to launch cleanly (exit ${status})." >&2
