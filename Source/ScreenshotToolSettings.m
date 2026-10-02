@@ -23,6 +23,8 @@ NSString * const STDefaultsTextStyleKey = @"ScreenshotToolTextStyle";
 NSString * const STDefaultsTextDefaultStyleKey = @"ScreenshotToolTextDefaultStyle";
 NSString * const STDefaultsTextSizePresetKey = @"ScreenshotToolTextSizePreset";
 NSString * const STDefaultsTextDefaultSizePresetKey = @"ScreenshotToolTextDefaultSizePreset";
+NSString * const STDefaultsTextAlignmentKey = @"ScreenshotToolTextAlignment";
+NSString * const STDefaultsTextDefaultAlignmentKey = @"ScreenshotToolTextDefaultAlignment";
 NSString * const STDefaultsSaveDirectoryKey = @"ScreenshotToolSaveDirectory";
 NSString * const STDefaultsRecentDocumentsKey = @"ScreenshotToolRecentDocuments";
 NSString * const STDefaultsShowStatusBarKey = @"ScreenshotToolShowStatusBar";
@@ -71,6 +73,37 @@ STTextSizePreset STStoredTextSizePreset(NSString *key, STTextSizePreset fallback
     }
     NSInteger value = [stored integerValue];
     return (value >= STTextSizePresetExact && value <= STTextSizePresetExtraLarge) ? (STTextSizePreset)value : fallback;
+}
+
+NSInteger STTextAlignmentCode(NSTextAlignment alignment) {
+    switch (alignment) {
+        case NSTextAlignmentCenter:
+            return 1;
+        case NSTextAlignmentRight:
+            return 2;
+        default:
+            return 0;
+    }
+}
+
+NSTextAlignment STTextAlignmentFromCode(NSInteger code) {
+    switch (code) {
+        case 1:
+            return NSTextAlignmentCenter;
+        case 2:
+            return NSTextAlignmentRight;
+        default:
+            return NSTextAlignmentLeft;
+    }
+}
+
+NSTextAlignment STStoredTextAlignment(NSString *key, NSTextAlignment fallback) {
+    id stored = [[NSUserDefaults standardUserDefaults] objectForKey:key];
+    if (![stored respondsToSelector:@selector(integerValue)]) {
+        return fallback;
+    }
+    NSInteger code = [stored integerValue];
+    return (code >= 0 && code <= 2) ? STTextAlignmentFromCode(code) : fallback;
 }
 
 CGFloat STTextPointSizeForPreset(STTextSizePreset preset, NSSize imageSize) {

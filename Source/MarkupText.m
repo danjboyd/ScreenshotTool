@@ -79,7 +79,7 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
     attributes[NSForegroundColorAttributeName] = color;
     NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
     style.lineBreakMode = NSLineBreakByWordWrapping;
-    style.alignment = NSTextAlignmentLeft;
+    style.alignment = self.alignment;
     attributes[NSParagraphStyleAttributeName] = style;
     return [[NSAttributedString alloc] initWithString:self.text ?: @"" attributes:attributes];
 }
@@ -116,8 +116,21 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
     return [self textRectForCanvas];
 }
 
+/// How far the widest line sits from the box's left edge, given the alignment.
+- (CGFloat)alignmentOffset {
+    CGFloat spare = MAX(0.0, self.boxSize.width - self.measuredSize.width);
+    switch (self.alignment) {
+        case NSTextAlignmentCenter:
+            return floor(spare * 0.5);
+        case NSTextAlignmentRight:
+            return spare;
+        default:
+            return 0.0;
+    }
+}
+
 - (NSRect)textBounds {
-    return NSMakeRect(self.origin.x, self.origin.y, self.measuredSize.width, self.measuredSize.height);
+    return NSMakeRect(self.origin.x + [self alignmentOffset], self.origin.y, self.measuredSize.width, self.measuredSize.height);
 }
 
 - (CGFloat)lineHeight {
@@ -270,7 +283,7 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
         }
         case MarkupTextStyleBackground: {
             CGFloat padding = [self backgroundPadding] * scale;
-            NSRect used = NSMakeRect(box.origin.x * scale, box.origin.y * scale,
+            NSRect used = NSMakeRect((box.origin.x + [self alignmentOffset]) * scale, box.origin.y * scale,
                                      self.measuredSize.width * scale, self.measuredSize.height * scale);
             NSRect pill = NSInsetRect(used, -padding, -padding);
             CGFloat radius = MIN(padding * 1.2, pill.size.height * 0.5);
@@ -309,6 +322,7 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
                                                                 boxSize:self.boxSize];
     copy.widthIsFixed = self.widthIsFixed;
     copy.style = self.style;
+    copy.alignment = self.alignment;
     return copy;
 }
 

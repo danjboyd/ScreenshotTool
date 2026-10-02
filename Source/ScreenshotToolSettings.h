@@ -25,6 +25,8 @@ extern NSString * const STDefaultsTextStyleKey;
 extern NSString * const STDefaultsTextDefaultStyleKey;
 extern NSString * const STDefaultsTextSizePresetKey;
 extern NSString * const STDefaultsTextDefaultSizePresetKey;
+extern NSString * const STDefaultsTextAlignmentKey;
+extern NSString * const STDefaultsTextDefaultAlignmentKey;
 extern NSString * const STDefaultsSaveDirectoryKey;
 extern NSString * const STDefaultsRecentDocumentsKey;
 extern NSString * const STDefaultsShowStatusBarKey;
@@ -58,6 +60,12 @@ FOUNDATION_EXPORT STTextSizePreset STStoredTextSizePreset(NSString *key, STTextS
 /// area (geometric mean of width and height), so a 1080p capture gets about 27pt at Medium, a 4K
 /// capture about 55pt, and small crops a readable minimum.
 FOUNDATION_EXPORT CGFloat STTextPointSizeForPreset(STTextSizePreset preset, NSSize imageSize);
+
+/// Alignment is stored as 0 left, 1 centre, 2 right: NSTextAlignment's raw values differ between
+/// GNUstep and macOS, so they don't belong in a shared preference.
+FOUNDATION_EXPORT NSInteger STTextAlignmentCode(NSTextAlignment alignment);
+FOUNDATION_EXPORT NSTextAlignment STTextAlignmentFromCode(NSInteger code);
+FOUNDATION_EXPORT NSTextAlignment STStoredTextAlignment(NSString *key, NSTextAlignment fallback);
 FOUNDATION_EXPORT NSString *STEncodeColor(NSColor *color);
 FOUNDATION_EXPORT NSColor *STDecodeColor(NSString *encoded, NSColor *fallback);
 
