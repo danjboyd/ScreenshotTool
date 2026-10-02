@@ -16,7 +16,7 @@ sudo apt-get install -y \
   libpng-dev libtiff-dev libjpeg-dev libfreetype6-dev \
   libx11-dev libxext-dev libxrandr-dev libxft-dev libxmu-dev \
   libxrender-dev libxtst-dev libxt-dev libxcomposite-dev \
-  libcairo2-dev libfontconfig1-dev \
+  libcairo2-dev libfontconfig1-dev fonts-dejavu-core \
   libxcursor-dev libcups2-dev libsndfile1-dev libdbus-1-dev \
   rsync imagemagick patchelf curl git pkg-config ca-certificates \
   squashfs-tools desktop-file-utils xvfb xauth

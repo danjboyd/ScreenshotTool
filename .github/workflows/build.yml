@@ -41,8 +41,11 @@ jobs:
       - name: Build ScreenshotTool (GNUstep)
         run: pwsh -NoProfile -File scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json
       - name: Unit tests
-        # Many tests need a window server; under Xvfb they run instead of skipping.
-        run: xvfb-run -a Tools/run_tests.sh
+        # Many tests need a window server; under Xvfb they run instead of skipping. A 24-bit
+        # screen so pixel checks see true colours.
+        run: |
+          echo "Fonts available: $(fc-list | wc -l); DejaVu Sans: $(fc-list 'DejaVu Sans' | wc -l)"
+          xvfb-run -a -s "-screen 0 1920x1080x24" Tools/run_tests.sh
       - name: Upload unit test log
         if: failure()
         uses: actions/upload-artifact@v4
