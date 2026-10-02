@@ -37,6 +37,8 @@ XCTEST_SRC_FILES = \
 # For now, we'll start with a placeholder for the converted test
 ScreenshotToolTests_OBJC_FILES = \
 	CursorAssetProbe_test.m \
+	ArrowCalloutProbe_test.m \
+	ProjectFileProbe_test.m \
 	ClipboardHighlighterOpacityProbe_test.m \
 	ClipboardHighlighterProbe_test.m \
 	CropClipsAnnotationsProbe_test.m \

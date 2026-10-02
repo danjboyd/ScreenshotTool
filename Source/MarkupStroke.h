@@ -22,8 +22,12 @@
 
 typedef NS_ENUM(NSInteger, MarkupStrokeType) {
     MarkupStrokeTypePen = 0,
-    MarkupStrokeTypeHighlighter = 1
+    MarkupStrokeTypeHighlighter = 1,
+    /// A straight arrow from the first point to the last, with a filled head (#33).
+    MarkupStrokeTypeArrow = 2
 };
+
+NS_ASSUME_NONNULL_BEGIN
 
 @interface MarkupStroke : NSObject <NSCopying>
 
@@ -36,6 +40,13 @@ typedef NS_ENUM(NSInteger, MarkupStrokeType) {
                     lineWidth:(CGFloat)lineWidth;
 
 - (void)addPoint:(NSPoint)point;
+/// For arrows: keeps the start point and moves the end to this point.
+- (void)setEndPoint:(NSPoint)point;
+/// Length of an arrow's head, from its tip back to its base.
+- (CGFloat)arrowHeadLength;
+/// Draws an arrow in canvas coordinates; a positive unflippedHeight maps them into an unflipped
+/// context of that height (export), zero draws straight into a flipped view.
+- (void)drawArrowWithUnflippedHeight:(CGFloat)unflippedHeight;
 - (NSArray<NSValue *> *)points;
 - (void)drawPath;
 - (BOOL)containsPoint:(NSPoint)point tolerance:(CGFloat)tolerance;
@@ -44,4 +55,10 @@ typedef NS_ENUM(NSInteger, MarkupStrokeType) {
 - (NSRect)bounds;
 - (void)translateByOffset:(NSPoint)offset;
 
+/// A property-list form for project files (#32), and back. Returns nil for malformed input.
+- (NSDictionary *)projectRepresentation;
++ (nullable instancetype)strokeWithProjectRepresentation:(NSDictionary *)dictionary;
+
 @end
+
+NS_ASSUME_NONNULL_END

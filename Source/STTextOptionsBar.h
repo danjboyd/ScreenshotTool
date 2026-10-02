@@ -21,6 +21,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)textOptionsBar:(STTextOptionsBar *)bar didPickSizePreset:(STTextSizePreset)preset;
 - (void)textOptionsBar:(STTextOptionsBar *)bar didStepSizeBy:(CGFloat)delta;
 - (void)textOptionsBar:(STTextOptionsBar *)bar didPickStyle:(MarkupTextStyle)style;
+- (void)textOptionsBarDidTogglePointer:(STTextOptionsBar *)bar;
 - (void)textOptionsBar:(STTextOptionsBar *)bar didPickFontFamily:(NSString *)family;
 - (void)textOptionsBarDidToggleBold:(STTextOptionsBar *)bar;
 - (void)textOptionsBarDidToggleItalic:(STTextOptionsBar *)bar;
@@ -43,6 +44,9 @@ NS_ASSUME_NONNULL_BEGIN
              alignment:(NSTextAlignment)alignment
          boldAvailable:(BOOL)boldAvailable
        italicAvailable:(BOOL)italicAvailable;
+
+/// Shows whether the label being edited has a callout pointer.
+- (void)setPointerOn:(BOOL)on available:(BOOL)available;
 
 /// Controls that are currently laid out (the rest didn't fit); for tests.
 - (NSArray<NSView *> *)visibleControls;

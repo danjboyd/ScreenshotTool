@@ -19,6 +19,7 @@
  */
 
 #import "MarkupStroke.h"
+#import "ScreenshotToolSettings.h"
 
 static inline CGFloat sqr(CGFloat value) {
     return value * value;
@@ -83,8 +84,74 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     [self.mutablePath lineToPoint:point];
 }
 
+- (void)setEndPoint:(NSPoint)point {
+    if (self.mutablePoints.count == 0) {
+        [self addPoint:point];
+        return;
+    }
+    NSValue *start = self.mutablePoints.firstObject;
+    self.mutablePoints = [[NSMutableArray alloc] initWithObjects:start, [NSValue valueWithPoint:point], nil];
+    NSBezierPath *path = [NSBezierPath bezierPath];
+    [path setLineJoinStyle:NSRoundLineJoinStyle];
+    [path setLineCapStyle:NSRoundLineCapStyle];
+    [path moveToPoint:start.pointValue];
+    [path lineToPoint:point];
+    self.mutablePath = path;
+}
+
+- (CGFloat)arrowHeadLength {
+    return MAX(10.0, self.lineWidth * 4.0);
+}
+
+- (void)drawArrowWithUnflippedHeight:(CGFloat)unflippedHeight {
+    if (self.mutablePoints.count < 2) {
+        return;
+    }
+    NSPoint start = [self.mutablePoints.firstObject pointValue];
+    NSPoint end = [self.mutablePoints.lastObject pointValue];
+    NSPoint (^map)(NSPoint) = ^NSPoint(NSPoint p) {
+        return unflippedHeight > 0.0 ? NSMakePoint(p.x, unflippedHeight - p.y) : p;
+    };
+    CGFloat dx = end.x - start.x;
+    CGFloat dy = end.y - start.y;
+    CGFloat length = hypot(dx, dy);
+    if (length < 0.5) {
+        return;
+    }
+    CGFloat ux = dx / length;
+    CGFloat uy = dy / length;
+    CGFloat head = MIN([self arrowHeadLength], length);
+    CGFloat halfWidth = head * 0.5;
+    // The shaft stops inside the head so its round cap doesn't poke through the tip.
+    NSPoint base = NSMakePoint(end.x - ux * head, end.y - uy * head);
+    NSPoint shaftEnd = NSMakePoint(end.x - ux * head * 0.6, end.y - uy * head * 0.6);
+
+    [self.color setStroke];
+    [self.color setFill];
+    NSBezierPath *shaft = [NSBezierPath bezierPath];
+    [shaft setLineWidth:self.lineWidth];
+    [shaft setLineCapStyle:NSRoundLineCapStyle];
+    [shaft moveToPoint:map(start)];
+    [shaft lineToPoint:map(shaftEnd)];
+    [shaft stroke];
+
+    NSBezierPath *tip = [NSBezierPath bezierPath];
+    [tip setLineJoinStyle:NSRoundLineJoinStyle];
+    [tip setLineWidth:MAX(1.0, self.lineWidth * 0.5)];
+    [tip moveToPoint:map(end)];
+    [tip lineToPoint:map(NSMakePoint(base.x - uy * halfWidth, base.y + ux * halfWidth))];
+    [tip lineToPoint:map(NSMakePoint(base.x + uy * halfWidth, base.y - ux * halfWidth))];
+    [tip closePath];
+    [tip fill];
+    [tip stroke];
+}
+
 - (void)drawPath {
     if (self.mutablePoints.count == 0) {
+        return;
+    }
+    if (self.type == MarkupStrokeTypeArrow) {
+        [self drawArrowWithUnflippedHeight:0.0];
         return;
     }
 
@@ -121,11 +188,22 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
             return YES;
         }
     }
+    if (self.type == MarkupStrokeTypeArrow) {
+        // The head is wider than the shaft.
+        NSPoint end = [self.mutablePoints.lastObject pointValue];
+        CGFloat reach = [self arrowHeadLength] * 0.6 + tolerance;
+        return sqr(point.x - end.x) + sqr(point.y - end.y) <= sqr(reach);
+    }
     return NO;
 }
 
 - (void)renderInContext:(NSGraphicsContext *)context canvasSize:(NSSize)size {
     if (self.mutablePoints.count == 0) {
+        return;
+    }
+
+    if (self.type == MarkupStrokeTypeArrow) {
+        [self drawArrowWithUnflippedHeight:size.height];
         return;
     }
 
@@ -204,6 +282,9 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
         maxY = MAX(maxY, p.y);
     }
     CGFloat inset = MAX(self.lineWidth, 1.0f) * 0.5f;
+    if (self.type == MarkupStrokeTypeArrow) {
+        inset = MAX(inset, [self arrowHeadLength] * 0.5f + 1.0f); // the head's wings reach past the shaft
+    }
     return NSMakeRect(minX - inset, minY - inset, (maxX - minX) + inset * 2.0f, (maxY - minY) + inset * 2.0f);
 }
 
@@ -235,6 +316,44 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
 
     self.mutablePoints = updatedPoints;
     self.mutablePath = newPath;
+}
+
+- (NSDictionary *)projectRepresentation {
+    NSMutableArray<NSArray<NSNumber *> *> *points = [[NSMutableArray alloc] initWithCapacity:self.mutablePoints.count];
+    for (NSValue *value in self.mutablePoints) {
+        NSPoint p = value.pointValue;
+        [points addObject:@[@(p.x), @(p.y)]];
+    }
+    return @{ @"type": @(self.type),
+              @"color": STEncodeColor(self.color ?: [NSColor blackColor]),
+              @"lineWidth": @(self.lineWidth),
+              @"points": points };
+}
+
++ (instancetype)strokeWithProjectRepresentation:(NSDictionary *)dictionary {
+    if (![dictionary isKindOfClass:[NSDictionary class]]) {
+        return nil;
+    }
+    NSInteger type = [dictionary[@"type"] integerValue];
+    NSArray *points = dictionary[@"points"];
+    if (type < MarkupStrokeTypePen || type > MarkupStrokeTypeArrow || ![points isKindOfClass:[NSArray class]] || points.count == 0) {
+        return nil;
+    }
+    MarkupStroke *stroke = [[self alloc] initWithType:(MarkupStrokeType)type
+                                                color:STDecodeColor(dictionary[@"color"], [NSColor blackColor])
+                                             lineWidth:MAX(0.5, [dictionary[@"lineWidth"] doubleValue])];
+    for (NSArray *pair in points) {
+        if (![pair isKindOfClass:[NSArray class]] || pair.count < 2) {
+            return nil;
+        }
+        NSPoint p = NSMakePoint([pair[0] doubleValue], [pair[1] doubleValue]);
+        if (type == MarkupStrokeTypeArrow && [stroke points].count >= 1) {
+            [stroke setEndPoint:p];
+        } else {
+            [stroke addPoint:p];
+        }
+    }
+    return stroke;
 }
 
 @end
