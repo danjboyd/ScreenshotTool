@@ -220,6 +220,110 @@ static CGFloat STReadGSScaleFactor(void) {
 
 static BOOL STPrepareBitmapBuffer(NSBitmapImageRep *rep, STBitmapBuffer *buffer);
 
+static inline unsigned char STRoundToByte(double value);
+
+static BOOL STColorSpaceIsRGB(NSString *name) {
+    return [name isEqualToString:NSDeviceRGBColorSpace] || [name isEqualToString:NSCalibratedRGBColorSpace];
+}
+
+/// YES for the layout the byte-wise pixel code handles: chunky 8-bit RGB or RGBA, whole bytes per pixel.
+static BOOL STBitmapRepIsRGBBytes(NSBitmapImageRep *rep) {
+    if (!rep || rep.isPlanar || rep.bitsPerSample != 8 || !STColorSpaceIsRGB(rep.colorSpaceName)) {
+        return NO;
+    }
+    NSInteger samples = rep.samplesPerPixel;
+    if (samples != (rep.hasAlpha ? 4 : 3)) {
+        return NO;
+    }
+    return rep.bitsPerPixel >= samples * 8 && rep.bitsPerPixel % 8 == 0;
+}
+
+/// The same pixels as chunky 8-bit RGBA, or `source` itself when it already has a layout the
+/// byte-wise code handles. Grayscale, 1/2/4/16-bit and planar images are converted (#46).
+static NSBitmapImageRep *STRGBABitmapFromRep(NSBitmapImageRep *source) {
+    if (!source || STBitmapRepIsRGBBytes(source)) {
+        return source;
+    }
+    NSInteger width = source.pixelsWide;
+    NSInteger height = source.pixelsHigh;
+    if (width <= 0 || height <= 0) {
+        return nil;
+    }
+    BOOL keepsPremultiplication = source.hasAlpha && ((source.bitmapFormat & NSAlphaNonpremultipliedBitmapFormat) == 0);
+    NSBitmapImageRep *converted = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                                          pixelsWide:width
+                                                                          pixelsHigh:height
+                                                                       bitsPerSample:8
+                                                                     samplesPerPixel:4
+                                                                            hasAlpha:YES
+                                                                            isPlanar:NO
+                                                                      colorSpaceName:NSDeviceRGBColorSpace
+                                                                        bitmapFormat:(keepsPremultiplication ? 0 : NSAlphaNonpremultipliedBitmapFormat)
+                                                                         bytesPerRow:0
+                                                                        bitsPerPixel:0];
+    unsigned char *destination = converted.bitmapData;
+    if (!destination) {
+        return nil;
+    }
+    [converted setSize:source.size];
+    NSInteger destBytesPerRow = converted.bytesPerRow;
+
+    NSString *space = source.colorSpaceName ?: @"";
+    BOOL isRGB = STColorSpaceIsRGB(space);
+    BOOL isWhite = [space isEqualToString:NSDeviceWhiteColorSpace] || [space isEqualToString:NSCalibratedWhiteColorSpace];
+    BOOL isBlack = [space isEqualToString:NSDeviceBlackColorSpace] || [space isEqualToString:NSCalibratedBlackColorSpace];
+    NSInteger samples = source.samplesPerPixel;
+    NSInteger colorSamples = samples - (source.hasAlpha ? 1 : 0);
+    BOOL knownLayout = source.bitsPerSample > 0 && source.bitsPerSample <= 16 && samples <= 5 &&
+                       ((isRGB && colorSamples == 3) || ((isWhite || isBlack) && colorSamples == 1));
+
+    if (knownLayout) {
+        // getPixel: unpacks any sample size and planar data; scale each sample to a byte.
+        BOOL alphaFirst = (source.bitmapFormat & NSAlphaFirstBitmapFormat) != 0;
+        NSInteger colorStart = (source.hasAlpha && alphaFirst) ? 1 : 0;
+        NSInteger alphaIndex = source.hasAlpha ? (alphaFirst ? 0 : colorSamples) : -1;
+        double maxValue = (double)((1u << source.bitsPerSample) - 1u);
+        NSUInteger pixel[5] = {0};
+        for (NSInteger y = 0; y < height; y++) {
+            unsigned char *row = destination + y * destBytesPerRow;
+            for (NSInteger x = 0; x < width; x++) {
+                [source getPixel:pixel atX:x y:y];
+                unsigned char *out = row + x * 4;
+                if (isRGB) {
+                    out[0] = STRoundToByte(pixel[colorStart] / maxValue);
+                    out[1] = STRoundToByte(pixel[colorStart + 1] / maxValue);
+                    out[2] = STRoundToByte(pixel[colorStart + 2] / maxValue);
+                } else {
+                    double level = pixel[colorStart] / maxValue;
+                    unsigned char value = STRoundToByte(isBlack ? (1.0 - level) : level);
+                    out[0] = value;
+                    out[1] = value;
+                    out[2] = value;
+                }
+                out[3] = alphaIndex >= 0 ? STRoundToByte(pixel[alphaIndex] / maxValue) : 255;
+            }
+        }
+        return converted;
+    }
+
+    // Other colour spaces (CMYK, named, …): go through NSColor, slower but general.
+    for (NSInteger y = 0; y < height; y++) {
+        unsigned char *row = destination + y * destBytesPerRow;
+        for (NSInteger x = 0; x < width; x++) {
+            NSColor *color = [[source colorAtX:x y:y] colorUsingColorSpaceName:NSDeviceRGBColorSpace];
+            unsigned char *out = row + x * 4;
+            CGFloat alpha = color ? color.alphaComponent : 0.0;
+            // NSColor components are unpremultiplied; match the destination's convention.
+            CGFloat scale = keepsPremultiplication ? alpha : 1.0;
+            out[0] = color ? STRoundToByte(color.redComponent * scale) : 0;
+            out[1] = color ? STRoundToByte(color.greenComponent * scale) : 0;
+            out[2] = color ? STRoundToByte(color.blueComponent * scale) : 0;
+            out[3] = STRoundToByte(alpha);
+        }
+    }
+    return converted;
+}
+
 static NSBitmapImageRep *STScaledCursorRep(NSBitmapImageRep *rep, CGFloat scale) {
     if (!rep || scale <= 1.01f) {
         return rep;
@@ -330,7 +434,10 @@ static BOOL STPrepareBitmapBuffer(NSBitmapImageRep *rep, STBitmapBuffer *buffer)
     if (!rep || !buffer) {
         return NO;
     }
-    if (rep.isPlanar || rep.bitsPerSample != 8) {
+    // The byte-wise code below reads and writes R, G, B (and A) bytes in place: anything else
+    // (grayscale, sub-byte or 16-bit samples, planar data) would be read and written out of
+    // bounds (#46). Callers normalise with STRGBABitmapFromRep first.
+    if (!STBitmapRepIsRGBBytes(rep)) {
         return NO;
     }
     NSInteger width = rep.pixelsWide;
@@ -753,12 +860,13 @@ static void STRasterizeDrawingOntoBitmap(NSRect canvasArea,
     } @finally {
         [image unlockFocus];
     }
+    rep = STRGBABitmapFromRep(rep);
     if (!rep || !rep.bitmapData || rep.pixelsWide <= 0 || rep.pixelsHigh <= 0) {
         return;
     }
 
     unsigned char *data = rep.bitmapData;
-    NSInteger bytesPerPixel = MAX(1, rep.bitsPerPixel / 8);
+    NSInteger bytesPerPixel = rep.bitsPerPixel / 8;
     NSInteger bytesPerRow = rep.bytesPerRow;
     NSBitmapFormat format = rep.bitmapFormat;
     BOOL alphaFirst = ((format & NSAlphaFirstBitmapFormat) == NSAlphaFirstBitmapFormat);
@@ -820,6 +928,9 @@ static void STRasterizeArrowOntoBitmap(MarkupStroke *stroke,
 }
 
 static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect clipRect, NSSize canvasSize) {
+    // The row copy below needs whole bytes per pixel; a 1-bit image used to be copied 8x past
+    // each row (#46). The result is always chunky 8-bit RGB(A).
+    source = STRGBABitmapFromRep(source);
     if (!source) {
         return nil;
     }
@@ -866,6 +977,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
                                                                        hasAlpha:source.hasAlpha
                                                                        isPlanar:source.isPlanar
                                                                  colorSpaceName:source.colorSpaceName ?: NSDeviceRGBColorSpace
+                                                                   bitmapFormat:source.bitmapFormat
                                                                     bytesPerRow:0
                                                                    bitsPerPixel:source.bitsPerPixel];
     if (!dest) {
@@ -878,7 +990,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
         return dest;
     }
 
-    NSInteger bytesPerPixel = MAX(1, source.bitsPerPixel / 8);
+    NSInteger bytesPerPixel = source.bitsPerPixel / 8;
     NSInteger srcBytesPerRow = source.bytesPerRow;
     NSInteger dstBytesPerRow = dest.bytesPerRow;
 
