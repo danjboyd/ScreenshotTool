@@ -84,8 +84,6 @@
     } else {
         STUnsetEnvVar("XDG_SESSION_TYPE");
     }
-    STUnsetEnvVar("ST_WL_COPY_CAPTURE");
-    STUnsetEnvVar("ST_WL_COPY_ARGS");
 
     if (_tempRoot.length > 0) {
         [[NSFileManager defaultManager] removeItemAtPath:_tempRoot error:NULL];
@@ -106,7 +104,10 @@
     XCTAssertTrue(created, @"Failed to create bin directory: %@", error);
 
     NSString *scriptPath = [binDirectory stringByAppendingPathComponent:@"wl-copy"];
-    NSString *script = @"#!/usr/bin/env bash\nprintf '%s\n' \"$@\" > \"$ST_WL_COPY_ARGS\"\ncat > \"$ST_WL_COPY_CAPTURE\"\n";
+    // The output paths are written into the script rather than passed through the environment,
+    // which NSTask may hand to the child from GNUstep's launch-time snapshot (#41).
+    NSString *script = [NSString stringWithFormat:@"#!/bin/sh\nprintf '%%s\\n' \"$@\" > '%@'\ncat > '%@'\n",
+                        argsPath, capturePath];
     BOOL wrote = [script writeToFile:scriptPath atomically:YES encoding:NSUTF8StringEncoding error:&error];
     XCTAssertTrue(wrote, @"Failed to write fake wl-copy: %@", error);
 
@@ -118,8 +119,6 @@
     STSetEnvVar("PATH", pathPrefix.UTF8String);
     STSetEnvVar("WAYLAND_DISPLAY", "wayland-test");
     STSetEnvVar("XDG_SESSION_TYPE", "wayland");
-    STSetEnvVar("ST_WL_COPY_CAPTURE", capturePath.UTF8String);
-    STSetEnvVar("ST_WL_COPY_ARGS", argsPath.UTF8String);
 }
 
 - (void)testCopyMirrorsPNGToWaylandClipboardWhenWlCopyExists {

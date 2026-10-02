@@ -1065,13 +1065,19 @@ static NSString *ScreenshotToolLogFilePath(void) {
     return logPath;
 }
 
+/// The variable's current value. GNUstep's -[NSProcessInfo environment] is a snapshot taken at
+/// launch, so it misses later setenv() calls (#41).
+static NSString *STCurrentEnvironmentValue(const char *name) {
+    const char *value = getenv(name);
+    return value ? [NSString stringWithUTF8String:value] : nil;
+}
+
 static BOOL STScreenshotToolIsWaylandSession(void) {
-    NSDictionary *env = [[NSProcessInfo processInfo] environment];
-    NSString *waylandDisplay = env[@"WAYLAND_DISPLAY"];
+    NSString *waylandDisplay = STCurrentEnvironmentValue("WAYLAND_DISPLAY");
     if (waylandDisplay.length > 0) {
         return YES;
     }
-    NSString *sessionType = [env[@"XDG_SESSION_TYPE"] lowercaseString];
+    NSString *sessionType = [STCurrentEnvironmentValue("XDG_SESSION_TYPE") lowercaseString];
     return [sessionType isEqualToString:@"wayland"];
 }
 
@@ -1085,7 +1091,7 @@ static NSString *STExecutablePathInPATH(NSString *executableName) {
         return [fileManager isExecutableFileAtPath:executableName] ? executableName : nil;
     }
 
-    NSString *pathValue = [[NSProcessInfo processInfo] environment][@"PATH"];
+    NSString *pathValue = STCurrentEnvironmentValue("PATH");
     for (NSString *directory in [pathValue componentsSeparatedByString:@":"]) {
         if (directory.length == 0) {
             continue;
