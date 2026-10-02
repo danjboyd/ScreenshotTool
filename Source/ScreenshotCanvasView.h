@@ -19,6 +19,7 @@
  */
 
 #import <AppKit/AppKit.h>
+#import "MarkupText.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -43,6 +44,8 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 @property (nonatomic, assign) CGFloat penLineWidth;
 @property (nonatomic, assign) CGFloat highlighterLineWidth;
 @property (nonatomic, strong) NSFont *textFont;
+/// Style for new text annotations; changing it restyles the box being edited.
+@property (nonatomic, assign) MarkupTextStyle textStyle;
 @property (nonatomic, assign) CGFloat zoomScale;
 @property (nonatomic, assign, getter=isFitToWindow) BOOL fitToWindow;
 @property (nonatomic, weak, nullable) NSScrollView *hostScrollView;

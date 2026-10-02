@@ -21,6 +21,8 @@ extern NSString * const STDefaultsTextFontNameKey;
 extern NSString * const STDefaultsTextFontSizeKey;
 extern NSString * const STDefaultsTextDefaultFontNameKey;
 extern NSString * const STDefaultsTextDefaultFontSizeKey;
+extern NSString * const STDefaultsTextStyleKey;
+extern NSString * const STDefaultsTextDefaultStyleKey;
 extern NSString * const STDefaultsSaveDirectoryKey;
 extern NSString * const STDefaultsRecentDocumentsKey;
 extern NSString * const STDefaultsShowStatusBarKey;
@@ -33,6 +35,10 @@ FOUNDATION_EXPORT NSColor *STDefaultPenColor(void);
 FOUNDATION_EXPORT NSColor *STDefaultHighlighterColor(void);
 FOUNDATION_EXPORT NSColor *STDefaultTextColor(void);
 FOUNDATION_EXPORT NSFont *STDefaultTextFont(void);
+/// The built-in text style (a MarkupTextStyle value): outlined, so labels read on any image.
+FOUNDATION_EXPORT NSInteger STDefaultTextStyle(void);
+/// A stored MarkupTextStyle value, or the fallback when it is missing or out of range.
+FOUNDATION_EXPORT NSInteger STStoredTextStyle(NSString *key, NSInteger fallback);
 FOUNDATION_EXPORT NSString *STEncodeColor(NSColor *color);
 FOUNDATION_EXPORT NSColor *STDecodeColor(NSString *encoded, NSColor *fallback);
 

@@ -22,6 +22,17 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// How a text annotation stands out from the image behind it.
+typedef NS_ENUM(NSInteger, MarkupTextStyle) {
+    MarkupTextStylePlain = 0,
+    /// A contrasting stroke around the glyphs.
+    MarkupTextStyleOutline = 1,
+    /// A soft dark shadow below and to the right of the glyphs.
+    MarkupTextStyleShadow = 2,
+    /// A rounded box in the text colour behind contrasting glyphs.
+    MarkupTextStyleBackground = 3,
+};
+
 @interface MarkupText : NSObject <NSCopying>
 
 @property (nonatomic, copy) NSString *text;
@@ -32,6 +43,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, assign, readonly) NSSize measuredSize;
 /// YES when the user set the wrap width by dragging or resizing; otherwise the box hugs the text.
 @property (nonatomic, assign) BOOL widthIsFixed;
+@property (nonatomic, assign) MarkupTextStyle style;
 
 - (instancetype)initWithText:(NSString *)text
                         font:(NSFont *)font
@@ -41,6 +53,16 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (NSAttributedString *)attributedString;
 - (void)drawInCanvasAtScale:(CGFloat)scale;
+/// Draws the annotation, or only its outline/shadow/background, in canvas coordinates at the given
+/// zoom. A positive unflippedHeight maps the canvas's top-down coordinates into an unflipped context
+/// of that height (export bitmaps); zero draws straight into a flipped view such as the canvas.
+- (void)drawAtScale:(CGFloat)scale unflippedHeight:(CGFloat)unflippedHeight decorationsOnly:(BOOL)decorationsOnly;
+/// The colour the glyphs are drawn in: the text colour, or a contrasting one on a background box.
+- (NSColor *)glyphColor;
+/// How far the style draws outside the text, in image points.
+- (CGFloat)decorationOutset;
+/// The text plus its outline, shadow or background: what is visible and can be hit.
+- (NSRect)decoratedBounds;
 - (void)renderInContext:(NSGraphicsContext *)context canvasSize:(NSSize)canvasSize;
 - (BOOL)containsPoint:(NSPoint)point;
 - (void)updateMeasuredSize;

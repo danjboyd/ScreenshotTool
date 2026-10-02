@@ -52,6 +52,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	TextFontFacePopupProbe_test.m \
 	ThemePreferenceProbe_test.m \
 	TextToolProbe_test.m \
+	TextStyleExportProbe_test.m \
 	TextFontComboProbe_test.m \
 	ToolbarBadgeRefreshProbe_test.m \
 	ToolbarIconThemeProbe_test.m \

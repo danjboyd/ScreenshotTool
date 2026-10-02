@@ -38,6 +38,7 @@
 @property (nonatomic, strong) NSPopUpButton *fontFacePopUp;
 @property (nonatomic, strong) NSTextField *fontSizeField;
 @property (nonatomic, strong) NSStepper *fontSizeStepper;
+@property (nonatomic, strong) NSSegmentedControl *styleControl;
 @property (nonatomic, strong) STHyperlinkButton *resetButton;
 @property (nonatomic, strong) STHyperlinkButton *defaultButton;
 @property (nonatomic, strong) NSArray<NSButton *> *colorSwatchButtons;
@@ -120,9 +121,13 @@
     [self.previewTextView setString:self.previewSampleText];
     [self updatePreviewWithFont:font color:color];
 
+    MarkupTextStyle style = [delegate textToolPopoverCurrentStyle:self];
+    MarkupTextStyle defaultStyle = [delegate textToolPopoverDefaultStyle:self];
+    [self.styleControl setSelectedSegment:(NSInteger)style];
+
     BOOL canResetColor = ![self colorsEqual:color other:defaultColor];
     BOOL canResetFont = ![self fontsEqual:font other:defaultFont];
-    BOOL enableActions = (canResetColor || canResetFont);
+    BOOL enableActions = (canResetColor || canResetFont || style != defaultStyle);
     [self.resetButton setEnabled:enableActions];
     [self.defaultButton setEnabled:enableActions];
 }
@@ -134,7 +139,7 @@
     CGFloat scaleFactor = 1.0f;
     
     CGFloat popoverWidth = 340.0f;
-    CGFloat popoverHeight = 320.0f;
+    CGFloat popoverHeight = 356.0f;
 
     STTextPopoverContentView *content = [[STTextPopoverContentView alloc] initWithFrame:NSMakeRect(0, 0, popoverWidth, popoverHeight)];
     content.owner = self;
@@ -323,6 +328,33 @@
     [self updateSwatchSelectionForColor:self.colorWell.color];
 
     y = NSMinY(swatchContainer.frame) - (12.0f * scaleFactor);
+
+    // How the text stands out from the image: plain, outlined, shadowed or on a box.
+    CGFloat styleRowHeight = 24.0f * scaleFactor;
+    y -= styleRowHeight;
+    NSTextField *styleLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y + (3.0f * scaleFactor), 40.0f * scaleFactor, 18.0f * scaleFactor)];
+    [self configureLabel:styleLabel font:[NSFont systemFontOfSize:12.0f * scaleFactor]];
+    [styleLabel setStringValue:@"Style"];
+    [styleLabel setAutoresizingMask:NSViewMinYMargin];
+    [self.contentView addSubview:styleLabel];
+
+    // A narrower label column and the small label font keep "Outline" and "Shadow" unclipped.
+    CGFloat styleControlX = padding + (44.0f * scaleFactor);
+    NSSegmentedControl *styleControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(styleControlX, y, padding + contentWidth - styleControlX, styleRowHeight)];
+    NSArray<NSString *> *styleTitles = @[@"Plain", @"Outline", @"Shadow", @"Box"];
+    [styleControl setSegmentCount:(NSInteger)styleTitles.count];
+    [styleControl setFont:[NSFont systemFontOfSize:11.0f * scaleFactor]];
+    CGFloat segmentWidth = floor(NSWidth(styleControl.frame) / styleTitles.count);
+    for (NSUInteger idx = 0; idx < styleTitles.count; idx++) {
+        [styleControl setLabel:styleTitles[idx] forSegment:(NSInteger)idx];
+        [styleControl setWidth:segmentWidth forSegment:(NSInteger)idx];
+    }
+    [styleControl setTarget:self];
+    [styleControl setAction:@selector(styleChanged:)];
+    [styleControl setAutoresizingMask:NSViewMinYMargin];
+    [self.contentView addSubview:styleControl];
+    self.styleControl = styleControl;
+    y -= 12.0f * scaleFactor;
     CGFloat previewAvailableHeight = y - previewBottom;
     if (previewAvailableHeight < 0.0f) {
         previewAvailableHeight = 0.0f;
@@ -708,6 +740,15 @@
 }
 
 #pragma mark - Actions
+
+- (void)styleChanged:(NSSegmentedControl *)sender {
+    NSInteger selected = [sender selectedSegment];
+    if (selected < 0) {
+        return;
+    }
+    [self.delegate textToolPopover:self didChangeStyle:(MarkupTextStyle)selected];
+    [self refresh];
+}
 
 - (void)colorChanged:(NSColorWell *)sender {
     NSColor *color = sender.color ?: STDefaultTextColor();

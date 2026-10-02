@@ -1342,6 +1342,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSColor *highlighterDefaultColor;
 @property (nonatomic, strong) NSColor *textDefaultColor;
 @property (nonatomic, strong) NSFont *textDefaultFont;
+@property (nonatomic, assign) MarkupTextStyle textDefaultStyle;
 @property (nonatomic, strong) ToolSettingsPopoverController *penPopoverController;
 @property (nonatomic, strong) ToolSettingsPopoverController *highlighterPopoverController;
 @property (nonatomic, strong) TextToolPopoverController *textPopoverController;
@@ -3420,6 +3421,7 @@ static id STInfoValueForKey(NSString *key) {
                                                sizeKey:STDefaultsTextDefaultFontSizeKey
                                               fallback:STDefaultTextFont()
                                    registerIfMissing:YES];
+    self.textDefaultStyle = (MarkupTextStyle)STStoredTextStyle(STDefaultsTextDefaultStyleKey, STDefaultTextStyle());
 
     NSColor *penColor = [self storedColorForKey:STDefaultsPenColorKey
                                        fallback:self.penDefaultColor
@@ -3439,6 +3441,7 @@ static id STInfoValueForKey(NSString *key) {
     self.canvasView.highlighterColor = highlighterColor;
     self.canvasView.textColor = textColor;
     self.canvasView.textFont = textFont;
+    self.canvasView.textStyle = (MarkupTextStyle)STStoredTextStyle(STDefaultsTextStyleKey, self.textDefaultStyle);
     [self.canvasView refreshCursor];
     [self refreshToolButtonIcons];
     [self updateToolWidthControls];
@@ -3841,6 +3844,19 @@ static id STInfoValueForKey(NSString *key) {
     [self persistFont:self.textDefaultFont nameKey:STDefaultsTextDefaultFontNameKey sizeKey:STDefaultsTextDefaultFontSizeKey];
 }
 
+- (void)applyTextStyle:(MarkupTextStyle)style persist:(BOOL)persist {
+    self.canvasView.textStyle = style;
+    if (persist) {
+        [[NSUserDefaults standardUserDefaults] setInteger:style forKey:STDefaultsTextStyleKey];
+    }
+    [self.canvasView setNeedsDisplay:YES];
+}
+
+- (void)setDefaultTextStyle:(MarkupTextStyle)style {
+    self.textDefaultStyle = style;
+    [[NSUserDefaults standardUserDefaults] setInteger:style forKey:STDefaultsTextDefaultStyleKey];
+}
+
 - (void)applyTextFont:(NSFont *)font persist:(BOOL)persist {
     NSFont *resolved = font ?: (self.textDefaultFont ?: STDefaultTextFont());
     self.canvasView.textFont = resolved;
@@ -4179,10 +4195,26 @@ static id STInfoValueForKey(NSString *key) {
     [self applyTextFont:font persist:YES];
 }
 
+- (MarkupTextStyle)textToolPopoverCurrentStyle:(TextToolPopoverController *)controller {
+    (void)controller;
+    return self.canvasView.textStyle;
+}
+
+- (MarkupTextStyle)textToolPopoverDefaultStyle:(TextToolPopoverController *)controller {
+    (void)controller;
+    return self.textDefaultStyle;
+}
+
+- (void)textToolPopover:(TextToolPopoverController *)controller didChangeStyle:(MarkupTextStyle)style {
+    (void)controller;
+    [self applyTextStyle:style persist:YES];
+}
+
 - (void)textToolPopoverDidRequestReset:(TextToolPopoverController *)controller {
     (void)controller;
     [self applyColor:self.textDefaultColor toTool:ScreenshotCanvasToolText persist:YES];
     [self applyTextFont:self.textDefaultFont persist:YES];
+    [self applyTextStyle:self.textDefaultStyle persist:YES];
     [self showStatusMessage:@"Text defaults restored" duration:2.0];
 }
 
@@ -4192,6 +4224,7 @@ static id STInfoValueForKey(NSString *key) {
     NSFont *font = self.canvasView.textFont ?: STDefaultTextFont();
     [self setDefaultColor:color forTool:ScreenshotCanvasToolText];
     [self setDefaultTextFont:font];
+    [self setDefaultTextStyle:self.canvasView.textStyle];
     [self showStatusMessage:@"Text defaults updated" duration:2.0];
 }
 

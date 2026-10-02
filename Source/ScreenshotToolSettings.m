@@ -19,6 +19,8 @@ NSString * const STDefaultsTextFontNameKey = @"ScreenshotToolTextFontName";
 NSString * const STDefaultsTextFontSizeKey = @"ScreenshotToolTextFontSize";
 NSString * const STDefaultsTextDefaultFontNameKey = @"ScreenshotToolTextDefaultFontName";
 NSString * const STDefaultsTextDefaultFontSizeKey = @"ScreenshotToolTextDefaultFontSize";
+NSString * const STDefaultsTextStyleKey = @"ScreenshotToolTextStyle";
+NSString * const STDefaultsTextDefaultStyleKey = @"ScreenshotToolTextDefaultStyle";
 NSString * const STDefaultsSaveDirectoryKey = @"ScreenshotToolSaveDirectory";
 NSString * const STDefaultsRecentDocumentsKey = @"ScreenshotToolRecentDocuments";
 NSString * const STDefaultsShowStatusBarKey = @"ScreenshotToolShowStatusBar";
@@ -41,6 +43,19 @@ NSColor *STDefaultTextColor(void) {
 
 NSFont *STDefaultTextFont(void) {
     return [NSFont systemFontOfSize:24.0f];
+}
+
+NSInteger STDefaultTextStyle(void) {
+    return 1; // MarkupTextStyleOutline
+}
+
+NSInteger STStoredTextStyle(NSString *key, NSInteger fallback) {
+    id stored = [[NSUserDefaults standardUserDefaults] objectForKey:key];
+    if (![stored respondsToSelector:@selector(integerValue)]) {
+        return fallback;
+    }
+    NSInteger value = [stored integerValue];
+    return (value >= 0 && value <= 3) ? value : fallback;
 }
 
 NSString *STEncodeColor(NSColor *color) {

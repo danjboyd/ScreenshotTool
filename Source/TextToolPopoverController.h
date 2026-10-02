@@ -1,4 +1,5 @@
 #import <AppKit/AppKit.h>
+#import "MarkupText.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -11,6 +12,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSFont *)textToolPopoverCurrentFont:(TextToolPopoverController *)controller;
 - (NSFont *)textToolPopoverDefaultFont:(TextToolPopoverController *)controller;
 - (void)textToolPopover:(TextToolPopoverController *)controller didChangeFont:(NSFont *)font;
+- (MarkupTextStyle)textToolPopoverCurrentStyle:(TextToolPopoverController *)controller;
+- (MarkupTextStyle)textToolPopoverDefaultStyle:(TextToolPopoverController *)controller;
+- (void)textToolPopover:(TextToolPopoverController *)controller didChangeStyle:(MarkupTextStyle)style;
 - (void)textToolPopoverDidRequestReset:(TextToolPopoverController *)controller;
 - (void)textToolPopoverDidRequestSetDefault:(TextToolPopoverController *)controller;
 @end
