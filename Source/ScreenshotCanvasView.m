@@ -33,12 +33,6 @@
 #include <float.h>
 #include <stdlib.h>
 #if defined(GNUSTEP) && !defined(__APPLE__)
-#include <ft2build.h>
-#include FT_FREETYPE_H
-#include <fontconfig/fontconfig.h>
-#endif
-
-#if defined(GNUSTEP) && !defined(__APPLE__)
 #define ST_ENABLE_GNUSTEP_WORKAROUNDS 1
 #else
 #define ST_ENABLE_GNUSTEP_WORKAROUNDS 0
@@ -657,332 +651,68 @@ static void STRasterizeStrokeOntoBitmap(MarkupStroke *stroke,
     }
 }
 
-#if ST_ENABLE_GNUSTEP_WORKAROUNDS
-static FT_Library STFTLibrary = NULL;
-static BOOL STFTLibraryInitialized = NO;
-static BOOL STFontConfigInitialized = NO;
-
-static BOOL STEnsureFreeTypeInitialized(void) {
-    if (!STFTLibraryInitialized) {
-        if (FT_Init_FreeType(&STFTLibrary) != 0) {
-            return NO;
-        }
-        STFTLibraryInitialized = YES;
-    }
-    if (!STFontConfigInitialized) {
-        STFontConfigInitialized = FcInit();
-    }
-    return STFTLibraryInitialized && STFontConfigInitialized;
-}
-
-static NSString *STFontFilePathForFont(NSFont *font) {
-    if (!font) {
-        return nil;
-    }
-    if (!STEnsureFreeTypeInitialized()) {
-        return nil;
-    }
-
-    NSString *family = font.familyName ?: font.fontName;
-    if (family.length == 0) {
-        return nil;
-    }
-
-    FcPattern *pattern = FcPatternCreate();
-    if (!pattern) {
-        return nil;
-    }
-
-    FcPatternAddString(pattern, FC_FAMILY, (const FcChar8 *)family.UTF8String);
-    FcPatternAddBool(pattern, FC_SCALABLE, FcTrue);
-    FcPatternAddDouble(pattern, FC_PIXEL_SIZE, font.pointSize);
-    FcConfigSubstitute(NULL, pattern, FcMatchPattern);
-    FcDefaultSubstitute(pattern);
-
-    FcResult result = FcResultNoMatch;
-    FcPattern *match = FcFontMatch(NULL, pattern, &result);
-    FcPatternDestroy(pattern);
-    if (!match) {
-        return nil;
-    }
-
-    FcChar8 *file = NULL;
-    if (FcPatternGetString(match, FC_FILE, 0, &file) != FcResultMatch) {
-        FcPatternDestroy(match);
-        return nil;
-    }
-
-    NSString *path = [NSString stringWithUTF8String:(const char *)file];
-    FcPatternDestroy(match);
-    return path;
-}
-
-static CGFloat STFTAdvanceForCharacter(FT_Face face, unichar character) {
-    if (!face) {
-        return 0.0f;
-    }
-    FT_UInt glyphIndex = FT_Get_Char_Index(face, character);
-    if (FT_Load_Glyph(face, glyphIndex, FT_LOAD_DEFAULT) != 0) {
-        return 0.0f;
-    }
-    return (CGFloat)(face->glyph->advance.x / 64.0);
-}
-
-static NSArray<NSString *> *STFTWrappedLinesForText(NSString *string,
-                                                    FT_Face face,
-                                                    CGFloat maxWidth) {
-    if (!string) {
-        return @[];
-    }
-    NSMutableArray<NSString *> *lines = [[NSMutableArray alloc] init];
-    NSUInteger length = string.length;
-    if (length == 0) {
-        [lines addObject:@""];
-        return lines;
-    }
-
-    NSUInteger lineStart = 0;
-    CGFloat lineWidth = 0.0f;
-    NSUInteger lastBreakIndex = NSNotFound;
-    NSCharacterSet *whitespace = [NSCharacterSet whitespaceCharacterSet];
-
-    for (NSUInteger idx = 0; idx < length; idx++) {
-        unichar ch = [string characterAtIndex:idx];
-        if (ch == '\n') {
-            NSRange range = NSMakeRange(lineStart, idx - lineStart);
-            [lines addObject:[string substringWithRange:range]];
-            lineStart = idx + 1;
-            lineWidth = 0.0f;
-            lastBreakIndex = NSNotFound;
-            continue;
-        }
-
-        CGFloat advance = STFTAdvanceForCharacter(face, ch);
-        if (maxWidth > 0.0f && lineWidth + advance > maxWidth && lineWidth > 0.0f) {
-            NSUInteger breakIndex = (lastBreakIndex != NSNotFound && lastBreakIndex >= lineStart)
-                ? lastBreakIndex + 1
-                : idx;
-            if (breakIndex <= lineStart) {
-                breakIndex = idx;
-            }
-            NSRange range = NSMakeRange(lineStart, breakIndex - lineStart);
-            [lines addObject:[string substringWithRange:range]];
-            lineStart = breakIndex;
-            idx = breakIndex - 1;
-            lineWidth = 0.0f;
-            lastBreakIndex = NSNotFound;
-            continue;
-        }
-
-        lineWidth += advance;
-        if ([whitespace characterIsMember:ch]) {
-            lastBreakIndex = idx;
-        }
-    }
-
-    if (lineStart <= length) {
-        NSRange range = NSMakeRange(lineStart, length - lineStart);
-        [lines addObject:[string substringWithRange:range]];
-    }
-
-    return lines;
-}
-
-static BOOL STRasterizeTextUsingFreeType(MarkupText *text,
-                                         STBitmapBuffer *buffer,
-                                         NSSize canvasSize) {
-    if (!text || !buffer || !buffer->data) {
-        return NO;
-    }
-    if (!STEnsureFreeTypeInitialized()) {
-        return NO;
-    }
-
-    NSString *fontPath = STFontFilePathForFont(text.font ?: [NSFont systemFontOfSize:18.0]);
-    if (fontPath.length == 0) {
-        return NO;
-    }
-
-    const char *fontPathBytes = [fontPath UTF8String];
-    if (fontPathBytes == NULL) {
-        return NO;
-    }
-
-    FT_Face face = NULL;
-    if (FT_New_Face(STFTLibrary, fontPathBytes, 0, &face) != 0) {
-        return NO;
-    }
-
-    CGFloat pointSize = MAX(text.font.pointSize, 1.0f);
-    FT_Set_Char_Size(face, 0, (FT_F26Dot6)lrint(pointSize * 64.0), 72, 72);
-
-    double ascent = face->size && face->size->metrics.ascender ? face->size->metrics.ascender / 64.0 : pointSize * 0.8;
-    double descent = face->size && face->size->metrics.descender ? fabs(face->size->metrics.descender / 64.0) : pointSize * 0.2;
-    double lineHeight = face->size && face->size->metrics.height ? face->size->metrics.height / 64.0 : (ascent + descent);
-    if (lineHeight < ascent + descent) {
-        lineHeight = ascent + descent;
-    }
-
-    NSArray<NSString *> *lines = STFTWrappedLinesForText(text.text ?: @"", face, text.boxSize.width);
-    if (lines.count == 0) {
-        FT_Done_Face(face);
-        return NO;
-    }
-
-    NSColor *color = [text.color colorUsingColorSpaceName:NSDeviceRGBColorSpace] ?: text.color ?: [NSColor whiteColor];
-    double sr = [color redComponent];
-    double sg = [color greenComponent];
-    double sb = [color blueComponent];
-
-    double topY = text.origin.y;
-    double baselineOffset = ascent;
-
-    BOOL painted = NO;
-
-    for (NSUInteger lineIndex = 0; lineIndex < lines.count; lineIndex++) {
-        double lineTop = topY + lineHeight * lineIndex;
-
-        NSString *line = lines[lineIndex];
-        double baselineImageY = lineTop + baselineOffset;
-        double destBaseline = canvasSize.height - baselineImageY;
-        double penX = text.origin.x;
-
-        for (NSUInteger charIndex = 0; charIndex < line.length; charIndex++) {
-            unichar ch = [line characterAtIndex:charIndex];
-            FT_UInt glyphIndex = FT_Get_Char_Index(face, ch);
-            if (FT_Load_Glyph(face, glyphIndex, FT_LOAD_DEFAULT) != 0) {
-                continue;
-            }
-            if (FT_Render_Glyph(face->glyph, FT_RENDER_MODE_NORMAL) != 0) {
-                penX += face->glyph->advance.x / 64.0;
-                continue;
-            }
-
-            FT_GlyphSlot slot = face->glyph;
-            FT_Bitmap *bitmap = &slot->bitmap;
-            int glyphTop = slot->bitmap_top;
-            int glyphLeft = slot->bitmap_left;
-
-            for (int row = 0; row < bitmap->rows; row++) {
-                int destY = (int)floor(destBaseline + glyphTop - row - 1);
-                if (destY < 0 || destY >= buffer->height) {
-                    continue;
-                }
-                unsigned char *srcRow = bitmap->buffer + (row * bitmap->pitch);
-                for (int col = 0; col < bitmap->width; col++) {
-                    int destX = (int)floor(penX + glyphLeft + col);
-                    if (destX < 0 || destX >= buffer->width) {
-                        continue;
-                    }
-                    unsigned char coverage = srcRow[col];
-                    if (coverage == 0) {
-                        continue;
-                    }
-                    double alpha = coverage / 255.0;
-                    STBlendPixel(buffer, destX, destY, sr, sg, sb, alpha);
-                    painted = YES;
-                }
-            }
-
-            penX += slot->advance.x / 64.0;
-        }
-    }
-
-    FT_Done_Face(face);
-    return painted;
-}
-#endif
-
+// GNUstep draws no glyphs into an NSBitmapImageRep graphics context (GNUSTEP_BUG_REPORT.md), but
+// it does into a locked NSImage. So each annotation is drawn there with the canvas's own drawing
+// code, read back, and composited, which keeps export identical to the screen (styles included).
 static void STRasterizeTextOntoBitmap(MarkupText *text,
                                       STBitmapBuffer *buffer,
                                       NSSize canvasSize) {
-    if (!text || !buffer || !buffer->data) {
-        return;
-    }
-    if (text.text.length == 0) {
+    if (!text || !buffer || !buffer->data || text.text.length == 0) {
         return;
     }
 
-    NSInteger width = (NSInteger)ceil(MAX(1.0f, text.boxSize.width));
-    NSInteger height = (NSInteger)ceil(MAX(1.0f, text.boxSize.height));
+    NSRect area = NSIntersectionRect(NSIntegralRect([text decoratedBounds]),
+                                     NSMakeRect(0.0, 0.0, canvasSize.width, canvasSize.height));
+    NSInteger width = (NSInteger)NSWidth(area);
+    NSInteger height = (NSInteger)NSHeight(area);
     if (width <= 0 || height <= 0) {
         return;
     }
 
-#if ST_ENABLE_GNUSTEP_WORKAROUNDS
-    if (STRasterizeTextUsingFreeType(text, buffer, canvasSize)) {
+    NSImage *image = [[NSImage alloc] initWithSize:area.size];
+    NSBitmapImageRep *rep = nil;
+    [image lockFocus];
+    @try {
+        [[NSColor clearColor] set];
+        NSRectFillUsingOperation(NSMakeRect(0.0, 0.0, width, height), NSCompositeCopy);
+        // Shift the annotation into this small image: x by translation, y through the unflipped
+        // mapping, so a top-down canvas y of area.origin.y lands on the image's top row.
+        [NSGraphicsContext saveGraphicsState];
+        NSAffineTransform *shift = [NSAffineTransform transform];
+        [shift translateXBy:-NSMinX(area) yBy:0.0];
+        [shift concat];
+        [text drawAtScale:1.0 unflippedHeight:(height + NSMinY(area)) decorationsOnly:NO];
+        [NSGraphicsContext restoreGraphicsState];
+        rep = [[NSBitmapImageRep alloc] initWithFocusedViewRect:NSMakeRect(0.0, 0.0, width, height)];
+    } @finally {
+        [image unlockFocus];
+    }
+    if (!rep || !rep.bitmapData || rep.pixelsWide <= 0 || rep.pixelsHigh <= 0) {
         return;
     }
-#endif
-
-    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
-                                                                    pixelsWide:width
-                                                                    pixelsHigh:height
-                                                                 bitsPerSample:8
-                                                               samplesPerPixel:4
-                                                                      hasAlpha:YES
-                                                                      isPlanar:NO
-                                                                colorSpaceName:NSDeviceRGBColorSpace
-                                                                   bytesPerRow:0
-                                                                  bitsPerPixel:0];
-    if (!rep) {
-        return;
-    }
-
-    NSGraphicsContext *context = [NSGraphicsContext graphicsContextWithBitmapImageRep:rep];
-    if (!context) {
-        return;
-    }
-
-    [NSGraphicsContext saveGraphicsState];
-    [NSGraphicsContext setCurrentContext:context];
-    [[NSColor clearColor] setFill];
-    NSRectFill(NSMakeRect(0.0, 0.0, width, height));
-    NSAttributedString *attr = [text attributedString];
-    [attr drawInRect:NSMakeRect(0.0, 0.0, width, height)];
-    [NSGraphicsContext restoreGraphicsState];
 
     unsigned char *data = rep.bitmapData;
-    if (!data) {
-        return;
-    }
-
     NSInteger bytesPerPixel = MAX(1, rep.bitsPerPixel / 8);
     NSInteger bytesPerRow = rep.bytesPerRow;
-    NSInteger rIndex = 0;
-    NSInteger gIndex = 1;
-    NSInteger bIndex = 2;
-    NSInteger aIndex = 3;
+    NSBitmapFormat format = rep.bitmapFormat;
+    BOOL alphaFirst = ((format & NSAlphaFirstBitmapFormat) == NSAlphaFirstBitmapFormat);
+    BOOL premultiplied = rep.hasAlpha && ((format & NSAlphaNonpremultipliedBitmapFormat) == 0);
+    NSInteger aIndex = rep.hasAlpha ? (alphaFirst ? 0 : MIN(bytesPerPixel - 1, 3)) : -1;
+    NSInteger rIndex = alphaFirst ? MIN(bytesPerPixel - 1, 1) : 0;
+    NSInteger gIndex = alphaFirst ? MIN(bytesPerPixel - 1, 2) : MIN(bytesPerPixel - 1, 1);
+    NSInteger bIndex = alphaFirst ? MIN(bytesPerPixel - 1, 3) : MIN(bytesPerPixel - 1, 2);
 
-    if (rep.hasAlpha) {
-        NSBitmapFormat format = rep.bitmapFormat;
-        BOOL alphaFirst = ((format & NSAlphaFirstBitmapFormat) == NSAlphaFirstBitmapFormat);
-        if (alphaFirst) {
-            aIndex = 0;
-            rIndex = MIN(bytesPerPixel - 1, 1);
-            gIndex = MIN(bytesPerPixel - 1, 2);
-            bIndex = MIN(bytesPerPixel - 1, 3);
-        } else {
-            aIndex = MIN(bytesPerPixel - 1, 3);
-            rIndex = MIN(bytesPerPixel - 1, 0);
-            gIndex = MIN(bytesPerPixel - 1, 1);
-            bIndex = MIN(bytesPerPixel - 1, 2);
-        }
-    } else {
-        aIndex = -1;
-    }
-
-    double destBaseX = text.origin.x;
-    double destTopY = canvasSize.height - text.origin.y;
-
-    for (NSInteger row = 0; row < height; row++) {
-        NSInteger destY = (NSInteger)floor(destTopY - 1.0 - row);
+    NSInteger rows = MIN(height, rep.pixelsHigh);
+    NSInteger columns = MIN(width, rep.pixelsWide);
+    for (NSInteger row = 0; row < rows; row++) {
+        // Bitmap rows run top-down; the export buffer counts rows from the bottom.
+        NSInteger destY = (NSInteger)canvasSize.height - 1 - ((NSInteger)NSMinY(area) + row);
         if (destY < 0 || destY >= buffer->height) {
             continue;
         }
         unsigned char *srcRow = data + row * bytesPerRow;
-        for (NSInteger col = 0; col < width; col++) {
-            NSInteger destX = (NSInteger)floor(destBaseX + col);
+        for (NSInteger col = 0; col < columns; col++) {
+            NSInteger destX = (NSInteger)NSMinX(area) + col;
             if (destX < 0 || destX >= buffer->width) {
                 continue;
             }
@@ -994,6 +724,11 @@ static void STRasterizeTextOntoBitmap(MarkupText *text,
             double sr = srcPixel[rIndex] / 255.0;
             double sg = srcPixel[gIndex] / 255.0;
             double sb = srcPixel[bIndex] / 255.0;
+            if (premultiplied) {
+                sr = MIN(1.0, sr / alpha);
+                sg = MIN(1.0, sg / alpha);
+                sb = MIN(1.0, sb / alpha);
+            }
             STBlendPixel(buffer, destX, destY, sr, sg, sb, alpha);
         }
     }
@@ -1261,6 +996,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
     target.origin = snapshot.origin;
     target.boxSize = snapshot.boxSize;
     target.widthIsFixed = snapshot.widthIsFixed;
+    target.style = snapshot.style;
     [target updateMeasuredSize];
 
     [self setNeedsDisplay:YES];
@@ -2052,10 +1788,19 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (self.currentTextEntry) {
         self.currentTextEntry.color = _textColor;
     }
-    if (self.activeTextView) {
-        [self.activeTextView setTextColor:_textColor];
-        [self.activeTextView setInsertionPointColor:_textColor];
+    [self updateActiveTextViewFrame];
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setTextStyle:(MarkupTextStyle)textStyle {
+    if (_textStyle == textStyle) {
+        return;
     }
+    _textStyle = textStyle;
+    if (self.currentTextEntry) {
+        self.currentTextEntry.style = textStyle;
+    }
+    [self updateActiveTextViewFrame];
     [self setNeedsDisplay:YES];
 }
 
@@ -2109,8 +1854,6 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     if (trimmed.length > 0) {
         entry.text = submitted;
-        NSColor *submittedColor = self.activeTextView.textColor ?: entry.color ?: [NSColor whiteColor];
-        entry.color = submittedColor;
         [entry fitToTextWithinCanvasSize:self.image.size];
 
         if (editingIndex != NSNotFound) {
@@ -2283,7 +2026,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     NSFont *editingFont = entry.font ?: self.textFont;
     [self.activeTextView setFont:[self scaledFontForEditingWithBaseFont:editingFont]];
-    NSColor *editingColor = entry.color ?: self.textColor ?: [NSColor whiteColor];
+    NSColor *editingColor = [entry glyphColor];
     [self.activeTextView setTextColor:editingColor];
     [self.activeTextView setInsertionPointColor:editingColor];
 }
@@ -2308,6 +2051,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
                                           origin:imageRect.origin
                                           boxSize:imageRect.size];
         entry.widthIsFixed = widthIsFixed;
+        entry.style = self.textStyle;
     } else {
         entry.origin = imageRect.origin;
         entry.boxSize = imageRect.size;
@@ -2356,7 +2100,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 #endif
     // No padding, so text sits at the box origin as it will once committed and exported.
     [[textView textContainer] setLineFragmentPadding:0.0];
-    [textView setTextColor:entry.color];
+    [textView setTextColor:[entry glyphColor]];
     [textView setFont:[self scaledFontForEditingWithBaseFont:entry.font]];
     [textView setInsertionPointColor:entry.color];
     [textView setHorizontallyResizable:NO];
@@ -2500,6 +2244,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (self.currentTextEntry && !self.activeTextView) {
         [self.currentTextEntry drawInCanvasAtScale:self.zoomScale];
     }
+    if (self.currentTextEntry && self.activeTextView) {
+        [self.currentTextEntry drawAtScale:self.zoomScale unflippedHeight:0.0 decorationsOnly:YES];
+    }
 
     if (self.activeTool == ScreenshotCanvasToolText) {
         [self drawTextGuides];
@@ -2546,7 +2293,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (!self.currentTextEntry) {
         return NSZeroRect;
     }
-    return NSInsetRect([self viewRectForImageRect:self.currentTextEntry.bounds], -STTextGuideOutset, -STTextGuideOutset);
+    // Outside the text and its outline/shadow/background, so the guide never sits on them.
+    CGFloat outset = STTextGuideOutset + ([self.currentTextEntry decorationOutset] * self.zoomScale);
+    return NSInsetRect([self viewRectForImageRect:self.currentTextEntry.bounds], -outset, -outset);
 }
 
 - (NSRect)activeTextHandleRectInView {
@@ -3141,7 +2890,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
     NSMutableArray<MarkupText *> *updatedTexts = [[NSMutableArray alloc] init];
     for (MarkupText *text in self.texts) {
-        if (!NSIntersectsRect([text textBounds], clipRect)) {
+        if (!NSIntersectsRect([text decoratedBounds], clipRect)) {
             continue;
         }
         [text translateByOffset:offset];

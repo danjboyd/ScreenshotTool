@@ -70,9 +70,13 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
 }
 
 - (NSAttributedString *)attributedStringWithFont:(NSFont *)font {
+    return [self attributedStringWithFont:font color:self.color ?: [NSColor whiteColor]];
+}
+
+- (NSAttributedString *)attributedStringWithFont:(NSFont *)font color:(NSColor *)color {
     NSMutableDictionary<NSAttributedStringKey, id> *attributes = [[NSMutableDictionary alloc] init];
     attributes[NSFontAttributeName] = font;
-    attributes[NSForegroundColorAttributeName] = self.color ?: [NSColor whiteColor];
+    attributes[NSForegroundColorAttributeName] = color;
     NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
     style.lineBreakMode = NSLineBreakByWordWrapping;
     style.alignment = NSTextAlignmentLeft;
@@ -135,12 +139,14 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
     CGFloat lineHeight = STTextLineHeight(self.font);
     CGFloat pointSize = self.font.pointSize > 0.0 ? self.font.pointSize : 18.0;
     NSPoint origin = self.origin;
+    // Outlines, shadows and backgrounds draw outside the text; keep them on the image as well.
+    CGFloat inset = [self decorationOutset];
 
     // Keep a few characters of room at the right edge rather than wrapping every glyph.
-    CGFloat minWrapWidth = MIN(MAX(canvasSize.width, 1.0), MAX(lineHeight * 2.0, pointSize * 3.0));
-    origin.x = MAX(0.0, MIN(origin.x, canvasSize.width - minWrapWidth));
-    origin.y = MAX(0.0, MIN(origin.y, canvasSize.height - lineHeight));
-    CGFloat availableWidth = MAX(minWrapWidth, canvasSize.width - origin.x);
+    CGFloat minWrapWidth = MIN(MAX(canvasSize.width - inset * 2.0, 1.0), MAX(lineHeight * 2.0, pointSize * 3.0));
+    origin.x = MAX(inset, MIN(origin.x, canvasSize.width - inset - minWrapWidth));
+    origin.y = MAX(inset, MIN(origin.y, canvasSize.height - inset - lineHeight));
+    CGFloat availableWidth = MAX(minWrapWidth, canvasSize.width - inset - origin.x);
 
     CGFloat wrapWidth = self.widthIsFixed ? MIN(MAX(self.boxSize.width, minWrapWidth), availableWidth) : availableWidth;
     NSSize measured = [self measuredSizeForWrapWidth:wrapWidth];
@@ -152,17 +158,72 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
         width = MIN(availableWidth, MAX(lineHeight, measured.width + slack));
     }
     CGFloat height = MAX(measured.height, lineHeight);
-    if (origin.y + height > canvasSize.height) {
-        origin.y = MAX(0.0, canvasSize.height - height);
+    if (origin.y + height > canvasSize.height - inset) {
+        origin.y = MAX(0.0, canvasSize.height - inset - height);
     }
 
     _origin = origin;
     _boxSize = NSMakeSize(ceil(width), ceil(height));
     self.measuredSize = measured;
-    return height <= canvasSize.height + 0.5;
+    return height + inset * 2.0 <= canvasSize.height + 0.5;
+}
+
+- (CGFloat)stylePointSize {
+    return self.font.pointSize > 0.0 ? self.font.pointSize : 18.0;
+}
+
+- (CGFloat)outlineWidth {
+    return MAX(1.0, round([self stylePointSize] * 0.07 * 2.0) / 2.0);
+}
+
+- (CGFloat)shadowOffset {
+    return MAX(1.0, round([self stylePointSize] * 0.06));
+}
+
+- (CGFloat)backgroundPadding {
+    return round([self stylePointSize] * 0.3) + 2.0;
+}
+
+- (CGFloat)decorationOutset {
+    switch (self.style) {
+        case MarkupTextStyleOutline:
+            return ceil([self outlineWidth]);
+        case MarkupTextStyleShadow:
+            return ceil([self shadowOffset] * 1.5);
+        case MarkupTextStyleBackground:
+            return [self backgroundPadding];
+        case MarkupTextStylePlain:
+        default:
+            return 0.0;
+    }
+}
+
+- (NSRect)decoratedBounds {
+    CGFloat outset = [self decorationOutset];
+    return NSInsetRect([self textBounds], -outset, -outset);
+}
+
+/// Black or white, whichever reads better against the text colour.
+- (NSColor *)contrastingColor {
+    NSColor *color = [(self.color ?: [NSColor whiteColor]) colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
+    CGFloat red = 1.0, green = 1.0, blue = 1.0, alpha = 1.0;
+    [color getRed:&red green:&green blue:&blue alpha:&alpha];
+    CGFloat luminance = (0.2126 * red) + (0.7152 * green) + (0.0722 * blue);
+    return luminance > 0.55 ? [NSColor blackColor] : [NSColor whiteColor];
+}
+
+- (NSColor *)glyphColor {
+    if (self.style == MarkupTextStyleBackground) {
+        return [self contrastingColor];
+    }
+    return self.color ?: [NSColor whiteColor];
 }
 
 - (void)drawInCanvasAtScale:(CGFloat)scale {
+    [self drawAtScale:scale unflippedHeight:0.0 decorationsOnly:NO];
+}
+
+- (void)drawAtScale:(CGFloat)scale unflippedHeight:(CGFloat)unflippedHeight decorationsOnly:(BOOL)decorationsOnly {
     if (self.text.length == 0 || scale <= 0.0) {
         return;
     }
@@ -173,24 +234,71 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
     if (fabs(scale - 1.0) > 0.0001) {
         font = [NSFont fontWithName:baseFont.fontName size:MAX(1.0, baseFont.pointSize * scale)] ?: baseFont;
     }
-    NSRect rect = [self textRectForCanvas];
-    rect = NSMakeRect(rect.origin.x * scale, rect.origin.y * scale, rect.size.width * scale, rect.size.height * scale);
-    [[self attributedStringWithFont:font] drawInRect:rect];
+
+    NSRect box = [self textRectForCanvas];
+    NSRect textRect = NSMakeRect(box.origin.x * scale, box.origin.y * scale, box.size.width * scale, box.size.height * scale);
+    // Rects are worked out top-down, as on the canvas, then mapped for unflipped contexts.
+    NSRect (^map)(NSRect) = ^NSRect(NSRect rect) {
+        if (unflippedHeight > 0.0) {
+            rect.origin.y = unflippedHeight - rect.origin.y - rect.size.height;
+        }
+        return rect;
+    };
+    void (^drawGlyphs)(NSColor *, CGFloat, CGFloat) = ^(NSColor *color, CGFloat dx, CGFloat dy) {
+        NSRect rect = NSOffsetRect(textRect, dx, dy);
+        [[self attributedStringWithFont:font color:color] drawInRect:map(rect)];
+    };
+
+    switch (self.style) {
+        case MarkupTextStyleOutline: {
+            // Copies of the text in a ring around it make an outline that works with any font.
+            CGFloat width = [self outlineWidth] * scale;
+            NSColor *outline = [self contrastingColor];
+            for (NSInteger step = 0; step < 16; step++) {
+                CGFloat angle = (M_PI * 2.0 * step) / 16.0;
+                drawGlyphs(outline, cos(angle) * width, sin(angle) * width);
+            }
+            break;
+        }
+        case MarkupTextStyleShadow: {
+            // A few offset passes at low opacity read as a soft shadow.
+            CGFloat offset = [self shadowOffset] * scale;
+            drawGlyphs([NSColor colorWithDeviceWhite:0.0 alpha:0.18], offset * 1.5, offset * 1.5);
+            drawGlyphs([NSColor colorWithDeviceWhite:0.0 alpha:0.30], offset, offset);
+            drawGlyphs([NSColor colorWithDeviceWhite:0.0 alpha:0.30], offset * 0.5, offset * 0.5);
+            break;
+        }
+        case MarkupTextStyleBackground: {
+            CGFloat padding = [self backgroundPadding] * scale;
+            NSRect used = NSMakeRect(box.origin.x * scale, box.origin.y * scale,
+                                     self.measuredSize.width * scale, self.measuredSize.height * scale);
+            NSRect pill = NSInsetRect(used, -padding, -padding);
+            CGFloat radius = MIN(padding * 1.2, pill.size.height * 0.5);
+            [(self.color ?: [NSColor whiteColor]) setFill];
+            [[NSBezierPath bezierPathWithRoundedRect:map(pill) xRadius:radius yRadius:radius] fill];
+            break;
+        }
+        case MarkupTextStylePlain:
+        default:
+            break;
+    }
+
+    if (!decorationsOnly) {
+        drawGlyphs([self glyphColor], 0.0, 0.0);
+    }
 }
 
 - (void)renderInContext:(NSGraphicsContext *)context canvasSize:(NSSize)canvasSize {
-    if (self.text.length == 0 || self.boxSize.width <= 0.0 || self.boxSize.height <= 0.0) {
+    (void)context;
+    if (self.boxSize.width <= 0.0 || self.boxSize.height <= 0.0) {
         return;
     }
-    NSAttributedString *attr = [self attributedString];
-    NSRect rect = [self textRectForCanvas];
-    rect.origin.y = canvasSize.height - rect.origin.y - rect.size.height;
-    [attr drawInRect:rect];
+    [self drawAtScale:1.0 unflippedHeight:canvasSize.height decorationsOnly:NO];
 }
 
 - (BOOL)containsPoint:(NSPoint)point {
     // Hit the text itself (with a little tolerance), not empty space in a wide box.
-    return NSPointInRect(point, NSInsetRect([self textBounds], -4.0, -4.0));
+    return NSPointInRect(point, NSInsetRect([self decoratedBounds], -4.0, -4.0));
 }
 
 - (id)copyWithZone:(NSZone *)zone {
@@ -200,6 +308,7 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
                                                                 origin:self.origin
                                                                 boxSize:self.boxSize];
     copy.widthIsFixed = self.widthIsFixed;
+    copy.style = self.style;
     return copy;
 }
 

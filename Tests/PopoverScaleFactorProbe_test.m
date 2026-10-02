@@ -88,7 +88,7 @@
     [controller showRelativeToRect:NSMakeRect(5.0f, 5.0f, 1.0f, 1.0f) ofView:anchor preferredEdge:NSMaxYEdge];
     XCTAssertNotNil(controller.popover, @"Popover should be constructed");
     XCTAssertEqualWithAccuracy(controller.popover.contentSize.width, 340.0f, 0.1f, @"Text popover width should stay logical sized");
-    XCTAssertEqualWithAccuracy(controller.popover.contentSize.height, 320.0f, 0.1f, @"Text popover height should stay logical sized");
+    XCTAssertEqualWithAccuracy(controller.popover.contentSize.height, 356.0f, 0.1f, @"Text popover height should stay logical sized (includes the Style row)");
 }
 
 - (void)testZoomPopoverButtonsFitMeasuredCellSizes {
