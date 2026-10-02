@@ -152,6 +152,7 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/TextToolPopoverController.m \
 	Source/ZoomPopoverController.m \
 	Source/PreferencesWindowController.m \
+	Source/STTextOptionsBar.m \
 	Source/STThemeUtilities.m
 
 CLANG_WRAPPER := $(shell pwd)/Tools/clang-wrapper.sh

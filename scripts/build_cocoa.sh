@@ -57,6 +57,7 @@ SOURCES=(
   Source/ToolSettingsPopoverController.m
   Source/TextToolPopoverController.m
   Source/PreferencesWindowController.m
+  Source/STTextOptionsBar.m
   Source/STThemeUtilities.m
 )
 

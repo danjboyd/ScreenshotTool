@@ -42,6 +42,9 @@ NSString * const ScreenshotCanvasViewDidRestoreStateNotification = @"ScreenshotC
 NSString * const ScreenshotCanvasViewRequestsToolNotification = @"ScreenshotCanvasViewRequestsToolNotification";
 NSString * const ScreenshotCanvasViewToolKey = @"tool";
 NSString * const ScreenshotCanvasViewDidBeginTextEditingNotification = @"ScreenshotCanvasViewDidBeginTextEditingNotification";
+NSString * const ScreenshotCanvasViewDidEndTextEditingNotification = @"ScreenshotCanvasViewDidEndTextEditingNotification";
+NSString * const ScreenshotCanvasViewRequestsTextFormatNotification = @"ScreenshotCanvasViewRequestsTextFormatNotification";
+NSString * const ScreenshotCanvasViewTextFormatKey = @"format";
 #if ST_ENABLE_GNUSTEP_WORKAROUNDS
 BOOL ScreenshotUndoLoggingEnabled(void) __attribute__((weak));
 #else
@@ -75,7 +78,12 @@ static BOOL ScreenshotUndoLoggingEnabled(void) {
     NSString *characters = event.charactersIgnoringModifiers;
     unichar key = characters.length > 0 ? [characters characterAtIndex:0] : 0;
     BOOL isReturn = (key == NSCarriageReturnCharacter || key == NSEnterCharacter || key == NSNewlineCharacter);
-    if (isReturn && (event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl)) != 0) {
+    NSString *format = [self formatCommandForEvent:event];
+    if (format) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewRequestsTextFormatNotification
+                                                            object:self.delegate
+                                                          userInfo:@{ ScreenshotCanvasViewTextFormatKey: format }];
+    } else if (isReturn && (event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl)) != 0) {
         // GNUstep's key bindings have no command for Control+Return; send the one the delegate
         // reads as "finish" so Ctrl+Return works whichever modifier the Ctrl key maps to.
         [self doCommandBySelector:@selector(insertNewline:)];
@@ -83,6 +91,33 @@ static BOOL ScreenshotUndoLoggingEnabled(void) {
         [super keyDown:event];
     }
     self.handlingKeyModifierFlags = 0;
+}
+
+/// Ctrl (or Cmd)+B / I toggle bold and italic; with Shift, > and < step the size.
+- (nullable NSString *)formatCommandForEvent:(NSEvent *)event {
+    NSEventModifierFlags flags = event.modifierFlags;
+    if ((flags & (NSEventModifierFlagCommand | NSEventModifierFlagControl)) == 0) {
+        return nil;
+    }
+    NSString *characters = event.charactersIgnoringModifiers.lowercaseString;
+    if (characters.length != 1) {
+        return nil;
+    }
+    unichar key = [characters characterAtIndex:0];
+    BOOL shift = (flags & NSEventModifierFlagShift) != 0;
+    if (!shift && key == 'b') {
+        return @"bold";
+    }
+    if (!shift && key == 'i') {
+        return @"italic";
+    }
+    if (key == '>' || (shift && key == '.')) {
+        return @"bigger";
+    }
+    if (key == '<' || (shift && key == ',')) {
+        return @"smaller";
+    }
+    return nil;
 }
 @end
 #endif
@@ -1029,6 +1064,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
     target.boxSize = snapshot.boxSize;
     target.widthIsFixed = snapshot.widthIsFixed;
     target.style = snapshot.style;
+    target.alignment = snapshot.alignment;
     [target updateMeasuredSize];
 
     [self setNeedsDisplay:YES];
@@ -1944,6 +1980,18 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     return [NSFont fontWithName:font.fontName size:presetSize] ?: [NSFont systemFontOfSize:presetSize];
 }
 
+- (void)setTextAlignment:(NSTextAlignment)textAlignment {
+    if (_textAlignment == textAlignment) {
+        return;
+    }
+    _textAlignment = textAlignment;
+    if (self.currentTextEntry) {
+        self.currentTextEntry.alignment = textAlignment;
+    }
+    [self updateActiveTextViewFrame];
+    [self setNeedsDisplay:YES];
+}
+
 - (void)setTextFont:(NSFont *)textFont {
     NSFont *resolved = textFont ?: [NSFont systemFontOfSize:24.0f];
     if ([_textFont isEqual:resolved]) {
@@ -1966,6 +2014,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     self.activeTextView = nil;
     [self.textEditingUndoManager removeAllActions];
     self.textEditingUndoManager = nil;
+    [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewDidEndTextEditingNotification object:self];
     self.activeTextOverflowsImage = NO;
     NSWindow *window = self.window;
     if (window && (window.firstResponder == nil || window.firstResponder == window)) {
@@ -2445,6 +2494,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     NSFont *editingFont = entry.font ?: self.textFont;
     [self.activeTextView setFont:[self scaledFontForEditingWithBaseFont:editingFont]];
     NSColor *editingColor = [entry glyphColor];
+    [self.activeTextView setAlignment:entry.alignment];
     [self.activeTextView setTextColor:editingColor];
     [self.activeTextView setInsertionPointColor:editingColor];
 }
@@ -2470,6 +2520,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
                                           boxSize:imageRect.size];
         entry.widthIsFixed = widthIsFixed;
         entry.style = self.textStyle;
+        entry.alignment = self.textAlignment;
     } else {
         entry.origin = imageRect.origin;
         entry.boxSize = imageRect.size;
@@ -2549,6 +2600,14 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewDidBeginTextEditingNotification object:self];
 }
 
+- (nullable MarkupText *)activeTextEntry {
+    return self.activeTextView ? self.currentTextEntry : nil;
+}
+
+- (NSRect)activeTextRectInView {
+    return self.activeTextView ? [self activeTextGuideRectInView] : NSZeroRect;
+}
+
 - (nullable NSUndoManager *)activeTextUndoManager {
     return self.activeTextView ? self.textEditingUndoManager : nil;
 }
@@ -2622,7 +2681,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 }
 
 - (void)updateForEnclosingBoundsChange {
-    if (!self.fitToWindow || !self.image || !self.hostScrollView) {
+    if (!self.fitToWindow || !self.image || !self.hostScrollView || self.suspendsFitUpdates) {
         return;
     }
 

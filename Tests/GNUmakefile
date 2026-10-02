@@ -52,6 +52,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	StatusBarToggleProbe_test.m \
 	TextFontFacePopupProbe_test.m \
 	ThemePreferenceProbe_test.m \
+	TextAlignmentToolbarProbe_test.m \
 	TextKeyboardPointerProbe_test.m \
 	TextToolProbe_test.m \
 	TextStyleExportProbe_test.m \
@@ -81,6 +82,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/TextToolPopoverController.m \
 	../Source/ZoomPopoverController.m \
 	../Source/PreferencesWindowController.m \
+	../Source/STTextOptionsBar.m \
 	../Source/STThemeUtilities.m
 
 ScreenshotToolTests_OBJC_FILES += $(XCTEST_SRC_FILES)

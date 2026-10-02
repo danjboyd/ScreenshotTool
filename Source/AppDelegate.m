@@ -10,6 +10,7 @@
 #import "PreferencesWindowController.h"
 #import "STThemeUtilities.h"
 #import "STHudView.h"
+#import "STTextOptionsBar.h"
 #import "GPStandardUpdaterController.h"
 #if defined(ST_USE_OPENSAVE)
 #import <GSOpenSave.h>
@@ -1305,7 +1306,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 @end
 
-@interface AppDelegate () <NSToolbarDelegate, ToolSettingsPopoverControllerDelegate, TextToolPopoverControllerDelegate, ZoomPopoverControllerDelegate, PreferencesWindowControllerDelegate, GPStandardUpdaterControllerDelegate>
+@interface AppDelegate () <NSToolbarDelegate, ToolSettingsPopoverControllerDelegate, TextToolPopoverControllerDelegate, ZoomPopoverControllerDelegate, PreferencesWindowControllerDelegate, GPStandardUpdaterControllerDelegate, STTextOptionsBarDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NSScrollView *scrollView;
 @property (nonatomic, strong) ScreenshotCanvasView *canvasView;
@@ -1344,6 +1345,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSFont *textDefaultFont;
 @property (nonatomic, assign) MarkupTextStyle textDefaultStyle;
 @property (nonatomic, assign) STTextSizePreset textDefaultSizePreset;
+@property (nonatomic, assign) NSTextAlignment textDefaultAlignment;
+@property (nonatomic, strong) STTextOptionsBar *textOptionsBar;
 @property (nonatomic, strong) ToolSettingsPopoverController *penPopoverController;
 @property (nonatomic, strong) ToolSettingsPopoverController *highlighterPopoverController;
 @property (nonatomic, strong) TextToolPopoverController *textPopoverController;
@@ -2024,6 +2027,14 @@ static id STInfoValueForKey(NSString *key) {
                                              selector:@selector(canvasViewDidBeginTextEditing:)
                                                  name:ScreenshotCanvasViewDidBeginTextEditingNotification
                                                object:self.canvasView];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(canvasViewDidEndTextEditing:)
+                                                 name:ScreenshotCanvasViewDidEndTextEditingNotification
+                                               object:self.canvasView];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(canvasViewRequestsTextFormat:)
+                                                 name:ScreenshotCanvasViewRequestsTextFormatNotification
+                                               object:self.canvasView];
 
     [self.scrollView setDocumentView:self.canvasView];
     [container addSubview:self.scrollView];
@@ -2576,6 +2587,156 @@ static id STInfoValueForKey(NSString *key) {
     return title;
 }
 
+- (void)canvasViewDidEndTextEditing:(NSNotification *)notification {
+    (void)notification;
+    [self hideTextOptionsBar];
+}
+
+- (void)canvasViewRequestsTextFormat:(NSNotification *)notification {
+    NSString *format = notification.userInfo[ScreenshotCanvasViewTextFormatKey];
+    if ([format isEqualToString:@"bold"]) {
+        [self toggleTextTrait:NSBoldFontMask];
+    } else if ([format isEqualToString:@"italic"]) {
+        [self toggleTextTrait:NSItalicFontMask];
+    } else if ([format isEqualToString:@"bigger"]) {
+        [self stepTextSizeBy:2.0];
+    } else if ([format isEqualToString:@"smaller"]) {
+        [self stepTextSizeBy:-2.0];
+    }
+}
+
+#pragma mark - Text options bar (#34)
+
+- (void)showTextOptionsBar {
+    NSView *container = self.scrollView.superview;
+    if (!container) {
+        return;
+    }
+    if (!self.textOptionsBar) {
+        self.textOptionsBar = [[STTextOptionsBar alloc] initWithFrame:NSMakeRect(0.0, 0.0, NSWidth(self.scrollView.frame), [STTextOptionsBar preferredHeight])];
+        self.textOptionsBar.delegate = self;
+    }
+    if (self.textOptionsBar.superview != container) {
+        [self.textOptionsBar setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
+        [container addSubview:self.textOptionsBar];
+    }
+    // Keep the image's scale while the row takes its space; the canvas slides down instead.
+    self.canvasView.suspendsFitUpdates = YES;
+    [self.textOptionsBar setHidden:NO];
+    [self layoutContentSubviews];
+    [self refreshTextOptionsBar];
+}
+
+- (void)hideTextOptionsBar {
+    if (!self.textOptionsBar || self.textOptionsBar.isHidden) {
+        return;
+    }
+    [self.textOptionsBar setHidden:YES];
+    [self layoutContentSubviews];
+    self.canvasView.suspendsFitUpdates = NO;
+    [self.canvasView updateForEnclosingBoundsChange];
+}
+
+- (NSFont *)currentTextFont {
+    return [self.canvasView activeTextEntry].font ?: [self.canvasView effectiveTextFont];
+}
+
+- (void)refreshTextOptionsBar {
+    STTextOptionsBar *bar = self.textOptionsBar;
+    if (!bar || bar.isHidden) {
+        return;
+    }
+    NSFont *font = [self currentTextFont];
+    NSFontManager *fonts = [NSFontManager sharedFontManager];
+    NSFont *bold = [fonts convertFont:font toHaveTrait:NSBoldFontMask];
+    NSFont *italic = [fonts convertFont:font toHaveTrait:NSItalicFontMask];
+    [bar updateWithFont:font
+                  color:self.canvasView.textColor ?: STDefaultTextColor()
+                  style:self.canvasView.textStyle
+             sizePreset:self.canvasView.textSizePreset
+              alignment:self.canvasView.textAlignment
+          boldAvailable:![bold.fontName isEqualToString:font.fontName]
+        italicAvailable:![italic.fontName isEqualToString:font.fontName]];
+}
+
+- (void)textSettingsChangedFromBar {
+    [self refreshTextOptionsBar];
+    [self.textPopoverController refresh];
+}
+
+- (void)toggleTextTrait:(NSFontTraitMask)trait {
+    NSFont *font = [self currentTextFont];
+    NSFontManager *fonts = [NSFontManager sharedFontManager];
+    BOOL has = ([fonts traitsOfFont:font] & trait) != 0;
+    NSFont *converted = has ? [fonts convertFont:font toNotHaveTrait:trait] : [fonts convertFont:font toHaveTrait:trait];
+    if (!converted || [converted.fontName isEqualToString:font.fontName]) {
+        NSBeep();
+        return;
+    }
+    // Keep the preset: only the face changes, the size still comes from the image.
+    [self applyTextFont:converted persist:YES];
+    [self textSettingsChangedFromBar];
+}
+
+- (void)stepTextSizeBy:(CGFloat)delta {
+    NSFont *font = [self currentTextFont];
+    CGFloat size = MAX(6.0, MIN(400.0, round(font.pointSize + delta)));
+    NSFont *resized = [NSFont fontWithName:font.fontName size:size] ?: font;
+    // Stepping picks an exact size.
+    [self applyTextSizePreset:STTextSizePresetExact persist:YES];
+    [self applyTextFont:resized persist:YES];
+    [self textSettingsChangedFromBar];
+}
+
+- (void)textOptionsBar:(STTextOptionsBar *)bar didPickColor:(NSColor *)color {
+    (void)bar;
+    [self applyColor:color toTool:ScreenshotCanvasToolText persist:YES];
+    [self textSettingsChangedFromBar];
+}
+
+- (void)textOptionsBar:(STTextOptionsBar *)bar didPickSizePreset:(STTextSizePreset)preset {
+    (void)bar;
+    [self applyTextSizePreset:preset persist:YES];
+    [self textSettingsChangedFromBar];
+}
+
+- (void)textOptionsBar:(STTextOptionsBar *)bar didStepSizeBy:(CGFloat)delta {
+    (void)bar;
+    [self stepTextSizeBy:delta];
+}
+
+- (void)textOptionsBar:(STTextOptionsBar *)bar didPickStyle:(MarkupTextStyle)style {
+    (void)bar;
+    [self applyTextStyle:style persist:YES];
+    [self textSettingsChangedFromBar];
+}
+
+- (void)textOptionsBar:(STTextOptionsBar *)bar didPickFontFamily:(NSString *)family {
+    (void)bar;
+    NSFont *font = [self currentTextFont];
+    NSFont *converted = [[NSFontManager sharedFontManager] convertFont:font toFamily:family];
+    if (converted) {
+        [self applyTextFont:converted persist:YES];
+    }
+    [self textSettingsChangedFromBar];
+}
+
+- (void)textOptionsBarDidToggleBold:(STTextOptionsBar *)bar {
+    (void)bar;
+    [self toggleTextTrait:NSBoldFontMask];
+}
+
+- (void)textOptionsBarDidToggleItalic:(STTextOptionsBar *)bar {
+    (void)bar;
+    [self toggleTextTrait:NSItalicFontMask];
+}
+
+- (void)textOptionsBar:(STTextOptionsBar *)bar didPickAlignment:(NSTextAlignment)alignment {
+    (void)bar;
+    [self applyTextAlignment:alignment persist:YES];
+    [self textSettingsChangedFromBar];
+}
+
 - (void)canvasViewRequestsTool:(NSNotification *)notification {
     NSNumber *tool = notification.userInfo[ScreenshotCanvasViewToolKey];
     if (tool) {
@@ -2585,6 +2746,7 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)canvasViewDidBeginTextEditing:(NSNotification *)notification {
     (void)notification;
+    [self showTextOptionsBar];
     // Once per launch: enough to learn it without nagging on every label.
     static BOOL shownHint = NO;
     if (shownHint) {
@@ -3467,6 +3629,7 @@ static id STInfoValueForKey(NSString *key) {
                                    registerIfMissing:YES];
     self.textDefaultStyle = (MarkupTextStyle)STStoredTextStyle(STDefaultsTextDefaultStyleKey, STDefaultTextStyle());
     self.textDefaultSizePreset = STStoredTextSizePreset(STDefaultsTextDefaultSizePresetKey, STDefaultTextSizePreset());
+    self.textDefaultAlignment = STStoredTextAlignment(STDefaultsTextDefaultAlignmentKey, NSTextAlignmentLeft);
 
     NSColor *penColor = [self storedColorForKey:STDefaultsPenColorKey
                                        fallback:self.penDefaultColor
@@ -3488,6 +3651,7 @@ static id STInfoValueForKey(NSString *key) {
     self.canvasView.textFont = textFont;
     self.canvasView.textStyle = (MarkupTextStyle)STStoredTextStyle(STDefaultsTextStyleKey, self.textDefaultStyle);
     self.canvasView.textSizePreset = STStoredTextSizePreset(STDefaultsTextSizePresetKey, self.textDefaultSizePreset);
+    self.canvasView.textAlignment = STStoredTextAlignment(STDefaultsTextAlignmentKey, self.textDefaultAlignment);
     [self.canvasView refreshCursor];
     [self refreshToolButtonIcons];
     [self updateToolWidthControls];
@@ -3906,6 +4070,19 @@ static id STInfoValueForKey(NSString *key) {
     [self.canvasView setNeedsDisplay:YES];
 }
 
+- (void)applyTextAlignment:(NSTextAlignment)alignment persist:(BOOL)persist {
+    self.canvasView.textAlignment = alignment;
+    if (persist) {
+        [[NSUserDefaults standardUserDefaults] setInteger:STTextAlignmentCode(alignment) forKey:STDefaultsTextAlignmentKey];
+    }
+    [self.canvasView setNeedsDisplay:YES];
+}
+
+- (void)setDefaultTextAlignment:(NSTextAlignment)alignment {
+    self.textDefaultAlignment = alignment;
+    [[NSUserDefaults standardUserDefaults] setInteger:STTextAlignmentCode(alignment) forKey:STDefaultsTextDefaultAlignmentKey];
+}
+
 - (void)setDefaultTextSizePreset:(STTextSizePreset)preset {
     self.textDefaultSizePreset = preset;
     [[NSUserDefaults standardUserDefaults] setInteger:preset forKey:STDefaultsTextDefaultSizePresetKey];
@@ -4258,6 +4435,23 @@ static id STInfoValueForKey(NSString *key) {
 - (void)textToolPopover:(TextToolPopoverController *)controller didChangeSizePreset:(STTextSizePreset)preset {
     (void)controller;
     [self applyTextSizePreset:preset persist:YES];
+    [self refreshTextOptionsBar];
+}
+
+- (NSTextAlignment)textToolPopoverCurrentAlignment:(TextToolPopoverController *)controller {
+    (void)controller;
+    return self.canvasView.textAlignment;
+}
+
+- (NSTextAlignment)textToolPopoverDefaultAlignment:(TextToolPopoverController *)controller {
+    (void)controller;
+    return self.textDefaultAlignment;
+}
+
+- (void)textToolPopover:(TextToolPopoverController *)controller didChangeAlignment:(NSTextAlignment)alignment {
+    (void)controller;
+    [self applyTextAlignment:alignment persist:YES];
+    [self refreshTextOptionsBar];
 }
 
 - (NSFont *)textToolPopoverDefaultFont:(TextToolPopoverController *)controller {
@@ -4291,6 +4485,8 @@ static id STInfoValueForKey(NSString *key) {
     [self applyTextFont:self.textDefaultFont persist:YES];
     [self applyTextStyle:self.textDefaultStyle persist:YES];
     [self applyTextSizePreset:self.textDefaultSizePreset persist:YES];
+    [self applyTextAlignment:self.textDefaultAlignment persist:YES];
+    [self refreshTextOptionsBar];
     [self showStatusMessage:@"Text defaults restored" duration:2.0];
 }
 
@@ -4302,6 +4498,7 @@ static id STInfoValueForKey(NSString *key) {
     [self setDefaultTextFont:font];
     [self setDefaultTextStyle:self.canvasView.textStyle];
     [self setDefaultTextSizePreset:self.canvasView.textSizePreset];
+    [self setDefaultTextAlignment:self.canvasView.textAlignment];
     [self showStatusMessage:@"Text defaults updated" duration:2.0];
 }
 
@@ -4775,10 +4972,18 @@ static id STInfoValueForKey(NSString *key) {
         [self layoutStatusControls];
     }
 
-    CGFloat scrollHeight = MAX(0.0f, bounds.size.height - barHeight);
+    // While editing text, the text toolbar gets its own row above the canvas. GNUstep doesn't
+    // redraw overlapping siblings reliably, so it never sits over the canvas.
+    BOOL showTextBar = (self.textOptionsBar && !self.textOptionsBar.isHidden);
+    CGFloat textBarHeight = showTextBar ? [STTextOptionsBar preferredHeight] : 0.0f;
+    CGFloat scrollHeight = MAX(0.0f, bounds.size.height - barHeight - textBarHeight);
     NSRect scrollFrame = NSMakeRect(0.0f, barHeight, bounds.size.width, scrollHeight);
     [self.scrollView setFrame:scrollFrame];
     [self.scrollView.contentView setNeedsDisplay:YES];
+    if (showTextBar) {
+        [self.textOptionsBar setFrame:NSMakeRect(0.0f, NSMaxY(scrollFrame), bounds.size.width, textBarHeight)];
+        [self.textOptionsBar setNeedsDisplay:YES];
+    }
 }
 
 - (void)resizeWindowToImageSize:(NSSize)imageSize {

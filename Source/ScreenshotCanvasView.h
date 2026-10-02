@@ -49,6 +49,15 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 @property (nonatomic, assign) MarkupTextStyle textStyle;
 /// Size preset for new text; anything but Exact sizes the font from the image (#27).
 @property (nonatomic, assign) STTextSizePreset textSizePreset;
+/// Alignment for new text; changing it realigns the box being edited (#31).
+@property (nonatomic, assign) NSTextAlignment textAlignment;
+/// While YES, Fit to Window doesn't rescale when the viewport changes (the text toolbar row
+/// appearing shouldn't shrink the image mid-edit).
+@property (nonatomic, assign) BOOL suspendsFitUpdates;
+/// The text annotation being edited, or nil.
+- (nullable MarkupText *)activeTextEntry;
+/// The box being edited, in this view's coordinates, or NSZeroRect.
+- (NSRect)activeTextRectInView;
 /// textFont at the preset's size for the current image, or textFont itself for Exact.
 - (NSFont *)effectiveTextFont;
 /// The undo history for typing in the open text box, or nil when no box is being edited.
@@ -84,3 +93,9 @@ extern NSString * const _Nonnull ScreenshotCanvasViewRequestsToolNotification;
 extern NSString * const _Nonnull ScreenshotCanvasViewToolKey;
 /// Posted when a text box opens for editing.
 extern NSString * const _Nonnull ScreenshotCanvasViewDidBeginTextEditingNotification;
+/// Posted when the open text box closes (committed or cancelled).
+extern NSString * const _Nonnull ScreenshotCanvasViewDidEndTextEditingNotification;
+/// Posted for formatting key commands while editing; userInfo[ScreenshotCanvasViewTextFormatKey] is
+/// @"bold", @"italic", @"bigger" or @"smaller".
+extern NSString * const _Nonnull ScreenshotCanvasViewRequestsTextFormatNotification;
+extern NSString * const _Nonnull ScreenshotCanvasViewTextFormatKey;

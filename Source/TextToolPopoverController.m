@@ -40,6 +40,7 @@
 @property (nonatomic, strong) NSStepper *fontSizeStepper;
 @property (nonatomic, strong) NSSegmentedControl *styleControl;
 @property (nonatomic, strong) NSSegmentedControl *sizePresetControl;
+@property (nonatomic, strong) NSSegmentedControl *alignmentControl;
 @property (nonatomic, strong) STHyperlinkButton *resetButton;
 @property (nonatomic, strong) STHyperlinkButton *defaultButton;
 @property (nonatomic, strong) NSArray<NSButton *> *colorSwatchButtons;
@@ -139,7 +140,12 @@
 
     BOOL canResetColor = ![self colorsEqual:color other:defaultColor];
     BOOL canResetFont = ![self fontsEqual:font other:defaultFont];
-    BOOL enableActions = (canResetColor || canResetFont || style != defaultStyle || sizePreset != defaultSizePreset);
+    NSTextAlignment alignment = [delegate textToolPopoverCurrentAlignment:self];
+    NSTextAlignment defaultAlignment = [delegate textToolPopoverDefaultAlignment:self];
+    [self.alignmentControl setSelectedSegment:STTextAlignmentCode(alignment)];
+
+    BOOL enableActions = (canResetColor || canResetFont || style != defaultStyle || sizePreset != defaultSizePreset ||
+                          alignment != defaultAlignment);
     [self.resetButton setEnabled:enableActions];
     [self.defaultButton setEnabled:enableActions];
 }
@@ -151,7 +157,7 @@
     CGFloat scaleFactor = 1.0f;
     
     CGFloat popoverWidth = 340.0f;
-    CGFloat popoverHeight = 356.0f;
+    CGFloat popoverHeight = 392.0f;
 
     STTextPopoverContentView *content = [[STTextPopoverContentView alloc] initWithFrame:NSMakeRect(0, 0, popoverWidth, popoverHeight)];
     content.owner = self;
@@ -387,6 +393,30 @@
     [styleControl setAutoresizingMask:NSViewMinYMargin];
     [self.contentView addSubview:styleControl];
     self.styleControl = styleControl;
+    y -= 12.0f * scaleFactor;
+
+    // Left / Centre / Right for multi-line labels (#31).
+    y -= styleRowHeight;
+    NSTextField *alignLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y + (3.0f * scaleFactor), 40.0f * scaleFactor, 18.0f * scaleFactor)];
+    [self configureLabel:alignLabel font:[NSFont systemFontOfSize:12.0f * scaleFactor]];
+    [alignLabel setStringValue:@"Align"];
+    [alignLabel setAutoresizingMask:NSViewMinYMargin];
+    [self.contentView addSubview:alignLabel];
+
+    NSSegmentedControl *alignmentControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(styleControlX, y, padding + contentWidth - styleControlX, styleRowHeight)];
+    NSArray<NSString *> *alignTitles = @[@"Left", @"Centre", @"Right"];
+    [alignmentControl setSegmentCount:(NSInteger)alignTitles.count];
+    [alignmentControl setFont:[NSFont systemFontOfSize:11.0f * scaleFactor]];
+    CGFloat alignWidth = floor(NSWidth(alignmentControl.frame) / alignTitles.count);
+    for (NSUInteger idx = 0; idx < alignTitles.count; idx++) {
+        [alignmentControl setLabel:alignTitles[idx] forSegment:(NSInteger)idx];
+        [alignmentControl setWidth:alignWidth forSegment:(NSInteger)idx];
+    }
+    [alignmentControl setTarget:self];
+    [alignmentControl setAction:@selector(alignmentChanged:)];
+    [alignmentControl setAutoresizingMask:NSViewMinYMargin];
+    [self.contentView addSubview:alignmentControl];
+    self.alignmentControl = alignmentControl;
     y -= 12.0f * scaleFactor;
     CGFloat previewAvailableHeight = y - previewBottom;
     if (previewAvailableHeight < 0.0f) {
@@ -773,6 +803,15 @@
 }
 
 #pragma mark - Actions
+
+- (void)alignmentChanged:(NSSegmentedControl *)sender {
+    NSInteger selected = [sender selectedSegment];
+    if (selected < 0) {
+        return;
+    }
+    [self.delegate textToolPopover:self didChangeAlignment:STTextAlignmentFromCode(selected)];
+    [self refresh];
+}
 
 - (void)styleChanged:(NSSegmentedControl *)sender {
     NSInteger selected = [sender selectedSegment];

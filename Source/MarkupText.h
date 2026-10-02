@@ -44,6 +44,8 @@ typedef NS_ENUM(NSInteger, MarkupTextStyle) {
 /// YES when the user set the wrap width by dragging or resizing; otherwise the box hugs the text.
 @property (nonatomic, assign) BOOL widthIsFixed;
 @property (nonatomic, assign) MarkupTextStyle style;
+/// Left, centre or right; lines align within the box (#31).
+@property (nonatomic, assign) NSTextAlignment alignment;
 
 - (instancetype)initWithText:(NSString *)text
                         font:(NSFont *)font

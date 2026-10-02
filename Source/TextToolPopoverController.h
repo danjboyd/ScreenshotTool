@@ -19,6 +19,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (STTextSizePreset)textToolPopoverCurrentSizePreset:(TextToolPopoverController *)controller;
 - (STTextSizePreset)textToolPopoverDefaultSizePreset:(TextToolPopoverController *)controller;
 - (void)textToolPopover:(TextToolPopoverController *)controller didChangeSizePreset:(STTextSizePreset)preset;
+- (NSTextAlignment)textToolPopoverCurrentAlignment:(TextToolPopoverController *)controller;
+- (NSTextAlignment)textToolPopoverDefaultAlignment:(TextToolPopoverController *)controller;
+- (void)textToolPopover:(TextToolPopoverController *)controller didChangeAlignment:(NSTextAlignment)alignment;
 - (void)textToolPopoverDidRequestReset:(TextToolPopoverController *)controller;
 - (void)textToolPopoverDidRequestSetDefault:(TextToolPopoverController *)controller;
 @end
