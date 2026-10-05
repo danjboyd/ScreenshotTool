@@ -1039,6 +1039,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @interface AppDelegate () <NSToolbarDelegate, ToolSettingsPopoverControllerDelegate, TextToolPopoverControllerDelegate, ZoomPopoverControllerDelegate, PreferencesWindowControllerDelegate, GPStandardUpdaterControllerDelegate, STTextOptionsBarDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NSScrollView *scrollView;
+/// Shown instead of the canvas while no image is open (#55).
+@property (nonatomic, strong) NSView *emptyStateView;
 @property (nonatomic, strong) ScreenshotCanvasView *canvasView;
 @property (nonatomic, strong) NSToolbar *toolbar;
 @property (nonatomic, strong) NSMutableDictionary<NSToolbarItemIdentifier, NSToolbarItem *> *toolbarItemsByIdentifier;
@@ -1798,6 +1800,8 @@ static id STInfoValueForKey(NSString *key) {
 
     [self.scrollView setDocumentView:self.canvasView];
     [container addSubview:self.scrollView];
+    self.emptyStateView = [self newEmptyStateView];
+    [container addSubview:self.emptyStateView];
     [self.window setInitialFirstResponder:self.canvasView];
     [self.window makeFirstResponder:self.canvasView];
 
@@ -4661,10 +4665,105 @@ static id STInfoValueForKey(NSString *key) {
     NSRect scrollFrame = NSMakeRect(0.0f, barHeight, bounds.size.width, scrollHeight);
     [self.scrollView setFrame:scrollFrame];
     [self.scrollView.contentView setNeedsDisplay:YES];
+    // No image: an empty state in the canvas's place instead of a blank scroll view (#55).
+    BOOL hasImage = [self.canvasView hasImage];
+    [self.scrollView setHidden:!hasImage];
+    [self.emptyStateView setHidden:hasImage];
+    if (!hasImage) {
+        [self layoutEmptyStateViewInFrame:scrollFrame];
+    }
     if (showTextBar) {
         [self.textOptionsBar setFrame:NSMakeRect(0.0f, NSMaxY(scrollFrame), bounds.size.width, textBarHeight)];
         [self.textOptionsBar setNeedsDisplay:YES];
     }
+}
+
+#pragma mark - Empty state (#55)
+
+/// What the window shows with no image: the app's icon, "No Image", and Open… / Paste. Standard
+/// controls on a view that draws nothing, so the theme styles it (as libadwaita's status page).
+- (NSView *)newEmptyStateView {
+    NSView *view = [[NSView alloc] initWithFrame:NSZeroRect];
+
+    NSImageView *icon = [[NSImageView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 96.0, 96.0)];
+    [icon setImage:[NSImage imageNamed:@"ScreenshotToolIcon"]];
+    [icon setImageScaling:NSImageScaleProportionallyUpOrDown];
+    [icon setEditable:NO];
+    [icon setTag:1];
+    [view addSubview:icon];
+
+    NSTextField *title = [self emptyStateLabel:@"No Image" font:[NSFont boldSystemFontOfSize:20.0]];
+    [title setTag:2];
+    [view addSubview:title];
+
+    NSTextField *detail = [self emptyStateLabel:@"Open a screenshot, or paste one from the clipboard."
+                                           font:[NSFont systemFontOfSize:[NSFont systemFontSize]]];
+    [detail setTextColor:STThemeSecondaryTextColor()];
+    [detail setTag:3];
+    [view addSubview:detail];
+
+    NSButton *open = [self emptyStateButton:@"Open…" action:@selector(openDocument:)];
+    [open setTag:4];
+    [open setKeyEquivalent:@"\r"];
+    [view addSubview:open];
+
+    NSButton *paste = [self emptyStateButton:@"Paste" action:@selector(pasteAsNewImage:)];
+    [paste setTag:5];
+    [view addSubview:paste];
+    return view;
+}
+
+- (NSTextField *)emptyStateLabel:(NSString *)text font:(NSFont *)font {
+    NSTextField *label = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    [label setEditable:NO];
+    [label setSelectable:NO];
+    [label setBezeled:NO];
+    [label setBordered:NO];
+    [label setDrawsBackground:NO];
+    [label setAlignment:NSTextAlignmentCenter];
+    [label setFont:font];
+    [label setStringValue:text];
+    [label sizeToFit];
+    return label;
+}
+
+- (NSButton *)emptyStateButton:(NSString *)title action:(SEL)action {
+    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 120.0, 32.0)];
+    [button setButtonType:NSMomentaryPushInButton];
+    [button setBezelStyle:NSRoundedBezelStyle];
+    [button setTitle:title];
+    [button setTarget:self];
+    [button setAction:action];
+    return button;
+}
+
+/// Centres the icon, labels and buttons in `frame`, stacked top to bottom.
+- (void)layoutEmptyStateViewInFrame:(NSRect)frame {
+    NSView *view = self.emptyStateView;
+    [view setFrame:frame];
+    NSView *icon = [view viewWithTag:1];
+    NSTextField *title = [view viewWithTag:2];
+    NSTextField *detail = [view viewWithTag:3];
+    NSView *open = [view viewWithTag:4];
+    NSView *paste = [view viewWithTag:5];
+    [title sizeToFit];
+    [detail sizeToFit];
+    CGFloat gap = 12.0, buttonGap = 12.0;
+    CGFloat buttonsWidth = NSWidth(open.frame) + buttonGap + NSWidth(paste.frame);
+    CGFloat total = NSHeight(icon.frame) + gap + NSHeight(title.frame) + 6.0 + NSHeight(detail.frame) + 18.0 + NSHeight(open.frame);
+    CGFloat midX = floor(NSWidth(frame) / 2.0);
+    CGFloat y = floor((NSHeight(frame) + total) / 2.0);
+    y -= NSHeight(icon.frame);
+    [icon setFrameOrigin:NSMakePoint(midX - floor(NSWidth(icon.frame) / 2.0), y)];
+    y -= gap + NSHeight(title.frame);
+    [title setFrameOrigin:NSMakePoint(midX - floor(NSWidth(title.frame) / 2.0), y)];
+    y -= 6.0 + NSHeight(detail.frame);
+    [detail setFrameOrigin:NSMakePoint(midX - floor(NSWidth(detail.frame) / 2.0), y)];
+    y -= 18.0 + NSHeight(open.frame);
+    CGFloat x = midX - floor(buttonsWidth / 2.0);
+    [open setFrameOrigin:NSMakePoint(x, y)];
+    [paste setFrameOrigin:NSMakePoint(x + NSWidth(open.frame) + buttonGap, y)];
+    [view setNeedsDisplay:YES];
 }
 
 - (void)resizeWindowToImageSize:(NSSize)imageSize {
