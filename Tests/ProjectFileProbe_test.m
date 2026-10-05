@@ -22,6 +22,7 @@
 - (BOOL)hasUnsavedChanges;
 - (BOOL)confirmProceedingWithUnsavedChanges;
 - (BOOL)windowShouldClose:(id)sender;
+- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender;
 - (BOOL)validateMenuItem:(NSMenuItem *)item;
 - (void)saveProject:(id)sender;
 @end
@@ -221,6 +222,24 @@
     NSData *saved = [NSData dataWithContentsOfURL:projectURL];
     NSDictionary *json = [NSJSONSerialization JSONObjectWithData:saved options:0 error:NULL];
     XCTAssertEqual([json[@"strokes"] count], (NSUInteger)1);
+}
+
+/// Closing the last window quits the app under some menu styles (GNUstep terminates after the last
+/// window closes), and the quit mustn't ask again what the close just settled.
+- (void)testClosingThenQuittingAsksOnce {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    XCTAssertTrue([_appDelegate openImageAtURL:[self writeImageNamed:@"c.png" color:[NSColor blueColor]]]);
+    [self annotate];
+
+    _appDelegate.stubbedChoice = 2; // Cancel: the window stays, and quitting asks again
+    XCTAssertFalse([_appDelegate windowShouldClose:_appDelegate.window]);
+    XCTAssertEqual([_appDelegate applicationShouldTerminate:NSApp], NSTerminateCancel);
+    XCTAssertEqual(_appDelegate.promptCount, 2);
+
+    _appDelegate.stubbedChoice = 1; // Don't Save
+    XCTAssertTrue([_appDelegate windowShouldClose:_appDelegate.window]);
+    XCTAssertEqual([_appDelegate applicationShouldTerminate:NSApp], NSTerminateNow);
+    XCTAssertEqual(_appDelegate.promptCount, 3, @"the quit after the close doesn't ask again");
 }
 
 - (void)testSaveProjectMenuItemNeedsAnImage {
