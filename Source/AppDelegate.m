@@ -1375,6 +1375,33 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     }
 }
 
+/// The paths among the launch arguments: GNUstep reads `-Key value` pairs (e.g. `-GSTheme Adwaita`,
+/// `-GSBackend libgnustep-back`) into the defaults, so they and their values aren't files (#68).
+/// Everything after a `--` is a path.
+- (NSArray<NSString *> *)imagePathsFromLaunchArguments:(NSArray<NSString *> *)arguments {
+    NSMutableArray<NSString *> *paths = [[NSMutableArray alloc] init];
+    BOOL onlyPaths = NO;
+    for (NSUInteger idx = 1; idx < arguments.count; idx++) {
+        NSString *argument = arguments[idx];
+        if (argument.length == 0) {
+            continue;
+        }
+        if (!onlyPaths && [argument isEqualToString:@"--"]) {
+            onlyPaths = YES;
+            continue;
+        }
+        if (!onlyPaths && [argument hasPrefix:@"-"]) {
+            // The option's value, if there is one, goes with it.
+            if (idx + 1 < arguments.count && ![arguments[idx + 1] hasPrefix:@"-"]) {
+                idx++;
+            }
+            continue;
+        }
+        [paths addObject:argument];
+    }
+    return paths;
+}
+
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     ScreenshotToolAppendLog(@"ScreenshotTool launched");
 #if defined(ST_USE_OPENSAVE)
@@ -1408,20 +1435,10 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         NSArray<NSString *> *arguments = [[NSProcessInfo processInfo] arguments];
         ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: argc=%lu",
                                  (unsigned long)arguments.count]);
-        if (arguments.count > 1) {
-            for (NSUInteger idx = 1; idx < arguments.count; idx++) {
-                NSString *candidate = arguments[idx];
-                ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: CLI arg[%lu]=%@",
-                                         (unsigned long)idx,
-                                         candidate]);
-                if ([self openImageAtURL:[NSURL fileURLWithPath:candidate]]) {
-                    ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: opened CLI arg[%lu]",
-                                             (unsigned long)idx]);
-                    break;
-                } else {
-                    ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: failed to open CLI arg[%lu]",
-                                             (unsigned long)idx]);
-                }
+        for (NSString *candidate in [self imagePathsFromLaunchArguments:arguments]) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: CLI path %@", candidate]);
+            if ([self openImageAtURL:[NSURL fileURLWithPath:candidate]]) {
+                break;
             }
         }
     }
