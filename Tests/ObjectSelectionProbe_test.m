@@ -150,7 +150,7 @@
 }
 
 - (void)testNewTextUsesThePresetForTheCurrentImage {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;
     canvas.textFont = [NSFont fontWithName:@"DejaVuSans" size:12.0] ?: [NSFont systemFontOfSize:12.0];
 
@@ -171,7 +171,7 @@
 #pragma mark - Object selection (#25)
 
 - (void)testClickSelectsAndDragMovesWithUndo {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithStrokeAndText];
     MarkupStroke *stroke = canvas.strokes.firstObject;
 
@@ -192,7 +192,7 @@
 }
 
 - (void)testShiftClickExtendsAndDeleteRemovesWithUndo {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithStrokeAndText];
     NSPoint onText = NSMakePoint(NSMidX([canvas.texts.firstObject textBounds]), NSMidY([canvas.texts.firstObject textBounds]));
 
@@ -210,7 +210,7 @@
 }
 
 - (void)testArrowKeysNudgeSelection {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithStrokeAndText];
     MarkupText *text = canvas.texts.firstObject;
     NSPoint onText = NSMakePoint(NSMidX([text textBounds]), NSMidY([text textBounds]));
@@ -224,7 +224,7 @@
 }
 
 - (void)testDoubleClickEditsTextAndEmptyDragMakesRegionSelection {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithStrokeAndText];
     MarkupText *text = canvas.texts.firstObject;
     NSPoint onText = NSMakePoint(NSMidX([text textBounds]), NSMidY([text textBounds]));

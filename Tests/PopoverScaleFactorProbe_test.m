@@ -61,14 +61,14 @@
 }
 
 - (void)testCurrentScaleFactorUsesEnvironmentValue {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     STSetEnvVar("GSScaleFactor", "1.75");
     CGFloat factor = [STFloatingPopover currentScaleFactorForView:nil];
     XCTAssertEqualWithAccuracy(factor, 1.0f, 0.0f, @"Scale factor should remain logical (no double-scaling)");
 }
 
 - (void)testToolSettingsPopoverScalesContentSize {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     STSetEnvVar("GSScaleFactor", "1.50");
     NSView *anchor = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 10.0f, 10.0f)];
     ToolSettingsPopoverController *controller = [[ToolSettingsPopoverController alloc] initWithTool:ScreenshotCanvasToolPen];
@@ -80,7 +80,7 @@
 }
 
 - (void)testTextPopoverScalesContentSize {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     STSetEnvVar("GSScaleFactor", "1.25");
     NSView *anchor = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 10.0f, 10.0f)];
     TextToolPopoverController *controller = [[TextToolPopoverController alloc] init];
@@ -92,7 +92,7 @@
 }
 
 - (void)testZoomPopoverButtonsFitMeasuredCellSizes {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     STSetEnvVar("GSScaleFactor", "2.00");
     NSView *anchor = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 10.0f, 10.0f)];
     ZoomPopoverController *controller = [[ZoomPopoverController alloc] init];

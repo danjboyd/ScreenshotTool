@@ -53,7 +53,7 @@ jobs:
           name: unit-tests-log
           path: |
             tests.log
-            tests_runner.log
+            tests-junit.xml
           if-no-files-found: ignore
       - name: Download linuxdeploy
         run: |

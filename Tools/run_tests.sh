@@ -4,12 +4,37 @@
 # window server was reachable, so a missing display can't pass for a green run.
 # Under CI (no desktop), run it under a virtual display: `xvfb-run -a Tools/run_tests.sh`.
 # Build the app first (`make`): the test bundle links the vendored updater libraries.
+#
+# Usage: Tools/run_tests.sh [TestClass | TestClass/testMethod | -xctest-option ...]
+#   Tools/run_tests.sh                               the whole suite
+#   Tools/run_tests.sh FitViewportRoundingProbeTests one class (or Class/testMethod)
+#   Tools/run_tests.sh -test-iterations 20 ...       any xctest option, passed through
+# The log goes to $TEST_LOG (default tests.log) and JUnit XML to $TEST_JUNIT (default tests-junit.xml).
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-LOG_PATH="${1:-${ROOT_DIR}/tests.log}"
+LOG_PATH="${TEST_LOG:-${ROOT_DIR}/tests.log}"
+JUNIT_PATH="${TEST_JUNIT:-${ROOT_DIR}/tests-junit.xml}"
+
+# Bare names select tests; options (and the values of those that take one) go to xctest as they are.
+XCTEST_OPTIONS=()
+takes_value=""
+for arg in "$@"; do
+  if [[ -n "${takes_value}" ]]; then
+    XCTEST_OPTIONS+=("${arg}")
+    takes_value=""
+  elif [[ "${arg}" == -* ]]; then
+    XCTEST_OPTIONS+=("${arg}")
+    case "${arg}" in
+      -test-iterations|-junit-report|-output-format|-host|-host-launch-timeout|-performance-baselines) takes_value=1 ;;
+    esac
+  else
+    XCTEST_OPTIONS+=("-only-testing:ScreenshotToolTests/${arg}")
+  fi
+done
+XCTEST_OPTIONS+=(-junit-report "${JUNIT_PATH}")
 TEST_HOME="${SCREENSHOT_TOOL_TEST_HOME:-${ROOT_DIR}/.tests_home}"
 
 # A fresh shell (such as a CI step) may not have the GNUstep environment yet.
@@ -55,33 +80,33 @@ done
 # Truncate the log before starting the run so Codex can inspect fresh output.
 : > "${LOG_PATH}"
 
-# The test runner writes its own output to tests_runner.log in the repository root.
-RUNNER_LOG="${ROOT_DIR}/tests_runner.log"
-rm -f "${RUNNER_LOG}"
+rm -f "${JUNIT_PATH}"
+printf -v XCTEST_ARGS '%q ' "${XCTEST_OPTIONS[@]}"
 
 status=0
 echo "== ScreenshotTool tests started at $(date -u +"%Y-%m-%dT%H:%M:%SZ") ==" >> "${LOG_PATH}"
-"${MAKE:-make}" tests >> "${LOG_PATH}" 2>&1 || status=$?
+"${MAKE:-make}" tests XCTEST_ARGS="${XCTEST_ARGS}" >> "${LOG_PATH}" 2>&1 || status=$?
 echo "== ScreenshotTool tests finished at $(date -u +"%Y-%m-%dT%H:%M:%SZ") (exit ${status}) ==" >> "${LOG_PATH}"
 
-if [[ -f "${RUNNER_LOG}" ]]; then
-  grep -E "XCTest:|XCTest bundle|Failed to load|not found" "${RUNNER_LOG}" | sed -E 's/^[0-9-]+ [0-9:.]+ [^ ]+ //' || true
-fi
+# Per-class results, failures and the summary; filtered-out classes are left out.
+grep -E "XCTest:" "${LOG_PATH}" | grep -vE "^[^X]*XCTest:   [A-Za-z]+Tests SKIPPED$" | sed -E 's/^[0-9-]+ [0-9:.]+ [^ ]+ //' \
+  | grep -E "tests (PASSED|FAILED)|FAILED|skipped|Skipped|SKIPPED|Assertion|error" || true
 
 if [[ ${status} -ne 0 ]]; then
-  echo "Tests failed (exit ${status}). See ${LOG_PATH} and ${RUNNER_LOG}." >&2
+  echo "Tests failed (exit ${status}). See ${LOG_PATH} and ${JUNIT_PATH}." >&2
   tail -n 20 "${LOG_PATH}" >&2
   exit "${status}"
 fi
 
-if grep -q "failed to connect to window server" "${RUNNER_LOG}"; then
+# Tests skip themselves (XCTSkipIf) without a window server; that must not pass for green.
+if grep -q "failed to connect to window server" "${LOG_PATH}"; then
   echo "Tests were skipped because no window server was reachable; run under a display (xvfb-run -a)." >&2
   exit 1
 fi
 
-if ! grep -qE "[0-9]+ tests PASSED" "${RUNNER_LOG}"; then
-  echo "No passing test summary in ${RUNNER_LOG}." >&2
+if ! grep -qE "[0-9]+ tests PASSED" "${LOG_PATH}"; then
+  echo "No passing test summary in ${LOG_PATH}." >&2
   exit 1
 fi
 
-echo "Test suite passed. See ${LOG_PATH} and ${RUNNER_LOG} for details."
+echo "Test suite passed. See ${LOG_PATH} and ${JUNIT_PATH} for details."

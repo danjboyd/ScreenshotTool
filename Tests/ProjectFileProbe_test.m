@@ -127,7 +127,7 @@
 #pragma mark - Tests
 
 - (void)testProjectRoundTripKeepsImageAndEditableAnnotations {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     XCTAssertTrue([_appDelegate openImageAtURL:[self writeImageNamed:@"shot.png" color:[NSColor greenColor]]]);
     [self annotate];
     NSURL *projectURL = [NSURL fileURLWithPath:[_directory stringByAppendingPathComponent:@"shot.screenshottool"]];
@@ -167,7 +167,7 @@
 }
 
 - (void)testDamagedOrForeignProjectsAreRejected {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;
     NSError *error = nil;
     XCTAssertFalse([canvas loadProjectData:[@"not json" dataUsingEncoding:NSUTF8StringEncoding] error:&error]);
@@ -186,7 +186,7 @@
 }
 
 - (void)testEditsMarkTheDocumentDirtyAndUndoCleansIt {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     XCTAssertTrue([_appDelegate openImageAtURL:[self writeImageNamed:@"a.png" color:[NSColor greenColor]]]);
     XCTAssertFalse([_appDelegate hasUnsavedChanges]);
     [self annotate];
@@ -197,7 +197,7 @@
 }
 
 - (void)testPromptDecidesWhetherToProceed {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     XCTAssertTrue([_appDelegate openImageAtURL:[self writeImageNamed:@"b.png" color:[NSColor greenColor]]]);
     XCTAssertTrue([_appDelegate confirmProceedingWithUnsavedChanges]);
     XCTAssertEqual(_appDelegate.promptCount, 0, @"no prompt without changes");
@@ -224,7 +224,7 @@
 }
 
 - (void)testSaveProjectMenuItemNeedsAnImage {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:@"Save Project…" action:@selector(saveProject:) keyEquivalent:@""];
     [_appDelegate.canvasView loadImage:nil];
     XCTAssertFalse([_appDelegate validateMenuItem:item]);

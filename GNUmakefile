@@ -229,13 +229,20 @@ updater-helper:
 	fi
 	@$(MAKE) -C "$(UPDATER_HELPER_DIR)"
 
+# tools-xctest (submodule) builds the XCTest library and the xctest tool that runs the bundle.
+# Extra xctest options go in XCTEST_ARGS, e.g.
+#   make tests XCTEST_ARGS="-only-testing:ScreenshotToolTests/FitViewportRoundingProbeTests"
+XCTEST_ROOT := $(CURDIR)/third_party/tools-xctest
+XCTEST_ARGS ?=
+
 tests:
+	@echo "Building tools-xctest..."
+	@$(MAKE) -C "$(XCTEST_ROOT)"
 	@echo "Building test bundle..."
 	@$(MAKE) -C Tests
 	@echo "Running XCTest bundle..."
-	@runner="Tests/obj/ScreenshotToolTestsRunner"; \
-	if [ -x "$${runner}.exe" ]; then runner="$${runner}.exe"; fi; \
-	"$$runner" Tests/ScreenshotToolTests.bundle
+	@LD_LIBRARY_PATH="$(XCTEST_ROOT)/XCTest/obj$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
+		"$(XCTEST_ROOT)/obj/xctest" Tests/ScreenshotToolTests.bundle $(XCTEST_ARGS)
 
 tests-only:
 	@$(MAKE) tests

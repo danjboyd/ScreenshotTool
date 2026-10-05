@@ -86,7 +86,7 @@
 #pragma mark - Test
 
 - (void)testHighlighterIsVisibleInFlattenedImage {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     NSRect frame = NSMakeRect(0.0, 0.0, 640.0, 480.0);
     ScreenshotCanvasView *canvas = [[ScreenshotCanvasView alloc] initWithFrame:frame];

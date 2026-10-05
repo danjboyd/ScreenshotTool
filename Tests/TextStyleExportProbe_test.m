@@ -127,7 +127,7 @@ static NSColor *STProbePixel(NSBitmapImageRep *rep, NSInteger x, NSInteger y) {
 #pragma mark - Export fidelity (#26)
 
 - (void)testExportMatchesCanvasDrawingForEveryStyle {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     NSArray<NSNumber *> *styles = @[@(MarkupTextStylePlain), @(MarkupTextStyleOutline), @(MarkupTextStyleShadow), @(MarkupTextStyleBackground)];
     for (NSNumber *styleNumber in styles) {
@@ -153,7 +153,7 @@ static NSColor *STProbePixel(NSBitmapImageRep *rep, NSInteger x, NSInteger y) {
 #pragma mark - Styles (#24)
 
 - (void)testBackgroundStyleDrawsBoxWithContrastingText {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     MarkupText *text = [self labelWithStyle:MarkupTextStyleBackground];
     NSBitmapImageRep *exported = [self exportOf:text];
@@ -176,7 +176,7 @@ static NSColor *STProbePixel(NSBitmapImageRep *rep, NSInteger x, NSInteger y) {
 }
 
 - (void)testOutlineStyleDrawsContrastingEdge {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     MarkupText *plain = [self labelWithStyle:MarkupTextStylePlain];
     MarkupText *outlined = [self labelWithStyle:MarkupTextStyleOutline];

@@ -164,7 +164,7 @@ static NSDictionary<NSString *, NSDictionary *> *LoadCursorMetadata(void) {
 }
 
 - (void)testPenCursor {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     
     _canvas.activeTool = ScreenshotCanvasToolPen;
     NSCursor *insideCursor = [_canvas cursorForTestingWithMouseInside:YES];
@@ -177,7 +177,7 @@ static NSDictionary<NSString *, NSDictionary *> *LoadCursorMetadata(void) {
 }
 
 - (void)testHighlighterCursor {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     _canvas.activeTool = ScreenshotCanvasToolHighlighter;
     NSCursor *insideCursor = [_canvas cursorForTestingWithMouseInside:YES];
@@ -190,7 +190,7 @@ static NSDictionary<NSString *, NSDictionary *> *LoadCursorMetadata(void) {
 }
 
 - (void)testEraserCursor {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     _canvas.activeTool = ScreenshotCanvasToolEraser;
     NSCursor *insideCursor = [_canvas cursorForTestingWithMouseInside:YES];

@@ -70,7 +70,7 @@
 #pragma mark - Test
 
 - (void)testWindowResizesAfterCropAndUndo {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;
     NSWindow *window = _appDelegate.window;

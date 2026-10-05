@@ -50,7 +50,7 @@
 }
 
 - (void)testHudAppearsWhenStatusBarHidden {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     [_appDelegate preferencesController:nil didToggleStatusBar:NO];
     [_appDelegate showCopyFeedbackMessage:@"Copied image to clipboard" duration:0.25];

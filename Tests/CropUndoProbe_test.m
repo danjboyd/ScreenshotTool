@@ -87,7 +87,7 @@
 #pragma mark - Test
 
 - (void)testCropAndUndoRestoresState {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;
     XCTAssertNotNil(canvas, @"Canvas view should be available from app delegate");
