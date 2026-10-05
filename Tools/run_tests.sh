@@ -80,7 +80,10 @@ mkdir -p "${TEST_HOME}"
 chmod 600 "${TEST_GNUSTEP_CONF}"
 export GNUSTEP_CONFIG_FILE="${TEST_GNUSTEP_CONF}"
 
-# The theme for this run, set in the test defaults' global domain, or none (GNUstep's own) (#74).
+# Each run starts with empty test defaults, so a setting a test left behind (a theme, say) can't
+# carry into the next run. Then the theme for this run, set in the test defaults' global domain,
+# or none (GNUstep's own) (#74).
+rm -rf "${TEST_HOME:?}/GNUstep/Defaults"
 mkdir -p "${TEST_HOME}/GNUstep/Defaults"
 export ST_EXPECT_THEME="${TEST_THEME:-}"
 if [[ -n "${TEST_THEME:-}" ]]; then

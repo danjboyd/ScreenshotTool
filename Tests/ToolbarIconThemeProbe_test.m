@@ -61,6 +61,10 @@
 
 - (void)tearDown {
     _appDelegate = nil;
+    // Don't leave the theme set for the rest of the suite (or the next run).
+    if (!getenv("ST_EXPECT_THEME") || getenv("ST_EXPECT_THEME")[0] == '\0') {
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"GSTheme"];
+    }
     [super tearDown];
 }
 

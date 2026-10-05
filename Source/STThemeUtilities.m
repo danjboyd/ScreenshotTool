@@ -12,7 +12,7 @@ static NSString *STCurrentThemeName(void) {
     return globalTheme ?: @"";
 }
 
-static BOOL STThemeNameIndicatesDark(NSString *theme) {
+BOOL STThemeNameIndicatesDark(NSString *theme) {
     NSString *lower = [theme lowercaseString];
     if (lower.length == 0) {
         return NO;
