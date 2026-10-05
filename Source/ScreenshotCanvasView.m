@@ -1038,6 +1038,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) NSInteger editingTextIndex;
 @property (nonatomic, assign) BOOL hasSelectionRect;
 @property (nonatomic, assign) NSRect selectionRect;
+@property (nonatomic, assign) BOOL isUpdatingFit;
 @property (nonatomic, assign) BOOL isCreatingSelection;
 @property (nonatomic, assign) BOOL isResizingSelection;
 @property (nonatomic, assign) BOOL isMovingSelection;
@@ -1349,6 +1350,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
 
     _hostScrollView = hostScrollView;
+    [self applyScrollerPolicy];
 
     if (_hostScrollView) {
         NSClipView *clipView = _hostScrollView.contentView;
@@ -2080,8 +2082,27 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         return;
     }
     _fitToWindow = fitToWindow;
+    [self applyScrollerPolicy];
     if (fitToWindow) {
         [self updateForEnclosingBoundsChange];
+    }
+}
+
+/// Fit never needs a scroller: the canvas fits by construction. Left auto-hiding, GNUstep's
+/// scrollers could flip on and off for good during a window resize (NSScrollView -tile <->
+/// -reflectScrolledClipView:) until the stack overflowed (#49). Fixed zooms get them back.
+- (void)applyScrollerPolicy {
+    NSScrollView *scrollView = self.hostScrollView;
+    if (!scrollView) {
+        return;
+    }
+    if (self.fitToWindow) {
+        [scrollView setAutohidesScrollers:NO];
+        [scrollView setHasVerticalScroller:NO];
+        [scrollView setHasHorizontalScroller:NO];
+    } else {
+        [scrollView setAutohidesScrollers:YES];
+        [scrollView reflectScrolledClipView:scrollView.contentView];
     }
 }
 
@@ -2967,27 +2988,54 @@ static NSError *STProjectError(NSString *message) {
     NSSize imageSize = self.image.size;
     CGFloat width = round(imageSize.width * self.zoomScale);
     CGFloat height = round(imageSize.height * self.zoomScale);
+    if (self.fitToWindow) {
+        // Never a fraction larger than the viewport (rounding 577.5 gave 578): Fit has to fit
+        // without scrollers, which it turns off (see -applyScrollerPolicy, #49).
+        NSSize available = [self fitViewportSize];
+        if (available.width > 0.0 && available.height > 0.0) {
+            width = MIN(width, floor(available.width));
+            height = MIN(height, floor(available.height));
+        }
+    }
     NSSize targetSize = NSMakeSize(MAX(width, 1.0f), MAX(height, 1.0f));
     [self setFrameSize:targetSize];
     [self updateActiveTextViewFrame];
+}
+
+/// The space Fit fills: the scroll view's content size, measured as if no scrollers were shown.
+/// Autohiding scrollers appear while a previous zoom overflows and would otherwise leave Fit a
+/// few pixels short of 100%.
+- (NSSize)fitViewportSize {
+    if (!self.hostScrollView) {
+        return NSZeroSize;
+    }
+    return [NSScrollView contentSizeForFrameSize:self.hostScrollView.frame.size
+                           hasHorizontalScroller:NO
+                             hasVerticalScroller:NO
+                                      borderType:self.hostScrollView.borderType];
 }
 
 - (void)updateForEnclosingBoundsChange {
     if (!self.fitToWindow || !self.image || !self.hostScrollView || self.suspendsFitUpdates) {
         return;
     }
+    // Resizing the canvas changes the clip view's bounds, which calls back in here.
+    if (self.isUpdatingFit) {
+        return;
+    }
+    self.isUpdatingFit = YES;
+    [self fitToEnclosingBounds];
+    self.isUpdatingFit = NO;
+}
+
+- (void)fitToEnclosingBounds {
 
     NSSize imageSize = self.image.size;
     if (imageSize.width <= 0.0 || imageSize.height <= 0.0) {
         return;
     }
 
-    // Measure the viewport as if no scrollers were shown. Autohiding scrollers appear while a
-    // previous zoom overflows and would otherwise leave Fit a few pixels short of 100%.
-    NSSize available = [NSScrollView contentSizeForFrameSize:self.hostScrollView.frame.size
-                                       hasHorizontalScroller:NO
-                                         hasVerticalScroller:NO
-                                                  borderType:self.hostScrollView.borderType];
+    NSSize available = [self fitViewportSize];
     if (available.width <= 0.0 || available.height <= 0.0) {
         return;
     }
