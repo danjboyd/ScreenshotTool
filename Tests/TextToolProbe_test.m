@@ -165,7 +165,7 @@
 #pragma mark - Canvas interactions (#17, #20, #21)
 
 - (void)testClickingAwayOnlyCommits {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTextTool];
 
     [self clickCanvas:canvas atViewPoint:NSMakePoint(100.0, 100.0)];
@@ -182,7 +182,7 @@
 }
 
 - (void)testEscapeKeepsNewText {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTextTool];
 
     [self clickCanvas:canvas atViewPoint:NSMakePoint(100.0, 100.0)];
@@ -196,7 +196,7 @@
 }
 
 - (void)testEscapeKeyEventEndsEditing {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTextTool];
 
     // Send a real Escape key down so it goes through the key bindings (GNUstep maps Escape to
@@ -222,7 +222,7 @@
 }
 
 - (void)testResizeHandleResizesInsteadOfCommitting {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTextTool];
 
     [self clickCanvas:canvas atViewPoint:NSMakePoint(100.0, 100.0)];

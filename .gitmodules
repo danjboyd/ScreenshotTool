@@ -1,3 +1,6 @@
 [submodule "third_party/libs-OpenSave"]
 	path = third_party/libs-OpenSave
 	url = https://github.com/danjboyd/libs-OpenSave
+[submodule "third_party/tools-xctest"]
+	path = third_party/tools-xctest
+	url = https://github.com/danjboyd/tools-xctest

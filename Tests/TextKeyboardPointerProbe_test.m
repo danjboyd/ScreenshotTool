@@ -106,7 +106,7 @@
 #pragma mark - #30
 
 - (void)testEmptyingALabelIsAnUndoableDelete {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolText];
     MarkupText *label = [self addLabel:@"Keep" to:canvas at:NSMakePoint(50.0, 50.0)];
 
@@ -124,7 +124,7 @@
 #pragma mark - #28
 
 - (void)testControlReturnFinishesAndReturnAddsALine {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolText];
     [canvas beginTextEntryWithImageRect:NSMakeRect(50.0, 50.0, 1.0, 1.0) existingText:nil];
     [canvas.activeTextView insertText:@"First"];
@@ -151,7 +151,7 @@
 }
 
 - (void)testTypingHasItsOwnUndoHistory {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolText];
     [canvas beginTextEntryWithImageRect:NSMakeRect(50.0, 50.0, 1.0, 1.0) existingText:nil];
 
@@ -165,7 +165,7 @@
 }
 
 - (void)testToolShortcutsSwitchToolsOnlyWithoutModifiers {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolSelect];
 
     [canvas keyDown:[self keyEvent:'t' flags:0 canvas:canvas]];
@@ -181,7 +181,7 @@
 #pragma mark - #29
 
 - (void)testCursorsAndHoverSayWhatAClickWillDo {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolText];
     MarkupText *label = [self addLabel:@"Hover" to:canvas at:NSMakePoint(100.0, 100.0)];
     NSPoint onLabel = NSMakePoint(NSMidX([label textBounds]), NSMidY([label textBounds]));

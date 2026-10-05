@@ -149,34 +149,34 @@ static const NSInteger STTestHeight = 20;
 #pragma mark - Tests
 
 - (void)testOneBitGrayscale {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     [self assertExportOf:[self imageWithBitsPerSample:1 colorSpace:NSDeviceWhiteColorSpace hasAlpha:NO isPlanar:NO] named:@"1-bit gray"];
 }
 
 - (void)testFourBitGrayscale {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     [self assertExportOf:[self imageWithBitsPerSample:4 colorSpace:NSCalibratedWhiteColorSpace hasAlpha:NO isPlanar:NO] named:@"4-bit gray"];
 }
 
 - (void)testEightBitGrayscaleWithAndWithoutAlpha {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     [self assertExportOf:[self imageWithBitsPerSample:8 colorSpace:NSCalibratedWhiteColorSpace hasAlpha:NO isPlanar:NO] named:@"8-bit gray"];
     [self assertExportOf:[self imageWithBitsPerSample:8 colorSpace:NSCalibratedWhiteColorSpace hasAlpha:YES isPlanar:NO] named:@"8-bit gray+alpha"];
 }
 
 - (void)testSixteenBitRGBAndGray {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     [self assertExportOf:[self imageWithBitsPerSample:16 colorSpace:NSDeviceRGBColorSpace hasAlpha:YES isPlanar:NO] named:@"16-bit RGBA"];
     [self assertExportOf:[self imageWithBitsPerSample:16 colorSpace:NSCalibratedWhiteColorSpace hasAlpha:NO isPlanar:NO] named:@"16-bit gray"];
 }
 
 - (void)testPlanarRGB {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     [self assertExportOf:[self imageWithBitsPerSample:8 colorSpace:NSDeviceRGBColorSpace hasAlpha:NO isPlanar:YES] named:@"planar RGB"];
 }
 
 - (void)testOrdinaryRGBAStillWorks {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     [self assertExportOf:[self imageWithBitsPerSample:8 colorSpace:NSDeviceRGBColorSpace hasAlpha:YES isPlanar:NO] named:@"8-bit RGBA"];
 }
 

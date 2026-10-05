@@ -118,7 +118,7 @@
 #pragma mark - Test
 
 - (void)testBadgeCreationIsNonDestructive {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     NSSize iconSize = NSMakeSize(32.0f, 32.0f);
     NSImage *baseIcon = [self createBaseIconOfSize:iconSize fillColor:[NSColor whiteColor]];

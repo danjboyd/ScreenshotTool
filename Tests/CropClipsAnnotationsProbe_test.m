@@ -76,7 +76,7 @@
 #pragma mark - Tests
 
 - (void)testCropDropsStrokesOutsideSelection {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     ScreenshotCanvasView *canvas = [[ScreenshotCanvasView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 200.0, 200.0)];
     [canvas loadImage:[self whiteImageOfSize:NSMakeSize(200.0, 200.0)]];

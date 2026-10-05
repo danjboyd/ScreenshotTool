@@ -125,7 +125,7 @@
 #pragma mark - #31 alignment
 
 - (void)testAlignmentPlacesTextWithinAFixedBox {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     MarkupText *left = [self fixedLabel:@"Hi" alignment:NSTextAlignmentLeft];
     MarkupText *centre = [self fixedLabel:@"Hi" alignment:NSTextAlignmentCenter];
     MarkupText *right = [self fixedLabel:@"Hi" alignment:NSTextAlignmentRight];
@@ -156,7 +156,7 @@
 #pragma mark - #34 text toolbar
 
 - (void)testToolbarAppearsWhileEditingAndKeepsFocusInTheText {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self editingCanvas];
     [canvas beginTextEntryWithImageRect:NSMakeRect(100.0, 250.0, 1.0, 1.0) existingText:nil];
     [canvas.activeTextView insertText:@"Label"];
@@ -184,7 +184,7 @@
 }
 
 - (void)testToolbarTakesItsOwnRowWithoutRescalingTheImage {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self editingCanvas];
     canvas.fitToWindow = YES;
     [canvas updateForEnclosingBoundsChange];
@@ -204,7 +204,7 @@
 }
 
 - (void)testNarrowToolbarKeepsTheMostUsedControls {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     STTextOptionsBar *wide = [[STTextOptionsBar alloc] initWithFrame:NSMakeRect(0.0, 0.0, 1200.0, 40.0)];
     STTextOptionsBar *narrow = [[STTextOptionsBar alloc] initWithFrame:NSMakeRect(0.0, 0.0, 420.0, 40.0)];
     XCTAssertTrue([narrow visibleControls].count < [wide visibleControls].count, @"A narrow bar drops lower-priority groups");
@@ -218,7 +218,7 @@
 }
 
 - (void)testControlBTogglesBoldWhileEditing {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self editingCanvas];
     [canvas beginTextEntryWithImageRect:NSMakeRect(100.0, 250.0, 1.0, 1.0) existingText:nil];
     [canvas.activeTextView insertText:@"Bold?"];

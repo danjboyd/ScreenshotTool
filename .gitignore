@@ -43,3 +43,4 @@ third_party/gnustep-packager-updater/objc/GPUpdaterUI/*.a
 third_party/gnustep-packager-updater/objc/gp-update-helper/Source/*.o
 third_party/gnustep-packager-updater/objc/gp-update-helper/gp-update-helper
 third_party/gnustep-packager-updater/objc/gp-update-helper/gp-update-helper.exe
+tests-junit.xml

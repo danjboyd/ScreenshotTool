@@ -64,7 +64,7 @@ static const CGFloat kStatusBarHeight = 24.0f;
 }
 
 - (void)testStatusBarToggleAdjustsLayout {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     NSView *contentView = _appDelegate.window.contentView;
     XCTAssertNotNil(contentView, @"Content view should not be nil");

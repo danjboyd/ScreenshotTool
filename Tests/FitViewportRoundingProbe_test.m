@@ -68,7 +68,7 @@
 }
 
 - (void)testFitStaysWithinFractionalViewports {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;
     NSScrollView *scrollView = _appDelegate.scrollView;
     NSArray<NSImage *> *images = @[[self photoSizedImage:NSMakeSize(3024.0, 4032.0)],
@@ -101,7 +101,7 @@
 }
 
 - (void)testFitDoesNotEnlargeSmallImages {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;
     [canvas loadImage:[self photoSizedImage:NSMakeSize(300.0, 200.0)]];
     canvas.fitToWindow = YES;
@@ -112,7 +112,7 @@
 }
 
 - (void)testFitTurnsOffAutohidingScrollers {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;
     NSScrollView *scrollView = _appDelegate.scrollView;
     [canvas loadImage:[self photoSizedImage:NSMakeSize(3024.0, 4032.0)]];
@@ -135,7 +135,7 @@
 }
 
 - (void)testFitSurvivesTheScrollerFlipFromTheCrash {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     // The sizes logged just before the crash: a 576x757 viewport, the canvas 568x757, and the
     // clip toggling between 576x757 and 562x743 as both scrollers came and went.
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;

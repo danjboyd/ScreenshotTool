@@ -115,7 +115,7 @@
 #pragma mark - Arrow tool
 
 - (void)testArrowToolDrawsAStraightArrowWithThePensSettings {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolArrow];
     [self drag:canvas from:NSMakePoint(100.0, 100.0) to:NSMakePoint(300.0, 200.0) flags:0];
 
@@ -132,7 +132,7 @@
 }
 
 - (void)testShiftSnapsTo45DegreesAndStrayClicksAreIgnored {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolArrow];
     [self drag:canvas from:NSMakePoint(100.0, 100.0) to:NSMakePoint(300.0, 115.0) flags:NSEventModifierFlagShift];
     NSPoint end = [[canvas.strokes.firstObject points].lastObject pointValue];
@@ -143,7 +143,7 @@
 }
 
 - (void)testArrowExportsWithItsHead {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolArrow];
     [self drag:canvas from:NSMakePoint(100.0, 150.0) to:NSMakePoint(400.0, 150.0) flags:0];
     NSBitmapImageRep *rep = [self exportOf:canvas];
@@ -157,7 +157,7 @@
 }
 
 - (void)testArrowShortcut {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolSelect];
     NSString *a = @"a";
     [canvas keyDown:[NSEvent keyEventWithType:NSKeyDown location:NSZeroPoint modifierFlags:0 timestamp:0
@@ -193,7 +193,7 @@
 }
 
 - (void)testCalloutPointerIsExported {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     for (NSNumber *style in @[@(MarkupTextStyleBackground), @(MarkupTextStylePlain)]) {
         ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolSelect];
         if (!canvas.texts) {
@@ -209,7 +209,7 @@
 }
 
 - (void)testPointerToggleAndDragWhileEditing {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolText];
     [canvas beginTextEntryWithImageRect:NSMakeRect(300.0, 60.0, 1.0, 1.0) existingText:nil];
     [canvas.activeTextView insertText:@"Callout"];

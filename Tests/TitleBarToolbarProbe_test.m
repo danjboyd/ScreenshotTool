@@ -99,7 +99,7 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 #pragma mark - Preference
 
 - (void)testNotOfferedWithoutAdwaita {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     _appDelegate.stubAdwaita = NO;
     PreferencesWindowController *controller = [self preferences];
     XCTAssertTrue(controller.titleBarToolbarCheckbox.isHidden);
@@ -107,7 +107,7 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 }
 
 - (void)testOfferedAndEnabledWithTheHeaderBar {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     _appDelegate.stubAdwaita = YES;
     _appDelegate.stubHeaderBar = YES;
     PreferencesWindowController *controller = [self preferences];
@@ -119,7 +119,7 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 }
 
 - (void)testDisabledWithExplanationWithoutTheHeaderBar {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     _appDelegate.stubAdwaita = YES;
     _appDelegate.stubHeaderBar = NO;
     PreferencesWindowController *controller = [self preferences];
@@ -129,7 +129,7 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 }
 
 - (void)testToggleWritesTheThemeDefaultAndKeepsTheWindowFrame {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     _appDelegate.stubAdwaita = YES;
     _appDelegate.stubHeaderBar = YES;
     PreferencesWindowController *controller = [self preferences];
@@ -155,7 +155,7 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 }
 
 - (void)testRestoreDefaultsClearsTheChoice {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     [[NSUserDefaults standardUserDefaults] setBool:YES forKey:STHeaderBarToolbarKey];
     [_appDelegate preferencesControllerRestoreDefaults:nil];
     XCTAssertNil([[NSUserDefaults standardUserDefaults] objectForKey:STHeaderBarToolbarKey]);
@@ -164,7 +164,7 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 #pragma mark - Standard controls (#57)
 
 - (void)testToolbarUsesStandardControls {
-    if (_shouldSkip) { return; }
+    XCTSkipIf(_shouldSkip, @"No window server");
     // Standard controls track their own clicks (so the theme's header bar can't take them) and are
     // drawn by the theme, under GNUstep's default theme and Adwaita alike.
     NSToolbar *toolbar = _appDelegate.window.toolbar;

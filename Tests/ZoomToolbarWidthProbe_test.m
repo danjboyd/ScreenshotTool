@@ -62,7 +62,7 @@
 }
 
 - (void)testZoomToolbarWidthRemainsFixedAcrossDisplayedValues {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 #if !defined(GNUSTEP)
     return;
 #else

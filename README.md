@@ -82,6 +82,18 @@ make                 # the test bundle links libraries the app build produces
 Tools/run_tests.sh
 ```
 
+Run one class or test by name, or pass any `xctest` option (tests use the
+[tools-xctest](https://github.com/danjboyd/tools-xctest) submodule; run
+`git submodule update --init` after cloning):
+
+```bash
+Tools/run_tests.sh FitViewportRoundingProbeTests
+Tools/run_tests.sh FitViewportRoundingProbeTests/testFitTurnsOffAutohidingScrollers
+Tools/run_tests.sh -test-iterations 20 TitleBarToolbarProbeTests
+```
+
+Results go to `tests.log` and, as JUnit XML, `tests-junit.xml`.
+
 Most tests need a window server. Without a desktop session (as in CI), run them
 under a virtual display with `xvfb-run -a Tools/run_tests.sh`; the script fails
 if tests had to skip for lack of a display.

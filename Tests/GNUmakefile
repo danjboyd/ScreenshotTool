@@ -18,20 +18,12 @@ endif
 # Name of our test bundle
 BUNDLE_NAME = ScreenshotToolTests
 
-# Minimal test runner binary to load the bundle on Windows.
-TOOL_NAME = ScreenshotToolTestsRunner
-ScreenshotToolTestsRunner_OBJC_FILES = TestRunner.m
-
-# Vendored tools-xctest sources keep the test bundle reproducible from a clean clone.
-XCTEST_SRC_DIR ?= $(abspath ../third_party/tools-xctest/XCTest)
-ifeq ($(wildcard $(XCTEST_SRC_DIR)/XCTestCase.m),)
-$(error Missing XCTest sources at $(XCTEST_SRC_DIR). Expected third_party/tools-xctest/XCTest)
+# tools-xctest is a submodule (danjboyd/tools-xctest); the top-level `make tests` builds its
+# XCTest library and xctest tool first, and xctest runs this bundle (#61).
+XCTEST_ROOT ?= $(abspath ../third_party/tools-xctest)
+ifeq ($(wildcard $(XCTEST_ROOT)/XCTest/XCTestCase.m),)
+$(error Missing tools-xctest at $(XCTEST_ROOT): run `git submodule update --init`)
 endif
-XCTEST_INCLUDE_DIR := $(dir $(XCTEST_SRC_DIR))
-XCTEST_SRC_FILES = \
-	$(XCTEST_SRC_DIR)/XCTestCase.m \
-	$(XCTEST_SRC_DIR)/XCTestAssertions.m \
-	$(XCTEST_SRC_DIR)/GSXCTestRunner.m
 
 # All test files will be included here
 # For now, we'll start with a placeholder for the converted test
@@ -90,12 +82,10 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STTextOptionsBar.m \
 	../Source/STThemeUtilities.m
 
-ScreenshotToolTests_OBJC_FILES += $(XCTEST_SRC_FILES)
 
 # We need to tell the compiler where to find the source headers
 ADDITIONAL_OBJCFLAGS += -I../Source
-ADDITIONAL_OBJCFLAGS += -I$(XCTEST_INCLUDE_DIR)
-ADDITIONAL_OBJCFLAGS += -I$(XCTEST_SRC_DIR)
+ADDITIONAL_OBJCFLAGS += -I$(XCTEST_ROOT)
 ADDITIONAL_OBJCFLAGS += $(FONTCONFIG_CFLAGS)
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
 ADDITIONAL_OBJCFLAGS += -DHAVE_MODE_T
@@ -105,6 +95,8 @@ ADDITIONAL_OBJCFLAGS += -I$(UPDATER_ROOT)/GPUpdaterCore/Headers
 ADDITIONAL_OBJCFLAGS += -I$(UPDATER_ROOT)/GPUpdaterUI/Headers
 ADDITIONAL_LIB_DIRS += -L$(UPDATER_ROOT)/GPUpdaterUI -L$(UPDATER_ROOT)/GPUpdaterCore
 ScreenshotToolTests_BUNDLE_LIBS += -lGPUpdaterUI -lGPUpdaterCore
+ADDITIONAL_LIB_DIRS += -L$(XCTEST_ROOT)/XCTest/obj
+ScreenshotToolTests_BUNDLE_LIBS += -lXCTest
 ADDITIONAL_LDFLAGS += -lstdc++
 ADDITIONAL_LDFLAGS += -lobjc
 ADDITIONAL_LDFLAGS += -lfontconfig -lfreetype -ldispatch
@@ -114,6 +106,3 @@ endif
 
 # Include the bundle makefile
 include $(GNUSTEP_MAKEFILES)/bundle.make
-
-# Build the test runner tool.
-include $(GNUSTEP_MAKEFILES)/tool.make

@@ -119,7 +119,7 @@
 #pragma mark - Test
 
 - (void)testToolbarIconsAndLabelsRenderCorrectlyOnDarkTheme {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     NSArray<NSToolbarItemIdentifier> *identifiers = @[
         @"com.screenshottool.toolbar.select",

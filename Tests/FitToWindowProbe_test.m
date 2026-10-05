@@ -65,7 +65,7 @@
 }
 
 - (void)testFitNeverUpscalesSmallImages {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;
     [canvas loadImage:[self imageOfSize:NSMakeSize(300.0, 200.0)]];
@@ -76,7 +76,7 @@
 }
 
 - (void)testFitIgnoresScrollersLeftOverFromAPreviousZoom {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;
     [canvas loadImage:[self imageOfSize:NSMakeSize(800.0, 400.0)]];
@@ -96,7 +96,7 @@
 }
 
 - (void)testSmallImageIsCentredInViewport {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;
     [canvas loadImage:[self imageOfSize:NSMakeSize(300.0, 200.0)]];
@@ -113,7 +113,7 @@
 }
 
 - (void)testTinyImageGetsAUsableWindow {
-    if (_shouldSkip) return;
+    XCTSkipIf(_shouldSkip, @"No window server");
 
     [_appDelegate.canvasView loadImage:[self imageOfSize:NSMakeSize(16.0, 16.0)]];
     [_appDelegate resizeWindowToImageSize:NSMakeSize(16.0, 16.0)];
