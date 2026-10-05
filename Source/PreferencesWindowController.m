@@ -6,7 +6,6 @@
 
 static const CGFloat STPreferencesWidth = 760.0f;
 static const CGFloat STPreferencesHeight = 500.0f;
-static const CGFloat STPreferencesCardCornerRadius = 14.0f;
 
 typedef NS_ENUM(NSInteger, STPreferencesSection) {
     STPreferencesSectionAppearance = 0,
@@ -19,33 +18,8 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 @property (nonatomic, assign) NSRect contentCardRect;
 @end
 
+/// Lays out the page; draws nothing of its own, so the window looks however the theme draws it (#56).
 @implementation STPreferencesBackgroundView
-
-- (BOOL)isOpaque {
-    return YES;
-}
-
-- (void)drawCardInRect:(NSRect)rect {
-    if (NSIsEmptyRect(rect)) {
-        return;
-    }
-    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:rect
-                                                         xRadius:STPreferencesCardCornerRadius
-                                                         yRadius:STPreferencesCardCornerRadius];
-    [STThemeCardBackgroundColor() setFill];
-    [path fill];
-    [STThemeHairlineColor() setStroke];
-    [path setLineWidth:1.0f];
-    [path stroke];
-}
-
-- (void)drawRect:(NSRect)dirtyRect {
-    (void)dirtyRect;
-    [STThemeWindowBackgroundColor() setFill];
-    NSRectFill(self.bounds);
-    [self drawCardInRect:self.contentCardRect];
-}
-
 @end
 
 @interface PreferencesWindowController () <NSWindowDelegate>
@@ -87,13 +61,12 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 @property (nonatomic, strong) NSButton *chooseDirectoryButton;
 
 @property (nonatomic, strong) NSTextField *interfaceHeaderLabel;
-@property (nonatomic, strong) NSTextField *themeLabel;
-@property (nonatomic, strong) NSButton *statusBarCheckbox;
-@property (nonatomic, strong) NSButton *titleBarToolbarCheckbox;
+@property (nonatomic, strong) NSTextField *statusBarLabel;
+@property (nonatomic, strong) NSSwitch *statusBarSwitch;
+@property (nonatomic, strong) NSTextField *titleBarToolbarLabel;
+@property (nonatomic, strong) NSSwitch *titleBarToolbarSwitch;
 @property (nonatomic, strong) NSTextField *titleBarToolbarNoteLabel;
-@property (nonatomic, strong) NSPopUpButton *interfaceThemePopUp;
 @property (nonatomic, strong) NSButton *restoreDefaultsButton;
-@property (nonatomic, strong) NSButton *closeButton;
 @end
 
 @implementation PreferencesWindowController
@@ -293,35 +266,26 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     self.interfaceHeaderLabel = [self headerLabelWithString:@"Interface"];
     [content addSubview:self.interfaceHeaderLabel];
 
-    self.statusBarCheckbox = [[NSButton alloc] initWithFrame:NSZeroRect];
-    [self.statusBarCheckbox setButtonType:NSSwitchButton];
-    [self.statusBarCheckbox setTitle:@"Show status bar"];
-    [self.statusBarCheckbox setTarget:self];
-    [self.statusBarCheckbox setAction:@selector(statusBarToggled:)];
-    [content addSubview:self.statusBarCheckbox];
+    // On/off settings are switches, labelled on the left: standard controls the theme draws (#56).
+    self.statusBarLabel = [self fieldLabelWithString:@"Show status bar" frame:NSZeroRect];
+    [self.statusBarLabel setFont:[NSFont systemFontOfSize:[NSFont systemFontSize]]];
+    [content addSubview:self.statusBarLabel];
+    self.statusBarSwitch = [[NSSwitch alloc] initWithFrame:NSZeroRect];
+    [self.statusBarSwitch setTarget:self];
+    [self.statusBarSwitch setAction:@selector(statusBarToggled:)];
+    [content addSubview:self.statusBarSwitch];
 
     // Only offered with the Adwaita theme, which reads GnomeThemeHeaderBarToolbar.
-    self.titleBarToolbarCheckbox = [[NSButton alloc] initWithFrame:NSZeroRect];
-    [self.titleBarToolbarCheckbox setButtonType:NSSwitchButton];
-    [self.titleBarToolbarCheckbox setTitle:@"Show toolbar in the title bar"];
-    [self.titleBarToolbarCheckbox setTarget:self];
-    [self.titleBarToolbarCheckbox setAction:@selector(titleBarToolbarToggled:)];
-    [content addSubview:self.titleBarToolbarCheckbox];
+    self.titleBarToolbarLabel = [self fieldLabelWithString:@"Show toolbar in the title bar" frame:NSZeroRect];
+    [self.titleBarToolbarLabel setFont:[NSFont systemFontOfSize:[NSFont systemFontSize]]];
+    [content addSubview:self.titleBarToolbarLabel];
+    self.titleBarToolbarSwitch = [[NSSwitch alloc] initWithFrame:NSZeroRect];
+    [self.titleBarToolbarSwitch setTarget:self];
+    [self.titleBarToolbarSwitch setAction:@selector(titleBarToolbarToggled:)];
+    [content addSubview:self.titleBarToolbarSwitch];
 
     self.titleBarToolbarNoteLabel = [self fieldLabelWithString:@"" frame:NSZeroRect];
     [content addSubview:self.titleBarToolbarNoteLabel];
-
-    self.themeLabel = [self fieldLabelWithString:@"Theme" frame:NSZeroRect];
-    [content addSubview:self.themeLabel];
-
-    self.interfaceThemePopUp = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    [self.interfaceThemePopUp setTarget:self];
-    [self.interfaceThemePopUp setAction:@selector(interfaceThemeSelectionChanged:)];
-    [self.interfaceThemePopUp removeAllItems];
-    [self addThemeItemWithTitle:@"Follow Theme" preference:STInterfaceThemePreferenceAutoValue];
-    [self addThemeItemWithTitle:@"Light" preference:STInterfaceThemePreferenceLightValue];
-    [self addThemeItemWithTitle:@"Dark" preference:STInterfaceThemePreferenceDarkValue];
-    [content addSubview:self.interfaceThemePopUp];
 
     self.restoreDefaultsButton = [[NSButton alloc] initWithFrame:NSZeroRect];
     [self.restoreDefaultsButton setTitle:@"Restore Defaults"];
@@ -330,14 +294,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.restoreDefaultsButton setTarget:self];
     [self.restoreDefaultsButton setAction:@selector(restoreDefaultsPressed:)];
     [content addSubview:self.restoreDefaultsButton];
-
-    self.closeButton = [[NSButton alloc] initWithFrame:NSZeroRect];
-    [self.closeButton setTitle:@"Close"];
-    [self.closeButton setButtonType:NSMomentaryPushInButton];
-    [self.closeButton setBezelStyle:NSRoundedBezelStyle];
-    [self.closeButton setTarget:self];
-    [self.closeButton setAction:@selector(closePressed:)];
-    [content addSubview:self.closeButton];
 
     [self.window setContentMinSize:NSMakeSize(STPreferencesWidth, STPreferencesHeight)];
     [self layoutContentView];
@@ -380,12 +336,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [label setTextColor:STThemePrimaryTextColor()];
 }
 
-- (void)addThemeItemWithTitle:(NSString *)title preference:(NSString *)preference {
-    [self.interfaceThemePopUp addItemWithTitle:title ?: @""];
-    NSMenuItem *item = (NSMenuItem *)[self.interfaceThemePopUp itemAtIndex:(self.interfaceThemePopUp.numberOfItems - 1)];
-    item.representedObject = preference ?: STInterfaceThemePreferenceAutoValue;
-}
-
 - (NSString *)titleForSection:(STPreferencesSection)section {
     switch (section) {
         case STPreferencesSectionAppearance:
@@ -403,7 +353,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 - (NSString *)descriptionForSection:(STPreferencesSection)section {
     switch (section) {
         case STPreferencesSectionAppearance:
-            return @"Choose how the app should look and which interface chrome should stay visible.";
+            return @"Choose which parts of the window to show.";
         case STPreferencesSectionDrawing:
             return @"Set the default stroke width and color for the pen and highlighter tools.";
         case STPreferencesSectionText:
@@ -444,10 +394,10 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
         self.saveDirectoryField,
         self.chooseDirectoryButton,
         self.interfaceHeaderLabel,
-        self.themeLabel,
-        self.interfaceThemePopUp,
-        self.statusBarCheckbox,
-        self.titleBarToolbarCheckbox,
+        self.statusBarLabel,
+        self.statusBarSwitch,
+        self.titleBarToolbarLabel,
+        self.titleBarToolbarSwitch,
         self.titleBarToolbarNoteLabel
     ] hidden:YES];
     [self setViews:self.penQuickButtons hidden:YES];
@@ -470,7 +420,8 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.textFontSummaryLabel setTextColor:STThemePrimaryTextColor()];
     [self.penWidthValueLabel setTextColor:STThemePrimaryTextColor()];
     [self.highlighterWidthValueLabel setTextColor:STThemePrimaryTextColor()];
-    [self.themeLabel setTextColor:STThemeSecondaryTextColor()];
+    [self.statusBarLabel setTextColor:STThemePrimaryTextColor()];
+    [self.titleBarToolbarLabel setTextColor:STThemePrimaryTextColor()];
     [self.titleBarToolbarNoteLabel setTextColor:STThemeSecondaryTextColor()];
     [self.directoryLabel setTextColor:STThemeSecondaryTextColor()];
     [self.textColorLabel setTextColor:STThemeSecondaryTextColor()];
@@ -479,7 +430,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.highlighterLabel setTextColor:STThemePrimaryTextColor()];
     [self.pageTitleLabel setStringValue:[self titleForSection:self.currentSection]];
     [self.pageDescriptionLabel setStringValue:[self descriptionForSection:self.currentSection]];
-    [self.backgroundView setNeedsDisplay:YES];
 }
 
 - (void)layoutContentView {
@@ -509,7 +459,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
                                  contentWidth,
                                  MAX(220.0f, switcherY - switcherGap - outerPadding));
     self.backgroundView.contentCardRect = cardRect;
-    [self.backgroundView setNeedsDisplay:YES];
 
     CGFloat innerX = NSMinX(cardRect) + cardInnerPadding;
     CGFloat innerWidth = NSWidth(cardRect) - (cardInnerPadding * 2.0f);
@@ -522,7 +471,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 
     CGFloat footerY = NSMinY(cardRect) + footerInset;
     [self.restoreDefaultsButton setFrame:NSMakeRect(innerX, footerY, 150.0f, footerHeight)];
-    [self.closeButton setFrame:NSMakeRect(NSMaxX(cardRect) - cardInnerPadding - 108.0f, footerY, 108.0f, footerHeight)];
 
     [self hideAllPageControls];
 
@@ -533,23 +481,22 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 
     switch (self.currentSection) {
         case STPreferencesSectionAppearance: {
-            [self setViews:@[self.themeLabel, self.interfaceThemePopUp, self.statusBarCheckbox] hidden:NO];
-            CGFloat themeRowY = y - controlHeight;
-            [self.themeLabel setFrame:NSMakeRect(innerX, themeRowY + 5.0f, rowLabelWidth, 20.0f)];
-            [self.interfaceThemePopUp setFrame:NSMakeRect(innerX + rowLabelWidth + 16.0f,
-                                                          themeRowY - 1.0f,
-                                                          innerWidth - rowLabelWidth - 16.0f,
-                                                          controlHeight)];
-            y = themeRowY - 22.0f;
-            CGFloat checkboxHeight = 24.0f;
-            [self.statusBarCheckbox setFrame:NSMakeRect(innerX, y - checkboxHeight, innerWidth, checkboxHeight)];
-            y -= checkboxHeight + 10.0f;
+            // Label on the left, switch on the right, a row each.
+            CGFloat switchWidth = 44.0f;
+            CGFloat switchHeight = 24.0f;
+            CGFloat rowHeight = 28.0f;
+            CGFloat switchX = innerX + innerWidth - switchWidth;
+            CGFloat labelWidth = innerWidth - switchWidth - 16.0f;
+            [self setViews:@[self.statusBarLabel, self.statusBarSwitch] hidden:NO];
+            [self.statusBarLabel setFrame:NSMakeRect(innerX, y - rowHeight + 4.0f, labelWidth, 20.0f)];
+            [self.statusBarSwitch setFrame:NSMakeRect(switchX, y - rowHeight + 2.0f, switchWidth, switchHeight)];
+            y -= rowHeight + 12.0f;
             if ([self.delegate preferencesControllerOffersToolbarInTitleBar:self]) {
-                [self setViews:@[self.titleBarToolbarCheckbox, self.titleBarToolbarNoteLabel] hidden:NO];
-                [self.titleBarToolbarCheckbox setFrame:NSMakeRect(innerX, y - checkboxHeight, innerWidth, checkboxHeight)];
-                y -= checkboxHeight + 2.0f;
-                // Lines up with the checkbox's title rather than its box.
-                [self.titleBarToolbarNoteLabel setFrame:NSMakeRect(innerX + 22.0f, y - 34.0f, innerWidth - 22.0f, 34.0f)];
+                [self setViews:@[self.titleBarToolbarLabel, self.titleBarToolbarSwitch, self.titleBarToolbarNoteLabel] hidden:NO];
+                [self.titleBarToolbarLabel setFrame:NSMakeRect(innerX, y - rowHeight + 4.0f, labelWidth, 20.0f)];
+                [self.titleBarToolbarSwitch setFrame:NSMakeRect(switchX, y - rowHeight + 2.0f, switchWidth, switchHeight)];
+                y -= rowHeight;
+                [self.titleBarToolbarNoteLabel setFrame:NSMakeRect(innerX, y - 34.0f, labelWidth, 34.0f)];
             }
             break;
         }
@@ -738,28 +685,15 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.saveDirectoryField setStringValue:[directory stringByAbbreviatingWithTildeInPath]];
 
     BOOL showStatusBar = [delegate preferencesControllerShouldShowStatusBar:self];
-    [self.statusBarCheckbox setState:showStatusBar ? NSControlStateValueOn : NSControlStateValueOff];
+    [self.statusBarSwitch setState:showStatusBar ? NSControlStateValueOn : NSControlStateValueOff];
 
     BOOL canPlaceToolbar = [delegate preferencesControllerCanShowToolbarInTitleBar:self];
     BOOL toolbarInTitleBar = [delegate preferencesControllerShowsToolbarInTitleBar:self];
-    [self.titleBarToolbarCheckbox setEnabled:canPlaceToolbar];
-    [self.titleBarToolbarCheckbox setState:toolbarInTitleBar ? NSControlStateValueOn : NSControlStateValueOff];
+    [self.titleBarToolbarSwitch setEnabled:canPlaceToolbar];
+    [self.titleBarToolbarSwitch setState:toolbarInTitleBar ? NSControlStateValueOn : NSControlStateValueOff];
     [self.titleBarToolbarNoteLabel setStringValue:canPlaceToolbar
         ? @"Puts the tools beside the window title, as GNOME apps do."
         : @"Needs the Adwaita theme to draw the window title bar (GSX11HandlesWindowDecorations NO)."];
-
-    NSString *preference = [[delegate preferencesControllerInterfaceThemePreference:self] lowercaseString];
-    if (preference.length == 0) {
-        preference = STInterfaceThemePreferenceAutoValue;
-    }
-    for (NSInteger idx = 0; idx < self.interfaceThemePopUp.numberOfItems; idx++) {
-        NSMenuItem *item = (NSMenuItem *)[self.interfaceThemePopUp itemAtIndex:idx];
-        NSString *candidate = item.representedObject;
-        if ([candidate isEqualToString:preference]) {
-            [self.interfaceThemePopUp selectItemAtIndex:idx];
-            break;
-        }
-    }
 }
 
 - (NSString *)displayStringForWidth:(CGFloat)width {
@@ -873,32 +807,32 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     }
 }
 
-- (void)statusBarToggled:(NSButton *)sender {
+- (void)statusBarToggled:(NSSwitch *)sender {
     BOOL show = (sender.state == NSControlStateValueOn);
     [self.delegate preferencesController:self didToggleStatusBar:show];
 }
 
-- (void)titleBarToolbarToggled:(NSButton *)sender {
+- (void)titleBarToolbarToggled:(NSSwitch *)sender {
     [self.delegate preferencesController:self didToggleToolbarInTitleBar:(sender.state == NSControlStateValueOn)];
-}
-
-- (void)interfaceThemeSelectionChanged:(NSPopUpButton *)sender {
-    NSString *preference = sender.selectedItem.representedObject;
-    if (preference.length == 0) {
-        preference = STInterfaceThemePreferenceAutoValue;
-    }
-    [self.delegate preferencesController:self didChangeInterfaceThemePreference:preference];
 }
 
 - (void)restoreDefaultsPressed:(id)sender {
     (void)sender;
+    if (![self confirmRestoreDefaults]) {
+        return;
+    }
     [self.delegate preferencesControllerRestoreDefaults:self];
     [self refresh];
 }
 
-- (void)closePressed:(id)sender {
-    (void)sender;
-    [self.window orderOut:nil];
+/// Changes apply as they're made, so there's no Close button; restoring defaults asks first.
+- (BOOL)confirmRestoreDefaults {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Restore the default settings?";
+    alert.informativeText = @"Tool widths, colours, the text font, the save folder and the window options go back to their defaults.";
+    [alert addButtonWithTitle:@"Restore Defaults"];
+    [alert addButtonWithTitle:@"Cancel"];
+    return [alert runModal] == NSAlertFirstButtonReturn;
 }
 
 #pragma mark - NSWindowDelegate

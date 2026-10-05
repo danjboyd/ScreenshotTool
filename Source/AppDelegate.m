@@ -3281,35 +3281,6 @@ static id STInfoValueForKey(NSString *key) {
     [self layoutContentSubviews];
 }
 
-- (NSString *)currentInterfaceThemePreferenceValue {
-    NSString *preference = [[[NSUserDefaults standardUserDefaults] stringForKey:STDefaultsInterfaceThemeKey] lowercaseString];
-    if ([preference isEqualToString:STInterfaceThemePreferenceLightValue] ||
-        [preference isEqualToString:STInterfaceThemePreferenceDarkValue] ||
-        [preference isEqualToString:STInterfaceThemePreferenceAutoValue]) {
-        return preference;
-    }
-    return STInterfaceThemePreferenceAutoValue;
-}
-
-- (void)updateInterfaceThemePreference:(NSString *)preference persist:(BOOL)persist {
-    NSString *normalizedPreference = [preference lowercaseString];
-    if (![normalizedPreference isEqualToString:STInterfaceThemePreferenceLightValue] &&
-        ![normalizedPreference isEqualToString:STInterfaceThemePreferenceDarkValue] &&
-        ![normalizedPreference isEqualToString:STInterfaceThemePreferenceAutoValue]) {
-        normalizedPreference = STInterfaceThemePreferenceAutoValue;
-    }
-    if (persist) {
-        NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-        if ([normalizedPreference isEqualToString:STInterfaceThemePreferenceAutoValue]) {
-            [defaults removeObjectForKey:STDefaultsInterfaceThemeKey];
-        } else {
-            [defaults setObject:normalizedPreference forKey:STDefaultsInterfaceThemeKey];
-        }
-    }
-    self.usesDarkTheme = STThemeIsDark();
-    [self refreshInterfaceThemeAppearance];
-}
-
 #if defined(GNUSTEP)
 - (void)themeDidActivate:(NSNotification *)notification {
     // A newly activated theme can change whether Auto resolves to the light or dark icons.
@@ -3320,10 +3291,6 @@ static id STInfoValueForKey(NSString *key) {
     }
 }
 #endif
-
-- (void)resetInterfaceThemePreferenceToDefault {
-    [self updateInterfaceThemePreference:STInterfaceThemePreferenceAutoValue persist:YES];
-}
 
 - (void)refreshInterfaceThemeAppearance {
 #if defined(GNUSTEP)
@@ -4403,16 +4370,6 @@ static id STInfoValueForKey(NSString *key) {
     [self.canvasView updateForEnclosingBoundsChange];
 }
 
-- (NSString *)preferencesControllerInterfaceThemePreference:(PreferencesWindowController *)controller {
-    (void)controller;
-    return [self currentInterfaceThemePreferenceValue];
-}
-
-- (void)preferencesController:(PreferencesWindowController *)controller didChangeInterfaceThemePreference:(NSString *)preference {
-    (void)controller;
-    [self updateInterfaceThemePreference:preference persist:YES];
-}
-
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller {
     (void)controller;
     [self setDefaultWidth:STPenWidthDefault forTool:ScreenshotCanvasToolPen];
@@ -4444,8 +4401,6 @@ static id STInfoValueForKey(NSString *key) {
     self.statusBarVisiblePreference = NO;
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
-
-    [self resetInterfaceThemePreferenceToDefault];
 
     if ([[NSUserDefaults standardUserDefaults] objectForKey:STGnomeThemeHeaderBarToolbarKey] != nil) {
         [[NSUserDefaults standardUserDefaults] removeObjectForKey:STGnomeThemeHeaderBarToolbarKey];

@@ -20,13 +20,11 @@
 - (void)setUp {
     [super setUp];
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults removeObjectForKey:STDefaultsInterfaceThemeKey];
     [defaults removeObjectForKey:@"GSTheme"];
 }
 
 - (void)tearDown {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults removeObjectForKey:STDefaultsInterfaceThemeKey];
     [defaults removeObjectForKey:@"GSTheme"];
     [super tearDown];
 }
@@ -36,31 +34,14 @@
     [defaults setObject:@"Adwaita-dark" forKey:@"GSTheme"];
 
     XCTAssertTrue(STDefaultInterfaceThemeIsDark(), @"Adwaita-dark should be treated as a dark GNUstep theme");
-    XCTAssertTrue(STThemeIsDark(), @"Auto mode should follow Adwaita-dark");
-}
-
-- (void)testExplicitLightPreferenceOverridesDarkTheme {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults setObject:@"Adwaita-dark" forKey:@"GSTheme"];
-    [defaults setObject:STInterfaceThemePreferenceLightValue forKey:STDefaultsInterfaceThemeKey];
-
-    XCTAssertFalse(STThemeIsDark(), @"Explicit light preference should override dark GNUstep themes");
-}
-
-- (void)testExplicitDarkPreferenceOverridesLightTheme {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults setObject:@"Adwaita" forKey:@"GSTheme"];
-    [defaults setObject:STInterfaceThemePreferenceDarkValue forKey:STDefaultsInterfaceThemeKey];
-
-    XCTAssertTrue(STThemeIsDark(), @"Explicit dark preference should override light GNUstep themes");
+    XCTAssertTrue(STThemeIsDark(), @"Light or dark follows the theme (#56)");
 }
 
 - (void)testAutoPreferenceFollowsCurrentTheme {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults setObject:@"Adwaita" forKey:@"GSTheme"];
-    [defaults setObject:STInterfaceThemePreferenceAutoValue forKey:STDefaultsInterfaceThemeKey];
 
-    XCTAssertFalse(STThemeIsDark(), @"Auto preference should follow a light GNUstep theme");
+    XCTAssertFalse(STThemeIsDark(), @"A light GNUstep theme is light");
 }
 
 - (void)testDarkPaletteIsDetectedFromWindowBackground {
