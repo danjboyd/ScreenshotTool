@@ -44,8 +44,13 @@
 
     @try {
         [NSApplication sharedApplication];
-        [[NSUserDefaults standardUserDefaults] setObject:@"Sombre" forKey:@"GSTheme"];
-        [[NSUserDefaults standardUserDefaults] synchronize];
+        // A dark theme, unless the suite runs under a requested theme (TEST_THEME), which it must
+        // keep: switching themes here would run the rest of the suite under Sombre.
+        const char *requestedTheme = getenv("ST_EXPECT_THEME");
+        if (!requestedTheme || requestedTheme[0] == '\0') {
+            [[NSUserDefaults standardUserDefaults] setObject:@"Sombre" forKey:@"GSTheme"];
+            [[NSUserDefaults standardUserDefaults] synchronize];
+        }
         _appDelegate = [[AppDelegate alloc] init];
         _appDelegate.usesDarkTheme = YES;
     } @catch (NSException *exception) {
