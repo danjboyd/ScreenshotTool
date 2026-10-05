@@ -168,6 +168,44 @@ static NSArray<NSString *> *STOpenableImageFileTypes(void) {
     return @[ @"png", @"jpg", @"jpeg", @"gif", @"bmp", @"tif", @"tiff", @"webp" ];
 }
 
+/// Read by the Adwaita theme: YES puts the window's toolbar in its header bar.
+static NSString * const STGnomeThemeHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
+
+static BOOL STAdwaitaThemeIsActive(void) {
+#if defined(GNUSTEP)
+    NSString *name = [[GSTheme theme] name];
+    return name != nil && [name caseInsensitiveCompare:@"Adwaita"] == NSOrderedSame;
+#else
+    return NO;
+#endif
+}
+
+/// Whether windows get the Adwaita theme's header bar: it draws the title bar itself (the user
+/// set GSX11HandlesWindowDecorations NO, or the theme's own defaults did).
+static BOOL STAdwaitaHeaderBarIsActive(void) {
+#if defined(GNUSTEP)
+    if (!STAdwaitaThemeIsActive()) {
+        return NO;
+    }
+    Class headerBar = NSClassFromString(@"GnomeThemeHeaderBarDecorationView");
+    id decorator = [[GSTheme theme] windowDecorator];
+    return headerBar != Nil && [decorator respondsToSelector:@selector(isSubclassOfClass:)] &&
+           [(Class)decorator isSubclassOfClass:headerBar];
+#else
+    return NO;
+#endif
+}
+
+/// The value the theme will use: the user's default, else the app's Info.plist, else NO.
+static BOOL STToolbarInTitleBarEnabled(void) {
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if ([defaults objectForKey:STGnomeThemeHeaderBarToolbarKey] != nil) {
+        return [defaults boolForKey:STGnomeThemeHeaderBarToolbarKey];
+    }
+    id declared = [[NSBundle mainBundle] infoDictionary][STGnomeThemeHeaderBarToolbarKey];
+    return [declared respondsToSelector:@selector(boolValue)] && [declared boolValue];
+}
+
 static NSString * const STProjectFileExtension = @"screenshottool";
 
 typedef NS_ENUM(NSInteger, STUnsavedChangesChoice) {
@@ -654,6 +692,12 @@ static NSString *STPathForToolbarResource(NSString *filename, NSString *extensio
                             hints:nil];
 }
 
+/// Claims the press so it reaches mouseUp: here. Unclaimed, it goes up the responder chain; in
+/// the Adwaita theme's header bar that starts a window drag, which swallows the release.
+- (void)mouseDown:(NSEvent *)event {
+    (void)event;
+}
+
 - (void)mouseUp:(NSEvent *)event {
     (void)event;
     if (self.target && self.action) {
@@ -773,6 +817,11 @@ static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin)
         [slashPath setLineWidth:1.5f];
         [slashPath stroke];
     }
+}
+
+- (void)mouseDown:(NSEvent *)event {
+    // See STToolbarGlyphView: keep the header bar from taking the press.
+    (void)event;
 }
 
 - (void)mouseUp:(NSEvent *)event {
@@ -938,6 +987,11 @@ static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin)
     [chevronPath stroke];
 }
 
+- (void)mouseDown:(NSEvent *)event {
+    // See STToolbarGlyphView: keep the header bar from taking the press.
+    (void)event;
+}
+
 - (void)mouseUp:(NSEvent *)event {
     (void)event;
     if (!self.enabled) {
@@ -1031,6 +1085,11 @@ static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin)
                   fraction:(self.enabled ? 1.0f : 0.45f)
             respectFlipped:YES
                      hints:nil];
+}
+
+- (void)mouseDown:(NSEvent *)event {
+    // See STToolbarGlyphView: keep the header bar from taking the press.
+    (void)event;
 }
 
 - (void)mouseUp:(NSEvent *)event {
@@ -4665,6 +4724,43 @@ static id STInfoValueForKey(NSString *key) {
     [self updateStatusBarVisibility];
 }
 
+- (BOOL)preferencesControllerOffersToolbarInTitleBar:(PreferencesWindowController *)controller {
+    (void)controller;
+    return STAdwaitaThemeIsActive();
+}
+
+- (BOOL)preferencesControllerCanShowToolbarInTitleBar:(PreferencesWindowController *)controller {
+    (void)controller;
+    return STAdwaitaHeaderBarIsActive();
+}
+
+- (BOOL)preferencesControllerShowsToolbarInTitleBar:(PreferencesWindowController *)controller {
+    (void)controller;
+    return STToolbarInTitleBarEnabled();
+}
+
+- (void)preferencesController:(PreferencesWindowController *)controller didToggleToolbarInTitleBar:(BOOL)show {
+    (void)controller;
+    [[NSUserDefaults standardUserDefaults] setBool:show forKey:STGnomeThemeHeaderBarToolbarKey];
+    [self reattachToolbarForTitleBarPlacement];
+}
+
+/// The theme reads GnomeThemeHeaderBarToolbar when a toolbar is added to a window, so setting the
+/// toolbar again moves it into or out of the header bar without a restart.
+- (void)reattachToolbarForTitleBarPlacement {
+    NSToolbar *toolbar = self.window.toolbar;
+    if (!toolbar || !toolbar.isVisible) {
+        return;
+    }
+    // Keep the window where and as big as it is: the canvas takes or gives up the toolbar's row.
+    NSRect frame = self.window.frame;
+    [self.window setToolbar:nil];
+    [self.window setToolbar:toolbar];
+    [self.window setFrame:frame display:YES];
+    [self layoutContentSubviews];
+    [self.canvasView updateForEnclosingBoundsChange];
+}
+
 - (NSString *)preferencesControllerInterfaceThemePreference:(PreferencesWindowController *)controller {
     (void)controller;
     return [self currentInterfaceThemePreferenceValue];
@@ -4708,6 +4804,11 @@ static id STInfoValueForKey(NSString *key) {
     [self updateStatusBarVisibility];
 
     [self resetInterfaceThemePreferenceToDefault];
+
+    if ([[NSUserDefaults standardUserDefaults] objectForKey:STGnomeThemeHeaderBarToolbarKey] != nil) {
+        [[NSUserDefaults standardUserDefaults] removeObjectForKey:STGnomeThemeHeaderBarToolbarKey];
+        [self reattachToolbarForTitleBarPlacement];
+    }
 
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self updateToolWidthControls];
