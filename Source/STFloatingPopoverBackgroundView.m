@@ -62,6 +62,10 @@ static inline CGFloat STFPClamp(CGFloat value, CGFloat minValue, CGFloat maxValu
     }
 }
 
+// An exception to #51/#67: GNUstep's NSPopover can't stand in yet (a fixed dark grey bevelled
+// panel the theme doesn't draw, rough positioning, and its panel can't become key, which the
+// popovers' sliders and text fields need). So the app draws the panel and arrow, in system colours
+// only (#57). Replace it once GNUstep has a themeable popover.
 - (void)drawRect:(NSRect)dirtyRect {
     (void)dirtyRect;
     NSRect bounds = self.bounds;

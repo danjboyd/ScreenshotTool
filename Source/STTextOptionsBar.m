@@ -233,15 +233,7 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
     return visible;
 }
 
-- (void)drawRect:(NSRect)dirtyRect {
-    (void)dirtyRect;
-    [[STThemeToolbarBackgroundColor(NO) colorWithAlphaComponent:0.97] setFill];
-    NSRectFill(self.bounds);
-    [STThemeHairlineColor() setFill];
-    NSRectFill(NSMakeRect(0.0, NSHeight(self.bounds) - 1.0, NSWidth(self.bounds), 1.0));
-    NSRectFill(NSMakeRect(0.0, 0.0, NSWidth(self.bounds), 1.0));
-}
-
+// No background or separator lines of its own: the bar sits on the window, drawn by the theme (#67).
 #pragma mark - State
 
 static BOOL STTextOptionsColorsMatch(NSColor *a, NSColor *b) {
