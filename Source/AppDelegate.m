@@ -157,11 +157,10 @@ static NSString *STDefaultSaveDirectoryPath(void) {
     return home;
 }
 
+/// The picture formats Open offers. Not +[NSImage imageFileTypes]: on GNUstep that can include
+/// everything ImageMagick reads (text, HTML, video…), which made Open's file type menu hundreds
+/// of entries long.
 static NSArray<NSString *> *STOpenableImageFileTypes(void) {
-    NSArray<NSString *> *fileTypes = [NSImage imageFileTypes];
-    if (fileTypes.count > 0) {
-        return fileTypes;
-    }
     return @[ @"png", @"jpg", @"jpeg", @"gif", @"bmp", @"tif", @"tiff", @"webp" ];
 }
 
