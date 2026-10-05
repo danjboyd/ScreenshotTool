@@ -12,6 +12,7 @@
 #import "AppDelegate.h"
 #import "PreferencesWindowController.h"
 #import "TestEnvironmentHelpers.h"
+#import <objc/runtime.h>
 
 static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 
@@ -25,7 +26,8 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 @end
 
 @interface PreferencesWindowController (TitleBarToolbarTesting)
-@property (nonatomic, strong) NSButton *titleBarToolbarCheckbox;
+@property (nonatomic, strong) NSSwitch *titleBarToolbarSwitch;
+@property (nonatomic, strong) NSSwitch *statusBarSwitch;
 @property (nonatomic, strong) NSTextField *titleBarToolbarNoteLabel;
 @property (nonatomic, strong) NSWindow *window;
 - (void)layoutContentView;
@@ -90,6 +92,12 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     [super tearDown];
 }
 
+/// What a click on a switch does: flip it and send its action.
+- (void)toggle:(NSSwitch *)control {
+    [control setState:(control.state == NSControlStateValueOn) ? NSControlStateValueOff : NSControlStateValueOn];
+    [NSApp sendAction:control.action to:control.target from:control];
+}
+
 - (PreferencesWindowController *)preferences {
     _preferences = [[PreferencesWindowController alloc] initWithDelegate:_appDelegate];
     [_preferences refresh];
@@ -103,7 +111,7 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     XCTSkipIf(_shouldSkip, @"No window server");
     _appDelegate.stubAdwaita = NO;
     PreferencesWindowController *controller = [self preferences];
-    XCTAssertTrue(controller.titleBarToolbarCheckbox.isHidden);
+    XCTAssertTrue(controller.titleBarToolbarSwitch.isHidden);
     XCTAssertTrue(controller.titleBarToolbarNoteLabel.isHidden);
 }
 
@@ -112,11 +120,11 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     _appDelegate.stubAdwaita = YES;
     _appDelegate.stubHeaderBar = YES;
     PreferencesWindowController *controller = [self preferences];
-    XCTAssertFalse(controller.titleBarToolbarCheckbox.isHidden);
-    XCTAssertTrue(controller.titleBarToolbarCheckbox.isEnabled);
-    XCTAssertEqual(controller.titleBarToolbarCheckbox.state, NSControlStateValueOff, @"off unless chosen");
+    XCTAssertFalse(controller.titleBarToolbarSwitch.isHidden);
+    XCTAssertTrue(controller.titleBarToolbarSwitch.isEnabled);
+    XCTAssertEqual(controller.titleBarToolbarSwitch.state, NSControlStateValueOff, @"off unless chosen");
     XCTAssertTrue([controller.titleBarToolbarNoteLabel.stringValue hasPrefix:@"Puts the tools"]);
-    XCTAssertGreaterThan(NSWidth(controller.titleBarToolbarCheckbox.frame), 100.0);
+    XCTAssertGreaterThan(NSWidth(controller.titleBarToolbarSwitch.frame), 20.0);
 }
 
 - (void)testDisabledWithExplanationWithoutTheHeaderBar {
@@ -124,8 +132,8 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     _appDelegate.stubAdwaita = YES;
     _appDelegate.stubHeaderBar = NO;
     PreferencesWindowController *controller = [self preferences];
-    XCTAssertFalse(controller.titleBarToolbarCheckbox.isHidden);
-    XCTAssertFalse(controller.titleBarToolbarCheckbox.isEnabled);
+    XCTAssertFalse(controller.titleBarToolbarSwitch.isHidden);
+    XCTAssertFalse(controller.titleBarToolbarSwitch.isEnabled);
     XCTAssertTrue([controller.titleBarToolbarNoteLabel.stringValue containsString:@"GSX11HandlesWindowDecorations"]);
 }
 
@@ -138,7 +146,7 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     XCTAssertNotNil(toolbar);
     NSRect frame = _appDelegate.window.frame;
 
-    [controller.titleBarToolbarCheckbox performClick:nil];
+    [self toggle:controller.titleBarToolbarSwitch];
     XCTAssertTrue([[NSUserDefaults standardUserDefaults] boolForKey:STHeaderBarToolbarKey]);
     XCTAssertTrue([_appDelegate preferencesControllerShowsToolbarInTitleBar:controller]);
     XCTAssertEqual(_appDelegate.window.toolbar, toolbar, @"the same toolbar is attached again");
@@ -149,7 +157,7 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     XCTAssertEqualWithAccuracy(NSWidth(after), NSWidth(frame), 1.0, @"the window keeps its frame");
     XCTAssertEqualWithAccuracy(NSHeight(after), NSHeight(frame), 1.0, @"the window keeps its frame");
 
-    [controller.titleBarToolbarCheckbox performClick:nil];
+    [self toggle:controller.titleBarToolbarSwitch];
     XCTAssertNotNil([[NSUserDefaults standardUserDefaults] objectForKey:STHeaderBarToolbarKey]);
     XCTAssertFalse([[NSUserDefaults standardUserDefaults] boolForKey:STHeaderBarToolbarKey],
                    @"off is written, so it overrides a global YES");
@@ -231,6 +239,24 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     XCTAssertNotNil(info, @"the plist parses");
     XCTAssertTrue([info[@"GnomeThemeHeaderBarToolbar"] boolValue], @"the toolbar suits a header bar");
     XCTAssertNil(info[@"GnomeThemeMenuStyle"], @"menu bar or primary menu is the user's theme setting, not the app's");
+}
+
+#pragma mark - Standard Preferences (#56)
+
+- (void)testPreferencesUseStandardControls {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    _appDelegate.stubAdwaita = YES;
+    _appDelegate.stubHeaderBar = YES;
+    PreferencesWindowController *controller = [self preferences];
+    XCTAssertTrue([controller.statusBarSwitch isKindOfClass:[NSSwitch class]], @"on/off settings are switches");
+    XCTAssertTrue([controller.titleBarToolbarSwitch isKindOfClass:[NSSwitch class]]);
+    XCTAssertFalse([controller respondsToSelector:@selector(closeButton)], @"changes apply at once: no Close button");
+    XCTAssertFalse([controller respondsToSelector:@selector(interfaceThemePopUp)], @"light or dark is the theme's choice");
+    // The page draws nothing of its own, so each theme draws the window its way.
+    Class pageView = NSClassFromString(@"STPreferencesBackgroundView");
+    XCTAssertNotNil(pageView);
+    XCTAssertEqual(class_getMethodImplementation(pageView, @selector(drawRect:)),
+                   class_getMethodImplementation([NSView class], @selector(drawRect:)));
 }
 
 @end

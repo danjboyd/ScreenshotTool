@@ -23,11 +23,6 @@ static BOOL STThemeNameIndicatesDark(NSString *theme) {
             [lower containsString:@"sombre"]);
 }
 
-static NSString *STNormalizedInterfaceThemePreference(void) {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    return [[[defaults stringForKey:STDefaultsInterfaceThemeKey] lowercaseString] copy] ?: @"";
-}
-
 BOOL STThemeBackgroundColorIsDark(NSColor *color) {
     NSColor *background = [color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
     if (!background) {
@@ -46,17 +41,8 @@ BOOL STDefaultInterfaceThemeIsDark(void) {
     return STThemeNameIndicatesDark(theme) || STThemeBackgroundColorIsDark([NSColor windowBackgroundColor]);
 }
 
+/// Light or dark is the theme's choice (and the desktop's), not an app setting (#56).
 BOOL STThemeIsDark(void) {
-    NSString *preference = STNormalizedInterfaceThemePreference();
-    if (preference.length == 0 || [preference isEqualToString:STInterfaceThemePreferenceAutoValue]) {
-        return STDefaultInterfaceThemeIsDark();
-    }
-    if ([preference isEqualToString:STInterfaceThemePreferenceDarkValue]) {
-        return YES;
-    }
-    if ([preference isEqualToString:STInterfaceThemePreferenceLightValue]) {
-        return NO;
-    }
     return STDefaultInterfaceThemeIsDark();
 }
 

@@ -28,10 +28,6 @@ NSString * const STDefaultsTextDefaultAlignmentKey = @"ScreenshotToolTextDefault
 NSString * const STDefaultsSaveDirectoryKey = @"ScreenshotToolSaveDirectory";
 NSString * const STDefaultsRecentDocumentsKey = @"ScreenshotToolRecentDocuments";
 NSString * const STDefaultsShowStatusBarKey = @"ScreenshotToolShowStatusBar";
-NSString * const STDefaultsInterfaceThemeKey = @"ScreenshotToolInterfaceTheme";
-NSString * const STInterfaceThemePreferenceAutoValue = @"auto";
-NSString * const STInterfaceThemePreferenceLightValue = @"light";
-NSString * const STInterfaceThemePreferenceDarkValue = @"dark";
 
 NSColor *STDefaultPenColor(void) {
     return [NSColor redColor];
