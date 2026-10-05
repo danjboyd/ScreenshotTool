@@ -4,6 +4,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 BOOL STThemeIsDark(void);
 BOOL STDefaultInterfaceThemeIsDark(void);
+/// Whether a theme's name says it's dark ("Adwaita-dark", "Sombre").
+BOOL STThemeNameIndicatesDark(NSString *theme);
 BOOL STThemeBackgroundColorIsDark(NSColor *color);
 
 NSColor *STThemeCanvasBackgroundColor(void);

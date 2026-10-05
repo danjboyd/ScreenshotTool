@@ -20,31 +20,20 @@
     STConfigureTestDefaults();
 }
 
-- (void)setUp {
-    [super setUp];
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults removeObjectForKey:@"GSTheme"];
+// These tests don't set GSTheme: GNUstep switches themes live when it changes, and switching away
+// from the theme the suite runs under (TEST_THEME) crashed the test process on CI.
+
+- (void)testDarkThemeNamesAreDetected {
+    XCTAssertTrue(STThemeNameIndicatesDark(@"Adwaita-dark"), @"Adwaita-dark should be treated as a dark GNUstep theme");
+    XCTAssertTrue(STThemeNameIndicatesDark(@"Sombre"));
+    XCTAssertFalse(STThemeNameIndicatesDark(@"Adwaita"));
+    XCTAssertFalse(STThemeNameIndicatesDark(@""));
 }
 
-- (void)tearDown {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults removeObjectForKey:@"GSTheme"];
-    [super tearDown];
-}
-
-- (void)testAdwaitaDarkThemeIsDetectedAsDarkInAutoMode {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults setObject:@"Adwaita-dark" forKey:@"GSTheme"];
-
-    XCTAssertTrue(STDefaultInterfaceThemeIsDark(), @"Adwaita-dark should be treated as a dark GNUstep theme");
-    XCTAssertTrue(STThemeIsDark(), @"Light or dark follows the theme (#56)");
-}
-
-- (void)testAutoPreferenceFollowsCurrentTheme {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    [defaults setObject:@"Adwaita" forKey:@"GSTheme"];
-
-    XCTAssertFalse(STThemeIsDark(), @"A light GNUstep theme is light");
+- (void)testLightOrDarkFollowsTheRunningTheme {
+    // Both themes the suite runs under (GNUstep's own and Adwaita's light palette) are light.
+    [NSApplication sharedApplication];
+    XCTAssertFalse(STThemeIsDark(), @"Light or dark follows the theme (#56); this one is light");
 }
 
 - (void)testDarkPaletteIsDetectedFromWindowBackground {
