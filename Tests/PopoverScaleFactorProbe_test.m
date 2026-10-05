@@ -76,7 +76,7 @@
     [controller showRelativeToRect:NSMakeRect(5.0f, 5.0f, 1.0f, 1.0f) ofView:anchor preferredEdge:NSMaxYEdge];
     XCTAssertNotNil(controller.popover, @"Popover should be constructed");
     XCTAssertEqualWithAccuracy(controller.popover.contentSize.width, 260.0f, 0.1f, @"Pen popover width should stay logical sized");
-    XCTAssertEqualWithAccuracy(controller.popover.contentSize.height, 180.0f, 0.1f, @"Pen popover height should stay logical sized");
+    XCTAssertEqualWithAccuracy(controller.popover.contentSize.height, 216.0f, 0.1f, @"Pen popover height should stay logical sized");
 }
 
 - (void)testTextPopoverScalesContentSize {

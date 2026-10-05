@@ -1,5 +1,4 @@
 #import "STHyperlinkButton.h"
-#import "STThemeUtilities.h"
 
 @implementation STHyperlinkButton
 
@@ -30,49 +29,13 @@
     return self;
 }
 
+/// A standard small push button, drawn by the theme (#67). It was a hand-drawn underlined link in
+/// a colour of the app's choosing.
 - (void)commonInit {
-    [self setBordered:NO];
-    [self setButtonType:NSMomentaryChangeButton];
-#if defined(NSBezelStyleInline)
-    [self setBezelStyle:NSBezelStyleInline];
-#endif
-    [self setFont:[NSFont systemFontOfSize:12.0]];
-    [self setFocusRingType:NSFocusRingTypeNone];
-    [self updateAttributedTitle];
-}
-
-- (void)setTitle:(NSString *)title {
-    [super setTitle:title];
-    [self updateAttributedTitle];
-}
-
-- (void)setEnabled:(BOOL)flag {
-    [super setEnabled:flag];
-    [self updateAttributedTitle];
-}
-
-- (void)updateAttributedTitle {
-    NSString *title = self.title ?: @"";
-    NSColor *enabledColor = STThemeLinkColor();
-    NSColor *disabledColor = [NSColor disabledControlTextColor] ?: [NSColor lightGrayColor];
-    NSColor *color = self.isEnabled ? enabledColor : disabledColor;
-    NSMutableAttributedString *attr = [[NSMutableAttributedString alloc] initWithString:title];
-    NSRange range = NSMakeRange(0, attr.length);
-    [attr addAttribute:NSForegroundColorAttributeName value:color range:range];
-    [attr addAttribute:NSUnderlineStyleAttributeName
-                value:@(NSUnderlineStyleSingle)
-                range:range];
-    [self setAttributedTitle:attr];
-    [self sizeToFit];
-}
-
-- (void)resetCursorRects {
-    [self discardCursorRects];
-    if (self.isEnabled) {
-        [self addCursorRect:self.bounds cursor:[NSCursor pointingHandCursor]];
-    } else {
-        [self addCursorRect:self.bounds cursor:[NSCursor arrowCursor]];
-    }
+    [self setButtonType:NSMomentaryPushInButton];
+    [self setBezelStyle:NSRoundedBezelStyle];
+    [[self cell] setControlSize:NSSmallControlSize];
+    [self setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
 }
 
 @end

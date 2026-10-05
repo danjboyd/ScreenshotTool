@@ -1,5 +1,11 @@
 #import "STHudView.h"
 
+/// The transient notice ("Copied image to clipboard") as a standard label in the tool tip colours,
+/// which each theme defines; the view draws nothing of its own (#67).
+@interface STHudView ()
+@property (nonatomic, strong) NSTextField *label;
+@end
+
 @implementation STHudView
 
 - (instancetype)initWithFrame:(NSRect)frameRect {
@@ -7,53 +13,71 @@
     if (self) {
         _message = @"";
         _font = [NSFont boldSystemFontOfSize:13.0f];
-        _textColor = [NSColor whiteColor];
-        _fillColor = [NSColor colorWithCalibratedWhite:0.1f alpha:0.85f];
+        _textColor = [NSColor toolTipTextColor] ?: [NSColor controlTextColor];
+        _fillColor = [NSColor toolTipColor] ?: [NSColor controlBackgroundColor];
         _textPadding = NSMakeSize(20.0f, 12.0f);
-        _cornerRadius = 10.0f;
+        _cornerRadius = 0.0f;
         _hudAlpha = 1.0f;
+
+        _label = [[NSTextField alloc] initWithFrame:self.bounds];
+        [_label setEditable:NO];
+        [_label setSelectable:NO];
+        [_label setBezeled:NO];
+        [_label setBordered:NO];
+        [_label setDrawsBackground:YES];
+        [_label setAlignment:NSTextAlignmentCenter];
+        [_label setAutoresizingMask:(NSViewWidthSizable | NSViewHeightSizable)];
+        [self addSubview:_label];
+        [self updateLabel];
     }
     return self;
 }
 
-- (BOOL)isOpaque {
-    return NO;
+- (void)setMessage:(NSString *)message {
+    _message = [message copy] ?: @"";
+    [self updateLabel];
 }
 
-- (void)drawRect:(NSRect)dirtyRect {
-    (void)dirtyRect;
-    NSRect bounds = self.bounds;
-    if (bounds.size.width <= 0.0f || bounds.size.height <= 0.0f) {
-        return;
-    }
+- (void)setFont:(NSFont *)font {
+    _font = font;
+    [self updateLabel];
+}
 
-    CGFloat alpha = MAX(0.0f, MIN(1.0f, self.hudAlpha));
-    NSBezierPath *path = [NSBezierPath bezierPathWithRoundedRect:bounds
-                                                         xRadius:self.cornerRadius
-                                                         yRadius:self.cornerRadius];
-    NSColor *fill = self.fillColor ?: [NSColor colorWithCalibratedWhite:0.1f alpha:0.85f];
-    fill = [fill colorWithAlphaComponent:(fill.alphaComponent * alpha)];
-    [fill setFill];
-    [path fill];
+- (void)setTextColor:(NSColor *)textColor {
+    _textColor = textColor;
+    [self updateLabel];
+}
 
-    if (self.message.length == 0) {
-        return;
-    }
+- (void)setFillColor:(NSColor *)fillColor {
+    _fillColor = fillColor;
+    [self updateLabel];
+}
 
-    NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
-    style.alignment = NSTextAlignmentCenter;
-    style.lineBreakMode = NSLineBreakByTruncatingTail;
+- (void)setTextPadding:(NSSize)textPadding {
+    _textPadding = textPadding;
+    [self updateLabel];
+}
 
-    NSColor *textColor = self.textColor ?: [NSColor whiteColor];
-    textColor = [textColor colorWithAlphaComponent:(textColor.alphaComponent * alpha)];
-    NSDictionary *attributes = @{
-        NSFontAttributeName: self.font ?: [NSFont systemFontOfSize:13.0f],
-        NSForegroundColorAttributeName: textColor,
-        NSParagraphStyleAttributeName: style
-    };
+- (void)setHudAlpha:(CGFloat)hudAlpha {
+    _hudAlpha = MAX(0.0f, MIN(1.0f, hudAlpha));
+    [self updateLabel];
+}
 
-    NSRect textRect = NSInsetRect(bounds, self.textPadding.width, self.textPadding.height);
-    [self.message drawInRect:textRect withAttributes:attributes];
+/// The label fills the notice; the text is centred vertically by the label's own padding.
+- (void)updateLabel {
+    NSColor *text = self.textColor ?: [NSColor controlTextColor];
+    NSColor *fill = self.fillColor ?: [NSColor controlBackgroundColor];
+    [self.label setStringValue:self.message ?: @""];
+    [self.label setFont:self.font ?: [NSFont systemFontOfSize:13.0f]];
+    [self.label setTextColor:[text colorWithAlphaComponent:text.alphaComponent * self.hudAlpha]];
+    [self.label setBackgroundColor:[fill colorWithAlphaComponent:fill.alphaComponent * self.hudAlpha]];
+    [self.label setFrame:self.bounds];
+    [self.label setNeedsDisplay:YES];
+}
+
+- (void)setFrameSize:(NSSize)newSize {
+    [super setFrameSize:newSize];
+    [self updateLabel];
 }
 
 @end

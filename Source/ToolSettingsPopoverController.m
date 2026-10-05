@@ -108,7 +108,8 @@
 - (void)buildPopoverForView:(NSView *)view {
     ScreenshotToolAppendLog([NSString stringWithFormat:@"ToolSettingsPopoverController(%@) buildPopover begin", [self titleText]]);
     CGFloat scaleFactor = 1.0f;
-    NSRect contentFrame = NSMakeRect(0, 0, 260.0f, 180.0f);
+    // Tall enough for a row of standard buttons below the colour well (#67).
+    NSRect contentFrame = NSMakeRect(0, 0, 260.0f, 216.0f);
     self.contentView = [[NSView alloc] initWithFrame:contentFrame];
     self.popover = [[STFloatingPopover alloc] initWithContentView:self.contentView];
     self.popover.contentSize = contentFrame.size;

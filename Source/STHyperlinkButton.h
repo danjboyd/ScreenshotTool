@@ -2,6 +2,7 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// A small push button for popover actions ("Reset", "Set as Default"), drawn by the theme.
 @interface STHyperlinkButton : NSButton
 
 + (instancetype)hyperlinkButtonWithTitle:(NSString *)title
