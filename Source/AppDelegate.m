@@ -901,6 +901,39 @@ static NSData *STWaylandClipboardDataForMIMEType(NSString *mimeType) {
     return nil;
 }
 
+/// Whether the Wayland clipboard offers PNG or TIFF data, from `wl-paste --list-types`.
+static BOOL STWaylandClipboardHasImage(void) {
+    if (!STScreenshotToolIsWaylandSession()) {
+        return NO;
+    }
+    NSString *wlPastePath = STExecutablePathInPATH(@"wl-paste");
+    if (wlPastePath.length == 0) {
+        return NO;
+    }
+    @try {
+        NSTask *task = [[NSTask alloc] init];
+        NSPipe *outputPipe = [NSPipe pipe];
+        task.launchPath = wlPastePath;
+        task.arguments = @[ @"--list-types" ];
+        task.standardOutput = outputPipe;
+        task.standardError = [NSFileHandle fileHandleWithNullDevice];
+        [task launch];
+        NSData *stdoutData = [[outputPipe fileHandleForReading] readDataToEndOfFile];
+        [task waitUntilExit];
+        NSString *types = [[NSString alloc] initWithData:stdoutData encoding:NSUTF8StringEncoding];
+        for (NSString *type in [types componentsSeparatedByString:@"\n"]) {
+            if ([type isEqualToString:@"image/png"] || [type isEqualToString:@"image/tiff"]) {
+                return YES;
+            }
+        }
+    } @catch (NSException *exception) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Wayland clipboard type listing exception (%@ - %@)",
+                                 exception.name ?: @"<no name>",
+                                 exception.reason ?: @"<no reason>"]);
+    }
+    return NO;
+}
+
 void ScreenshotToolAppendLog(NSString *message) {
     if (message.length == 0) {
         return;
@@ -1099,7 +1132,12 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) BOOL usesDarkTheme;
 @property (nonatomic, assign) BOOL toolWidthMenuCanReset;
 @property (nonatomic, strong) GPStandardUpdaterController *updaterController;
+/// Whether the clipboard held an image when last checked, and when (#76).
+@property (nonatomic, assign) BOOL clipboardHadImage;
+@property (nonatomic, assign) NSTimeInterval clipboardCheckedAt;
 - (NSData *)clipboardPNGDataForPasteAsNewImage;
+- (BOOL)clipboardHasImage;
+- (void)refreshPasteAvailability;
 - (NSURL *)temporaryClipboardImageURLForPNGData:(NSData *)pngData;
 - (BOOL)isTemporaryClipboardImageURL:(NSURL *)url;
 - (BOOL)launchNewWindowForImageAtURL:(NSURL *)url;
@@ -1424,6 +1462,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
     [self selectTool:ScreenshotCanvasToolHighlighter];
     [self reflectZoomSelection];
+    [self refreshPasteAvailability];
 
 
     if (self.pendingOpenPath.length > 0) {
@@ -1503,7 +1542,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         return [self.canvasView hasSelection];
     }
     if (action == @selector(pasteAsNewImage:)) {
-        return YES;
+        return [self clipboardHasImage];
     }
     if (action == @selector(undo:)) {
         NSUndoManager *undo = [self activeUndoManager];
@@ -5029,6 +5068,7 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
 
+    self.clipboardCheckedAt = 0.0;
     BOOL x11OnlyCopy = (STScreenshotToolIsWaylandSession() && !mirroredWayland && wrotePasteboard);
     NSString *status = nil;
     if ([self.canvasView hasSelection]) {
@@ -5039,8 +5079,17 @@ static id STInfoValueForKey(NSString *key) {
     [self showCopyFeedbackMessage:status duration:3.0];
 }
 
+/// The pasteboard Paste as New Image reads (tests substitute a private one).
+- (NSPasteboard *)clipboardPasteboard {
+    return [NSPasteboard generalPasteboard];
+}
+
+- (BOOL)waylandClipboardHasImage {
+    return STWaylandClipboardHasImage();
+}
+
 - (NSData *)clipboardPNGDataForPasteAsNewImage {
-    NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
+    NSPasteboard *pasteboard = [self clipboardPasteboard];
     NSArray<NSString *> *imageTypes = @[ NSPasteboardTypePNG, NSPasteboardTypeTIFF, NSTIFFPboardType ];
     NSString *availableType = [pasteboard availableTypeFromArray:imageTypes];
     if (availableType.length > 0) {
@@ -5057,6 +5106,17 @@ static id STInfoValueForKey(NSString *key) {
                                          availableType]);
                 return pngData;
             }
+        }
+    }
+
+    NSString *imagePath = [self clipboardImageFilePath];
+    if (imagePath.length > 0) {
+        NSImage *image = [[NSImage alloc] initWithContentsOfFile:imagePath];
+        NSData *pngData = [self pngDataForImage:image];
+        if (pngData.length > 0) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: using image file %@ from NSPasteboard",
+                                     imagePath]);
+            return pngData;
         }
     }
 
@@ -5078,6 +5138,62 @@ static id STInfoValueForKey(NSString *key) {
 
     ScreenshotToolAppendLog(@"pasteAsNewImage: clipboard does not contain supported image data");
     return nil;
+}
+
+/// The first image file among the files on the clipboard (as a file manager copies them), or nil.
+- (NSString *)clipboardImageFilePath {
+    NSPasteboard *pasteboard = [self clipboardPasteboard];
+    if (![pasteboard availableTypeFromArray:@[ NSFilenamesPboardType ]]) {
+        return nil;
+    }
+    id paths = [pasteboard propertyListForType:NSFilenamesPboardType];
+    if (![paths isKindOfClass:[NSArray class]]) {
+        return nil;
+    }
+    // Picture formats only: GNUstep's +[NSImage imageFileTypes] can include anything ImageMagick reads,
+    // text files among them.
+    NSArray<NSString *> *imageTypes = @[ @"png", @"tiff", @"tif", @"jpg", @"jpeg", @"gif", @"bmp", @"webp" ];
+    for (id path in paths) {
+        if (![path isKindOfClass:[NSString class]]) {
+            continue;
+        }
+        NSString *extension = [[path pathExtension] lowercaseString];
+        if ([imageTypes containsObject:extension] && [[NSFileManager defaultManager] isReadableFileAtPath:path]) {
+            return path;
+        }
+    }
+    return nil;
+}
+
+/// Whether Paste as New Image has something to paste: PNG or TIFF data, or an image file, on the
+/// clipboard. Menus validate often, so a result is reused for a second.
+- (BOOL)clipboardHasImage {
+    NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
+    if (self.clipboardCheckedAt > 0.0 && now - self.clipboardCheckedAt < 1.0) {
+        return self.clipboardHadImage;
+    }
+    NSPasteboard *pasteboard = [self clipboardPasteboard];
+    NSArray<NSString *> *imageTypes = @[ NSPasteboardTypePNG, NSPasteboardTypeTIFF, NSTIFFPboardType ];
+    BOOL hasImage = [pasteboard availableTypeFromArray:imageTypes] != nil || [self clipboardImageFilePath] != nil ||
+                    [self waylandClipboardHasImage];
+    self.clipboardHadImage = hasImage;
+    self.clipboardCheckedAt = now;
+    return hasImage;
+}
+
+/// Re-checks the clipboard and enables the empty state's Paste button to match (#76).
+- (void)refreshPasteAvailability {
+    self.clipboardCheckedAt = 0.0;
+    BOOL hasImage = [self clipboardHasImage];
+    NSButton *paste = [self.emptyStateView viewWithTag:5];
+    [paste setEnabled:hasImage];
+    [paste setToolTip:hasImage ? nil : @"The clipboard has no image"];
+}
+
+- (void)applicationDidBecomeActive:(NSNotification *)notification {
+    (void)notification;
+    // Another app may have changed the clipboard.
+    [self refreshPasteAvailability];
 }
 
 - (BOOL)isTemporaryClipboardImageURL:(NSURL *)url {
@@ -5976,6 +6092,12 @@ static id STInfoValueForKey(NSString *key) {
     [self refreshToolButtonIcons];
     [self markAnnotationsSaved];
     return YES;
+}
+
+- (void)windowDidBecomeKey:(NSNotification *)notification {
+    if (notification.object == self.window) {
+        [self refreshPasteAvailability];
+    }
 }
 
 - (void)windowDidResize:(NSNotification *)notification {
