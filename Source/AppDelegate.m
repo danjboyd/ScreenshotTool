@@ -1175,12 +1175,15 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     }
     if ([identifier isEqualToString:ToolbarItemColor]) {
         switch (self.canvasView.activeTool) {
+            // One control for the tool's style: colour and width (#54).
             case ScreenshotCanvasToolPen:
-                return @"Pen Color — click to configure";
+                return [NSString stringWithFormat:@"Pen color and width (%.0f px) — click to change", [self currentWidthForTool:ScreenshotCanvasToolPen]];
+            case ScreenshotCanvasToolArrow:
+                return [NSString stringWithFormat:@"Arrow color and width (%.0f px) — click to change", [self currentWidthForTool:ScreenshotCanvasToolArrow]];
             case ScreenshotCanvasToolHighlighter:
-                return @"Highlighter Color — click to configure";
+                return [NSString stringWithFormat:@"Highlighter color and width (%.0f px) — click to change", [self currentWidthForTool:ScreenshotCanvasToolHighlighter]];
             case ScreenshotCanvasToolText:
-                return @"Text Color and Font — click to configure";
+                return @"Text color and font — click to change";
             default:
                 return @"Current tool has no color settings";
         }
@@ -1834,7 +1837,8 @@ static id STInfoValueForKey(NSString *key) {
     [statusBar addSubview:statusField];
     [self setupStatusControls];
 
-    self.statusBarVisiblePreference = YES;
+    // Off unless chosen: the toolbar's colour control sets colour and width (#54).
+    self.statusBarVisiblePreference = NO;
 
     [self.window setContentView:container];
     [self layoutContentSubviews];
@@ -3431,10 +3435,9 @@ static id STInfoValueForKey(NSString *key) {
     self.defaultSaveDirectory = savedDirectory;
     [self ensureDirectoryExistsAtPath:self.defaultSaveDirectory];
 
-    if ([defaults objectForKey:STDefaultsShowStatusBarKey] == nil) {
-        [defaults setBool:YES forKey:STDefaultsShowStatusBarKey];
-    }
-    self.statusBarVisiblePreference = [defaults boolForKey:STDefaultsShowStatusBarKey];
+    // Off unless the user turned it on; nothing is written until they choose (#54).
+    self.statusBarVisiblePreference = [defaults objectForKey:STDefaultsShowStatusBarKey] != nil
+        && [defaults boolForKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
 
     if (self.preferencesWindowController) {
@@ -4432,8 +4435,8 @@ static id STInfoValueForKey(NSString *key) {
     [[NSUserDefaults standardUserDefaults] setObject:fallbackDirectory forKey:STDefaultsSaveDirectoryKey];
     [self ensureDirectoryExistsAtPath:fallbackDirectory];
 
-    self.statusBarVisiblePreference = YES;
-    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:STDefaultsShowStatusBarKey];
+    self.statusBarVisiblePreference = NO;
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
 
     [self resetInterfaceThemePreferenceToDefault];
