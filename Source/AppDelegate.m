@@ -1126,6 +1126,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong, nullable) NSURL *currentProjectURL;
 /// The canvas's fingerprint when it was last opened or saved; a different one means unsaved changes.
 @property (nonatomic, strong, nullable) NSData *savedAnnotationFingerprint;
+/// The annotations as they were when closing the window settled them (saved or discarded), so the
+/// quit that can follow the close doesn't ask again.
+@property (nonatomic, strong) NSData *closeSettledAnnotationFingerprint;
 @property (nonatomic, strong) NSMutableArray<NSString *> *recentDocumentPaths;
 @property (nonatomic, strong) NSMenu *openRecentMenu;
 @property (nonatomic, strong) NSUndoManager *undoManager;
@@ -5964,11 +5967,19 @@ static id STInfoValueForKey(NSString *key) {
 
 - (BOOL)windowShouldClose:(id)sender {
     (void)sender;
-    return [self confirmProceedingWithUnsavedChanges];
+    BOOL proceed = [self confirmProceedingWithUnsavedChanges];
+    self.closeSettledAnnotationFingerprint = proceed ? [self.canvasView annotationFingerprint] : nil;
+    return proceed;
 }
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
     (void)sender;
+    // GNUstep quits when the last window closes under some menu styles (in-window menus); the
+    // close has just asked, so don't ask again about the same annotations.
+    NSData *settled = self.closeSettledAnnotationFingerprint;
+    if (settled && [settled isEqualToData:[self.canvasView annotationFingerprint]]) {
+        return NSTerminateNow;
+    }
     return [self confirmProceedingWithUnsavedChanges] ? NSTerminateNow : NSTerminateCancel;
 }
 
@@ -5990,7 +6001,7 @@ static id STInfoValueForKey(NSString *key) {
 - (STUnsavedChangesChoice)askAboutUnsavedChanges {
     NSAlert *alert = [[NSAlert alloc] init];
     alert.messageText = @"Save your annotations?";
-    alert.informativeText = @"Your changes will be lost if you don't save them. To keep annotations editable, use File ▸ Save Project…; Save… flattens them into an image.";
+    alert.informativeText = @"Your changes will be lost if you don't save them. To keep annotations editable, choose Save Project… in the File menu; Save… flattens them into an image.";
     [alert addButtonWithTitle:@"Save…"];
     [alert addButtonWithTitle:@"Don't Save"];
     [alert addButtonWithTitle:@"Cancel"];
