@@ -223,4 +223,14 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     XCTAssertTrue(sel_isEqual(find(@"Customize Toolbar…").action, @selector(runToolbarCustomizationPalette:)));
 }
 
+#pragma mark - Declared intent (#52)
+
+- (void)testInfoPlistDeclaresTheToolbarSuitsAHeaderBar {
+    // `make tests` runs from the repository root; the app ships this file as its Info-gnustep.plist.
+    NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:@"Resources/Info-gnustep.plist"];
+    XCTAssertNotNil(info, @"the plist parses");
+    XCTAssertTrue([info[@"GnomeThemeHeaderBarToolbar"] boolValue], @"the toolbar suits a header bar");
+    XCTAssertNil(info[@"GnomeThemeMenuStyle"], @"menu bar or primary menu is the user's theme setting, not the app's");
+}
+
 @end
