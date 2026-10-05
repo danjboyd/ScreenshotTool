@@ -44,6 +44,8 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
 @property (nonatomic, assign) NSRectEdge currentArrowEdge;
 @property (nonatomic, assign) NSPoint anchorCenterInScreen;
 @property (nonatomic, assign) NSInteger transientInteractionCount;
+/// The window the popover was shown from, which gets the keyboard back when it closes (#80).
+@property (nonatomic, weak) NSWindow *anchorWindow;
 @end
 
 @implementation STFloatingPopover
@@ -89,6 +91,10 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
     background.cornerRadius = kSTPopoverCornerRadius;
 
     window.contentView = background;
+    __weak STFloatingPopover *weakSelf = self;
+    window.cancelHandler = ^{
+        [weakSelf close];
+    };
     self.window = window;
     self.backgroundView = background;
 
@@ -262,6 +268,7 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
     }
 
     [self ensureWindow];
+    self.anchorWindow = view.window;
     self.effectiveScaleFactor = [[self class] currentScaleFactorForView:view];
     CGFloat gsScaleFactor = STReadGSScaleFactor();
     CGFloat anchorWindowScale = STUserSpaceScaleFactorForWindow(view.window);
@@ -398,7 +405,15 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
         return;
     }
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(handleDeferredFocusLoss) object:nil];
+    // Give the keyboard back if the popover had it (or nothing has it); not when the user has
+    // moved on to another window, which closes the popover too.
+    NSWindow *keyWindow = [NSApp keyWindow];
+    BOOL hadKeyboard = self.window.isVisible && (keyWindow == nil || keyWindow == self.window);
     [self.window orderOut:nil];
+    NSWindow *parent = self.anchorWindow;
+    if (hadKeyboard && parent.isVisible) {
+        [parent makeKeyWindow];
+    }
 }
 
 - (BOOL)isShown {

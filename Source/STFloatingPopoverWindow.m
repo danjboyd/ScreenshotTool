@@ -28,6 +28,22 @@
     return NO;
 }
 
+- (void)cancelOperation:(id)sender {
+    (void)sender;
+    if (self.cancelHandler) {
+        self.cancelHandler();
+    }
+}
+
+- (void)keyDown:(NSEvent *)event {
+    // Escape closes the popover, wherever the keyboard is inside it.
+    if ([event.charactersIgnoringModifiers isEqualToString:@"\033"] && self.cancelHandler) {
+        self.cancelHandler();
+        return;
+    }
+    [super keyDown:event];
+}
+
 - (void)resetCursorRects {
     [self.contentView discardCursorRects];
     NSView *contentView = self.contentView;
