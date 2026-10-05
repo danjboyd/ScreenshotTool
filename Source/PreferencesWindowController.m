@@ -476,7 +476,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 
     CGFloat rowLabelWidth = 138.0f;
     CGFloat valueWidth = 72.0f;
-    CGFloat controlHeight = 30.0f;
     CGFloat contentBottom = footerY + footerHeight + 20.0f;
 
     switch (self.currentSection) {

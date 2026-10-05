@@ -30,60 +30,42 @@ UPDATER_HELPER_DIR := $(UPDATER_ROOT)/gp-update-helper
 
 ScreenshotTool_RESOURCE_DIRS =
 ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
+	Resources/CopyImage-symbolic.png \
+	Resources/Highligher-symbolic.png \
+	Resources/PenTool-symbolic.png \
+	Resources/Arrow-symbolic.png \
+	Resources/Eraser-symbolic.png \
+	Resources/AddText-symbolic.png \
+	Resources/MarqueeTool-symbolic.png \
+	Resources/Preferences-symbolic.png \
 	Resources/CopyImage-light.png \
 	Resources/CopyImage-dark.png \
-	Resources/CopyImage-light-gnustep.png \
-	Resources/CopyImage-dark-gnustep.png \
 	Resources/Highligher.png \
 	Resources/Highligher-light.png \
 	Resources/Highligher-dark.png \
-	Resources/Highligher-light-gnustep.png \
-	Resources/Highligher-dark-gnustep.png \
 	Resources/HighligherChangeColor.png \
 	Resources/PenTool.png \
 	Resources/PenTool-light.png \
 	Resources/PenTool-dark.png \
-	Resources/PenTool-light-gnustep.png \
-	Resources/PenTool-dark-gnustep.png \
 	Resources/Arrow.png \
 	Resources/Arrow-light.png \
 	Resources/Arrow-dark.png \
-	Resources/Arrow-light-gnustep.png \
-	Resources/Arrow-dark-gnustep.png \
 	Resources/PenChangeColor.png \
 	Resources/Eraser.png \
 	Resources/Eraser-light.png \
 	Resources/Eraser-dark.png \
-	Resources/Eraser-light-gnustep.png \
-	Resources/Eraser-dark-gnustep.png \
 	Resources/AddText.png \
 	Resources/AddText-light.png \
 	Resources/AddText-dark.png \
-	Resources/AddText-light-gnustep.png \
-	Resources/AddText-dark-gnustep.png \
-	Resources/AddText-light-active-gnustep.png \
-	Resources/AddText-dark-active-gnustep.png \
 	Resources/MarqueeTool.png \
 	Resources/MarqueeTool-light.png \
 	Resources/MarqueeTool-dark.png \
-	Resources/MarqueeTool-light-gnustep.png \
-	Resources/MarqueeTool-dark-gnustep.png \
-	Resources/MarqueeTool-light-active-gnustep.png \
-	Resources/MarqueeTool-dark-active-gnustep.png \
 	Resources/Highligher-active.png \
-	Resources/Highligher-light-active-gnustep.png \
-	Resources/Highligher-dark-active-gnustep.png \
 	Resources/PenTool-active.png \
-	Resources/PenTool-light-active-gnustep.png \
-	Resources/PenTool-dark-active-gnustep.png \
 	Resources/Eraser-active.png \
-	Resources/Eraser-light-active-gnustep.png \
-	Resources/Eraser-dark-active-gnustep.png \
 	Resources/AddText-active.png \
 	Resources/MarqueeTool-active.png \
 	Resources/CopyImage-active.png \
-	Resources/CopyImage-light-active-gnustep.png \
-	Resources/CopyImage-dark-active-gnustep.png \
 	Resources/CopyImage.tiff \
 	Resources/ScreenshotToolIcon.png \
 	Resources/ScreenshotToolIcon.tiff \
@@ -100,11 +82,7 @@ ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
 	Resources/CopyImage-active.tiff \
 	Resources/Preferences.png \
 	Resources/Preferences-light.png \
-	Resources/Preferences-dark.png \
-	Resources/Preferences-light-gnustep.png \
-	Resources/Preferences-dark-gnustep.png \
-	Resources/Preferences-light-active-gnustep.png \
-	Resources/Preferences-dark-active-gnustep.png
+	Resources/Preferences-dark.png
 
 ScreenshotTool_RESOURCE_FILES += \
 	Resources/Cursors/pen-cursor@1x.png \

@@ -137,6 +137,8 @@
         NSImage *probeImage = [self imageFromToolbarView:container orItem:item];
         XCTAssertNotNil(probeImage, @"Toolbar item container missing image: %@", identifier);
         XCTAssertTrue(probeImage.representations.count > 0, @"Toolbar icon lacks bitmap data for %@", identifier);
+        // One monochrome set, named so the theme tints it like GTK's symbolic icons (#57).
+        XCTAssertTrue([probeImage.name hasSuffix:@"-symbolic"], @"%@ uses a symbolic icon, not %@", identifier, probeImage.name);
         
         NSTextField *labelField = nil;
         if ([container respondsToSelector:@selector(labelField)]) {

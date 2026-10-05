@@ -205,6 +205,19 @@ static BOOL STToolbarInTitleBarEnabled(void) {
 
 static NSString * const STProjectFileExtension = @"screenshottool";
 
+/// `stem`-symbolic: GNOME's name for a single-colour icon. Themes that tint template images
+/// (Adwaita) recognise it by the name, since GNUstep 0.32 has no -[NSImage setTemplate:] (#57).
+static NSString *STSymbolicIconName(NSString *stem) {
+    return [stem stringByAppendingString:@"-symbolic"];
+}
+
+/// Names a loaded symbolic icon after its file, which is how the theme knows to tint it.
+static void STMarkSymbolicIcon(NSImage *image, NSString *name) {
+    if (image && [name hasSuffix:@"-symbolic"] && ![[image name] isEqualToString:name]) {
+        [image setName:name];
+    }
+}
+
 typedef NS_ENUM(NSInteger, STUnsavedChangesChoice) {
     STUnsavedChangesChoiceSave = 0,
     STUnsavedChangesChoiceDiscard = 1,
@@ -1991,6 +2004,12 @@ static id STInfoValueForKey(NSString *key) {
     if (!stem) {
         return @[];
     }
+#if defined(GNUSTEP)
+    // One monochrome set the theme tints (#57): the selected tool shows as a pressed control,
+    // and light or dark is the theme's palette, so there are no active or dark variants.
+    (void)active;
+    return @[STSymbolicIconName(stem), stem];
+#endif
 
     NSMutableArray<NSString *> *ordered = [[NSMutableArray alloc] init];
     void (^appendUnique)(NSString *) = ^(NSString *candidate) {
@@ -2747,18 +2766,9 @@ static id STInfoValueForKey(NSString *key) {
 
     NSMutableArray<NSString *> *candidates = [[NSMutableArray alloc] init];
 #if defined(GNUSTEP)
-    if (self.usesDarkTheme) {
-        if (active) {
-            [candidates addObject:[name stringByAppendingString:@"-dark-active-gnustep"]];
-        }
-        [candidates addObject:[name stringByAppendingString:@"-dark-gnustep"]];
-    } else {
-        if (active) {
-            [candidates addObject:[name stringByAppendingString:@"-light-active-gnustep"]];
-        }
-        [candidates addObject:[name stringByAppendingString:@"-light-gnustep"]];
-    }
-#endif
+    // One monochrome set the theme tints (#57).
+    [candidates addObject:STSymbolicIconName(name)];
+#else
     if (self.usesDarkTheme) {
         if (active) {
             [candidates addObject:[name stringByAppendingString:@"-dark-active"]];
@@ -2770,6 +2780,7 @@ static id STInfoValueForKey(NSString *key) {
         }
         [candidates addObject:[name stringByAppendingString:@"-light"]];
     }
+#endif
     [candidates addObject:name];
 
     for (NSString *candidate in candidates) {
@@ -2791,6 +2802,7 @@ static id STInfoValueForKey(NSString *key) {
 #endif
         if (image) {
             [image setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
+            STMarkSymbolicIcon(image, candidate);
             baselineToolbarCache[candidate] = image;
             return image;
         }
@@ -2822,15 +2834,11 @@ static id STInfoValueForKey(NSString *key) {
     if (!baseIcon) {
         return nil;
     }
-    BOOL shouldApplyDarkFilter =
-#if defined(GNUSTEP)
-        NO;
-#else
-        (self.usesDarkTheme || STThemeIsDark());
-#endif
-    if (shouldApplyDarkFilter) {
+#if !defined(GNUSTEP)
+    if (self.usesDarkTheme || STThemeIsDark()) {
         baseIcon = [self darkThemeToolbarImageFromImage:baseIcon active:active];
     }
+#endif
     NSImage *rendered = [baseIcon copy];
     NSColor *badgeColor = [self badgeColorForToolbarIdentifier:identifier];
     if (badgeColor) {
@@ -2852,51 +2860,6 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 #if defined(GNUSTEP)
-- (NSImage *)darkThemeToolbarImageFromImage:(NSImage *)image active:(BOOL)active {
-    if (!image) {
-        return nil;
-    }
-    NSBitmapImageRep *sourceRep = nil;
-    for (NSImageRep *representation in image.representations) {
-        if (![representation isKindOfClass:[NSBitmapImageRep class]]) {
-            continue;
-        }
-        sourceRep = [(NSBitmapImageRep *)representation copy];
-        break;
-    }
-    if (!sourceRep) {
-        sourceRep = STBitmapRepresentationFromImage(image);
-    }
-    if (!sourceRep) {
-        return image;
-    }
-    [sourceRep setSize:image.size];
-    NSInteger width = sourceRep.pixelsWide;
-    NSInteger height = sourceRep.pixelsHigh;
-    if (width <= 0 || height <= 0) {
-        return image;
-    }
-    unsigned char *pixels = [sourceRep bitmapData];
-    NSInteger bytesPerRow = [sourceRep bytesPerRow];
-    unsigned char lightValue = active ? 255 : 220;
-    for (NSInteger y = 0; y < height; y++) {
-        for (NSInteger x = 0; x < width; x++) {
-            unsigned char *pixel = pixels + y * bytesPerRow + x * 4;
-            if (pixel[3] > 0) {
-                pixel[0] = lightValue;
-                pixel[1] = lightValue;
-                pixel[2] = lightValue;
-                if (!active) {
-                    pixel[3] = 200;
-                }
-            }
-        }
-    }
-    NSImage *result = [[NSImage alloc] initWithSize:NSMakeSize(width, height)];
-    [result addRepresentation:sourceRep];
-    return result;
-}
-
 - (NSImage *)bitmapBackedToolbarImageFromImage:(NSImage *)image {
     if (!image) {
         return nil;
@@ -5466,6 +5429,7 @@ static id STInfoValueForKey(NSString *key) {
                 icon = [base copy];
                 if (icon) {
                     [icon setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
+                    STMarkSymbolicIcon(icon, candidate);
                 }
 #else
                 icon = STRenderToolbarIcon(base);
