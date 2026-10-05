@@ -1690,7 +1690,8 @@ static id STInfoValueForKey(NSString *key) {
 
     NSMenuItem *fitToWindowItem = [[NSMenuItem alloc] initWithTitle:@"Fit to Window"
                                                             action:@selector(zoomFitToWindow:)
-                                                     keyEquivalent:@""];
+                                                     keyEquivalent:@"0"];
+    [fitToWindowItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
     [fitToWindowItem setTarget:self];
     [viewMenu addItem:fitToWindowItem];
 
@@ -1708,7 +1709,8 @@ static id STInfoValueForKey(NSString *key) {
 
     NSMenuItem *zoom100Item = [[NSMenuItem alloc] initWithTitle:@"100%"
                                                          action:@selector(zoomPreset100:)
-                                                  keyEquivalent:@""];
+                                                  keyEquivalent:@"1"];
+    [zoom100Item setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
     [zoom100Item setTarget:self];
     [viewMenu addItem:zoom100Item];
 
@@ -1733,6 +1735,13 @@ static id STInfoValueForKey(NSString *key) {
     [zoomOutItem setTarget:self];
     [zoomOutItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
     [viewMenu addItem:zoomOutItem];
+
+    // Zoom and Preferences can go back in the toolbar from here (#53).
+    [viewMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *customizeToolbarItem = [[NSMenuItem alloc] initWithTitle:@"Customize Toolbar…"
+                                                                  action:@selector(runToolbarCustomizationPalette:)
+                                                           keyEquivalent:@""];
+    [viewMenu addItem:customizeToolbarItem];
 
     NSMenuItem *viewMenuItem = [[NSMenuItem alloc] initWithTitle:@"View" action:NULL keyEquivalent:@""];
     [viewMenuItem setSubmenu:viewMenu];
@@ -1860,8 +1869,8 @@ static id STInfoValueForKey(NSString *key) {
     }
     self.toolbar = [[NSToolbar alloc] initWithIdentifier:ToolbarIdentifier];
     self.toolbar.delegate = self;
-    self.toolbar.allowsUserCustomization = NO;
-    self.toolbar.autosavesConfiguration = NO;
+    self.toolbar.allowsUserCustomization = YES;
+    self.toolbar.autosavesConfiguration = YES;
     self.toolbar.sizeMode = NSToolbarSizeModeRegular;
 #if defined(GNUSTEP)
     // Items have no labels on GNUstep, and libs-gui reserves label space in icon-and-label mode,
@@ -2152,12 +2161,12 @@ static id STInfoValueForKey(NSString *key) {
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
 #if defined(GNUSTEP)
     (void)toolbar;
+    // Zoom and Preferences live in the View and app menus (with shortcuts) and can be added back
+    // by customising the toolbar (#53).
     return @[ToolbarItemTools,
              ToolbarItemColor,
              NSToolbarFlexibleSpaceItemIdentifier,
-             ToolbarItemCopy,
-             ToolbarItemPreferences,
-             ToolbarItemZoom];
+             ToolbarItemCopy];
 #else
     return @[ToolbarItemSelect,
              ToolbarItemHighlighter,
@@ -2165,11 +2174,8 @@ static id STInfoValueForKey(NSString *key) {
              ToolbarItemArrow,
              ToolbarItemText,
              ToolbarItemEraser,
-             ToolbarItemCopy,
-             ToolbarItemPreferences,
              NSToolbarFlexibleSpaceItemIdentifier,
-             ToolbarItemZoom,
-             NSToolbarSpaceItemIdentifier];
+             ToolbarItemCopy];
 #endif
 }
 
