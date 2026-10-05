@@ -98,6 +98,15 @@ Most tests need a window server. Without a desktop session (as in CI), run them
 under a virtual display with `xvfb-run -a Tools/run_tests.sh`; the script fails
 if tests had to skip for lack of a display.
 
+### Screenshots
+
+`Tools/screenshots.sh` captures the main screens (empty window, Preferences,
+an image, the text bar, the tool popover) under GNUstep's default theme and
+Adwaita on a private virtual display, into `screenshots/`. It needs Xvfb,
+xdotool, x11-utils and ImageMagick, plus GNOME Shell or Openbox for window
+decorations. Your GNUstep defaults are left untouched. CI uploads the images
+as the `screenshots` artifact.
+
 ## Usage Tips
 - Double-click toolbar buttons to open tool popovers.
 - Use Preferences for persistent defaults such as toolbar theme, default save folder, and status bar visibility.
