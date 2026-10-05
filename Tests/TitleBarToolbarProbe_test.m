@@ -22,32 +22,19 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 - (NSWindow *)window;
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller;
 - (void)setupMenus;
-- (BOOL)preferencesControllerShowsToolbarInTitleBar:(PreferencesWindowController *)controller;
+- (void)loadToolSettingsFromDefaults;
 @end
 
 @interface PreferencesWindowController (TitleBarToolbarTesting)
-@property (nonatomic, strong) NSSwitch *titleBarToolbarSwitch;
 @property (nonatomic, strong) NSSwitch *statusBarSwitch;
-@property (nonatomic, strong) NSTextField *titleBarToolbarNoteLabel;
 @property (nonatomic, strong) NSWindow *window;
 - (void)layoutContentView;
 @end
 
-/// Stands in for the theme: whether Adwaita is active and draws the title bar.
 @interface STThemeStubAppDelegate : AppDelegate
-@property (nonatomic, assign) BOOL stubAdwaita;
-@property (nonatomic, assign) BOOL stubHeaderBar;
 @end
 
 @implementation STThemeStubAppDelegate
-- (BOOL)preferencesControllerOffersToolbarInTitleBar:(PreferencesWindowController *)controller {
-    (void)controller;
-    return self.stubAdwaita;
-}
-- (BOOL)preferencesControllerCanShowToolbarInTitleBar:(PreferencesWindowController *)controller {
-    (void)controller;
-    return self.stubAdwaita && self.stubHeaderBar;
-}
 @end
 
 @interface TitleBarToolbarProbeTests : XCTestCase {
@@ -92,12 +79,6 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     [super tearDown];
 }
 
-/// What a click on a switch does: flip it and send its action.
-- (void)toggle:(NSSwitch *)control {
-    [control setState:(control.state == NSControlStateValueOn) ? NSControlStateValueOff : NSControlStateValueOn];
-    [NSApp sendAction:control.action to:control.target from:control];
-}
-
 - (PreferencesWindowController *)preferences {
     _preferences = [[PreferencesWindowController alloc] initWithDelegate:_appDelegate];
     [_preferences refresh];
@@ -106,69 +87,6 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 }
 
 #pragma mark - Preference
-
-- (void)testNotOfferedWithoutAdwaita {
-    XCTSkipIf(_shouldSkip, @"No window server");
-    _appDelegate.stubAdwaita = NO;
-    PreferencesWindowController *controller = [self preferences];
-    XCTAssertTrue(controller.titleBarToolbarSwitch.isHidden);
-    XCTAssertTrue(controller.titleBarToolbarNoteLabel.isHidden);
-}
-
-- (void)testOfferedAndEnabledWithTheHeaderBar {
-    XCTSkipIf(_shouldSkip, @"No window server");
-    _appDelegate.stubAdwaita = YES;
-    _appDelegate.stubHeaderBar = YES;
-    PreferencesWindowController *controller = [self preferences];
-    XCTAssertFalse(controller.titleBarToolbarSwitch.isHidden);
-    XCTAssertTrue(controller.titleBarToolbarSwitch.isEnabled);
-    XCTAssertEqual(controller.titleBarToolbarSwitch.state, NSControlStateValueOff, @"off unless chosen");
-    XCTAssertTrue([controller.titleBarToolbarNoteLabel.stringValue hasPrefix:@"Puts the tools"]);
-    XCTAssertGreaterThan(NSWidth(controller.titleBarToolbarSwitch.frame), 20.0);
-}
-
-- (void)testDisabledWithExplanationWithoutTheHeaderBar {
-    XCTSkipIf(_shouldSkip, @"No window server");
-    _appDelegate.stubAdwaita = YES;
-    _appDelegate.stubHeaderBar = NO;
-    PreferencesWindowController *controller = [self preferences];
-    XCTAssertFalse(controller.titleBarToolbarSwitch.isHidden);
-    XCTAssertFalse(controller.titleBarToolbarSwitch.isEnabled);
-    XCTAssertTrue([controller.titleBarToolbarNoteLabel.stringValue containsString:@"GSX11HandlesWindowDecorations"]);
-}
-
-- (void)testToggleWritesTheThemeDefaultAndKeepsTheWindowFrame {
-    XCTSkipIf(_shouldSkip, @"No window server");
-    _appDelegate.stubAdwaita = YES;
-    _appDelegate.stubHeaderBar = YES;
-    PreferencesWindowController *controller = [self preferences];
-    NSToolbar *toolbar = _appDelegate.window.toolbar;
-    XCTAssertNotNil(toolbar);
-    NSRect frame = _appDelegate.window.frame;
-
-    [self toggle:controller.titleBarToolbarSwitch];
-    XCTAssertTrue([[NSUserDefaults standardUserDefaults] boolForKey:STHeaderBarToolbarKey]);
-    XCTAssertTrue([_appDelegate preferencesControllerShowsToolbarInTitleBar:controller]);
-    XCTAssertEqual(_appDelegate.window.toolbar, toolbar, @"the same toolbar is attached again");
-    NSRect after = _appDelegate.window.frame;
-    // Within a point: the backend puts the window on whole pixels.
-    XCTAssertEqualWithAccuracy(NSMinX(after), NSMinX(frame), 1.0, @"the window keeps its frame");
-    XCTAssertEqualWithAccuracy(NSMinY(after), NSMinY(frame), 1.0, @"the window keeps its frame");
-    XCTAssertEqualWithAccuracy(NSWidth(after), NSWidth(frame), 1.0, @"the window keeps its frame");
-    XCTAssertEqualWithAccuracy(NSHeight(after), NSHeight(frame), 1.0, @"the window keeps its frame");
-
-    [self toggle:controller.titleBarToolbarSwitch];
-    XCTAssertNotNil([[NSUserDefaults standardUserDefaults] objectForKey:STHeaderBarToolbarKey]);
-    XCTAssertFalse([[NSUserDefaults standardUserDefaults] boolForKey:STHeaderBarToolbarKey],
-                   @"off is written, so it overrides a global YES");
-}
-
-- (void)testRestoreDefaultsClearsTheChoice {
-    XCTSkipIf(_shouldSkip, @"No window server");
-    [[NSUserDefaults standardUserDefaults] setBool:YES forKey:STHeaderBarToolbarKey];
-    [_appDelegate preferencesControllerRestoreDefaults:nil];
-    XCTAssertNil([[NSUserDefaults standardUserDefaults] objectForKey:STHeaderBarToolbarKey]);
-}
 
 #pragma mark - Standard controls (#57)
 
@@ -245,11 +163,8 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 
 - (void)testPreferencesUseStandardControls {
     XCTSkipIf(_shouldSkip, @"No window server");
-    _appDelegate.stubAdwaita = YES;
-    _appDelegate.stubHeaderBar = YES;
     PreferencesWindowController *controller = [self preferences];
     XCTAssertTrue([controller.statusBarSwitch isKindOfClass:[NSSwitch class]], @"on/off settings are switches");
-    XCTAssertTrue([controller.titleBarToolbarSwitch isKindOfClass:[NSSwitch class]]);
     XCTAssertFalse([controller respondsToSelector:@selector(closeButton)], @"changes apply at once: no Close button");
     XCTAssertFalse([controller respondsToSelector:@selector(interfaceThemePopUp)], @"light or dark is the theme's choice");
     // The page draws nothing of its own, so each theme draws the window its way.
@@ -257,6 +172,30 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     XCTAssertNotNil(pageView);
     XCTAssertEqual(class_getMethodImplementation(pageView, @selector(drawRect:)),
                    class_getMethodImplementation([NSView class], @selector(drawRect:)));
+}
+
+#pragma mark - The theme's setting (#58)
+
+- (void)testTitleBarToolbarIsTheThemesSetting {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    PreferencesWindowController *controller = [self preferences];
+    XCTAssertFalse([controller respondsToSelector:@selector(titleBarToolbarSwitch)], @"the theme offers it for all apps");
+    XCTAssertFalse([_appDelegate respondsToSelector:@selector(preferencesControllerOffersToolbarInTitleBar:)]);
+}
+
+- (void)testOldCheckboxValueIsClearedOnce {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults removeObjectForKey:@"ScreenshotToolClearedHeaderBarToolbar"];
+    [defaults setBool:NO forKey:STHeaderBarToolbarKey];  // what the old checkbox saved
+    [_appDelegate loadToolSettingsFromDefaults];
+    XCTAssertNil([defaults objectForKey:STHeaderBarToolbarKey], @"so the theme-level choice applies");
+    XCTAssertTrue([defaults boolForKey:@"ScreenshotToolClearedHeaderBarToolbar"]);
+
+    [defaults setBool:NO forKey:STHeaderBarToolbarKey];  // set by the user afterwards, for this app
+    [_appDelegate loadToolSettingsFromDefaults];
+    XCTAssertNotNil([defaults objectForKey:STHeaderBarToolbarKey], @"only cleared once");
+    [defaults removeObjectForKey:@"ScreenshotToolClearedHeaderBarToolbar"];
 }
 
 @end
