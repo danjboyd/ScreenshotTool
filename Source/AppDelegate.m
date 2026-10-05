@@ -6097,7 +6097,18 @@ static id STInfoValueForKey(NSString *key) {
 - (void)windowDidBecomeKey:(NSNotification *)notification {
     if (notification.object == self.window) {
         [self refreshPasteAvailability];
+        [self giveCanvasTheKeyboardUnlessEditing];
     }
+}
+
+/// Tool shortcuts are the canvas's, so it takes the keyboard back from the window or a toolbar
+/// control (after a popover closes, say), but never from text being edited (#80).
+- (void)giveCanvasTheKeyboardUnlessEditing {
+    NSResponder *responder = self.window.firstResponder;
+    if (responder == self.canvasView || [responder isKindOfClass:[NSText class]] || ![self.canvasView hasImage]) {
+        return;
+    }
+    [self.window makeFirstResponder:self.canvasView];
 }
 
 - (void)windowDidResize:(NSNotification *)notification {

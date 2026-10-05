@@ -6,6 +6,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (instancetype)initWithContentSize:(NSSize)size;
 
+/// Run when Escape is pressed in the popover.
+@property (nonatomic, copy, nullable) void (^cancelHandler)(void);
+
 @end
 
 NS_ASSUME_NONNULL_END
