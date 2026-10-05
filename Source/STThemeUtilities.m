@@ -1,36 +1,6 @@
 #import "STThemeUtilities.h"
 #import "ScreenshotToolSettings.h"
 
-static NSColor *STRGB(CGFloat red, CGFloat green, CGFloat blue, CGFloat alpha) {
-    return [NSColor colorWithDeviceRed:(red / 255.0f)
-                                 green:(green / 255.0f)
-                                  blue:(blue / 255.0f)
-                                 alpha:alpha];
-}
-
-static NSColor *STDeviceColor(NSColor *color, NSColor *fallback) {
-    NSColor *resolved = [color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
-    if (resolved) {
-        return resolved;
-    }
-    return fallback ?: color;
-}
-
-static NSColor *STBlendColors(NSColor *fromColor, NSColor *toColor, CGFloat fraction) {
-    NSColor *from = STDeviceColor(fromColor, STRGB(255.0f, 255.0f, 255.0f, 1.0f));
-    NSColor *to = STDeviceColor(toColor, STRGB(0.0f, 0.0f, 0.0f, 1.0f));
-    CGFloat startRed = 0.0f, startGreen = 0.0f, startBlue = 0.0f, startAlpha = 1.0f;
-    CGFloat endRed = 0.0f, endGreen = 0.0f, endBlue = 0.0f, endAlpha = 1.0f;
-    [from getRed:&startRed green:&startGreen blue:&startBlue alpha:&startAlpha];
-    [to getRed:&endRed green:&endGreen blue:&endBlue alpha:&endAlpha];
-
-    CGFloat clamped = MAX(0.0f, MIN(1.0f, fraction));
-    return [NSColor colorWithDeviceRed:(startRed + ((endRed - startRed) * clamped))
-                                 green:(startGreen + ((endGreen - startGreen) * clamped))
-                                  blue:(startBlue + ((endBlue - startBlue) * clamped))
-                                 alpha:(startAlpha + ((endAlpha - startAlpha) * clamped))];
-}
-
 static NSString *STCurrentThemeName(void) {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     NSString *direct = [defaults stringForKey:@"GSTheme"];
@@ -51,41 +21,6 @@ static BOOL STThemeNameIndicatesDark(NSString *theme) {
             [lower containsString:@"black"] ||
             [lower containsString:@"night"] ||
             [lower containsString:@"sombre"]);
-}
-
-static NSColor *STFallbackWindowBackgroundColor(BOOL darkTheme) {
-    return darkTheme ? STRGB(36.0f, 36.0f, 36.0f, 1.0f)
-                     : STRGB(246.0f, 245.0f, 244.0f, 1.0f);
-}
-
-static NSColor *STFallbackCardBackgroundColor(BOOL darkTheme) {
-    return darkTheme ? STRGB(48.0f, 48.0f, 48.0f, 1.0f)
-                     : STRGB(255.0f, 255.0f, 255.0f, 1.0f);
-}
-
-static NSColor *STFallbackInsetBackgroundColor(BOOL darkTheme) {
-    return darkTheme ? STRGB(42.0f, 42.0f, 45.0f, 1.0f)
-                     : STRGB(235.0f, 233.0f, 230.0f, 1.0f);
-}
-
-static NSColor *STFallbackHairlineColor(BOOL darkTheme) {
-    return darkTheme ? STRGB(78.0f, 78.0f, 82.0f, 1.0f)
-                     : STRGB(210.0f, 206.0f, 201.0f, 1.0f);
-}
-
-static NSColor *STFallbackPrimaryTextColor(BOOL darkTheme) {
-    return darkTheme ? STRGB(249.0f, 240.0f, 248.0f, 1.0f)
-                     : STRGB(36.0f, 31.0f, 49.0f, 1.0f);
-}
-
-static NSColor *STFallbackSecondaryTextColor(BOOL darkTheme) {
-    return darkTheme ? STRGB(192.0f, 191.0f, 188.0f, 1.0f)
-                     : STRGB(94.0f, 92.0f, 100.0f, 1.0f);
-}
-
-static NSColor *STFallbackAccentColor(BOOL darkTheme) {
-    return darkTheme ? STRGB(120.0f, 174.0f, 237.0f, 1.0f)
-                     : STRGB(53.0f, 132.0f, 228.0f, 1.0f);
 }
 
 static NSString *STNormalizedInterfaceThemePreference(void) {
@@ -125,101 +60,79 @@ BOOL STThemeIsDark(void) {
     return STDefaultInterfaceThemeIsDark();
 }
 
+// Every colour below is a system colour the active theme defines, so each theme gives the app
+// its own look (#57). No blends, fixed palettes or accent of the app's own.
+
+/// `color`, or `fallback` for a theme that doesn't define it.
+static NSColor *STSystemColor(NSColor *color, NSColor *fallback) {
+    return color ?: fallback;
+}
+
 NSColor *STThemeWindowBackgroundColor(void) {
-    return STDeviceColor([NSColor windowBackgroundColor], STFallbackWindowBackgroundColor(STThemeIsDark()));
+    return STSystemColor([NSColor windowBackgroundColor], [NSColor lightGrayColor]);
 }
 
 NSColor *STThemeCardBackgroundColor(void) {
-    BOOL darkTheme = STThemeIsDark();
-    NSColor *fallback = STFallbackCardBackgroundColor(darkTheme);
-    NSColor *control = STDeviceColor([NSColor controlBackgroundColor], fallback);
-    if (!control) {
-        return fallback;
-    }
-    return control;
+    return STSystemColor([NSColor controlBackgroundColor], STThemeWindowBackgroundColor());
 }
 
 NSColor *STThemeInsetBackgroundColor(void) {
-    BOOL darkTheme = STThemeIsDark();
-    NSColor *fallback = STFallbackInsetBackgroundColor(darkTheme);
-    NSColor *textBackground = STDeviceColor([NSColor textBackgroundColor], fallback);
-    if (textBackground) {
-        return STBlendColors(textBackground,
-                             darkTheme ? STRGB(255.0f, 255.0f, 255.0f, 1.0f) : STRGB(255.0f, 255.0f, 255.0f, 1.0f),
-                             darkTheme ? 0.04f : 0.18f);
-    }
-    return fallback;
+    return STSystemColor([NSColor textBackgroundColor], STThemeCardBackgroundColor());
 }
 
 NSColor *STThemeHairlineColor(void) {
-    BOOL darkTheme = STThemeIsDark();
-    NSColor *fallback = STFallbackHairlineColor(darkTheme);
-    NSColor *blend = STBlendColors(STThemeCardBackgroundColor(),
-                                   darkTheme ? STRGB(255.0f, 255.0f, 255.0f, 1.0f) : STRGB(0.0f, 0.0f, 0.0f, 1.0f),
-                                   darkTheme ? 0.18f : 0.12f);
-    return blend ?: fallback;
+    return STSystemColor([NSColor controlShadowColor], [NSColor grayColor]);
 }
 
 NSColor *STThemePrimaryTextColor(void) {
-    NSColor *label = STDeviceColor([NSColor labelColor], nil);
-    return label ?: STFallbackPrimaryTextColor(STThemeIsDark());
+    return STSystemColor([NSColor labelColor], [NSColor controlTextColor]);
 }
 
 NSColor *STThemeSecondaryTextColor(void) {
-    NSColor *secondary = STDeviceColor([NSColor secondaryLabelColor], nil);
-    return secondary ?: STFallbackSecondaryTextColor(STThemeIsDark());
+    return STSystemColor([NSColor secondaryLabelColor], [NSColor disabledControlTextColor]);
 }
 
 NSColor *STThemeAccentColor(void) {
-    return STFallbackAccentColor(STThemeIsDark());
+    return STSystemColor([NSColor keyboardFocusIndicatorColor], [NSColor selectedControlColor]);
 }
 
 NSColor *STThemeLinkColor(void) {
-    return STBlendColors(STThemeAccentColor(),
-                         STThemeIsDark() ? STRGB(255.0f, 255.0f, 255.0f, 1.0f) : STRGB(24.0f, 24.0f, 24.0f, 1.0f),
-                         STThemeIsDark() ? 0.12f : 0.06f);
+    return STThemeAccentColor();
 }
 
 NSColor *STThemeSectionHeaderColor(void) {
-    return STBlendColors(STThemeAccentColor(), STThemePrimaryTextColor(), STThemeIsDark() ? 0.24f : 0.18f);
+    // Section titles are set apart by a bold font, as in the system's own panels.
+    return STThemePrimaryTextColor();
 }
 
 NSColor *STThemeCanvasBackgroundColor(void) {
-    return STBlendColors(STThemeWindowBackgroundColor(),
-                         STThemeCardBackgroundColor(),
-                         STThemeIsDark() ? 0.18f : 0.38f);
+    return STThemeCardBackgroundColor();
 }
 
 NSColor *STThemeCanvasBackdropColor(void) {
-    // Darker than the window in both schemes so white and near-black screenshots both stand out.
-    return STBlendColors(STThemeWindowBackgroundColor(),
-                         STRGB(0.0f, 0.0f, 0.0f, 1.0f),
-                         STThemeIsDark() ? 0.35f : 0.10f);
+    return STThemeWindowBackgroundColor();
 }
 
 NSColor *STThemeCanvasImageBorderColor(void) {
-    return STThemeIsDark() ? STRGB(255.0f, 255.0f, 255.0f, 0.16f)
-                           : STRGB(0.0f, 0.0f, 0.0f, 0.18f);
+    return STThemeHairlineColor();
 }
 
 NSColor *STThemeStatusBarBackgroundColorForTheme(BOOL darkTheme) {
-    NSColor *windowColor = STThemeWindowBackgroundColor();
-    NSColor *cardColor = STThemeCardBackgroundColor();
-    return STBlendColors(windowColor, cardColor, darkTheme ? 0.56f : 0.72f);
+    (void)darkTheme;
+    return STThemeWindowBackgroundColor();
 }
 
 NSColor *STThemeStatusBarBackgroundColor(void) {
-    return STThemeStatusBarBackgroundColorForTheme(STThemeIsDark());
+    return STThemeWindowBackgroundColor();
 }
 
 NSColor *STThemeStatusBarBorderColorForTheme(BOOL darkTheme) {
-    return STBlendColors(STThemeStatusBarBackgroundColorForTheme(darkTheme),
-                         darkTheme ? STRGB(255.0f, 255.0f, 255.0f, 1.0f) : STRGB(0.0f, 0.0f, 0.0f, 1.0f),
-                         darkTheme ? 0.16f : 0.10f);
+    (void)darkTheme;
+    return STThemeHairlineColor();
 }
 
 NSColor *STThemeStatusBarBorderColor(void) {
-    return STThemeStatusBarBorderColorForTheme(STThemeIsDark());
+    return STThemeHairlineColor();
 }
 
 NSColor *STThemeStatusPrimaryTextColor(void) {
@@ -231,61 +144,39 @@ NSColor *STThemeStatusValueTextColor(void) {
 }
 
 NSColor *STThemeStatusValueBackgroundColor(void) {
-    return STBlendColors(STThemeCardBackgroundColor(),
-                         STThemeWindowBackgroundColor(),
-                         STThemeIsDark() ? 0.35f : 0.18f);
+    return STThemeInsetBackgroundColor();
 }
 
 NSColor *STThemePopoverBackgroundColor(void) {
-    return STBlendColors(STThemeCardBackgroundColor(),
-                         STThemeWindowBackgroundColor(),
-                         STThemeIsDark() ? 0.20f : 0.08f);
+    return STThemeWindowBackgroundColor();
 }
 
 NSColor *STThemePopoverBorderColor(void) {
-    return STBlendColors(STThemePopoverBackgroundColor(),
-                         STThemeIsDark() ? STRGB(255.0f, 255.0f, 255.0f, 1.0f) : STRGB(0.0f, 0.0f, 0.0f, 1.0f),
-                         STThemeIsDark() ? 0.22f : 0.12f);
+    return STThemeHairlineColor();
 }
 
+/// Transient notices ("Copied image to clipboard") use the tool tip colours, which each theme
+/// styles: a dark pill with Adwaita, GNUstep's own tool tip colours otherwise.
 NSColor *STThemeHUDBackgroundColor(void) {
-    NSColor *base = STBlendColors(STThemeAccentColor(),
-                                  STThemeIsDark() ? STRGB(24.0f, 28.0f, 34.0f, 1.0f) : STRGB(30.0f, 34.0f, 40.0f, 1.0f),
-                                  STThemeIsDark() ? 0.18f : 0.12f);
-    return [base colorWithAlphaComponent:(STThemeIsDark() ? 0.90f : 0.88f)];
+    return STSystemColor([NSColor toolTipColor], STThemeCardBackgroundColor());
 }
 
 NSColor *STThemeHUDTextColor(void) {
-    return STThemeIsDark() ? STRGB(249.0f, 240.0f, 248.0f, 1.0f)
-                           : STRGB(255.0f, 255.0f, 255.0f, 1.0f);
+    return STSystemColor([NSColor toolTipTextColor], STThemePrimaryTextColor());
 }
 
 NSColor *STThemeToolbarBackgroundColor(BOOL active) {
-    if (active) {
-        return STBlendColors(STThemeAccentColor(),
-                             STThemeCardBackgroundColor(),
-                             STThemeIsDark() ? 0.30f : 0.14f);
-    }
-    return STBlendColors(STThemeCardBackgroundColor(),
-                         STThemeWindowBackgroundColor(),
-                         STThemeIsDark() ? 0.26f : 0.10f);
+    return active ? STSystemColor([NSColor selectedControlColor], STThemeCardBackgroundColor())
+                  : STThemeCardBackgroundColor();
 }
 
 NSColor *STThemeToolbarBorderColor(BOOL active) {
-    if (active) {
-        return STBlendColors(STThemeToolbarBackgroundColor(YES),
-                             STThemeAccentColor(),
-                             STThemeIsDark() ? 0.38f : 0.50f);
-    }
-    return STBlendColors(STThemeToolbarBackgroundColor(NO),
-                         STThemeIsDark() ? STRGB(255.0f, 255.0f, 255.0f, 1.0f) : STRGB(0.0f, 0.0f, 0.0f, 1.0f),
-                         STThemeIsDark() ? 0.16f : 0.10f);
+    (void)active;
+    return STThemeHairlineColor();
 }
 
 CGFloat STThemeToolbarIconFraction(BOOL active) {
-    if (STThemeIsDark()) {
-        return active ? 1.0f : 0.85f;
-    }
+    (void)active;
     return 1.0f;
 }
 

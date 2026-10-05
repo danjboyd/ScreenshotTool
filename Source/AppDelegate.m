@@ -73,9 +73,6 @@ static const CGFloat STToolbarToolControlHeight = 32.0f;
 static const CGFloat STToolbarToolIconSize = 22.0f;
 static const CGFloat STToolbarColorControlWidth = 40.0f;
 static const CGFloat STToolbarColorControlHeight = 32.0f;
-static const CGFloat STToolbarUtilityButtonWidth = 40.0f;
-static const CGFloat STToolbarUtilityButtonHeight = 32.0f;
-static const CGFloat STToolbarUtilityIconSize = 20.0f;
 static const CGFloat STToolbarZoomControlHeight = 32.0f;
 static const CGFloat STToolbarZoomFontSize = 18.0f;
 static const CGFloat STToolbarZoomChevronWidth = 9.0f;
@@ -621,112 +618,17 @@ static NSString *STPathForToolbarResource(NSString *filename, NSString *extensio
 
 @end
 
-@interface STToolbarGlyphView : NSView
-@property (nonatomic, strong) NSImage *displayImage;
-@property (nonatomic, weak) id target;
-@property (nonatomic, assign) SEL action;
-@property (nonatomic, assign, getter=isActive) BOOL active;
-- (void)setImage:(NSImage *)image;
+
+
+/// The active tool's colour as a standard colour well, drawn by the theme (#57). A click opens the
+/// app's tool settings (its action) rather than the system colour panel.
+@interface STToolbarColorWellView : NSColorWell
 @end
 
-@implementation STToolbarGlyphView
-
-- (BOOL)isOpaque {
-    return NO;
-}
-
-- (NSImage *)displayedImage {
-    return self.displayImage;
-}
-
-- (NSImage *)image {
-    return self.displayImage;
-}
-
-- (void)setImage:(NSImage *)image {
-    self.displayImage = image;
-    [self setNeedsDisplay:YES];
-}
-
-- (void)setActive:(BOOL)active {
-    if (_active == active) {
-        return;
-    }
-    _active = active;
-    [self setNeedsDisplay:YES];
-}
-
-- (void)drawRect:(NSRect)dirtyRect {
-    (void)dirtyRect;
-    if (!self.displayImage) {
-        return;
-    }
-    NSSize iconSize = self.displayImage.size;
-    if (iconSize.width <= 0.0f || iconSize.height <= 0.0f) {
-        iconSize = NSMakeSize(ToolbarIconDimension, ToolbarIconDimension);
-    }
-    NSRect bounds = self.bounds;
-    NSRect iconRect = NSMakeRect(floor((bounds.size.width - iconSize.width) * 0.5f),
-                                 floor((bounds.size.height - iconSize.height) * 0.5f),
-                                 iconSize.width,
-                                 iconSize.height);
-    if (self.active) {
-        CGFloat chipWidth = MIN(MAX(bounds.size.width - 8.0f, 22.0f), 26.0f);
-        CGFloat chipHeight = MIN(MAX(bounds.size.height - 6.0f, 16.0f), 18.0f);
-        NSRect chipRect = NSMakeRect(floor((bounds.size.width - chipWidth) * 0.5f),
-                                     floor((bounds.size.height - chipHeight) * 0.5f) + 0.5f,
-                                     chipWidth,
-                                     chipHeight);
-        NSBezierPath *chipPath = [NSBezierPath bezierPathWithRoundedRect:chipRect xRadius:6.0f yRadius:6.0f];
-        [[STThemeToolbarBackgroundColor(YES) colorWithAlphaComponent:0.98f] setFill];
-        [chipPath fill];
-        [[STThemeToolbarBorderColor(YES) colorWithAlphaComponent:0.75f] setStroke];
-        [chipPath setLineWidth:1.0f];
-        [chipPath stroke];
-    }
-    [self.displayImage drawInRect:iconRect
-                         fromRect:NSZeroRect
-                        operation:NSCompositeSourceOver
-                         fraction:1.0f
-                   respectFlipped:YES
-                            hints:nil];
-}
-
-/// Claims the press so it reaches mouseUp: here. Unclaimed, it goes up the responder chain; in
-/// the Adwaita theme's header bar that starts a window drag, which swallows the release.
-- (void)mouseDown:(NSEvent *)event {
-    (void)event;
-}
-
-- (void)mouseUp:(NSEvent *)event {
-    (void)event;
-    if (self.target && self.action) {
-        [NSApp sendAction:self.action to:self.target from:self];
-    }
-}
-
+/// The zoom level as a standard button that opens the zoom popover, drawn by the theme (#57).
+@interface STToolbarZoomButtonView : NSButton
 @end
 
-@interface STToolbarColorWellView : NSView
-@property (nonatomic, strong) NSColor *color;
-@property (nonatomic, weak) id target;
-@property (nonatomic, assign) SEL action;
-@property (nonatomic, assign, getter=isEnabled) BOOL enabled;
-@end
-
-@interface STToolbarZoomButtonView : NSView
-@property (nonatomic, copy) NSString *title;
-@property (nonatomic, weak) id target;
-@property (nonatomic, assign) SEL action;
-@property (nonatomic, assign, getter=isEnabled) BOOL enabled;
-@end
-
-@interface STToolbarUtilityButtonView : NSView
-@property (nonatomic, strong) NSImage *image;
-@property (nonatomic, weak) id target;
-@property (nonatomic, assign) SEL action;
-@property (nonatomic, assign, getter=isEnabled) BOOL enabled;
-@end
 
 #if defined(GNUSTEP)
 static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin) {
@@ -740,10 +642,6 @@ static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin)
 #endif
 
 @implementation STToolbarColorWellView
-
-- (BOOL)isOpaque {
-    return NO;
-}
 
 - (void)viewDidMoveToSuperview {
     [super viewDidMoveToSuperview];
@@ -762,79 +660,54 @@ static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin)
 }
 
 - (void)setColor:(NSColor *)color {
-    _color = color;
-    [self setNeedsDisplay:YES];
+    // No colour (a tool without one): the well shows the window's background, and is disabled.
+    [super setColor:color ?: [NSColor windowBackgroundColor]];
 }
 
-- (void)setEnabled:(BOOL)enabled {
-    if (_enabled == enabled) {
-        return;
-    }
-    _enabled = enabled;
-    [self setNeedsDisplay:YES];
-}
-
-- (void)drawRect:(NSRect)dirtyRect {
-    (void)dirtyRect;
-    NSRect bounds = self.bounds;
-    CGFloat plateWidth = MIN(30.0f, MAX(20.0f, bounds.size.width - 10.0f));
-    CGFloat plateHeight = MIN(24.0f, MAX(18.0f, bounds.size.height - 8.0f));
-    NSRect plateRect = NSMakeRect(floor((bounds.size.width - plateWidth) * 0.5f),
-                                  floor((bounds.size.height - plateHeight) * 0.5f),
-                                  plateWidth,
-                                  plateHeight);
-    CGFloat plateRadius = MIN(7.0f, floor(plateHeight * 0.5f));
-    NSBezierPath *platePath = [NSBezierPath bezierPathWithRoundedRect:plateRect xRadius:plateRadius yRadius:plateRadius];
-    NSColor *plateFill = self.enabled
-        ? [STThemeToolbarBackgroundColor(NO) colorWithAlphaComponent:(STThemeIsDark() ? 0.82f : 0.90f)]
-        : [STThemeWindowBackgroundColor() colorWithAlphaComponent:(STThemeIsDark() ? 0.48f : 0.72f)];
-    [plateFill setFill];
-    [platePath fill];
-    [[STThemeToolbarBorderColor(NO) colorWithAlphaComponent:(self.enabled ? 0.58f : 0.30f)] setStroke];
-    [platePath setLineWidth:1.0f];
-    [platePath stroke];
-
-    NSRect swatchRect = NSInsetRect(plateRect, 5.0f, 4.0f);
-    CGFloat swatchRadius = MIN(5.0f, floor(MIN(NSWidth(swatchRect), NSHeight(swatchRect)) * 0.35f));
-    NSBezierPath *swatchPath = [NSBezierPath bezierPathWithRoundedRect:swatchRect xRadius:swatchRadius yRadius:swatchRadius];
-    NSColor *swatchColor = nil;
-    if (self.enabled && self.color) {
-        swatchColor = [self.color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: self.color;
-    } else {
-        swatchColor = [[STThemeSecondaryTextColor() colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] colorWithAlphaComponent:(self.enabled ? 0.20f : 0.14f)];
-    }
-    [swatchColor setFill];
-    [swatchPath fill];
-    [[NSColor colorWithCalibratedWhite:0.0f alpha:(self.enabled ? 0.18f : 0.08f)] setStroke];
-    [swatchPath setLineWidth:1.0f];
-    [swatchPath stroke];
-
-    if (!self.enabled) {
-        NSBezierPath *slashPath = [NSBezierPath bezierPath];
-        [slashPath moveToPoint:NSMakePoint(NSMinX(plateRect) + 5.0f, NSMaxY(plateRect) - 5.0f)];
-        [slashPath lineToPoint:NSMakePoint(NSMaxX(plateRect) - 5.0f, NSMinY(plateRect) + 5.0f)];
-        [[STThemeSecondaryTextColor() colorWithAlphaComponent:0.45f] setStroke];
-        [slashPath setLineWidth:1.5f];
-        [slashPath stroke];
-    }
-}
-
+/// The well's action is the app's tool settings popover; the system colour panel stays closed.
 - (void)mouseDown:(NSEvent *)event {
-    // See STToolbarGlyphView: keep the header bar from taking the press.
     (void)event;
+    if (self.isEnabled) {
+        [self sendAction:self.action to:self.target];
+    }
 }
 
-- (void)mouseUp:(NSEvent *)event {
-    (void)event;
-    if (!self.enabled) {
-        return;
-    }
-    if (self.target && self.action) {
-        [NSApp sendAction:self.action to:self.target from:self];
-    }
+- (void)activate:(BOOL)exclusive {
+    (void)exclusive;
 }
 
 @end
+
+@implementation STToolbarZoomButtonView
+
+- (instancetype)initWithFrame:(NSRect)frameRect {
+    self = [super initWithFrame:frameRect];
+    if (self) {
+        [self setButtonType:NSMomentaryPushInButton];
+        [self setBezelStyle:NSTexturedRoundedBezelStyle];
+        [self setImagePosition:NSNoImage];
+    }
+    return self;
+}
+
+- (void)viewDidMoveToSuperview {
+    [super viewDidMoveToSuperview];
+#if defined(GNUSTEP)
+    if (self.superview) {
+        [super setFrameOrigin:STCenteredToolbarViewOrigin(self, self.frame.origin)];
+    }
+#endif
+}
+
+- (void)setFrameOrigin:(NSPoint)newOrigin {
+#if defined(GNUSTEP)
+    newOrigin = STCenteredToolbarViewOrigin(self, newOrigin);
+#endif
+    [super setFrameOrigin:newOrigin];
+}
+
+@end
+
 
 @interface STToolbarSegmentedControl : NSSegmentedControl
 @property (nonatomic, assign) NSInteger clickedSegment;
@@ -890,219 +763,7 @@ static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin)
 
 @end
 
-@implementation STToolbarZoomButtonView
 
-- (instancetype)initWithFrame:(NSRect)frameRect {
-    self = [super initWithFrame:frameRect];
-    if (self) {
-        _enabled = YES;
-    }
-    return self;
-}
-
-- (BOOL)isOpaque {
-    return NO;
-}
-
-- (void)viewDidMoveToSuperview {
-    [super viewDidMoveToSuperview];
-#if defined(GNUSTEP)
-    if (self.superview) {
-        [super setFrameOrigin:STCenteredToolbarViewOrigin(self, self.frame.origin)];
-    }
-#endif
-}
-
-- (void)setFrameOrigin:(NSPoint)newOrigin {
-#if defined(GNUSTEP)
-    newOrigin = STCenteredToolbarViewOrigin(self, newOrigin);
-#endif
-    [super setFrameOrigin:newOrigin];
-}
-
-- (void)setTitle:(NSString *)title {
-    NSString *newTitle = (title.length > 0) ? [title copy] : @"";
-    if ((_title == newTitle) || [_title isEqualToString:newTitle]) {
-        return;
-    }
-    _title = newTitle;
-    [self setNeedsDisplay:YES];
-}
-
-- (void)setEnabled:(BOOL)enabled {
-    if (_enabled == enabled) {
-        return;
-    }
-    _enabled = enabled;
-    [self setNeedsDisplay:YES];
-}
-
-- (void)drawRect:(NSRect)dirtyRect {
-    (void)dirtyRect;
-    NSRect bounds = self.bounds;
-    NSRect plateRect = NSInsetRect(bounds, 1.0f, 2.0f);
-    CGFloat radius = MIN(9.0f, floor(NSHeight(plateRect) * 0.45f));
-    NSBezierPath *platePath = [NSBezierPath bezierPathWithRoundedRect:plateRect xRadius:radius yRadius:radius];
-
-    NSColor *fillColor = nil;
-    NSColor *borderColor = nil;
-    if (self.enabled) {
-        fillColor = [STThemeToolbarBackgroundColor(NO) colorWithAlphaComponent:(STThemeIsDark() ? 0.90f : 0.96f)];
-        borderColor = [STThemeToolbarBorderColor(NO) colorWithAlphaComponent:0.72f];
-    } else {
-        fillColor = [STThemeWindowBackgroundColor() colorWithAlphaComponent:(STThemeIsDark() ? 0.48f : 0.72f)];
-        borderColor = [STThemeToolbarBorderColor(NO) colorWithAlphaComponent:0.24f];
-    }
-
-    [fillColor setFill];
-    [platePath fill];
-    [borderColor setStroke];
-    [platePath setLineWidth:1.0f];
-    [platePath stroke];
-
-    NSString *title = self.title.length > 0 ? self.title : @"Zoom";
-    NSColor *textColor = self.enabled ? STThemePrimaryTextColor() : [STThemeSecondaryTextColor() colorWithAlphaComponent:0.55f];
-    NSDictionary *attributes = @{
-        NSFontAttributeName: STToolbarZoomFont(),
-        NSForegroundColorAttributeName: textColor
-    };
-    NSSize titleSize = [title sizeWithAttributes:attributes];
-    CGFloat chevronWidth = STToolbarZoomChevronWidth;
-    CGFloat chevronSpacing = STToolbarZoomChevronSpacing;
-    CGFloat contentWidth = titleSize.width + chevronSpacing + chevronWidth;
-    CGFloat startX = floor((NSWidth(bounds) - contentWidth) * 0.5f);
-    CGFloat titleY = floor((NSHeight(bounds) - titleSize.height) * 0.5f);
-    [title drawAtPoint:NSMakePoint(startX, titleY) withAttributes:attributes];
-
-    CGFloat chevronX = startX + titleSize.width + chevronSpacing;
-    CGFloat chevronY = floor(NSMidY(bounds)) + 1.0f;
-    NSBezierPath *chevronPath = [NSBezierPath bezierPath];
-    [chevronPath moveToPoint:NSMakePoint(chevronX, chevronY)];
-    [chevronPath lineToPoint:NSMakePoint(chevronX + (chevronWidth * 0.5f), chevronY - 5.0f)];
-    [chevronPath lineToPoint:NSMakePoint(chevronX + chevronWidth, chevronY)];
-    [textColor setStroke];
-    [chevronPath setLineWidth:1.6f];
-    [chevronPath setLineJoinStyle:NSRoundLineJoinStyle];
-    [chevronPath setLineCapStyle:NSRoundLineCapStyle];
-    [chevronPath stroke];
-}
-
-- (void)mouseDown:(NSEvent *)event {
-    // See STToolbarGlyphView: keep the header bar from taking the press.
-    (void)event;
-}
-
-- (void)mouseUp:(NSEvent *)event {
-    (void)event;
-    if (!self.enabled) {
-        return;
-    }
-    if (self.target && self.action) {
-        [NSApp sendAction:self.action to:self.target from:self];
-    }
-}
-
-@end
-
-@implementation STToolbarUtilityButtonView
-
-- (instancetype)initWithFrame:(NSRect)frameRect {
-    self = [super initWithFrame:frameRect];
-    if (self) {
-        _enabled = YES;
-    }
-    return self;
-}
-
-- (BOOL)isOpaque {
-    return NO;
-}
-
-- (void)viewDidMoveToSuperview {
-    [super viewDidMoveToSuperview];
-#if defined(GNUSTEP)
-    if (self.superview) {
-        [super setFrameOrigin:STCenteredToolbarViewOrigin(self, self.frame.origin)];
-    }
-#endif
-}
-
-- (void)setFrameOrigin:(NSPoint)newOrigin {
-#if defined(GNUSTEP)
-    newOrigin = STCenteredToolbarViewOrigin(self, newOrigin);
-#endif
-    [super setFrameOrigin:newOrigin];
-}
-
-- (void)setImage:(NSImage *)image {
-    _image = image;
-    [self setNeedsDisplay:YES];
-}
-
-- (void)setEnabled:(BOOL)enabled {
-    if (_enabled == enabled) {
-        return;
-    }
-    _enabled = enabled;
-    [self setNeedsDisplay:YES];
-}
-
-- (void)drawRect:(NSRect)dirtyRect {
-    (void)dirtyRect;
-    NSRect bounds = self.bounds;
-    NSRect plateRect = NSInsetRect(bounds, 1.0f, 2.0f);
-    CGFloat radius = MIN(8.0f, floor(NSHeight(plateRect) * 0.45f));
-    NSBezierPath *platePath = [NSBezierPath bezierPathWithRoundedRect:plateRect xRadius:radius yRadius:radius];
-
-    NSColor *fillColor = nil;
-    NSColor *borderColor = nil;
-    if (self.enabled) {
-        fillColor = [STThemeToolbarBackgroundColor(NO) colorWithAlphaComponent:(STThemeIsDark() ? 0.90f : 0.96f)];
-        borderColor = [STThemeToolbarBorderColor(NO) colorWithAlphaComponent:0.72f];
-    } else {
-        fillColor = [STThemeWindowBackgroundColor() colorWithAlphaComponent:(STThemeIsDark() ? 0.48f : 0.72f)];
-        borderColor = [STThemeToolbarBorderColor(NO) colorWithAlphaComponent:0.24f];
-    }
-
-    [fillColor setFill];
-    [platePath fill];
-    [borderColor setStroke];
-    [platePath setLineWidth:1.0f];
-    [platePath stroke];
-
-    if (!self.image) {
-        return;
-    }
-
-    CGFloat iconDimension = MIN(STToolbarUtilityIconSize, MIN(NSWidth(bounds) - 10.0f, NSHeight(bounds) - 8.0f));
-    NSRect iconRect = NSMakeRect(floor((NSWidth(bounds) - iconDimension) * 0.5f),
-                                 floor((NSHeight(bounds) - iconDimension) * 0.5f),
-                                 iconDimension,
-                                 iconDimension);
-    [self.image drawInRect:iconRect
-                  fromRect:NSZeroRect
-                 operation:NSCompositeSourceOver
-                  fraction:(self.enabled ? 1.0f : 0.45f)
-            respectFlipped:YES
-                     hints:nil];
-}
-
-- (void)mouseDown:(NSEvent *)event {
-    // See STToolbarGlyphView: keep the header bar from taking the press.
-    (void)event;
-}
-
-- (void)mouseUp:(NSEvent *)event {
-    (void)event;
-    if (!self.enabled) {
-        return;
-    }
-    if (self.target && self.action) {
-        [NSApp sendAction:self.action to:self.target from:self];
-    }
-}
-
-@end
 
 #endif
 #import <AppKit/NSInterfaceStyle.h>
@@ -2598,38 +2259,10 @@ static id STInfoValueForKey(NSString *key) {
 
     BOOL isActive = [identifier isEqualToString:[self identifierForTool:self.canvasView.activeTool]];
     NSImage *image = [self baselineToolbarImageNamed:imageName active:isActive];
-#if defined(GNUSTEP)
-    BOOL usesUtilityButton = ([identifier isEqualToString:ToolbarItemCopy] ||
-                              [identifier isEqualToString:ToolbarItemPreferences]);
-    if (usesUtilityButton) {
-        STToolbarUtilityButtonView *utilityView = [[STToolbarUtilityButtonView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, STToolbarUtilityButtonWidth, STToolbarUtilityButtonHeight)];
-        utilityView.target = self;
-        utilityView.action = selector;
-        [utilityView setImage:image];
-        [utilityView setEnabled:![identifier isEqualToString:ToolbarItemCopy] || [self.canvasView hasImage]];
-        [utilityView setToolTip:item.toolTip];
-        STApplyAccessibilityLabel(utilityView, label);
-        item.view = utilityView;
-        item.minSize = utilityView.frame.size;
-        item.maxSize = utilityView.frame.size;
-        item.enabled = utilityView.enabled;
-    } else {
-        STToolbarGlyphView *glyphView = [[STToolbarGlyphView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, 32.0f, 24.0f)];
-        glyphView.target = self;
-        glyphView.action = selector;
-        [glyphView setImage:image];
-        [glyphView setActive:isActive];
-        [glyphView setToolTip:item.toolTip];
-        STApplyAccessibilityLabel(glyphView, label);
-        item.view = glyphView;
-        item.minSize = glyphView.frame.size;
-        item.maxSize = glyphView.frame.size;
-    }
-#else
+    // A plain image item: the theme draws it as one of its own toolbar buttons (#57).
     if (image) {
         item.image = image;
     }
-#endif
     return item;
 }
 
