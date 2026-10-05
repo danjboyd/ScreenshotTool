@@ -31,6 +31,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	CursorAssetProbe_test.m \
 	ArrowCalloutProbe_test.m \
 	LaunchArgumentsProbe_test.m \
+	LaunchWindowSizeProbe_test.m \
 	EmptyStateProbe_test.m \
 	PasteAvailabilityProbe_test.m \
 	PopoverFocusProbe_test.m \

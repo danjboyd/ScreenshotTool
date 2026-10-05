@@ -1456,6 +1456,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     [self setupToolbar];
     self.lastWidthTool = ScreenshotCanvasToolHighlighter;
     [self loadToolSettingsFromDefaults];
+    // Open a launch image before the window is first shown, so it appears at the image's size:
+    // resizing a shown window loses its top 39pt under some window managers (#60).
+    [self openLaunchImage];
     [self.window makeKeyAndOrderFront:nil];
     [NSApp activateIgnoringOtherApps:YES];
     [self configureUpdater];
@@ -1463,8 +1466,10 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     [self selectTool:ScreenshotCanvasToolHighlighter];
     [self reflectZoomSelection];
     [self refreshPasteAvailability];
+}
 
-
+/// The image named by application:openFile: or on the command line, if any.
+- (void)openLaunchImage {
     if (self.pendingOpenPath.length > 0) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: attempting deferred open for %@",
                                  self.pendingOpenPath]);
@@ -1481,7 +1486,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
             }
         }
     }
-
 }
 
 - (void)configureUpdater {
