@@ -20,6 +20,7 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 - (void)setupToolbar;
 - (NSWindow *)window;
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller;
+- (void)setupMenus;
 - (BOOL)preferencesControllerShowsToolbarInTitleBar:(PreferencesWindowController *)controller;
 @end
 
@@ -183,6 +184,43 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
         XCTAssertNotNil(item, @"%@", identifier);
         XCTAssertTrue([item.view isKindOfClass:[NSControl class]], @"%@ is a standard control, not %@", identifier, item.view.class);
     }
+}
+
+#pragma mark - Slim toolbar (#53)
+
+- (void)testDefaultToolbarIsToolsStyleAndCopy {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSToolbar *toolbar = _appDelegate.window.toolbar;
+    id<NSToolbarDelegate> delegate = (id<NSToolbarDelegate>)_appDelegate;
+    NSArray *defaults = [delegate toolbarDefaultItemIdentifiers:toolbar];
+    XCTAssertEqualObjects(defaults, (@[@"com.screenshottool.toolbar.tools", @"com.screenshottool.toolbar.color",
+                                       NSToolbarFlexibleSpaceItemIdentifier, @"com.screenshottool.toolbar.copy"]));
+    NSArray *allowed = [delegate toolbarAllowedItemIdentifiers:toolbar];
+    XCTAssertTrue([allowed containsObject:@"com.screenshottool.toolbar.zoom"], @"zoom can be added back");
+    XCTAssertTrue([allowed containsObject:@"com.screenshottool.toolbar.preferences"], @"preferences can be added back");
+    XCTAssertTrue(toolbar.allowsUserCustomization);
+    XCTAssertTrue(toolbar.autosavesConfiguration, @"a customised toolbar is kept");
+}
+
+- (void)testZoomAndPreferencesAreInTheMenusWithShortcuts {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_appDelegate setupMenus];
+    NSMenu *menu = [NSApp mainMenu];
+    NSMenuItem *(^find)(NSString *) = ^NSMenuItem *(NSString *title) {
+        for (NSMenuItem *top in menu.itemArray) {
+            for (NSMenuItem *item in top.submenu.itemArray) {
+                if ([item.title isEqualToString:title]) {
+                    return item;
+                }
+            }
+        }
+        return nil;
+    };
+    XCTAssertEqualObjects(find(@"Fit to Window").keyEquivalent, @"0");
+    XCTAssertEqualObjects(find(@"100%").keyEquivalent, @"1");
+    XCTAssertEqualObjects(find(@"Zoom In").keyEquivalent, @"=");
+    XCTAssertEqualObjects(find(@"Preferences…").keyEquivalent, @",");
+    XCTAssertTrue(sel_isEqual(find(@"Customize Toolbar…").action, @selector(runToolbarCustomizationPalette:)));
 }
 
 @end
