@@ -47,18 +47,6 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 }
 @end
 
-/// Records presses that reach it through the responder chain, as the header bar would take them.
-@interface STPressRecordingView : NSView
-@property (nonatomic, assign) NSInteger pressCount;
-@end
-
-@implementation STPressRecordingView
-- (void)mouseDown:(NSEvent *)event {
-    (void)event;
-    self.pressCount += 1;
-}
-@end
-
 @interface TitleBarToolbarProbeTests : XCTestCase {
     BOOL _shouldSkip;
     STThemeStubAppDelegate *_appDelegate;
@@ -173,28 +161,27 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     XCTAssertNil([[NSUserDefaults standardUserDefaults] objectForKey:STHeaderBarToolbarKey]);
 }
 
-#pragma mark - Clicks in the header bar
+#pragma mark - Standard controls (#57)
 
-- (void)testToolbarButtonsKeepTheirPress {
+- (void)testToolbarUsesStandardControls {
     if (_shouldSkip) { return; }
-    NSEvent *press = [NSEvent mouseEventWithType:NSLeftMouseDown
-                                        location:NSMakePoint(5.0, 5.0)
-                                   modifierFlags:0
-                                       timestamp:0
-                                    windowNumber:_appDelegate.window.windowNumber
-                                         context:nil
-                                     eventNumber:0
-                                      clickCount:1
-                                        pressure:1.0];
-    for (NSString *className in @[@"STToolbarGlyphView", @"STToolbarColorWellView",
-                                  @"STToolbarZoomButtonView", @"STToolbarUtilityButtonView"]) {
-        Class viewClass = NSClassFromString(className);
-        XCTAssertNotNil(viewClass, @"%@", className);
-        STPressRecordingView *bar = [[STPressRecordingView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 200.0, 46.0)];
-        NSView *button = [[viewClass alloc] initWithFrame:NSMakeRect(10.0, 10.0, 32.0, 24.0)];
-        [bar addSubview:button];
-        [button mouseDown:press];
-        XCTAssertEqual(bar.pressCount, 0, @"%@ passed its press on, where a header bar would start a drag", className);
+    // Standard controls track their own clicks (so the theme's header bar can't take them) and are
+    // drawn by the theme, under GNUstep's default theme and Adwaita alike.
+    NSToolbar *toolbar = _appDelegate.window.toolbar;
+    XCTAssertNotNil(toolbar);
+    id<NSToolbarDelegate> delegate = (id<NSToolbarDelegate>)_appDelegate;
+    for (NSString *name in @[@"copy", @"preferences"]) {
+        NSString *identifier = [@"com.screenshottool.toolbar." stringByAppendingString:name];
+        NSToolbarItem *item = [delegate toolbar:toolbar itemForItemIdentifier:identifier willBeInsertedIntoToolbar:YES];
+        XCTAssertNotNil(item, @"%@", identifier);
+        XCTAssertNil(item.view, @"%@ is a plain toolbar item the theme draws, not %@", identifier, item.view.class);
+        XCTAssertNotNil(item.image, @"%@ shows its icon", identifier);
+    }
+    for (NSString *name in @[@"tools", @"color", @"zoom"]) {
+        NSString *identifier = [@"com.screenshottool.toolbar." stringByAppendingString:name];
+        NSToolbarItem *item = [delegate toolbar:toolbar itemForItemIdentifier:identifier willBeInsertedIntoToolbar:YES];
+        XCTAssertNotNil(item, @"%@", identifier);
+        XCTAssertTrue([item.view isKindOfClass:[NSControl class]], @"%@ is a standard control, not %@", identifier, item.view.class);
     }
 }
 
