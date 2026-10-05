@@ -22,6 +22,12 @@ static const CGFloat kStatusBarHeight = 24.0f;
 - (NSView *)statusBarView;
 - (void)preferencesController:(PreferencesWindowController *)controller didToggleStatusBar:(BOOL)show;
 - (void)layoutContentSubviews;
+- (void)loadToolSettingsFromDefaults;
+- (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller;
+- (BOOL)statusBarVisiblePreference;
+- (NSString *)toolTipForIdentifier:(NSString *)identifier;
+- (void)selectTool:(ScreenshotCanvasTool)tool;
+- (ScreenshotCanvasView *)canvasView;
 @end
 
 #pragma mark - Test Class
@@ -46,7 +52,9 @@ static const CGFloat kStatusBarHeight = 24.0f;
         _appDelegate = [[AppDelegate alloc] init];
         [_appDelegate setupWindowAndContent];
         [_appDelegate.window makeKeyAndOrderFront:nil];
-        
+        // The bar is off by default (#54); these tests start with it shown.
+        [_appDelegate preferencesController:nil didToggleStatusBar:YES];
+
         // Match the normal sizing path the app uses when loading an image.
         NSSize imageSize = NSMakeSize(640.0f, 480.0f);
         [_appDelegate resizeWindowToImageSize:imageSize];
@@ -93,6 +101,40 @@ static const CGFloat kStatusBarHeight = 24.0f;
 
     XCTAssertEqualWithAccuracy(contentView.frame.size.height, initialContentHeight, 1.0, @"Content view height should be restored after re-showing status bar");
     XCTAssertEqualWithAccuracy(scrollView.frame.origin.y, kStatusBarHeight, 0.75, @"Scroll view origin should be restored after re-showing status bar");
+}
+
+- (void)testStatusBarIsOffUnlessChosen {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    [defaults removeObjectForKey:@"ScreenshotToolShowStatusBar"];
+    [_appDelegate loadToolSettingsFromDefaults];
+    XCTAssertFalse([_appDelegate statusBarVisiblePreference], @"off by default (#54)");
+    XCTAssertNil([defaults objectForKey:@"ScreenshotToolShowStatusBar"], @"nothing is saved until the user chooses");
+    XCTAssertEqualWithAccuracy(_appDelegate.scrollView.frame.origin.y, 0.0, 0.75, @"the canvas reaches the bottom");
+
+    [defaults setBool:YES forKey:@"ScreenshotToolShowStatusBar"];
+    [_appDelegate loadToolSettingsFromDefaults];
+    XCTAssertTrue([_appDelegate statusBarVisiblePreference], @"a saved choice to show it is kept");
+
+    [_appDelegate preferencesControllerRestoreDefaults:nil];
+    XCTAssertFalse([_appDelegate statusBarVisiblePreference]);
+    XCTAssertNil([defaults objectForKey:@"ScreenshotToolShowStatusBar"]);
+}
+
+- (void)testColorControlIsTheStyleControl {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    // With the bar hidden, the toolbar's colour control is where colour and width are set (#54).
+    struct { ScreenshotCanvasTool tool; NSString *name; } cases[] = {
+        { ScreenshotCanvasToolPen, @"Pen" },
+        { ScreenshotCanvasToolHighlighter, @"Highlighter" },
+        { ScreenshotCanvasToolArrow, @"Arrow" },
+    };
+    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        [_appDelegate selectTool:cases[i].tool];
+        NSString *tip = [_appDelegate toolTipForIdentifier:@"com.screenshottool.toolbar.color"];
+        XCTAssertTrue([tip hasPrefix:cases[i].name], @"%@", tip);
+        XCTAssertTrue([tip containsString:@"width"] && [tip containsString:@" px"], @"%@ mentions the width: %@", cases[i].name, tip);
+    }
 }
 
 @end
