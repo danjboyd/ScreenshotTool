@@ -16,7 +16,7 @@ sudo apt-get install -y \
   libpng-dev libtiff-dev libjpeg-dev libfreetype6-dev \
   libx11-dev libxext-dev libxrandr-dev libxft-dev libxmu-dev \
   libxrender-dev libxtst-dev libxt-dev libxcomposite-dev \
-  libcairo2-dev libfontconfig1-dev fonts-dejavu-core libcurl4-gnutls-dev \
+  libcairo2-dev libfontconfig1-dev fonts-dejavu-core libcurl4-gnutls-dev libglib2.0-dev \
   libxcursor-dev libcups2-dev libsndfile1-dev libdbus-1-dev \
   rsync imagemagick patchelf curl git pkg-config ca-certificates \
   squashfs-tools desktop-file-utils xvfb xauth
@@ -78,6 +78,8 @@ clone_or_refresh() {
 LIBS_BASE_REF="${LIBS_BASE_REF:-base-1_31_1}"
 LIBS_GUI_REF="${LIBS_GUI_REF:-gui-0_32_0}"
 LIBS_BACK_REF="${LIBS_BACK_REF:-back-0_32_0}"
+# The Adwaita theme, so the unit tests also run under it (#74).
+THEME_ADWAITA_REF="${THEME_ADWAITA_REF:-0.1.0-alpha2}"
 
 clone_or_refresh https://github.com/gnustep/libobjc2.git libobjc2
 pushd libobjc2 >/dev/null
@@ -177,4 +179,15 @@ sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
   GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
   make install
 register_gnustep_libraries
+popd >/dev/null
+
+clone_or_refresh https://github.com/danjboyd/plugins-themes-Adwaita.git plugins-themes-adwaita "${THEME_ADWAITA_REF}"
+pushd plugins-themes-adwaita >/dev/null
+source_gnustep_env
+PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+  GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+  ${MAKE} messages=yes
+sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
+  GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
+  make install GNUSTEP_INSTALLATION_DOMAIN=SYSTEM
 popd >/dev/null
