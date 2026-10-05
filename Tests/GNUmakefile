@@ -38,6 +38,7 @@ XCTEST_SRC_FILES = \
 ScreenshotToolTests_OBJC_FILES = \
 	CursorAssetProbe_test.m \
 	ArrowCalloutProbe_test.m \
+	TitleBarToolbarProbe_test.m \
 	LowBitDepthImageProbe_test.m \
 	ProjectFileProbe_test.m \
 	ClipboardHighlighterOpacityProbe_test.m \
