@@ -63,9 +63,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 @property (nonatomic, strong) NSTextField *interfaceHeaderLabel;
 @property (nonatomic, strong) NSTextField *statusBarLabel;
 @property (nonatomic, strong) NSSwitch *statusBarSwitch;
-@property (nonatomic, strong) NSTextField *titleBarToolbarLabel;
-@property (nonatomic, strong) NSSwitch *titleBarToolbarSwitch;
-@property (nonatomic, strong) NSTextField *titleBarToolbarNoteLabel;
 @property (nonatomic, strong) NSButton *restoreDefaultsButton;
 @end
 
@@ -275,18 +272,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.statusBarSwitch setAction:@selector(statusBarToggled:)];
     [content addSubview:self.statusBarSwitch];
 
-    // Only offered with the Adwaita theme, which reads GnomeThemeHeaderBarToolbar.
-    self.titleBarToolbarLabel = [self fieldLabelWithString:@"Show toolbar in the title bar" frame:NSZeroRect];
-    [self.titleBarToolbarLabel setFont:[NSFont systemFontOfSize:[NSFont systemFontSize]]];
-    [content addSubview:self.titleBarToolbarLabel];
-    self.titleBarToolbarSwitch = [[NSSwitch alloc] initWithFrame:NSZeroRect];
-    [self.titleBarToolbarSwitch setTarget:self];
-    [self.titleBarToolbarSwitch setAction:@selector(titleBarToolbarToggled:)];
-    [content addSubview:self.titleBarToolbarSwitch];
-
-    self.titleBarToolbarNoteLabel = [self fieldLabelWithString:@"" frame:NSZeroRect];
-    [content addSubview:self.titleBarToolbarNoteLabel];
-
     self.restoreDefaultsButton = [[NSButton alloc] initWithFrame:NSZeroRect];
     [self.restoreDefaultsButton setTitle:@"Restore Defaults"];
     [self.restoreDefaultsButton setButtonType:NSMomentaryPushInButton];
@@ -395,10 +380,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
         self.chooseDirectoryButton,
         self.interfaceHeaderLabel,
         self.statusBarLabel,
-        self.statusBarSwitch,
-        self.titleBarToolbarLabel,
-        self.titleBarToolbarSwitch,
-        self.titleBarToolbarNoteLabel
+        self.statusBarSwitch
     ] hidden:YES];
     [self setViews:self.penQuickButtons hidden:YES];
     [self setViews:self.highlighterQuickButtons hidden:YES];
@@ -421,8 +403,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.penWidthValueLabel setTextColor:STThemePrimaryTextColor()];
     [self.highlighterWidthValueLabel setTextColor:STThemePrimaryTextColor()];
     [self.statusBarLabel setTextColor:STThemePrimaryTextColor()];
-    [self.titleBarToolbarLabel setTextColor:STThemePrimaryTextColor()];
-    [self.titleBarToolbarNoteLabel setTextColor:STThemeSecondaryTextColor()];
     [self.directoryLabel setTextColor:STThemeSecondaryTextColor()];
     [self.textColorLabel setTextColor:STThemeSecondaryTextColor()];
     [self.textFontLabel setTextColor:STThemeSecondaryTextColor()];
@@ -489,14 +469,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
             [self setViews:@[self.statusBarLabel, self.statusBarSwitch] hidden:NO];
             [self.statusBarLabel setFrame:NSMakeRect(innerX, y - rowHeight + 4.0f, labelWidth, 20.0f)];
             [self.statusBarSwitch setFrame:NSMakeRect(switchX, y - rowHeight + 2.0f, switchWidth, switchHeight)];
-            y -= rowHeight + 12.0f;
-            if ([self.delegate preferencesControllerOffersToolbarInTitleBar:self]) {
-                [self setViews:@[self.titleBarToolbarLabel, self.titleBarToolbarSwitch, self.titleBarToolbarNoteLabel] hidden:NO];
-                [self.titleBarToolbarLabel setFrame:NSMakeRect(innerX, y - rowHeight + 4.0f, labelWidth, 20.0f)];
-                [self.titleBarToolbarSwitch setFrame:NSMakeRect(switchX, y - rowHeight + 2.0f, switchWidth, switchHeight)];
-                y -= rowHeight;
-                [self.titleBarToolbarNoteLabel setFrame:NSMakeRect(innerX, y - 34.0f, labelWidth, 34.0f)];
-            }
             break;
         }
 
@@ -685,14 +657,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 
     BOOL showStatusBar = [delegate preferencesControllerShouldShowStatusBar:self];
     [self.statusBarSwitch setState:showStatusBar ? NSControlStateValueOn : NSControlStateValueOff];
-
-    BOOL canPlaceToolbar = [delegate preferencesControllerCanShowToolbarInTitleBar:self];
-    BOOL toolbarInTitleBar = [delegate preferencesControllerShowsToolbarInTitleBar:self];
-    [self.titleBarToolbarSwitch setEnabled:canPlaceToolbar];
-    [self.titleBarToolbarSwitch setState:toolbarInTitleBar ? NSControlStateValueOn : NSControlStateValueOff];
-    [self.titleBarToolbarNoteLabel setStringValue:canPlaceToolbar
-        ? @"Puts the tools beside the window title, as GNOME apps do."
-        : @"Needs the Adwaita theme to draw the window title bar (GSX11HandlesWindowDecorations NO)."];
 }
 
 - (NSString *)displayStringForWidth:(CGFloat)width {
@@ -809,10 +773,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 - (void)statusBarToggled:(NSSwitch *)sender {
     BOOL show = (sender.state == NSControlStateValueOn);
     [self.delegate preferencesController:self didToggleStatusBar:show];
-}
-
-- (void)titleBarToolbarToggled:(NSSwitch *)sender {
-    [self.delegate preferencesController:self didToggleToolbarInTitleBar:(sender.state == NSControlStateValueOn)];
 }
 
 - (void)restoreDefaultsPressed:(id)sender {

@@ -18,12 +18,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)preferencesController:(PreferencesWindowController *)controller didChangeDefaultSaveDirectory:(NSString *)path;
 - (BOOL)preferencesControllerShouldShowStatusBar:(PreferencesWindowController *)controller;
 - (void)preferencesController:(PreferencesWindowController *)controller didToggleStatusBar:(BOOL)show;
-/// Whether to offer "Show toolbar in the title bar": the Adwaita theme is active.
-- (BOOL)preferencesControllerOffersToolbarInTitleBar:(PreferencesWindowController *)controller;
-/// Whether that option can take effect: the theme draws the title bar (its header bar).
-- (BOOL)preferencesControllerCanShowToolbarInTitleBar:(PreferencesWindowController *)controller;
-- (BOOL)preferencesControllerShowsToolbarInTitleBar:(PreferencesWindowController *)controller;
-- (void)preferencesController:(PreferencesWindowController *)controller didToggleToolbarInTitleBar:(BOOL)show;
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller;
 - (void)preferencesControllerDidRequestClose:(PreferencesWindowController *)controller;
 @end

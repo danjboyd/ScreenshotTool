@@ -165,43 +165,11 @@ static NSArray<NSString *> *STOpenableImageFileTypes(void) {
     return @[ @"png", @"jpg", @"jpeg", @"gif", @"bmp", @"tif", @"tiff", @"webp" ];
 }
 
-/// Read by the Adwaita theme: YES puts the window's toolbar in its header bar.
+/// Read by the Adwaita theme: YES puts the window's toolbar in its header bar. The theme offers it
+/// for all apps (danjboyd/plugins-themes-Adwaita#30); the app only declares it in Info.plist (#52).
 static NSString * const STGnomeThemeHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
-
-static BOOL STAdwaitaThemeIsActive(void) {
-#if defined(GNUSTEP)
-    NSString *name = [[GSTheme theme] name];
-    return name != nil && [name caseInsensitiveCompare:@"Adwaita"] == NSOrderedSame;
-#else
-    return NO;
-#endif
-}
-
-/// Whether windows get the Adwaita theme's header bar: it draws the title bar itself (the user
-/// set GSX11HandlesWindowDecorations NO, or the theme's own defaults did).
-static BOOL STAdwaitaHeaderBarIsActive(void) {
-#if defined(GNUSTEP)
-    if (!STAdwaitaThemeIsActive()) {
-        return NO;
-    }
-    Class headerBar = NSClassFromString(@"GnomeThemeHeaderBarDecorationView");
-    id decorator = [[GSTheme theme] windowDecorator];
-    return headerBar != Nil && [decorator respondsToSelector:@selector(isSubclassOfClass:)] &&
-           [(Class)decorator isSubclassOfClass:headerBar];
-#else
-    return NO;
-#endif
-}
-
-/// The value the theme will use: the user's default, else the app's Info.plist, else NO.
-static BOOL STToolbarInTitleBarEnabled(void) {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    if ([defaults objectForKey:STGnomeThemeHeaderBarToolbarKey] != nil) {
-        return [defaults boolForKey:STGnomeThemeHeaderBarToolbarKey];
-    }
-    id declared = [[NSBundle mainBundle] infoDictionary][STGnomeThemeHeaderBarToolbarKey];
-    return [declared respondsToSelector:@selector(boolValue)] && [declared boolValue];
-}
+/// Set once the value the app's old "Show toolbar in the title bar" checkbox saved is cleared (#58).
+static NSString * const STDefaultsClearedHeaderBarToolbarKey = @"ScreenshotToolClearedHeaderBarToolbar";
 
 static NSString * const STProjectFileExtension = @"screenshottool";
 
@@ -3371,6 +3339,14 @@ static id STInfoValueForKey(NSString *key) {
     self.defaultSaveDirectory = savedDirectory;
     [self ensureDirectoryExistsAtPath:self.defaultSaveDirectory];
 
+    // The app's old "Show toolbar in the title bar" checkbox saved GnomeThemeHeaderBarToolbar here,
+    // which outranks the user's choice for all apps in the theme. Clear it once (#58); a value the
+    // user sets for this app afterwards is theirs.
+    if (![defaults boolForKey:STDefaultsClearedHeaderBarToolbarKey]) {
+        [defaults removeObjectForKey:STGnomeThemeHeaderBarToolbarKey];
+        [defaults setBool:YES forKey:STDefaultsClearedHeaderBarToolbarKey];
+    }
+
     // Off unless the user turned it on; nothing is written until they choose (#54).
     self.statusBarVisiblePreference = [defaults objectForKey:STDefaultsShowStatusBarKey] != nil
         && [defaults boolForKey:STDefaultsShowStatusBarKey];
@@ -4296,43 +4272,6 @@ static id STInfoValueForKey(NSString *key) {
     [self updateStatusBarVisibility];
 }
 
-- (BOOL)preferencesControllerOffersToolbarInTitleBar:(PreferencesWindowController *)controller {
-    (void)controller;
-    return STAdwaitaThemeIsActive();
-}
-
-- (BOOL)preferencesControllerCanShowToolbarInTitleBar:(PreferencesWindowController *)controller {
-    (void)controller;
-    return STAdwaitaHeaderBarIsActive();
-}
-
-- (BOOL)preferencesControllerShowsToolbarInTitleBar:(PreferencesWindowController *)controller {
-    (void)controller;
-    return STToolbarInTitleBarEnabled();
-}
-
-- (void)preferencesController:(PreferencesWindowController *)controller didToggleToolbarInTitleBar:(BOOL)show {
-    (void)controller;
-    [[NSUserDefaults standardUserDefaults] setBool:show forKey:STGnomeThemeHeaderBarToolbarKey];
-    [self reattachToolbarForTitleBarPlacement];
-}
-
-/// The theme reads GnomeThemeHeaderBarToolbar when a toolbar is added to a window, so setting the
-/// toolbar again moves it into or out of the header bar without a restart.
-- (void)reattachToolbarForTitleBarPlacement {
-    NSToolbar *toolbar = self.window.toolbar;
-    if (!toolbar || !toolbar.isVisible) {
-        return;
-    }
-    // Keep the window where and as big as it is: the canvas takes or gives up the toolbar's row.
-    NSRect frame = self.window.frame;
-    [self.window setToolbar:nil];
-    [self.window setToolbar:toolbar];
-    [self.window setFrame:frame display:YES];
-    [self layoutContentSubviews];
-    [self.canvasView updateForEnclosingBoundsChange];
-}
-
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller {
     (void)controller;
     [self setDefaultWidth:STPenWidthDefault forTool:ScreenshotCanvasToolPen];
@@ -4364,11 +4303,6 @@ static id STInfoValueForKey(NSString *key) {
     self.statusBarVisiblePreference = NO;
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
-
-    if ([[NSUserDefaults standardUserDefaults] objectForKey:STGnomeThemeHeaderBarToolbarKey] != nil) {
-        [[NSUserDefaults standardUserDefaults] removeObjectForKey:STGnomeThemeHeaderBarToolbarKey];
-        [self reattachToolbarForTitleBarPlacement];
-    }
 
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self updateToolWidthControls];
