@@ -30,6 +30,7 @@ endif
 ScreenshotToolTests_OBJC_FILES = \
 	CursorAssetProbe_test.m \
 	ArrowCalloutProbe_test.m \
+	LaunchArgumentsProbe_test.m \
 	EmptyStateProbe_test.m \
 	FitViewportRoundingProbe_test.m \
 	TitleBarToolbarProbe_test.m \
