@@ -10,6 +10,8 @@
 #   Tools/run_tests.sh FitViewportRoundingProbeTests one class (or Class/testMethod)
 #   Tools/run_tests.sh -test-iterations 20 ...       any xctest option, passed through
 # The log goes to $TEST_LOG (default tests.log) and JUnit XML to $TEST_JUNIT (default tests-junit.xml).
+# TEST_THEME=Adwaita runs the suite with that GNUstep theme (default: GNUstep's own); the theme must
+# be installed, or in $TEST_LIBRARY_DIR/Themes (a GNUstep Library folder used instead of the user's).
 
 set -euo pipefail
 
@@ -70,12 +72,22 @@ SYSTEM_GNUSTEP_CONF="${GNUSTEP_CONFIG_FILE:-/etc/GNUstep/GNUstep.conf}"
 TEST_GNUSTEP_CONF="${TEST_HOME}/GNUstep.conf"
 mkdir -p "${TEST_HOME}"
 {
-  [[ -f "${SYSTEM_GNUSTEP_CONF}" ]] && grep -vE '^(GNUSTEP_USER_DEFAULTS_DIR|GNUSTEP_USER_CONFIG_FILE)=' "${SYSTEM_GNUSTEP_CONF}"
+  [[ -f "${SYSTEM_GNUSTEP_CONF}" ]] && grep -vE '^(GNUSTEP_USER_DEFAULTS_DIR|GNUSTEP_USER_CONFIG_FILE|GNUSTEP_USER_DIR_LIBRARY)=' "${SYSTEM_GNUSTEP_CONF}"
   echo "GNUSTEP_USER_DEFAULTS_DIR=${TEST_HOME}/GNUstep/Defaults"
   echo "GNUSTEP_USER_CONFIG_FILE=${TEST_HOME}/.GNUstep.conf.unused"
+  [[ -n "${TEST_LIBRARY_DIR:-}" ]] && echo "GNUSTEP_USER_DIR_LIBRARY=${TEST_LIBRARY_DIR}"
 } > "${TEST_GNUSTEP_CONF}"
 chmod 600 "${TEST_GNUSTEP_CONF}"
 export GNUSTEP_CONFIG_FILE="${TEST_GNUSTEP_CONF}"
+
+# The theme for this run, set in the test defaults' global domain, or none (GNUstep's own) (#74).
+mkdir -p "${TEST_HOME}/GNUstep/Defaults"
+export ST_EXPECT_THEME="${TEST_THEME:-}"
+if [[ -n "${TEST_THEME:-}" ]]; then
+  printf '{\n  GSTheme = "%s";\n}\n' "${TEST_THEME}" > "${TEST_HOME}/GNUstep/Defaults/NSGlobalDomain.plist"
+else
+  rm -f "${TEST_HOME}/GNUstep/Defaults/NSGlobalDomain.plist"
+fi
 
 # Keep GNUstep defaults isolated inside the repo so tests do not depend on the
 # caller's desktop session state or lock permissions.

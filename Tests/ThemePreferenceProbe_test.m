@@ -5,6 +5,9 @@
 
 #import <XCTest/XCTest.h>
 #import "STThemeUtilities.h"
+#if defined(GNUSTEP)
+#import <GNUstepGUI/GSTheme.h>
+#endif
 #import "ScreenshotToolSettings.h"
 #import "TestEnvironmentHelpers.h"
 
@@ -52,6 +55,17 @@
                    @"Adwaita's light window background should count as light");
     XCTAssertFalse(STThemeBackgroundColorIsDark([NSColor colorWithDeviceWhite:0.83 alpha:1.0]),
                    @"GNUstep's default grey should count as light");
+}
+
+- (void)testRunsUnderTheRequestedTheme {
+    // Tools/run_tests.sh sets ST_EXPECT_THEME with TEST_THEME (#74), so a run meant for a theme
+    // fails if that theme didn't load rather than quietly testing GNUstep's own.
+    NSString *expected = [[NSProcessInfo processInfo] environment][@"ST_EXPECT_THEME"];
+    XCTSkipIf(expected.length == 0, @"No theme requested");
+#if defined(GNUSTEP)
+    [NSApplication sharedApplication];
+    XCTAssertEqualObjects([[GSTheme theme] name], expected);
+#endif
 }
 
 @end

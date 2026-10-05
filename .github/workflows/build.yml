@@ -46,6 +46,13 @@ jobs:
         run: |
           echo "Fonts available: $(fc-list | wc -l); DejaVu Sans: $(fc-list 'DejaVu Sans' | wc -l)"
           xvfb-run -a -s "-screen 0 1920x1080x24" Tools/run_tests.sh
+      - name: Unit tests (Adwaita theme)
+        # The same suite under the Adwaita theme, which the bootstrap installs (#74).
+        env:
+          TEST_THEME: Adwaita
+          TEST_LOG: tests-adwaita.log
+          TEST_JUNIT: tests-adwaita-junit.xml
+        run: xvfb-run -a -s "-screen 0 1920x1080x24" Tools/run_tests.sh
       - name: Upload unit test log
         if: failure()
         uses: actions/upload-artifact@v4
@@ -54,6 +61,8 @@ jobs:
           path: |
             tests.log
             tests-junit.xml
+            tests-adwaita.log
+            tests-adwaita-junit.xml
           if-no-files-found: ignore
       - name: Download linuxdeploy
         run: |
