@@ -62,6 +62,21 @@ export LD_LIBRARY_PATH="${LIB_PREFIX}/Libraries:${LD_LIBRARY_PATH:-}"
 export DYLD_LIBRARY_PATH="${LIB_PREFIX}/Libraries:${DYLD_LIBRARY_PATH:-}"
 export HOME="${TEST_HOME}"
 
+# GNUstep ignores HOME for its defaults and reads the user's real ones (theme included). A private
+# GNUstep.conf points the defaults at the test home instead, so the tests run with GNUstep's own
+# theme, as in CI, and never write to the user's settings. GNUstep ignores a config file that's
+# writable by anyone but its owner.
+SYSTEM_GNUSTEP_CONF="${GNUSTEP_CONFIG_FILE:-/etc/GNUstep/GNUstep.conf}"
+TEST_GNUSTEP_CONF="${TEST_HOME}/GNUstep.conf"
+mkdir -p "${TEST_HOME}"
+{
+  [[ -f "${SYSTEM_GNUSTEP_CONF}" ]] && grep -vE '^(GNUSTEP_USER_DEFAULTS_DIR|GNUSTEP_USER_CONFIG_FILE)=' "${SYSTEM_GNUSTEP_CONF}"
+  echo "GNUSTEP_USER_DEFAULTS_DIR=${TEST_HOME}/GNUstep/Defaults"
+  echo "GNUSTEP_USER_CONFIG_FILE=${TEST_HOME}/.GNUstep.conf.unused"
+} > "${TEST_GNUSTEP_CONF}"
+chmod 600 "${TEST_GNUSTEP_CONF}"
+export GNUSTEP_CONFIG_FILE="${TEST_GNUSTEP_CONF}"
+
 # Keep GNUstep defaults isolated inside the repo so tests do not depend on the
 # caller's desktop session state or lock permissions.
 mkdir -p "${HOME}/GNUstep/Defaults/.lck"
