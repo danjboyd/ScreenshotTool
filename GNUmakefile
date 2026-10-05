@@ -19,7 +19,10 @@ endif
 
 APP_NAME = ScreenshotTool
 ScreenshotTool_APPLICATION_ICON =
-USE_OPENSAVE ?= 1
+# Deprecated: libs-OpenSave swapped in GTK file dialogs. A theme provides native dialogs now (the
+# Adwaita theme uses GNOME's file chooser through the portal), and libs-OpenSave's swizzling breaks
+# a theme's panels, so it's off by default. USE_OPENSAVE=1 still builds it, for now.
+USE_OPENSAVE ?= 0
 OPENSAVE_DIR := $(CURDIR)/third_party/libs-OpenSave
 OPENSAVE_SOURCE_DIR := $(OPENSAVE_DIR)/Source
 OPENSAVE_LIB_DIR := $(OPENSAVE_SOURCE_DIR)/obj
