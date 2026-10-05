@@ -19,4 +19,12 @@
   /* Declares that the toolbar suits a header bar (a few icons, a flexible space): a theme with
      one, such as Adwaita, may put the toolbar in the title bar. Other themes ignore it (#52). */
   GnomeThemeHeaderBarToolbar = YES;
+  /* The project format, so file choosers can name it. */
+  CFBundleDocumentTypes = (
+    {
+      CFBundleTypeName = "ScreenshotTool project";
+      CFBundleTypeExtensions = (screenshottool);
+      CFBundleTypeRole = Editor;
+    }
+  );
 }
