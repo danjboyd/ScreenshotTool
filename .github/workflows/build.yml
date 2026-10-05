@@ -53,6 +53,17 @@ jobs:
           TEST_LOG: tests-adwaita.log
           TEST_JUNIT: tests-adwaita-junit.xml
         run: xvfb-run -a -s "-screen 0 1920x1080x24" Tools/run_tests.sh
+      - name: Screenshots
+        # The main screens under GNUstep's default theme and Adwaita, for review (#75). The
+        # script runs its own virtual display and window manager.
+        run: Tools/screenshots.sh screenshots
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshots/*.png
+          if-no-files-found: ignore
       - name: Upload unit test log
         if: failure()
         uses: actions/upload-artifact@v4

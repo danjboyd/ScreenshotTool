@@ -19,7 +19,8 @@ sudo apt-get install -y \
   libcairo2-dev libfontconfig1-dev fonts-dejavu-core libcurl4-gnutls-dev libglib2.0-dev \
   libxcursor-dev libcups2-dev libsndfile1-dev libdbus-1-dev \
   rsync imagemagick patchelf curl git pkg-config ca-certificates \
-  squashfs-tools desktop-file-utils xvfb xauth
+  squashfs-tools desktop-file-utils xvfb xauth \
+  openbox xdotool x11-utils
 
 mkdir -p "${BOOTSTRAP_ROOT}"
 cd "${BOOTSTRAP_ROOT}"
