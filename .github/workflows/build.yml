@@ -32,9 +32,24 @@ jobs:
           echo "appimage_path=Staging/${APPIMAGE_NAME}" >> "${GITHUB_OUTPUT}"
           echo "appimage_sha_name=${APPIMAGE_NAME}.sha256" >> "${GITHUB_OUTPUT}"
           echo "artifact_name=${APPIMAGE_NAME}" >> "${GITHUB_OUTPUT}"
+      - name: Prepare the GNUstep prefix
+        # The cache restores /usr/GNUstep as this user. A new key each week also picks up the
+        # libraries that aren't pinned (libobjc2, libdispatch, tools-make, Sombre).
+        id: gnustep-prefix
+        run: |
+          sudo mkdir -p /usr/GNUstep
+          sudo chown "$(id -u):$(id -g)" /usr/GNUstep
+          echo "week=$(date -u +%G-W%V)" >> "${GITHUB_OUTPUT}"
+      - name: Restore the GNUstep build
+        id: gnustep-cache
+        uses: actions/cache@v4
+        with:
+          path: /usr/GNUstep
+          key: gnustep-${{ runner.os }}-${{ hashFiles('scripts/bootstrap_gnustep_linux_ci.sh', 'scripts/patches/**') }}-${{ steps.gnustep-prefix.outputs.week }}
       - name: Bootstrap GNUstep Linux toolchain
         env:
           PREFIX: /usr/GNUstep
+          GNUSTEP_PREBUILT: ${{ steps.gnustep-cache.outputs.cache-hit }}
         run: |
           chmod +x ./scripts/bootstrap_gnustep_linux_ci.sh
           ./scripts/bootstrap_gnustep_linux_ci.sh
