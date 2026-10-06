@@ -935,32 +935,6 @@ static NSData *STWaylandClipboardDataForMIMEType(NSString *mimeType) {
     return nil;
 }
 
-/// Whether the Wayland clipboard offers PNG or TIFF data, from `wl-paste --list-types`.
-static BOOL STWaylandClipboardHasImage(void) {
-    if (!STScreenshotToolIsWaylandSession()) {
-        return NO;
-    }
-    NSString *wlPastePath = STExecutablePathInPATH(@"wl-paste");
-    if (wlPastePath.length == 0) {
-        return NO;
-    }
-    @try {
-        // Menu validation asks, on the main thread: keep it short.
-        NSData *stdoutData = STRunWlPaste(wlPastePath, @[ @"--list-types" ], 0.5, NULL, NULL);
-        NSString *types = [[NSString alloc] initWithData:stdoutData encoding:NSUTF8StringEncoding];
-        for (NSString *type in [types componentsSeparatedByString:@"\n"]) {
-            if ([type isEqualToString:@"image/png"] || [type isEqualToString:@"image/tiff"]) {
-                return YES;
-            }
-        }
-    } @catch (NSException *exception) {
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"Wayland clipboard type listing exception (%@ - %@)",
-                                 exception.name ?: @"<no name>",
-                                 exception.reason ?: @"<no reason>"]);
-    }
-    return NO;
-}
-
 void ScreenshotToolAppendLog(NSString *message) {
     if (message.length == 0) {
         return;
@@ -5118,10 +5092,6 @@ static id STInfoValueForKey(NSString *key) {
     return [NSPasteboard generalPasteboard];
 }
 
-- (BOOL)waylandClipboardHasImage {
-    return STWaylandClipboardHasImage();
-}
-
 - (NSData *)clipboardPNGDataForPasteAsNewImage {
     NSPasteboard *pasteboard = [self clipboardPasteboard];
     NSArray<NSString *> *imageTypes = @[ NSPasteboardTypePNG, NSPasteboardTypeTIFF, NSTIFFPboardType ];
@@ -5208,8 +5178,10 @@ static id STInfoValueForKey(NSString *key) {
     }
     NSPasteboard *pasteboard = [self clipboardPasteboard];
     NSArray<NSString *> *imageTypes = @[ NSPasteboardTypePNG, NSPasteboardTypeTIFF, NSTIFFPboardType ];
-    BOOL hasImage = [pasteboard availableTypeFromArray:imageTypes] != nil || [self clipboardImageFilePath] != nil ||
-                    [self waylandClipboardHasImage];
+    // No wl-paste here: on GNOME it takes keyboard focus to read the clipboard, so the window
+    // stopped being key, became key again and re-checked, and its title bar flickered. XWayland
+    // mirrors the Wayland clipboard, so the pasteboard already sees an image copied there.
+    BOOL hasImage = [pasteboard availableTypeFromArray:imageTypes] != nil || [self clipboardImageFilePath] != nil;
     self.clipboardHadImage = hasImage;
     self.clipboardCheckedAt = now;
     return hasImage;
