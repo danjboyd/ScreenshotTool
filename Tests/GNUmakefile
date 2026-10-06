@@ -57,6 +57,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	ThemeSwitchProbe_test.m \
 	TextAlignmentToolbarProbe_test.m \
 	TextFontMenuProbe_test.m \
+	TextStyleControlProbe_test.m \
 	TextKeyboardPointerProbe_test.m \
 	TextToolProbe_test.m \
 	TextStyleExportProbe_test.m \
