@@ -151,8 +151,22 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
     self.fontPopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 110.0, STTextOptionsBarControlHeight) pullsDown:NO];
     NSArray<NSString *> *families = [[[NSFontManager sharedFontManager] availableFontFamilies]
         sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
-    [self.fontPopUp addItemsWithTitles:families ?: @[]];
+    // Set the font first and add the fonts to the pop-up's menu directly, with change messages held:
+    // adding them to the pop-up one by one, or changing its font afterwards, has GNUstep re-measure
+    // the whole menu each time, which takes seconds with a few thousand fonts (#82).
     [self.fontPopUp setFont:[NSFont systemFontOfSize:12.0]];
+    NSMenu *fontMenu = [self.fontPopUp menu];
+    [fontMenu setMenuChangedMessagesEnabled:NO];
+    for (NSString *family in families) {
+        NSMenuItem *item = (NSMenuItem *)[fontMenu addItemWithTitle:family action:NULL keyEquivalent:@""];
+        // As -[NSPopUpButton addItemWithTitle:] does, so the selected font shows without a tick.
+        [item setOnStateImage:nil];
+        [item setMixedStateImage:nil];
+    }
+    [fontMenu setMenuChangedMessagesEnabled:YES];
+    if (families.count > 0) {
+        [self.fontPopUp selectItemAtIndex:0];
+    }
     [self.fontPopUp setAction:@selector(fontChanged:)];
     [self prepareControl:self.fontPopUp toolTip:@"Font"];
 
