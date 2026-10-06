@@ -18,13 +18,26 @@ Current build targets:
 
 ## Screenshots
 
-![Main window](docs/images/main-window-dark.png)
+The app is built from standard controls, and the GNUstep theme decides how it looks. The same
+window, adding a text annotation:
 
-Main editing window with an image loaded and the annotation toolbar visible.
+![Adding text under the Adwaita theme](docs/images/adwaita-text.png)
 
-![Annotated demo page](docs/images/main-window-annotated-demo.png)
+Under the [Adwaita theme](https://github.com/danjboyd/plugins-themes-Adwaita), as on a GNOME
+desktop: the toolbar sits in the header bar.
 
-Example markup workflow on a simple demo page image.
+![Adding text under GNUstep's default theme](docs/images/gnustep-text.png)
+
+Under GNUstep's default theme, with the window manager's title bar.
+
+![The highlighter's settings popover under the Adwaita theme](docs/images/adwaita-popover.png)
+
+A tool's width and colour, from its toolbar button.
+
+To regenerate these images, run `Tools/screenshots.sh` after building the app. It opens the app on a
+private display under both themes, and saves each screen whole and cropped to its window
+(`*-window.png`). The images here are `adwaita-text-toolbar-window.png`,
+`default-text-toolbar-window.png` and `adwaita-popover-window.png`.
 
 ## Build
 

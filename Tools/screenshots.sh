@@ -6,7 +6,12 @@
 #   THEMES="default Adwaita"   the themes to use; "default" is GNUstep's own
 #   SCREENSHOT_LIBRARY_DIR     a GNUstep Library folder holding Themes/ (default: the user's)
 #   SCREENSHOT_WM              gnome-shell, openbox or none (default: the first one installed)
+#   SCREENSHOT_SAMPLE          the image to open (default: a generated chart)
 #   KEEP_WORK=1                keep the work folder (app logs, generated configuration)
+#
+# Each shot is saved twice: <name>.png, the whole screen, and <name>-window.png, cropped to the
+# window it's about (with the window manager's title bar, when it draws one). The README's images
+# come from the -window shots (#81).
 #
 # Needs Xvfb, xdotool and ImageMagick, and a window manager: GNOME Shell (as on GNOME desktops)
 # when installed, otherwise Openbox; without either, windows have no title bars. The app runs with
@@ -101,24 +106,50 @@ else
   echo "screenshots: no window manager (GNOME Shell or Openbox); windows have no title bars" >&2
 fi
 
-# A sample image: a gradient, so the canvas and its surroundings are easy to tell apart.
-convert -size 900x560 gradient:'#3b6ea8-#e8c37a' -define png:color-type=6 "PNG32:${WORK}/sample.png"
+# A sample image: the one asked for, or a simple chart, as a screenshot to mark up might show.
+# Either way it's sample.png, the title the script looks for.
+if [[ -n "${SCREENSHOT_SAMPLE:-}" ]]; then
+  convert "${SCREENSHOT_SAMPLE}" -define png:color-type=6 "PNG32:${WORK}/sample.png"
+else
+  bars=(140 190 120 260 210 70 160)
+  days=(Mon Tue Wed Thu Fri Sat Sun)
+  draw=()
+  for i in "${!bars[@]}"; do
+    x=$((80 + i * 105))
+    draw+=(-fill '#3b6ea8' -draw "rectangle ${x},$((440 - bars[i])) $((x + 75)),440"
+           -fill '#555' -pointsize 14 -annotate "+$((x + 22))+468" "${days[i]}")
+  done
+  convert -size 860x520 xc:'#fbfbfa' -font DejaVu-Sans \
+    -fill '#222' -pointsize 26 -annotate +40+56 'Weekly builds' \
+    -fill '#666' -pointsize 15 -annotate +40+84 'Successful builds per day' \
+    -stroke '#ddd' -draw 'line 40,440 820,440' -draw 'line 40,340 820,340' \
+    -draw 'line 40,240 820,240' -draw 'line 40,140 820,140' -stroke none \
+    "${draw[@]}" -define png:color-type=6 "PNG32:${WORK}/sample.png"
+fi
 
-# The app's main window (the GNUstep client window, not the window manager's frame): x y width height.
-client_geometry() {
+# The app's window with that title, x y width height: the GNUstep client window, not the window
+# manager's frame, which GNOME Shell gives the same title (and an invisible shadow border).
+client_window() {
   local name="$1" w
   for w in $(xdotool search --onlyvisible --name "${name}" 2>/dev/null); do
+    xprop -id "${w}" WM_CLASS 2>/dev/null | grep -q '"ScreenshotTool"' || continue
     local info
     info="$(xwininfo -id "${w}" 2>/dev/null)" || continue
     local width height
     width="$(awk '/Width:/ {print $2}' <<<"${info}")"
     height="$(awk '/Height:/ {print $2}' <<<"${info}")"
     if (( width >= 400 && height >= 300 )); then
-      echo "$(awk '/Absolute upper-left X:/ {print $4}' <<<"${info}") $(awk '/Absolute upper-left Y:/ {print $4}' <<<"${info}") ${width} ${height}"
+      echo "${w} $(awk '/Absolute upper-left X:/ {print $4}' <<<"${info}") $(awk '/Absolute upper-left Y:/ {print $4}' <<<"${info}") ${width} ${height}"
       return 0
     fi
   done
   return 1
+}
+
+client_geometry() {
+  local id x y w h
+  read -r id x y w h < <(client_window "$1") || return 1
+  echo "${x} ${y} ${w} ${h}"
 }
 
 wait_for_window() {
@@ -130,9 +161,18 @@ wait_for_window() {
   return 1
 }
 
+# shoot <name> <window title>: the whole screen, and the window with that title cropped out of it.
 shoot() {
-  import -window root "${OUT_DIR}/$1.png"
-  echo "screenshots: ${OUT_DIR}/$1.png"
+  local name="$1" title="$2" id x y w h extents left=0 right=0 top=0 bottom=0
+  import -window root "${OUT_DIR}/${name}.png"
+  echo "screenshots: ${OUT_DIR}/${name}.png"
+  read -r id x y w h < <(client_window "${title}") || return 0
+  # The window manager's decorations around the client window (its title bar), if it draws any.
+  extents="$(xprop -id "${id}" _NET_FRAME_EXTENTS 2>/dev/null | sed -n 's/.*= //p')"
+  [[ -n "${extents}" ]] && IFS=', ' read -r left right top bottom <<<"${extents}"
+  convert "${OUT_DIR}/${name}.png" -crop "$((w + left + right))x$((h + top + bottom))+$((x - left))+$((y - top))" \
+    +repage "${OUT_DIR}/${name}-window.png"
+  echo "screenshots: ${OUT_DIR}/${name}-window.png"
 }
 
 launch() {
@@ -166,20 +206,20 @@ for theme in ${THEMES}; do
   launch "${LOG}"
   wait_for_window "ScreenshotTool" || { echo "screenshots: ${theme}: the window didn't appear" >&2; continue; }
   sleep 2
-  shoot "${label}-empty"
+  shoot "${label}-empty" "ScreenshotTool"
 
   # 2. Preferences (the command key is Ctrl under Adwaita, Alt with GNUstep's defaults).
   xdotool key ctrl+comma; sleep 1.5
   xdotool search --onlyvisible --name "^Preferences$" >/dev/null 2>&1 || { xdotool key alt+comma; sleep 1.5; }
   # Drawing a new window under a theme can take several seconds on a virtual display.
   sleep 6
-  shoot "${label}-preferences"
+  shoot "${label}-preferences" "^Preferences$"
 
   # 3. An image.
   launch "${LOG}" "${WORK}/sample.png"
   wait_for_window "sample.png" || { echo "screenshots: ${theme}: the image window didn't appear" >&2; continue; }
   sleep 2
-  shoot "${label}-image"
+  shoot "${label}-image" "sample.png"
   read -r X Y W H < <(client_geometry "sample.png")
 
   # 4. The text toolbar: the text tool (T, a canvas shortcut), then a click on the canvas.
@@ -198,7 +238,7 @@ for theme in ${THEMES}; do
   # The text bar can take a few seconds to lay out.
   sleep 3
   xdotool type --delay 80 "Annotation"; sleep 1
-  shoot "${label}-text-toolbar"
+  shoot "${label}-text-toolbar" "sample.png"
 
   # 5. The tool settings popover, from the colour control (the second toolbar item, at the same
   #    place in a toolbar row and in Adwaita's header bar), in a fresh window.
@@ -212,6 +252,6 @@ for theme in ${THEMES}; do
     # Under GNUstep's default theme with window manager decorations, #60 clips the toolbar.
     echo "screenshots: ${theme}: the tool popover didn't open" >&2
   fi
-  shoot "${label}-popover"
+  shoot "${label}-popover" "sample.png"
   stop_app
 done
