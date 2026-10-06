@@ -54,6 +54,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	StatusBarToggleProbe_test.m \
 	TextFontFacePopupProbe_test.m \
 	ThemePreferenceProbe_test.m \
+	ThemeSwitchProbe_test.m \
 	TextAlignmentToolbarProbe_test.m \
 	TextFontMenuProbe_test.m \
 	TextKeyboardPointerProbe_test.m \
