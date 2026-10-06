@@ -11,6 +11,7 @@
 #import <AppKit/AppKit.h>
 #import "MarkupText.h"
 #import "ScreenshotToolSettings.h"
+#import "ScreenshotCanvasView.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -26,11 +27,16 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)textOptionsBarDidToggleBold:(STTextOptionsBar *)bar;
 - (void)textOptionsBarDidToggleItalic:(STTextOptionsBar *)bar;
 - (void)textOptionsBar:(STTextOptionsBar *)bar didPickAlignment:(NSTextAlignment)alignment;
+@optional
+/// The font field is done with the keyboard (a font was chosen, or Escape): give it back to the
+/// text box (#103).
+- (void)textOptionsBarDidFinishFontEntry:(STTextOptionsBar *)bar;
 @end
 
 /// The strip of text controls shown over the canvas while a text box is being edited (#34).
-/// Its controls never take first responder, so the caret stays in the text box.
-@interface STTextOptionsBar : NSView
+/// Its controls never take first responder, so the caret stays in the text box, except the font
+/// field, which takes the keyboard while a font name is typed and then hands it back (#103).
+@interface STTextOptionsBar : NSView <STTextEditingCompanion>
 
 @property (nonatomic, weak, nullable) id<STTextOptionsBarDelegate> delegate;
 

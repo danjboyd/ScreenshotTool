@@ -56,7 +56,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	ThemePreferenceProbe_test.m \
 	ThemeSwitchProbe_test.m \
 	TextAlignmentToolbarProbe_test.m \
-	TextFontMenuProbe_test.m \
+	TextFontFieldProbe_test.m \
 	TextStyleControlProbe_test.m \
 	TextKeyboardPointerProbe_test.m \
 	TextToolProbe_test.m \
@@ -89,6 +89,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/ZoomPopoverController.m \
 	../Source/PreferencesWindowController.m \
 	../Source/STTextOptionsBar.m \
+	../Source/STFontFamilyList.m \
 	../Source/STThemeUtilities.m
 
 

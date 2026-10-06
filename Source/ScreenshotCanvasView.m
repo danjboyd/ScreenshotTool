@@ -2947,7 +2947,18 @@ static NSError *STProjectError(NSString *message) {
     if (notification.object != self.activeTextView) {
         return;
     }
+    // Focus moving into the text bar's font field leaves the box open; the bar gives it back (#103).
+    if ([self.textEditingCompanion isTakingTextFocus]) {
+        return;
+    }
     [self commitActiveTextIfNeeded];
+}
+
+- (BOOL)focusActiveTextView {
+    if (!self.activeTextView || !self.window) {
+        return NO;
+    }
+    return [self.window makeFirstResponder:self.activeTextView];
 }
 
 - (BOOL)textView:(NSTextView *)textView doCommandBySelector:(SEL)commandSelector {

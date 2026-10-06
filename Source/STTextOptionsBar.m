@@ -9,6 +9,7 @@
  */
 
 #import "STTextOptionsBar.h"
+#import "STFontFamilyList.h"
 #import "STThemeUtilities.h"
 
 static const CGFloat STTextOptionsBarHeight = 40.0;
@@ -45,14 +46,17 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
 
 @end
 
-@interface STTextOptionsBar ()
+@interface STTextOptionsBar () <NSComboBoxDataSource, NSComboBoxDelegate>
 @property (nonatomic, strong) NSArray<STTextOptionsSwatch *> *swatches;
 @property (nonatomic, strong) NSSegmentedControl *sizePresets;
 @property (nonatomic, strong) NSButton *smallerButton;
 @property (nonatomic, strong) NSButton *biggerButton;
 @property (nonatomic, strong) NSSegmentedControl *styleControl;
 @property (nonatomic, strong) NSButton *pointerButton;
-@property (nonatomic, strong) NSPopUpButton *fontPopUp;
+@property (nonatomic, strong) NSComboBox *fontField;
+@property (nonatomic, strong) STFontFamilyList *fontFamilies;
+@property (nonatomic, copy) NSString *shownFontFamily;
+@property (nonatomic, assign) BOOL takingTextFocus;
 @property (nonatomic, strong) NSButton *boldButton;
 @property (nonatomic, strong) NSButton *italicButton;
 @property (nonatomic, strong) NSSegmentedControl *alignmentControl;
@@ -122,6 +126,22 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
     samples[index] = image;
     return image;
 }
+
+/// The font field: an editable combo box that, unlike the bar's other controls, takes the keyboard.
+/// It says so as AppKit asks, which is before the text box gives the keyboard up.
+@interface STFontComboBox : NSComboBox
+@property (nonatomic, copy, nullable) void (^willTakeFocus)(void);
+@end
+
+@implementation STFontComboBox
+- (BOOL)acceptsFirstResponder {
+    BOOL accepts = [super acceptsFirstResponder];
+    if (accepts && self.willTakeFocus && ![self currentEditor]) {
+        self.willTakeFocus();
+    }
+    return accepts;
+}
+@end
 
 @implementation STTextOptionsBar
 
@@ -219,27 +239,25 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
     [self.pointerButton setFont:[NSFont systemFontOfSize:11.0]];
     [self.pointerButton setButtonType:NSPushOnPushOffButton];
 
-    self.fontPopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 110.0, STTextOptionsBarControlHeight) pullsDown:NO];
-    NSArray<NSString *> *families = [[[NSFontManager sharedFontManager] availableFontFamilies]
-        sortedArrayUsingSelector:@selector(localizedCaseInsensitiveCompare:)];
-    // Set the font first and add the fonts to the pop-up's menu directly, with change messages held:
-    // adding them to the pop-up one by one, or changing its font afterwards, has GNUstep re-measure
-    // the whole menu each time, which takes seconds with a few thousand fonts (#82).
-    [self.fontPopUp setFont:[NSFont systemFontOfSize:12.0]];
-    NSMenu *fontMenu = [self.fontPopUp menu];
-    [fontMenu setMenuChangedMessagesEnabled:NO];
-    for (NSString *family in families) {
-        NSMenuItem *item = (NSMenuItem *)[fontMenu addItemWithTitle:family action:NULL keyEquivalent:@""];
-        // As -[NSPopUpButton addItemWithTitle:] does, so the selected font shows without a tick.
-        [item setOnStateImage:nil];
-        [item setMixedStateImage:nil];
-    }
-    [fontMenu setMenuChangedMessagesEnabled:YES];
-    if (families.count > 0) {
-        [self.fontPopUp selectItemAtIndex:0];
-    }
-    [self.fontPopUp setAction:@selector(fontChanged:)];
-    [self prepareControl:self.fontPopUp toolTip:@"Font"];
+    // An editable combo box: type part of a name to complete it (any installed family), or pick
+    // from a scrolling list of recent fonts and those for the user's language (#103). The list is
+    // its data source, so thousands of families cost nothing until it opens.
+    self.fontFamilies = [[STFontFamilyList alloc] init];
+    STFontComboBox *fontField = [[STFontComboBox alloc] initWithFrame:NSMakeRect(0.0, 0.0, 120.0, STTextOptionsBarControlHeight)];
+    [fontField setUsesDataSource:YES];
+    [fontField setDataSource:self];
+    [fontField setDelegate:self];
+    [fontField setCompletes:YES];
+    [fontField setNumberOfVisibleItems:12];
+    [fontField setFont:[NSFont systemFontOfSize:12.0]];
+    [fontField setAction:@selector(fontEntered:)];
+    __weak STTextOptionsBar *weakSelf = self;
+    fontField.willTakeFocus = ^{
+        [weakSelf noteTakingTextFocus];
+    };
+    self.fontField = fontField;
+    [self prepareControl:self.fontField toolTip:@"Font: type a name, or pick from recent fonts and fonts for your language"];
+    [self.fontField setRefusesFirstResponder:NO];
 
     self.boldButton = [self smallButtonWithTitle:@"B" action:@selector(boldPressed:) toolTip:@"Bold (Ctrl+B)"];
     [self.boldButton setFont:[NSFont boldSystemFontOfSize:12.0]];
@@ -262,7 +280,7 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
         self.swatches,
         @[self.sizePresets, self.smallerButton, self.biggerButton],
         @[self.styleControl, self.pointerButton],
-        @[self.fontPopUp],
+        @[self.fontField],
         @[self.boldButton, self.italicButton],
         @[self.alignmentControl],
     ];
@@ -357,10 +375,11 @@ static BOOL STTextOptionsColorsMatch(NSColor *a, NSColor *b) {
 
     NSString *family = font.familyName;
     if (family.length > 0) {
-        if ([self.fontPopUp indexOfItemWithTitle:family] < 0) {
-            [self.fontPopUp addItemWithTitle:family];
+        self.shownFontFamily = family;
+        // Not while a name is being typed there.
+        if (![self.fontField currentEditor]) {
+            [self.fontField setStringValue:family];
         }
-        [self.fontPopUp selectItemWithTitle:family];
     }
 
     NSFontTraitMask traits = [[NSFontManager sharedFontManager] traitsOfFont:font];
@@ -409,11 +428,111 @@ static BOOL STTextOptionsColorsMatch(NSColor *a, NSColor *b) {
     [self.delegate textOptionsBarDidTogglePointer:self];
 }
 
-- (void)fontChanged:(NSPopUpButton *)sender {
-    NSString *family = [sender titleOfSelectedItem];
-    if (family.length > 0) {
-        [self.delegate textOptionsBar:self didPickFontFamily:family];
+#pragma mark - Font field
+
+- (void)noteTakingTextFocus {
+    // Until the next turn of the run loop: long enough for the text box to give the keyboard up.
+    self.takingTextFocus = YES;
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(clearTakingTextFocus) object:nil];
+    [self performSelector:@selector(clearTakingTextFocus) withObject:nil afterDelay:0.0];
+}
+
+- (void)clearTakingTextFocus {
+    self.takingTextFocus = NO;
+}
+
+- (BOOL)isTakingTextFocus {
+    return self.takingTextFocus;
+}
+
+/// Uses `family` for the text, remembers it as recent, and gives the keyboard back.
+- (void)chooseFontFamily:(NSString *)family {
+    NSString *installed = [self.fontFamilies familyNamed:family];
+    if (installed) {
+        [self.fontFamilies noteUsedFamily:installed];
+        [self.fontField reloadData];
+        self.shownFontFamily = installed;
+        [self.delegate textOptionsBar:self didPickFontFamily:installed];
     }
+    [self finishFontEntry];
+}
+
+/// Gives the keyboard back to the text box, then shows the text's font: set while the field is
+/// still being edited, the value would lose to the typed text.
+- (void)finishFontEntry {
+    if ([self.delegate respondsToSelector:@selector(textOptionsBarDidFinishFontEntry:)]) {
+        [self.delegate textOptionsBarDidFinishFontEntry:self];
+    }
+    if ([self.fontField currentEditor]) {
+        [[self.fontField window] endEditingFor:self.fontField];
+    }
+    [self.fontField setStringValue:self.shownFontFamily ?: @""];
+}
+
+/// Return in the field: the typed name, or the family it completes to.
+- (void)fontEntered:(id)sender {
+    (void)sender;
+    NSString *typed = self.fontField.stringValue ?: @"";
+    NSString *family = [self.fontFamilies familyNamed:typed] ?: [self.fontFamilies completionForPrefix:typed];
+    [self chooseFontFamily:family ?: @""];
+}
+
+- (BOOL)control:(NSControl *)control textView:(NSTextView *)textView doCommandBySelector:(SEL)commandSelector {
+    (void)textView;
+    if (control != self.fontField) {
+        return NO;
+    }
+    // Escape (GNUstep binds it to complete:; Cocoa sends cancelOperation:): keep the font.
+    if (sel_isEqual(commandSelector, @selector(cancelOperation:)) || sel_isEqual(commandSelector, @selector(complete:))) {
+        [self finishFontEntry];
+        return YES;
+    }
+    return NO;
+}
+
+/// The list closed, perhaps without a choice (Escape there is the list's): show the text's font and
+/// give the keyboard back. A choice has already done both.
+- (void)comboBoxWillDismiss:(NSNotification *)notification {
+    if (notification.object != self.fontField) {
+        return;
+    }
+    [self performSelector:@selector(finishFontEntry) withObject:nil afterDelay:0.0];
+}
+
+- (void)comboBoxSelectionDidChange:(NSNotification *)notification {
+    if (notification.object != self.fontField) {
+        return;
+    }
+    // By index: in data-source mode GNUstep's -objectValueOfSelectedItem isn't available.
+    NSInteger index = self.fontField.indexOfSelectedItem;
+    NSArray<NSString *> *listed = self.fontFamilies.listedFamilies;
+    if (index >= 0 && (NSUInteger)index < listed.count) {
+        [self chooseFontFamily:listed[(NSUInteger)index]];
+    }
+}
+
+- (NSInteger)numberOfItemsInComboBox:(NSComboBox *)comboBox {
+    return comboBox == self.fontField ? (NSInteger)self.fontFamilies.listedFamilies.count : 0;
+}
+
+- (id)comboBox:(NSComboBox *)comboBox objectValueForItemAtIndex:(NSInteger)index {
+    NSArray<NSString *> *listed = self.fontFamilies.listedFamilies;
+    if (comboBox != self.fontField || index < 0 || (NSUInteger)index >= listed.count) {
+        return nil;
+    }
+    return listed[(NSUInteger)index];
+}
+
+- (NSUInteger)comboBox:(NSComboBox *)comboBox indexOfItemWithStringValue:(NSString *)string {
+    if (comboBox != self.fontField) {
+        return NSNotFound;
+    }
+    NSString *family = [self.fontFamilies familyNamed:string];
+    return family ? [self.fontFamilies.listedFamilies indexOfObject:family] : NSNotFound;
+}
+
+- (NSString *)comboBox:(NSComboBox *)comboBox completedString:(NSString *)string {
+    return comboBox == self.fontField ? [self.fontFamilies completionForPrefix:string] : nil;
 }
 
 - (void)boldPressed:(id)sender {

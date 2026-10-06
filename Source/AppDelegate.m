@@ -2413,6 +2413,8 @@ static id STInfoValueForKey(NSString *key) {
     if (!self.textOptionsBar) {
         self.textOptionsBar = [[STTextOptionsBar alloc] initWithFrame:NSMakeRect(0.0, 0.0, NSWidth(self.scrollView.frame), [STTextOptionsBar preferredHeight])];
         self.textOptionsBar.delegate = self;
+        // The bar's font field may take the keyboard without finishing the text box (#103).
+        self.canvasView.textEditingCompanion = self.textOptionsBar;
     }
     if (self.textOptionsBar.superview != container) {
         [self.textOptionsBar setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
@@ -2525,6 +2527,11 @@ static id STInfoValueForKey(NSString *key) {
         [self applyTextFont:converted persist:YES];
     }
     [self textSettingsChangedFromBar];
+}
+
+- (void)textOptionsBarDidFinishFontEntry:(STTextOptionsBar *)bar {
+    (void)bar;
+    [self.canvasView focusActiveTextView];
 }
 
 - (void)textOptionsBarDidToggleBold:(STTextOptionsBar *)bar {
@@ -4707,6 +4714,10 @@ static id STInfoValueForKey(NSString *key) {
     BOOL hasImage = [self.canvasView hasImage];
     [self.scrollView setHidden:!hasImage];
     [self.emptyStateView setHidden:hasImage];
+    // Return opens a file only from the empty state: GNUstep offers key equivalents to hidden
+    // buttons too, so with an image open the Open button took every Return no control consumed,
+    // a menu's or the font field's among them, and asked about unsaved changes (#103).
+    [(NSButton *)[self.emptyStateView viewWithTag:4] setKeyEquivalent:(hasImage ? @"" : @"\r")];
     if (!hasImage) {
         [self layoutEmptyStateViewInFrame:scrollFrame];
     }

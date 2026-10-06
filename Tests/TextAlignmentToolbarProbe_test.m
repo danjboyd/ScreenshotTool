@@ -165,6 +165,10 @@
     XCTAssertNotNil(bar);
     XCTAssertFalse(bar.isHidden, @"The text toolbar shows while a box is being edited");
     for (NSView *control in [bar visibleControls]) {
+        // The font field is the exception: it takes the keyboard to type a name, then gives it back (#103).
+        if ([control isKindOfClass:[NSComboBox class]]) {
+            continue;
+        }
         XCTAssertFalse([control acceptsFirstResponder], @"%@ must not take focus from the text box", control);
     }
 
