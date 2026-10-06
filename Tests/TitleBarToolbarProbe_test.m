@@ -114,12 +114,14 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 
 #pragma mark - Slim toolbar (#53)
 
-- (void)testDefaultToolbarIsToolsStyleAndCopy {
+- (void)testDefaultToolbarIsUndoToolsStyleAndCopy {
     XCTSkipIf(_shouldSkip, @"No window server");
     NSToolbar *toolbar = _appDelegate.window.toolbar;
     id<NSToolbarDelegate> delegate = (id<NSToolbarDelegate>)_appDelegate;
     NSArray *defaults = [delegate toolbarDefaultItemIdentifiers:toolbar];
-    XCTAssertEqualObjects(defaults, (@[@"com.screenshottool.toolbar.tools", @"com.screenshottool.toolbar.color",
+    // Undo and Redo lead (#101).
+    XCTAssertEqualObjects(defaults, (@[@"com.screenshottool.toolbar.undo", @"com.screenshottool.toolbar.redo",
+                                       @"com.screenshottool.toolbar.tools", @"com.screenshottool.toolbar.color",
                                        NSToolbarFlexibleSpaceItemIdentifier, @"com.screenshottool.toolbar.copy"]));
     NSArray *allowed = [delegate toolbarAllowedItemIdentifiers:toolbar];
     XCTAssertTrue([allowed containsObject:@"com.screenshottool.toolbar.zoom"], @"zoom can be added back");

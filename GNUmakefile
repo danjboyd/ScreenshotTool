@@ -34,6 +34,8 @@ ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
 	Resources/AddText-symbolic.png \
 	Resources/MarqueeTool-symbolic.png \
 	Resources/Preferences-symbolic.png \
+	Resources/Undo-symbolic.png \
+	Resources/Redo-symbolic.png \
 	Resources/CopyImage-light.png \
 	Resources/CopyImage-dark.png \
 	Resources/Highligher.png \

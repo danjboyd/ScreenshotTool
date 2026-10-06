@@ -240,14 +240,19 @@ for theme in ${THEMES}; do
   xdotool type --delay 80 "Annotation"; sleep 1
   shoot "${label}-text-toolbar" "sample.png"
 
-  # 5. The tool settings popover, from the colour control (the second toolbar item, at the same
-  #    place in a toolbar row and in Adwaita's header bar), in a fresh window.
+  # 5. The tool settings popover, from the colour control, in a fresh window. The control is found
+  #    by its swatch (the highlighter's yellow) in the window's top rows, wherever the theme and
+  #    the toolbar's other items put it.
   launch "${LOG}" "${WORK}/sample.png"
   wait_for_window "sample.png" || { echo "screenshots: ${theme}: the image window didn't appear" >&2; continue; }
   sleep 2
   read -r X Y W H < <(client_geometry "sample.png")
   before="$(grep -c 'popover show invoked' "${LOG}" 2>/dev/null || true)"
-  xdotool mousemove $((X + 316)) $((Y + 22)) click 1; sleep 1.5
+  # The highlighter (H), so the swatch is its yellow whatever the last tool was.
+  xdotool search --onlyvisible --name "sample.png" windowactivate --sync >/dev/null 2>&1; xdotool key h; sleep 0.5
+  read -r SX SY < <(import -window root png:- 2>/dev/null | convert png:- -crop "${W}x120+${X}+${Y}" +repage txt:- \
+    | awk -F'[ ,:]+' '/#FFFF00/ { print $1, $2; exit }')
+  xdotool mousemove $((X + ${SX:-316} + 6)) $((Y + ${SY:-22} + 6)) click 1; sleep 1.5
   if [[ "$(grep -c 'popover show invoked' "${LOG}" 2>/dev/null || true)" == "${before}" ]]; then
     # Under GNUstep's default theme with window manager decorations, #60 clips the toolbar.
     echo "screenshots: ${theme}: the tool popover didn't open" >&2
