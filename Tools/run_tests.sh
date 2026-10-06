@@ -12,6 +12,11 @@
 # The log goes to $TEST_LOG (default tests.log) and JUnit XML to $TEST_JUNIT (default tests-junit.xml).
 # TEST_THEME=Adwaita runs the suite with that GNUstep theme (default: GNUstep's own); the theme must
 # be installed, or in $TEST_LIBRARY_DIR/Themes (a GNUstep Library folder used instead of the user's).
+#
+# Each test class runs in its own xctest process, one at a time, so a crash fails only that class
+# and a class's leftovers (a theme it switched to, say) can't reach the next. Each test has
+# $TEST_TIME_ALLOWANCE seconds (default 60) before it fails, so a hang can't stall the run.
+# TEST_ISOLATION=0 runs every class in one process instead (quicker to start; for debugging).
 
 set -euo pipefail
 
@@ -30,13 +35,21 @@ for arg in "$@"; do
   elif [[ "${arg}" == -* ]]; then
     XCTEST_OPTIONS+=("${arg}")
     case "${arg}" in
-      -test-iterations|-junit-report|-output-format|-host|-host-launch-timeout|-performance-baselines) takes_value=1 ;;
+      -test-iterations|-junit-report|-output-format|-host|-host-launch-timeout|-performance-baselines|\
+      -parallel-testing-enabled|-parallel-testing-worker-count|-test-timeouts-enabled|\
+      -default-test-execution-time-allowance|-maximum-test-execution-time-allowance|\
+      -test-execution-order|-test-execution-order-seed|-attachments-path) takes_value=1 ;;
     esac
   else
     XCTEST_OPTIONS+=("-only-testing:ScreenshotToolTests/${arg}")
   fi
 done
 XCTEST_OPTIONS+=(-junit-report "${JUNIT_PATH}")
+if [[ "${TEST_ISOLATION:-1}" != 0 ]]; then
+  # One worker: the classes share one display, so they must not run at the same time.
+  XCTEST_OPTIONS+=(-parallel-testing-enabled YES -parallel-testing-worker-count 1)
+fi
+XCTEST_OPTIONS+=(-default-test-execution-time-allowance "${TEST_TIME_ALLOWANCE:-60}")
 TEST_HOME="${SCREENSHOT_TOOL_TEST_HOME:-${ROOT_DIR}/.tests_home}"
 
 # A fresh shell (such as a CI step) may not have the GNUstep environment yet.
