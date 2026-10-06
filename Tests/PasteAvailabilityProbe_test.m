@@ -29,9 +29,6 @@
     return self.testPasteboard;
 }
 
-- (BOOL)waylandClipboardHasImage {
-    return NO;
-}
 @end
 
 @interface PasteAvailabilityProbeTests : XCTestCase {
