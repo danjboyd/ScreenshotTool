@@ -79,6 +79,18 @@ clone_or_refresh() {
   fi
 }
 
+# CI restores ${PREFIX} from its cache when nothing that's built has changed (GNUSTEP_PREBUILT=true).
+# The stamp is written only after a complete build, so a partial prefix is never reused.
+# tools-make's GNUstep.conf lives in /etc, outside the prefix: a copy is kept in the prefix.
+BOOTSTRAP_STAMP="${PREFIX}/.bootstrap-complete"
+BOOTSTRAP_ETC="${PREFIX}/.bootstrap-etc"
+if [[ "${GNUSTEP_PREBUILT:-}" == "true" && -f "${BOOTSTRAP_STAMP}" && -f "${BOOTSTRAP_ETC}/GNUstep.conf" ]]; then
+  echo "GNUstep prefix restored from cache ($(cat "${BOOTSTRAP_STAMP}")); skipping the build."
+  sudo install -D -m 0644 "${BOOTSTRAP_ETC}/GNUstep.conf" /etc/GNUstep/GNUstep.conf
+  register_gnustep_libraries
+  exit 0
+fi
+
 # Pin the GNUstep libraries to releases. Upstream master draws exported images incorrectly
 # (blank annotations under cairo, near-invisible text under xlib; #45), and these releases
 # match the packages the app is developed and tested against.
@@ -199,3 +211,7 @@ sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
   GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \
   make install GNUSTEP_INSTALLATION_DOMAIN=SYSTEM
 popd >/dev/null
+register_gnustep_libraries
+
+sudo install -D -m 0644 /etc/GNUstep/GNUstep.conf "${BOOTSTRAP_ETC}/GNUstep.conf"
+date -u +"built %Y-%m-%dT%H:%M:%SZ" | sudo tee "${BOOTSTRAP_STAMP}" >/dev/null
