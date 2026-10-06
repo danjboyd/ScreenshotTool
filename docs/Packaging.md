@@ -30,7 +30,6 @@ pwsh -NoProfile -File scripts/build_release.ps1 -ManifestPath packaging/package.
 
 That builds:
 
-- `third_party/libs-OpenSave`
 - `third_party/gnustep-packager-updater/objc/GPUpdaterCore`
 - `third_party/gnustep-packager-updater/objc/GPUpdaterUI`
 - `third_party/gnustep-packager-updater/objc/gp-update-helper`

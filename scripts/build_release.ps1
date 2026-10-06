@@ -94,12 +94,33 @@ function Invoke-BashBuild {
   Invoke-LoggedCommand -FilePath $BashExe -ArgumentList @("-lc", $command)
 }
 
-if (-not (Test-Path $manifestFullPath)) {
-  throw "Manifest not found: $manifestFullPath"
+# Windows packages use GNUstep's WinUXTheme, which provides native Win32 controls and the open
+# and save dialogs (#83). MSYS2 doesn't package it, so build it from a pinned commit.
+$winUXThemeRef = "06943038b3d0d9740a7ebedb2ccbde70a72e53f0"
+
+function Invoke-WinUXThemeBuild {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$BashExe,
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$GNUstepSh
+  )
+
+  $themeRoot = Join-Path $RepoRoot "dist\themes\plugins-themes-WinUXTheme"
+  $themePosix = ConvertTo-MsysPath -WindowsPath $themeRoot
+  $gnustepPosix = ConvertTo-MsysPath -WindowsPath $GNUstepSh
+  $command = "set -eo pipefail; export ZSH_VERSION=`"${ZSH_VERSION:-}`"; " +
+    "rm -rf '$themePosix'; mkdir -p '$themePosix'; cd '$themePosix'; " +
+    "git init -q; git remote add origin https://github.com/gnustep/plugins-themes-WinUXTheme.git; " +
+    "git fetch -q --depth 1 origin $winUXThemeRef; git checkout -q FETCH_HEAD; " +
+    "set +u; source '$gnustepPosix'; set -u; make"
+  Invoke-LoggedCommand -FilePath $BashExe -ArgumentList @("-lc", $command)
 }
 
-if (-not (Test-Path (Join-Path $repoRoot "third_party\libs-OpenSave\Source\GNUmakefile"))) {
-  throw "libs-OpenSave submodule is missing. Run: git submodule update --init --recursive"
+if (-not (Test-Path $manifestFullPath)) {
+  throw "Manifest not found: $manifestFullPath"
 }
 
 $gitMetadataPath = Join-Path $repoRoot ".git"
@@ -141,6 +162,7 @@ if ($IsWindows) {
   $env:MSYSTEM = "CLANG64"
   $gnustepSh = Resolve-WindowsGNUstepSh -Clang64Root $clang64Root
   Invoke-BashBuild -BashExe $bashExe -RepoRoot $repoRoot -GNUstepSh $gnustepSh
+  Invoke-WinUXThemeBuild -BashExe $bashExe -RepoRoot $repoRoot -GNUstepSh $gnustepSh
   exit 0
 }
 

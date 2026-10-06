@@ -19,13 +19,6 @@ endif
 
 APP_NAME = ScreenshotTool
 ScreenshotTool_APPLICATION_ICON =
-# Deprecated: libs-OpenSave swapped in GTK file dialogs. A theme provides native dialogs now (the
-# Adwaita theme uses GNOME's file chooser through the portal), and libs-OpenSave's swizzling breaks
-# a theme's panels, so it's off by default. USE_OPENSAVE=1 still builds it, for now.
-USE_OPENSAVE ?= 0
-OPENSAVE_DIR := $(CURDIR)/third_party/libs-OpenSave
-OPENSAVE_SOURCE_DIR := $(OPENSAVE_DIR)/Source
-OPENSAVE_LIB_DIR := $(OPENSAVE_SOURCE_DIR)/obj
 UPDATER_ROOT := $(CURDIR)/third_party/gnustep-packager-updater/objc
 UPDATER_CORE_DIR := $(UPDATER_ROOT)/GPUpdaterCore
 UPDATER_UI_DIR := $(UPDATER_ROOT)/GPUpdaterUI
@@ -155,37 +148,11 @@ ADDITIONAL_LDFLAGS += $(FONTCONFIG_LDFLAGS)
 ADDITIONAL_LDFLAGS += -lstdc++
 ADDITIONAL_LDFLAGS += -lobjc
 
-ifeq ($(USE_OPENSAVE),1)
-ADDITIONAL_OBJCFLAGS += -DST_USE_OPENSAVE=1
-ADDITIONAL_INCLUDE_DIRS += -I$(OPENSAVE_DIR)/Headers
-ADDITIONAL_LIB_DIRS += -L$(OPENSAVE_LIB_DIR)
-ADDITIONAL_GUI_LIBS += -lOpenSave
-ADDITIONAL_LDFLAGS += -Wl,-rpath,$(OPENSAVE_LIB_DIR)
-endif
-
-OPENSAVE_SUBMAKE_FLAGS :=
-ifneq (,$(findstring mingw,$(GNUSTEP_HOST_OS)))
-OPENSAVE_SUBMAKE_FLAGS += ADDITIONAL_OBJCFLAGS=-DHAVE_MODE_T
-endif
-
 
 
 include $(GNUSTEP_MAKEFILES)/application.make
 
-.PHONY: tests tests-only clean-tests opensave-lib updater-core updater-ui updater-helper
-
-ifeq ($(USE_OPENSAVE),1)
-before-all:: opensave-lib
-
-opensave-lib:
-	@if [ ! -f "$(OPENSAVE_SOURCE_DIR)/GNUmakefile" ]; then \
-		echo "libs-OpenSave submodule not initialized."; \
-		echo "Run: git submodule update --init --recursive"; \
-		exit 1; \
-	fi
-	@echo "Building libs-OpenSave..."
-	@$(MAKE) -C "$(OPENSAVE_SOURCE_DIR)" $(OPENSAVE_SUBMAKE_FLAGS)
-endif
+.PHONY: tests tests-only clean-tests updater-core updater-ui updater-helper
 
 before-all:: updater-core updater-ui updater-helper
 

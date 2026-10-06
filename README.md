@@ -42,9 +42,6 @@ Notes:
 - Open and save dialogs come from the GNUstep theme: under the
   [Adwaita theme](https://github.com/danjboyd/plugins-themes-Adwaita) they're
   GNOME's own file chooser.
-- `USE_OPENSAVE=1` (deprecated) still builds `third_party/libs-OpenSave`, which
-  swaps in GTK dialogs; it can't be combined with a theme's dialogs.
-- GTK4 development files are needed for GTK-backed dialogs; without them, dialogs fall back to GNUstep behavior.
 
 ### macOS (Cocoa-native)
 

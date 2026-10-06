@@ -152,13 +152,6 @@
         "stageRelativePath": "metadata/licenses/ScreenshotTool.txt"
       },
       {
-        "name": "libs-OpenSave",
-        "license": "GPL-2.0-or-later",
-        "source": "Bundled Open/Save panel integration library",
-        "homepage": "https://github.com/danjboyd/ScreenshotTool/tree/main/third_party/libs-OpenSave",
-        "stageRelativePath": "metadata/licenses/libs-OpenSave.txt"
-      },
-      {
         "name": "GNUstep Runtime",
         "license": "LGPL-2.1-or-later",
         "source": "Bundled GNUstep base/gui/back runtime payload",
