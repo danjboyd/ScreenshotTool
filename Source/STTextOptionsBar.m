@@ -50,7 +50,7 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
 @property (nonatomic, strong) NSSegmentedControl *sizePresets;
 @property (nonatomic, strong) NSButton *smallerButton;
 @property (nonatomic, strong) NSButton *biggerButton;
-@property (nonatomic, strong) NSPopUpButton *stylePopUp;
+@property (nonatomic, strong) NSSegmentedControl *styleControl;
 @property (nonatomic, strong) NSButton *pointerButton;
 @property (nonatomic, strong) NSPopUpButton *fontPopUp;
 @property (nonatomic, strong) NSButton *boldButton;
@@ -59,6 +59,69 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
 /// Control groups in priority order; trailing groups are hidden when the bar is too narrow.
 @property (nonatomic, strong) NSArray<NSArray<NSView *> *> *groups;
 @end
+
+/// The dark grey of GNOME's symbolic icons, which the app's other symbolic icons use.
+static NSColor *STSymbolicIconColor(void) {
+    return [NSColor colorWithDeviceRed:61.0 / 255.0 green:56.0 / 255.0 blue:70.0 / 255.0 alpha:1.0];
+}
+
+/// An "A" drawn in a text style, as a symbolic icon for the style control: plain, outlined, with
+/// a shadow, or cut out of a box. Named -symbolic so themes that tint icons tint it (#51, #57).
+static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
+    // Made once per style: an image name can belong to only one image.
+    static NSImage *samples[4];
+    NSInteger index = MAX(0, MIN((NSInteger)style, 3));
+    if (samples[index]) {
+        return samples[index];
+    }
+    NSString *names[] = {@"Plain", @"Outline", @"Shadow", @"Box"};
+    NSSize size = NSMakeSize(18.0, 16.0);
+    NSRect bounds = NSMakeRect(0.0, 0.0, size.width, size.height);
+    NSColor *ink = STSymbolicIconColor();
+
+    // The letter on its own, composited below: GNUstep has no glyph outlines to stroke here.
+    NSImage *letter = [[NSImage alloc] initWithSize:size];
+    NSDictionary *attributes = @{NSFontAttributeName: [NSFont boldSystemFontOfSize:13.0],
+                                 NSForegroundColorAttributeName: ink};
+    NSSize letterSize = [@"A" sizeWithAttributes:attributes];
+    [letter lockFocus];
+    [@"A" drawAtPoint:NSMakePoint(floor((size.width - letterSize.width) * 0.5), floor((size.height - letterSize.height) * 0.5))
+       withAttributes:attributes];
+    [letter unlockFocus];
+
+    NSImage *image = [[NSImage alloc] initWithSize:size];
+    [image lockFocus];
+    switch (style) {
+        case MarkupTextStyleOutline:
+            // The letter spread by a pixel each way, its middle cut out.
+            for (NSInteger dx = -1; dx <= 1; dx++) {
+                for (NSInteger dy = -1; dy <= 1; dy++) {
+                    if (dx != 0 || dy != 0) {
+                        [letter drawInRect:NSOffsetRect(bounds, dx, dy) fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0];
+                    }
+                }
+            }
+            [letter drawInRect:bounds fromRect:NSZeroRect operation:NSCompositeDestinationOut fraction:1.0];
+            break;
+        case MarkupTextStyleShadow:
+            [letter drawInRect:NSOffsetRect(bounds, 1.5, -1.5) fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:0.45];
+            [letter drawInRect:bounds fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0];
+            break;
+        case MarkupTextStyleBackground:
+            [ink setFill];
+            [[NSBezierPath bezierPathWithRoundedRect:bounds xRadius:3.0 yRadius:3.0] fill];
+            [letter drawInRect:bounds fromRect:NSZeroRect operation:NSCompositeDestinationOut fraction:1.0];
+            break;
+        case MarkupTextStylePlain:
+        default:
+            [letter drawInRect:bounds fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0];
+            break;
+    }
+    [image unlockFocus];
+    [image setName:[NSString stringWithFormat:@"ScreenshotToolTextStyle%@-symbolic", names[index]]];
+    samples[index] = image;
+    return image;
+}
 
 @implementation STTextOptionsBar
 
@@ -137,11 +200,19 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
     self.smallerButton = [self smallButtonWithTitle:@"A-" action:@selector(smallerPressed:) toolTip:@"Smaller (Ctrl+Shift+<)"];
     self.biggerButton = [self smallButtonWithTitle:@"A+" action:@selector(biggerPressed:) toolTip:@"Bigger (Ctrl+Shift+>)"];
 
-    self.stylePopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 88.0, STTextOptionsBarControlHeight) pullsDown:NO];
-    [self.stylePopUp addItemsWithTitles:@[@"Plain", @"Outline", @"Shadow", @"Box"]];
-    [self.stylePopUp setFont:[NSFont systemFontOfSize:12.0]];
-    [self.stylePopUp setAction:@selector(styleChanged:)];
-    [self prepareControl:self.stylePopUp toolTip:@"Text style"];
+    // Segments rather than a pop-up: one click to choose, and no menu, which flickered while a
+    // text box was being edited (#102). Each segment shows its style on an "A"; tool tips name them.
+    NSArray<NSString *> *styleNames = @[@"Plain", @"Outline", @"Shadow", @"Box"];
+    self.styleControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(0.0, 0.0, 4.0 * 22.0 + 4.0, STTextOptionsBarControlHeight)];
+    [self.styleControl setSegmentCount:(NSInteger)styleNames.count];
+    for (NSUInteger idx = 0; idx < styleNames.count; idx++) {
+        [self.styleControl setImage:STTextStyleSampleImage((MarkupTextStyle)idx) forSegment:(NSInteger)idx];
+        [self.styleControl setLabel:@"" forSegment:(NSInteger)idx];
+        [self.styleControl setWidth:22.0 forSegment:(NSInteger)idx];
+        [[self.styleControl cell] setToolTip:styleNames[idx] forSegment:(NSInteger)idx];
+    }
+    [self.styleControl setAction:@selector(styleChanged:)];
+    [self prepareControl:self.styleControl toolTip:@"Text style"];
 
     self.pointerButton = [self smallButtonWithTitle:@"Pointer" action:@selector(pointerPressed:) toolTip:@"Callout pointer — drag its handle to aim it"];
     [self.pointerButton setFrameSize:NSMakeSize(60.0, STTextOptionsBarControlHeight)];
@@ -190,7 +261,7 @@ static const CGFloat STTextOptionsBarControlHeight = 26.0;
     self.groups = @[
         self.swatches,
         @[self.sizePresets, self.smallerButton, self.biggerButton],
-        @[self.stylePopUp, self.pointerButton],
+        @[self.styleControl, self.pointerButton],
         @[self.fontPopUp],
         @[self.boldButton, self.italicButton],
         @[self.alignmentControl],
@@ -282,7 +353,7 @@ static BOOL STTextOptionsColorsMatch(NSColor *a, NSColor *b) {
     }
     [self.sizePresets setToolTip:[NSString stringWithFormat:@"Size relative to the image (now %.0f pt)", font.pointSize]];
 
-    [self.stylePopUp selectItemAtIndex:MAX(0, MIN((NSInteger)style, self.stylePopUp.numberOfItems - 1))];
+    [self.styleControl setSelectedSegment:MAX(0, MIN((NSInteger)style, self.styleControl.segmentCount - 1))];
 
     NSString *family = font.familyName;
     if (family.length > 0) {
@@ -324,8 +395,8 @@ static BOOL STTextOptionsColorsMatch(NSColor *a, NSColor *b) {
     [self.delegate textOptionsBar:self didStepSizeBy:2.0];
 }
 
-- (void)styleChanged:(NSPopUpButton *)sender {
-    [self.delegate textOptionsBar:self didPickStyle:(MarkupTextStyle)[sender indexOfSelectedItem]];
+- (void)styleChanged:(NSSegmentedControl *)sender {
+    [self.delegate textOptionsBar:self didPickStyle:(MarkupTextStyle)[sender selectedSegment]];
 }
 
 - (void)setPointerOn:(BOOL)on available:(BOOL)available {
