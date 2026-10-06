@@ -37,6 +37,13 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
     ScreenshotCanvasToolArrow = 5
 };
 
+/// A view next to the canvas whose controls can take the keyboard while a text box is being edited
+/// (the text bar's font field, #103). Moving focus into it doesn't finish the text box.
+@protocol STTextEditingCompanion <NSObject>
+/// YES while keyboard focus is moving from the text box into the companion.
+- (BOOL)isTakingTextFocus;
+@end
+
 @interface ScreenshotCanvasView : NSView
 
 @property (nonatomic, strong, nullable) NSImage *image;
@@ -86,6 +93,11 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 - (void)clearSelection;
 - (void)refreshCursor;
 - (BOOL)cropToActiveSelection;
+
+/// See STTextEditingCompanion.
+@property (nonatomic, weak, nullable) id<STTextEditingCompanion> textEditingCompanion;
+/// Gives the keyboard back to the text box being edited, after a companion had it. NO if none is.
+- (BOOL)focusActiveTextView;
 
 @end
 

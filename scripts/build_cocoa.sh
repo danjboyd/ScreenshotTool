@@ -58,6 +58,7 @@ SOURCES=(
   Source/TextToolPopoverController.m
   Source/PreferencesWindowController.m
   Source/STTextOptionsBar.m
+  Source/STFontFamilyList.m
   Source/STThemeUtilities.m
 )
 
