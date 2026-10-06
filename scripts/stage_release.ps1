@@ -485,8 +485,12 @@ function Stage-LinuxRuntime {
   Copy-LinuxDependencyClosure -StageRoot $StageRoot -RuntimeLibraryRoot $runtimeLib
 }
 
+# The MSYS2 root that holds the GNUstep toolchain: gnustep-packager's managed gnustep-cli-new root
+# (GP_GNUSTEP_CLI_ROOT) when it provides one, else MSYS2 itself, whose own CLANG64 may have GNUstep.
 function Resolve-MsysRoot {
   foreach ($candidate in @(
+    $env:GP_GNUSTEP_CLI_ROOT,
+    $env:GNUSTEP_CLI_ROOT,
     $env:MSYS2_LOCATION,
     "C:\msys64"
   )) {
@@ -664,15 +668,6 @@ function Stage-WindowsRuntime {
     }
   }
 
-  # WinUXTheme, built by build_release.ps1, gives the app native Win32 controls and file dialogs
-  # (#83). It's the default through GlobalDefaults.plist, which GNUstep reads next to GNUstep.conf
-  # below the user's own defaults, so a theme the user picks still wins.
-  $winUXTheme = Join-Path $RepoRoot "dist\themes\plugins-themes-WinUXTheme\WinUXTheme.theme"
-  if (-not (Copy-DirectoryTree -Source $winUXTheme -Destination (Join-Path $runtimeSystemThemes "WinUXTheme.theme"))) {
-    throw "WinUXTheme.theme missing at $winUXTheme. Run scripts/build_release.ps1 first."
-  }
-  Set-Content -Path (Join-Path $runtimeBin "GlobalDefaults.plist") -Value "{ GSTheme = WinUXTheme; }" -Encoding ascii
-
   Write-WindowsGNUstepConfig -RuntimeRootPath $RuntimeRootPath
 }
 
@@ -709,7 +704,6 @@ function Write-LicenseFiles {
     $runtimeNotice += @(
       "- GNUstep runtime assets staged from MSYS2 CLANG64"
       "- GNUstep bundles/themes copied into runtime/System"
-      "- GNUstep WinUXTheme (LGPL-2.0-or-later), https://github.com/gnustep/plugins-themes-WinUXTheme"
       ""
       "Primary runtime license family: LGPL-2.1-or-later for GNUstep runtime components."
     )
