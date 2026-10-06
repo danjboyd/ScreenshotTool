@@ -16,6 +16,7 @@
 #import <GSOpenSave.h>
 #endif
 #import <Foundation/NSTask.h>
+#import <dispatch/dispatch.h>
 #if defined(GNUSTEP)
 #import <AppKit/NSSegmentedCell.h>
 #import <GNUstepGUI/GSTheme.h>
@@ -855,6 +856,49 @@ static BOOL STMirrorPNGDataToWaylandClipboard(NSData *pngData) {
     return NO;
 }
 
+/// Runs wl-paste and returns its output, or nil if it doesn't finish within `timeout`. On GNOME,
+/// wl-paste has to get keyboard focus to read the clipboard and can otherwise wait for good; the
+/// app mustn't wait with it (#90). The output is read on another queue, so a large image can't
+/// fill the pipe and stall wl-paste while we wait.
+static NSData *STRunWlPaste(NSString *wlPastePath, NSArray<NSString *> *arguments, NSTimeInterval timeout,
+                            int *terminationStatus, NSData **stderrData) {
+    NSTask *task = [[NSTask alloc] init];
+    NSPipe *outputPipe = [NSPipe pipe];
+    NSPipe *errorPipe = [NSPipe pipe];
+    task.launchPath = wlPastePath;
+    task.arguments = arguments;
+    task.standardOutput = outputPipe;
+    task.standardError = errorPipe;
+    [task launch];
+
+    __block NSData *output = nil;
+    __block NSData *errors = nil;
+    dispatch_group_t readers = dispatch_group_create();
+    dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+    dispatch_group_async(readers, queue, ^{
+        output = [[outputPipe fileHandleForReading] readDataToEndOfFile];
+    });
+    dispatch_group_async(readers, queue, ^{
+        errors = [[errorPipe fileHandleForReading] readDataToEndOfFile];
+    });
+    if (dispatch_group_wait(readers, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(timeout * NSEC_PER_SEC))) != 0) {
+        [task terminate];
+        // The pipes close when wl-paste exits; give the readers a moment to finish with them.
+        dispatch_group_wait(readers, dispatch_time(DISPATCH_TIME_NOW, (int64_t)NSEC_PER_SEC));
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"wl-paste %@ didn't answer within %.1fs; stopped it",
+                                 [arguments componentsJoinedByString:@" "], timeout]);
+        return nil;
+    }
+    [task waitUntilExit];
+    if (terminationStatus) {
+        *terminationStatus = task.terminationStatus;
+    }
+    if (stderrData) {
+        *stderrData = errors;
+    }
+    return output;
+}
+
 static NSData *STWaylandClipboardDataForMIMEType(NSString *mimeType) {
     if (mimeType.length == 0 || !STScreenshotToolIsWaylandSession()) {
         return nil;
@@ -866,20 +910,11 @@ static NSData *STWaylandClipboardDataForMIMEType(NSString *mimeType) {
     }
 
     @try {
-        NSTask *task = [[NSTask alloc] init];
-        NSPipe *outputPipe = [NSPipe pipe];
-        NSPipe *errorPipe = [NSPipe pipe];
-        task.launchPath = wlPastePath;
-        task.arguments = @[ @"--type", mimeType ];
-        task.standardOutput = outputPipe;
-        task.standardError = errorPipe;
-        [task launch];
-
-        NSData *stdoutData = [[outputPipe fileHandleForReading] readDataToEndOfFile];
-        NSData *stderrData = [[errorPipe fileHandleForReading] readDataToEndOfFile];
-        [task waitUntilExit];
-
-        if (task.terminationStatus == 0 && stdoutData.length > 0) {
+        int status = -1;
+        NSData *stderrData = nil;
+        // Paste is asked for, so allow time for a large image.
+        NSData *stdoutData = STRunWlPaste(wlPastePath, @[ @"--type", mimeType ], 10.0, &status, &stderrData);
+        if (status == 0 && stdoutData.length > 0) {
             return stdoutData;
         }
 
@@ -887,7 +922,7 @@ static NSData *STWaylandClipboardDataForMIMEType(NSString *mimeType) {
         if (stderrText.length > 0) {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Wayland clipboard read failed for %@ (status=%d): %@",
                                      mimeType,
-                                     task.terminationStatus,
+                                     status,
                                      [stderrText stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]]);
         }
     } @catch (NSException *exception) {
@@ -910,15 +945,8 @@ static BOOL STWaylandClipboardHasImage(void) {
         return NO;
     }
     @try {
-        NSTask *task = [[NSTask alloc] init];
-        NSPipe *outputPipe = [NSPipe pipe];
-        task.launchPath = wlPastePath;
-        task.arguments = @[ @"--list-types" ];
-        task.standardOutput = outputPipe;
-        task.standardError = [NSFileHandle fileHandleWithNullDevice];
-        [task launch];
-        NSData *stdoutData = [[outputPipe fileHandleForReading] readDataToEndOfFile];
-        [task waitUntilExit];
+        // Menu validation asks, on the main thread: keep it short.
+        NSData *stdoutData = STRunWlPaste(wlPastePath, @[ @"--list-types" ], 0.5, NULL, NULL);
         NSString *types = [[NSString alloc] initWithData:stdoutData encoding:NSUTF8StringEncoding];
         for (NSString *type in [types componentsSeparatedByString:@"\n"]) {
             if ([type isEqualToString:@"image/png"] || [type isEqualToString:@"image/tiff"]) {
