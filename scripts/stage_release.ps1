@@ -450,24 +450,6 @@ function Copy-LinuxDependencyClosure {
   }
 }
 
-function Find-OpenSaveLinuxLibraries {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$RepoRoot
-  )
-
-  return Get-ChildItem -Path (Join-Path $RepoRoot "third_party\libs-OpenSave\Source\obj") -Filter "libOpenSave.so*" -File -ErrorAction SilentlyContinue
-}
-
-function Find-OpenSaveWindowsLibraries {
-  param(
-    [Parameter(Mandatory = $true)]
-    [string]$RepoRoot
-  )
-
-  return Get-ChildItem -Path (Join-Path $RepoRoot "third_party\libs-OpenSave\Source\obj") -Filter "*OpenSave*.dll" -File -ErrorAction SilentlyContinue
-}
-
 function Stage-LinuxRuntime {
   param(
     [Parameter(Mandatory = $true)]
@@ -498,11 +480,6 @@ function Stage-LinuxRuntime {
   [void](Copy-DirectoryTree -Source (Join-Path $gnustepRoot "System\Library\Libraries") -Destination $runtimeLib)
   [void](Copy-DirectoryTree -Source (Join-Path $gnustepRoot "lib") -Destination $runtimeLib)
   [void](Copy-FileIfPresent -Source (Join-Path $gnustepRoot "System\Tools\defaults") -Destination (Join-Path $runtimeBin "defaults"))
-
-  foreach ($library in @(Find-OpenSaveLinuxLibraries -RepoRoot $RepoRoot)) {
-    [void](Copy-FileIfPresent -Source $library.FullName -Destination (Join-Path $runtimeLib $library.Name))
-    [void](Copy-FileIfPresent -Source $library.FullName -Destination (Join-Path $runtimeSystemLib $library.Name))
-  }
 
   Patch-LinuxRunpathIfNeeded -Path (Join-Path $StageRoot "app\ScreenshotTool.app\ScreenshotTool") -NewRunpath '$ORIGIN:$ORIGIN/../../runtime/lib:$ORIGIN/../../runtime/System/Library/Libraries'
   Copy-LinuxDependencyClosure -StageRoot $StageRoot -RuntimeLibraryRoot $runtimeLib
@@ -687,10 +664,14 @@ function Stage-WindowsRuntime {
     }
   }
 
-  foreach ($library in @(Find-OpenSaveWindowsLibraries -RepoRoot $RepoRoot)) {
-    [void](Copy-FileIfPresent -Source $library.FullName -Destination (Join-Path $runtimeBin $library.Name))
-    [void](Copy-FileIfPresent -Source $library.FullName -Destination (Join-Path $runtimeSystemLib $library.Name))
+  # WinUXTheme, built by build_release.ps1, gives the app native Win32 controls and file dialogs
+  # (#83). It's the default through GlobalDefaults.plist, which GNUstep reads next to GNUstep.conf
+  # below the user's own defaults, so a theme the user picks still wins.
+  $winUXTheme = Join-Path $RepoRoot "dist\themes\plugins-themes-WinUXTheme\WinUXTheme.theme"
+  if (-not (Copy-DirectoryTree -Source $winUXTheme -Destination (Join-Path $runtimeSystemThemes "WinUXTheme.theme"))) {
+    throw "WinUXTheme.theme missing at $winUXTheme. Run scripts/build_release.ps1 first."
   }
+  Set-Content -Path (Join-Path $runtimeBin "GlobalDefaults.plist") -Value "{ GSTheme = WinUXTheme; }" -Encoding ascii
 
   Write-WindowsGNUstepConfig -RuntimeRootPath $RuntimeRootPath
 }
@@ -709,15 +690,6 @@ function Write-LicenseFiles {
 
   [void](Copy-FileIfPresent -Source (Join-Path $RepoRoot "COPYING") -Destination (Join-Path $DestinationRoot "ScreenshotTool.txt"))
 
-  $openSaveLicense = Join-Path $RepoRoot "third_party\libs-OpenSave\LICENSE"
-  if (-not (Copy-FileIfPresent -Source $openSaveLicense -Destination (Join-Path $DestinationRoot "libs-OpenSave.txt"))) {
-    Set-Content -Path (Join-Path $DestinationRoot "libs-OpenSave.txt") -Value @(
-      "libs-OpenSave is bundled with ScreenshotTool release payloads."
-      "Source tree: https://github.com/danjboyd/ScreenshotTool/tree/main/third_party/libs-OpenSave"
-      "License: GPL-2.0-or-later"
-    ) -Encoding utf8
-  }
-
   $runtimeNotice = @(
     "ScreenshotTool packaging runtime notice"
     "Version: $Version"
@@ -729,7 +701,6 @@ function Write-LicenseFiles {
     $runtimeNotice += @(
       "- GNUstep base/gui/back runtime from /usr/GNUstep"
       "- GNUstep themes and bundles copied into runtime/System"
-      "- libs-OpenSave runtime library"
       "- Linux shared-library closure staged under runtime/lib"
       ""
       "Primary runtime license family: LGPL-2.1-or-later for GNUstep runtime components."
@@ -738,7 +709,7 @@ function Write-LicenseFiles {
     $runtimeNotice += @(
       "- GNUstep runtime assets staged from MSYS2 CLANG64"
       "- GNUstep bundles/themes copied into runtime/System"
-      "- libs-OpenSave runtime library"
+      "- GNUstep WinUXTheme (LGPL-2.0-or-later), https://github.com/gnustep/plugins-themes-WinUXTheme"
       ""
       "Primary runtime license family: LGPL-2.1-or-later for GNUstep runtime components."
     )

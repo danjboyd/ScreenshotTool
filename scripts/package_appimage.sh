@@ -68,11 +68,17 @@ if [[ -d "${GNUSTEP_ROOT}/System" ]]; then
   if [[ -d "${GNUSTEP_ROOT}/lib" ]]; then
     rsync -a "${GNUSTEP_ROOT}/lib/" "${APPDIR}/usr/lib/"
   fi
-  THEME_SRC="${GNUSTEP_ROOT}/System/Library/Themes/Sombre.theme"
-  if [[ -d "${THEME_SRC}" ]]; then
-    mkdir -p "${GNUSTEP_APPDIR_ROOT}/System/Library/Themes"
-    rsync -a "${THEME_SRC}" "${GNUSTEP_APPDIR_ROOT}/System/Library/Themes/"
-  fi
+  # Adwaita gives GNOME users a header bar and GNOME's file chooser (#83); the launcher makes it
+  # the default there.
+  mkdir -p "${GNUSTEP_APPDIR_ROOT}/System/Library/Themes"
+  for THEME_NAME in Sombre Adwaita; do
+    THEME_SRC="${GNUSTEP_ROOT}/System/Library/Themes/${THEME_NAME}.theme"
+    if [[ -d "${THEME_SRC}" ]]; then
+      rsync -a "${THEME_SRC}" "${GNUSTEP_APPDIR_ROOT}/System/Library/Themes/"
+    else
+      echo "WARNING: ${THEME_NAME} theme not found at ${THEME_SRC}; not bundling it." >&2
+    fi
+  done
 else
   echo "WARNING: GNUstep root not found at ${GNUSTEP_ROOT}; continuing without bundling runtime." >&2
 fi
@@ -157,6 +163,16 @@ GNUSTEP_USER_DIR_DOC_MAN=GNUstep/Library/Documentation/man
 GNUSTEP_USER_DIR_DOC_INFO=GNUstep/Library/Documentation/info
 EOF_CONFIG
 chmod 0644 "${GNUSTEP_CONFIG_FILE}"
+# On GNOME, default to the bundled Adwaita theme. GlobalDefaults.plist next to GNUstep.conf ranks
+# below the user's own defaults, so a theme the user has chosen still wins.
+GLOBAL_DEFAULTS="${CONFIG_DIR}/GlobalDefaults.plist"
+if [[ ":${XDG_CURRENT_DESKTOP:-}:" == *":GNOME:"* && -d "${GNUSTEP_SYSTEM_ROOT}/Library/Themes/Adwaita.theme" ]]; then
+  echo '{ GSTheme = Adwaita; }' > "${GLOBAL_DEFAULTS}"
+  # GNUstep ignores the file if anyone but its owner can write to it.
+  chmod 0644 "${GLOBAL_DEFAULTS}"
+else
+  rm -f "${GLOBAL_DEFAULTS}"
+fi
 export GNUSTEP_SYSTEM_ROOT GNUSTEP_LOCAL_ROOT GNUSTEP_NETWORK_ROOT
 export GNUSTEP_CONFIG_FILE GNUSTEP_MAKEFILES GNUSTEP_USER_CONFIG_FILE
 if [[ -f "${GNUSTEP_MAKEFILES}/GNUstep.sh" ]]; then
@@ -203,8 +219,9 @@ echo "Running linuxdeploy..."
 chmod +x "${LINUXDEPLOY_BIN}" "${APPIMAGE_PLUGIN}" 2>/dev/null || true
 export LD_LIBRARY_PATH="${APPDIR}/usr/lib:${GNUSTEP_ROOT}/System/Library/Libraries:${GNUSTEP_ROOT}/lib:${LD_LIBRARY_PATH:-}"
 BACKEND_DEPLOY_ARGS=()
-for backend_bundle in "${APPDIR}"/usr/gnustep/System/Library/Bundles/libgnustep-back*.bundle/libgnustep-back*; do
-  if [[ -f "${backend_bundle}" ]]; then
+for backend_bundle in "${APPDIR}"/usr/gnustep/System/Library/Bundles/libgnustep-back*.bundle/libgnustep-back* \
+                      "${APPDIR}"/usr/gnustep/System/Library/Themes/*.theme/*; do
+  if [[ -f "${backend_bundle}" && -x "${backend_bundle}" ]]; then
     BACKEND_DEPLOY_ARGS+=( "--deploy-deps-only=${backend_bundle}" )
   fi
 done

@@ -68,8 +68,14 @@ clone_or_refresh() {
   if [ -d "${dir_name}/.git" ]; then
     git -C "${dir_name}" fetch --depth 1 origin ${ref:+"${ref}"}
     git -C "${dir_name}" reset --hard FETCH_HEAD
+  elif [ -n "${ref}" ]; then
+    # Fetch rather than clone --branch, so the ref can be a commit as well as a tag or branch.
+    git init -q "${dir_name}"
+    git -C "${dir_name}" remote add origin "${repo_url}"
+    git -C "${dir_name}" fetch --depth 1 origin "${ref}"
+    git -C "${dir_name}" checkout -q FETCH_HEAD
   else
-    git clone --depth 1 ${ref:+--branch "${ref}"} "${repo_url}" "${dir_name}"
+    git clone --depth 1 "${repo_url}" "${dir_name}"
   fi
 }
 
@@ -79,8 +85,9 @@ clone_or_refresh() {
 LIBS_BASE_REF="${LIBS_BASE_REF:-base-1_31_1}"
 LIBS_GUI_REF="${LIBS_GUI_REF:-gui-0_32_0}"
 LIBS_BACK_REF="${LIBS_BACK_REF:-back-0_32_0}"
-# The Adwaita theme, so the unit tests also run under it (#74).
-THEME_ADWAITA_REF="${THEME_ADWAITA_REF:-0.1.0-alpha2}"
+# The Adwaita theme, so the unit tests also run under it (#74) and the AppImage bundles it (#83).
+# Pinned past 0.1.0-alpha3 for its open and save panels (GNOME's file chooser through the portal).
+THEME_ADWAITA_REF="${THEME_ADWAITA_REF:-121c5cd30a9d59defb40f56eed866b530d4bee39}"
 
 clone_or_refresh https://github.com/gnustep/libobjc2.git libobjc2
 pushd libobjc2 >/dev/null
