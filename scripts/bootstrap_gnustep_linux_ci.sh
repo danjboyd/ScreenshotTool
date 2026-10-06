@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREFIX="${PREFIX:-/usr/GNUstep}"
 BOOTSTRAP_ROOT="${BOOTSTRAP_ROOT:-$PWD/.ci/gnustep-bootstrap}"
 MAKE_CMD="${MAKE_CMD:-make -j$(nproc)}"
@@ -179,6 +180,12 @@ popd >/dev/null
 
 clone_or_refresh https://github.com/gnustep/libs-back.git libs-back "${LIBS_BACK_REF}"
 pushd libs-back >/dev/null
+# libs-back #227 (on master since 0.32.0): with a window manager that draws the title bar (GNOME
+# Shell), 0.32.0 records no frame offsets, so a window resized after it's shown ends up 39pt short
+# and loses its toolbar (#60).
+if [[ "${LIBS_BACK_REF}" == "back-0_32_0" ]]; then
+  git apply "${SCRIPT_DIR}/patches/libs-back-0.32-frame-extents.patch"
+fi
 source_gnustep_env
 PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
   GNUSTEP_MAKEFILES="${PREFIX}/System/Library/Makefiles" \

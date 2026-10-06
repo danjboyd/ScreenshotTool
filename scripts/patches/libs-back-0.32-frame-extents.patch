@@ -1,0 +1,84 @@
+From b2a5b214f3134977ba73d958ca28587f0871852a Mon Sep 17 00:00:00 2001
+From: Todd White <todd.white@thalion.global>
+Date: Thu, 6 Aug 2026 11:58:36 -0400
+Subject: [PATCH] Fix: do not take an all zero answer to
+ _NET_REQUEST_FRAME_EXTENTS
+
+A window manager that decorates a window reports a frame extent for it.
+Recent Mutter releases answer the _NET_REQUEST_FRAME_EXTENTS message with four
+zeros and publish the real extents only once the window has been mapped.
+-_tryRequestFrameExtents: answered YES as soon as the property changed,
+whatever it held, so every decorated style was recorded with no offset and
+-_checkStyle: never mapped a window to find the real ones.
+
+The answer is now read before it is accepted. Zeros for a style that carries a
+title bar are rejected, which leaves -_checkStyle: to map the window and read
+_NET_FRAME_EXTENTS, as it already does for a window manager that does not
+support the message. A style without decoration is zero on all four sides and
+is taken as it stands.
+
+Measured against a window manager that answers with zeros and publishes a
+title bar of 37 once a window is mapped: the offsets for a titled style were
+0 on all four sides and are now 0, 0, 37, 0. A window manager that answers
+correctly gives 0, 0, 37, 0 either way.
+---
+ Source/x11/XGServerWindow.m | 36 +++++++++++++++++++++++++++++++++++-
+ 1 file changed, 35 insertions(+), 1 deletion(-)
+
+diff --git a/Source/x11/XGServerWindow.m b/Source/x11/XGServerWindow.m
+index fcc4445..e7c56e1 100644
+--- a/Source/x11/XGServerWindow.m
++++ b/Source/x11/XGServerWindow.m
+@@ -719,6 +719,40 @@ _get_next_prop_new_event(Display *display, XEvent *event, char *arg)
+     }
+ }
+ 
++/* A window manager that decorates a window reports a frame extent for it.
++ * Some answer the _NET_REQUEST_FRAME_EXTENTS message with four zeros and
++ * publish the real extents only once the window has been mapped, so zeros for
++ * a style that carries a title bar are not an answer we can use.  A style
++ * without decoration is zero on all four sides and is taken as it stands.
++ */
++- (BOOL) _frameExtentsUsable: (gswindow_device_t *)window
++{
++  unsigned	style = window->win_attrs.window_style;
++  unsigned long	*extents;
++  BOOL		usable;
++
++  if (!((style & NSTitledWindowMask) || (style & NSClosableWindowMask)
++    || (style & NSMiniaturizableWindowMask)))
++    {
++      return YES;
++    }
++
++  extents = [self _getExtents: window->ident];
++  if (extents == 0)
++    {
++      return NO;
++    }
++  usable = (extents[0] != 0 || extents[1] != 0
++    || extents[2] != 0 || extents[3] != 0);
++  if (usable == NO)
++    {
++      NSDebugLLog(@"Offset", @"Frame extents for style %u are all zero,"
++        @" mapping the window to read them instead", style);
++    }
++  XFree(extents);
++  return usable;
++}
++
+ - (BOOL) _tryRequestFrameExtents: (gswindow_device_t *)window
+ {
+   XEvent xEvent;
+@@ -751,7 +785,7 @@ _get_next_prop_new_event(Display *display, XEvent *event, char *arg)
+       else if (XCheckIfEvent(dpy, &xEvent, _get_next_prop_new_event,
+                              (char*)(&event_data)))
+         {
+-          return YES;
++          return [self _frameExtentsUsable: window];
+         }
+       else
+         {
+-- 
+2.47.3
+
