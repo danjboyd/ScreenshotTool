@@ -28,21 +28,21 @@ function Invoke-LoggedCommand {
   }
 }
 
-function ConvertTo-MsysPath {
+# A path as a quoted bash word. On Windows the shell converts it itself (cygpath): MSYS2 mounts
+# drives at /d, but other MSYS2-style roots, such as gnustep-cli-new's, may use /cygdrive/d.
+function ConvertTo-BashPathExpression {
   param(
     [Parameter(Mandatory = $true)]
-    [string]$WindowsPath
+    [string]$Path
   )
 
-  $normalized = [System.IO.Path]::GetFullPath($WindowsPath).Replace("\", "/")
-  if ($normalized -match "^([A-Za-z]):/(.*)$") {
-    return "/$($Matches[1].ToLowerInvariant())/$($Matches[2])"
+  $fullPath = [System.IO.Path]::GetFullPath($Path)
+  if ($IsWindows) {
+    return "`"`$(cygpath -u '$fullPath')`""
   }
-  return $normalized
+  return "'$fullPath'"
 }
 
-# The MSYS2 root that holds the GNUstep toolchain: gnustep-packager's managed gnustep-cli-new root
-# (GP_GNUSTEP_CLI_ROOT) when it provides one, else MSYS2 itself, whose own CLANG64 may have GNUstep.
 function Resolve-MsysRoot {
   foreach ($candidate in @(
     $env:GP_GNUSTEP_CLI_ROOT,
@@ -92,9 +92,9 @@ function Invoke-BashBuild {
     [string]$GNUstepSh
   )
 
-  $repoPosix = ConvertTo-MsysPath -WindowsPath $RepoRoot
-  $gnustepPosix = ConvertTo-MsysPath -WindowsPath $GNUstepSh
-  $command = "set -eo pipefail; export ZSH_VERSION=`"${ZSH_VERSION:-}`"; cd '$repoPosix'; set +u; source '$gnustepPosix'; set -u; make -j`$(nproc)"
+  $repoPath = ConvertTo-BashPathExpression -Path $RepoRoot
+  $gnustepPath = ConvertTo-BashPathExpression -Path $GNUstepSh
+  $command = "set -eo pipefail; export ZSH_VERSION=`"${ZSH_VERSION:-}`"; cd $repoPath; set +u; source $gnustepPath; set -u; make -j`$(nproc)"
   Invoke-LoggedCommand -FilePath $BashExe -ArgumentList @("-lc", $command)
 }
 
