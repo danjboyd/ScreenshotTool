@@ -70,7 +70,7 @@
     {
       "name": "WinUXTheme",
       "repo": "https://github.com/gnustep/plugins-themes-WinUXTheme.git",
-      "ref": "06943038b3d0d9740a7ebedb2ccbde70a72e53f0",
+      "ref": "92ab1fb034ce8b8be82441730d4b843eda708b6e",
       "platforms": [
         "msi"
       ],
