@@ -64,6 +64,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	PopoverScaleFactorProbe_test.m \
 	TooltipsSuppressedProbe_test.m \
 	WaylandClipboardMirrorProbe_test.m \
+	WaylandClipboardTimeoutProbe_test.m \
 	ZoomToolbarWidthProbe_test.m \
 	ZoomComboBoxProbe_test.m
 
