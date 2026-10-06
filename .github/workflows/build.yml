@@ -55,11 +55,15 @@ jobs:
           ./scripts/bootstrap_gnustep_linux_ci.sh
       - name: Build ScreenshotTool (GNUstep)
         run: pwsh -NoProfile -File scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json
+      - name: Keep core dumps of crashed tests
+        # A crashed test run leaves its core in /tmp, for the backtrace step below (#82).
+        run: sudo sysctl -w kernel.core_pattern=/tmp/core.%e.%p
       - name: Unit tests
         # Many tests need a window server; under Xvfb they run instead of skipping. A 24-bit
         # screen so pixel checks see true colours.
         run: |
           echo "Fonts available: $(fc-list | wc -l); DejaVu Sans: $(fc-list 'DejaVu Sans' | wc -l)"
+          ulimit -c unlimited
           xvfb-run -a -s "-screen 0 1920x1080x24" Tools/run_tests.sh
       - name: Unit tests (Adwaita theme)
         # The same suite under the Adwaita theme, which the bootstrap installs (#74).
@@ -67,7 +71,18 @@ jobs:
           TEST_THEME: Adwaita
           TEST_LOG: tests-adwaita.log
           TEST_JUNIT: tests-adwaita-junit.xml
-        run: xvfb-run -a -s "-screen 0 1920x1080x24" Tools/run_tests.sh
+        run: |
+          ulimit -c unlimited
+          xvfb-run -a -s "-screen 0 1920x1080x24" Tools/run_tests.sh
+      - name: Backtrace of a crashed test run
+        if: failure()
+        run: |
+          for core in /tmp/core.*; do
+            [ -f "${core}" ] || continue
+            echo "== ${core}"
+            gdb -batch -ex "set pagination off" -ex "info sharedlibrary libgnustep" \
+              -ex "thread apply all bt 40" third_party/tools-xctest/obj/xctest "${core}" 2>&1 | grep -v "^\[New LWP"
+          done
       - name: Screenshots
         # The main screens under GNUstep's default theme and Adwaita, for review (#75). The
         # script runs its own virtual display and window manager.
