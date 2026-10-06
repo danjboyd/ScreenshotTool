@@ -66,6 +66,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	ToolbarIconThemeProbe_test.m \
 	PopoverScaleFactorProbe_test.m \
 	TooltipsSuppressedProbe_test.m \
+	UndoRedoToolbarProbe_test.m \
 	WaylandClipboardMirrorProbe_test.m \
 	WaylandPasteCheckProbe_test.m \
 	ZoomToolbarWidthProbe_test.m \

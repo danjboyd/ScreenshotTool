@@ -49,6 +49,8 @@ static NSString * const ToolbarItemTools = @"com.screenshottool.toolbar.tools";
 static NSString * const ToolbarItemZoom = @"com.screenshottool.toolbar.zoom";
 static NSString * const ToolbarItemCopy = @"com.screenshottool.toolbar.copy";
 static NSString * const ToolbarItemPreferences = @"com.screenshottool.toolbar.preferences";
+static NSString * const ToolbarItemUndo = @"com.screenshottool.toolbar.undo";
+static NSString * const ToolbarItemRedo = @"com.screenshottool.toolbar.redo";
 static NSString * const ToolbarItemColor = @"com.screenshottool.toolbar.color";
 static const CGFloat StatusBarHeight = 24.0f;
 // Smallest canvas area a window gets, so tiny images still leave room for the title and the
@@ -1172,6 +1174,12 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     if ([identifier isEqualToString:ToolbarItemCopy]) {
         return @"Copy Image";
     }
+    if ([identifier isEqualToString:ToolbarItemUndo]) {
+        return @"Undo";
+    }
+    if ([identifier isEqualToString:ToolbarItemRedo]) {
+        return @"Redo";
+    }
     if ([identifier isEqualToString:ToolbarItemPreferences]) {
         return @"Preferences";
     }
@@ -1551,6 +1559,13 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 - (BOOL)validateToolbarItem:(NSToolbarItem *)toolbarItem {
     NSString *identifier = toolbarItem.itemIdentifier;
+    // As the Edit menu's items (#101).
+    if ([identifier isEqualToString:ToolbarItemUndo]) {
+        return [[self activeUndoManager] canUndo];
+    }
+    if ([identifier isEqualToString:ToolbarItemRedo]) {
+        return [[self activeUndoManager] canRedo];
+    }
     if ([identifier isEqualToString:ToolbarItemCopy]) {
         return [self.canvasView hasImage];
     }
@@ -1790,6 +1805,15 @@ static id STInfoValueForKey(NSString *key) {
     [self.window setAcceptsMouseMovedEvents:YES];
     self.undoManager = [[NSUndoManager alloc] init];
     self.undoManager.levelsOfUndo = 50;
+    // The toolbar's Undo and Redo follow every undo manager: the canvas's and an open text box's (#101).
+    // (GNUstep has no did-close-group notification; checkpoints come with group changes.)
+    for (NSString *name in @[NSUndoManagerCheckpointNotification, NSUndoManagerDidUndoChangeNotification,
+                             NSUndoManagerDidRedoChangeNotification]) {
+        [[NSNotificationCenter defaultCenter] addObserver:self
+                                                 selector:@selector(undoStateDidChange:)
+                                                     name:name
+                                                   object:nil];
+    }
 
     NSRect contentBounds = [[self.window contentView] bounds];
     NSView *container = [[NSView alloc] initWithFrame:contentBounds];
@@ -1987,6 +2011,12 @@ static id STInfoValueForKey(NSString *key) {
     if ([identifier isEqualToString:ToolbarItemPreferences]) {
         return @"Preferences";
     }
+    if ([identifier isEqualToString:ToolbarItemUndo]) {
+        return @"Undo";
+    }
+    if ([identifier isEqualToString:ToolbarItemRedo]) {
+        return @"Redo";
+    }
     return nil;
 }
 
@@ -2096,7 +2126,7 @@ static id STInfoValueForKey(NSString *key) {
 
 #if defined(GNUSTEP)
     [self refreshToolbarToolsControl];
-    NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[ToolbarItemCopy, ToolbarItemPreferences];
+    NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[ToolbarItemUndo, ToolbarItemRedo, ToolbarItemCopy, ToolbarItemPreferences];
 #else
     NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[
         ToolbarItemSelect,
@@ -2120,6 +2150,8 @@ static id STInfoValueForKey(NSString *key) {
         BOOL isEnabled = YES;
         if ([identifier isEqualToString:ToolbarItemCopy]) {
             isEnabled = [self.canvasView hasImage];
+        } else if ([identifier isEqualToString:ToolbarItemUndo] || [identifier isEqualToString:ToolbarItemRedo]) {
+            isEnabled = [self validateToolbarItem:item];
         }
         item.enabled = isEnabled;
 
@@ -2165,7 +2197,9 @@ static id STInfoValueForKey(NSString *key) {
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
 #if defined(GNUSTEP)
     (void)toolbar;
-    return @[ToolbarItemTools,
+    return @[ToolbarItemUndo,
+             ToolbarItemRedo,
+             ToolbarItemTools,
              ToolbarItemColor,
              ToolbarItemCopy,
              ToolbarItemPreferences,
@@ -2191,8 +2225,10 @@ static id STInfoValueForKey(NSString *key) {
 #if defined(GNUSTEP)
     (void)toolbar;
     // Zoom and Preferences live in the View and app menus (with shortcuts) and can be added back
-    // by customising the toolbar (#53).
-    return @[ToolbarItemTools,
+    // by customising the toolbar (#53). Undo and Redo lead, where GNOME apps keep them (#101).
+    return @[ToolbarItemUndo,
+             ToolbarItemRedo,
+             ToolbarItemTools,
              ToolbarItemColor,
              NSToolbarFlexibleSpaceItemIdentifier,
              ToolbarItemCopy];
@@ -2257,6 +2293,18 @@ static id STInfoValueForKey(NSString *key) {
                                                  label:@"Eraser"
                                                 action:@selector(activateEraser:)
                                              imageName:@"Eraser"];
+    }
+    if ([identifier isEqualToString:ToolbarItemUndo]) {
+        return [self baselineToolbarItemWithIdentifier:ToolbarItemUndo
+                                                 label:@"Undo"
+                                                action:@selector(undo:)
+                                             imageName:@"Undo"];
+    }
+    if ([identifier isEqualToString:ToolbarItemRedo]) {
+        return [self baselineToolbarItemWithIdentifier:ToolbarItemRedo
+                                                 label:@"Redo"
+                                                action:@selector(redo:)
+                                             imageName:@"Redo"];
     }
     if ([identifier isEqualToString:ToolbarItemCopy]) {
         return [self baselineToolbarItemWithIdentifier:ToolbarItemCopy
@@ -5923,6 +5971,17 @@ static id STInfoValueForKey(NSString *key) {
 /// While a text box is open, Undo/Redo act on its typing; otherwise on the canvas (#28).
 - (NSUndoManager *)activeUndoManager {
     return [self.canvasView activeTextUndoManager] ?: self.undoManager;
+}
+
+- (void)undoStateDidChange:(NSNotification *)notification {
+    (void)notification;
+    // Once per turn of the run loop, after the group being closed has closed: checkpoints are frequent.
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(validateUndoToolbarItems) object:nil];
+    [self performSelector:@selector(validateUndoToolbarItems) withObject:nil afterDelay:0.0];
+}
+
+- (void)validateUndoToolbarItems {
+    [self.toolbar validateVisibleItems];
 }
 
 - (void)undo:(id)sender {
