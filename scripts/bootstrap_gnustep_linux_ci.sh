@@ -21,7 +21,7 @@ sudo apt-get install -y \
   libxcursor-dev libcups2-dev libsndfile1-dev libdbus-1-dev \
   rsync imagemagick patchelf curl git pkg-config ca-certificates \
   squashfs-tools desktop-file-utils xvfb xauth \
-  openbox xdotool x11-utils
+  openbox xdotool x11-utils gdb
 
 mkdir -p "${BOOTSTRAP_ROOT}"
 cd "${BOOTSTRAP_ROOT}"
