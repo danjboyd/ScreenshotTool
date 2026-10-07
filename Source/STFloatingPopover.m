@@ -105,9 +105,12 @@
     return YES;
 }
 
+/// Closes at once, not animated: callers check -isShown straight after, to toggle or reopen.
 - (void)close {
     if (self.popover.isShown) {
+        self.popover.animates = NO;
         [self.popover close];
+        self.popover.animates = YES;
     }
 }
 

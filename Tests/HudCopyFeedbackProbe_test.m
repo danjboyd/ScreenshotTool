@@ -64,7 +64,12 @@
 
     [_appDelegate hideHUDMessage];
     [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.30]];
+#if defined(GNUSTEP)
     XCTAssertTrue(hudView.isHidden, @"HUD view should hide after dismissing");
+#else
+    // On macOS the notice is a child window, ordered out when it hides.
+    XCTAssertFalse(hudView.window.isVisible, @"HUD window should hide after dismissing");
+#endif
 }
 
 @end
