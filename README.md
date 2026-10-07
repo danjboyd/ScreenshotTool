@@ -8,7 +8,7 @@ you can keep editing.
 Current build targets:
 - GNUstep on Linux and BSD desktops
 - Windows, as an MSI built with GNUstep under MSYS2 CLANG64 (see `docs/Packaging.md`)
-- macOS via a Cocoa-native build path
+- macOS, as a universal (Apple silicon and Intel) app built natively with AppKit, in a DMG
 
 ## Features
 - Pen, highlighter, arrow, text, select and eraser tools. Pen, highlighter and
@@ -75,8 +75,14 @@ scripts/smoke_macos_app.sh build/cocoa/ScreenshotTool.app
 scripts/package_macos_dmg.sh build/cocoa/ScreenshotTool.app
 ```
 
-Requires Xcode Command Line Tools. The macOS build does not require the
-GNUstep runtime.
+Requires Xcode 26 or its Command Line Tools; GNUstep isn't needed. The build compiles the
+sources and copies the resources `GNUmakefile` lists, and produces a universal app signed ad
+hoc. Set `VERSION` to stamp a version, or `ARCHS=arm64` for a quicker one-architecture build.
+
+Release DMGs aren't signed with a Developer ID yet, so macOS won't open the app the first
+time: after the warning, click **Open Anyway** in System Settings → Privacy & Security, or
+run `xattr -dr com.apple.quarantine /Applications/ScreenshotTool.app`. The DMG includes
+these steps. Sparkle updates, Developer ID signing and notarization are planned (`macos.md`).
 
 ## Run
 
@@ -88,9 +94,9 @@ GNUstep runtime.
 
 ### macOS
 
-Build `build/cocoa/ScreenshotTool.app` with `scripts/build_cocoa.sh`, then open
-the app bundle normally or use `scripts/smoke_macos_app.sh` for a quick launch
-check.
+Build `build/cocoa/ScreenshotTool.app` with `scripts/build_cocoa.sh`, then
+`open build/cocoa/ScreenshotTool.app`. `scripts/smoke_macos_app.sh` launches it with a sample
+image and fails if the image doesn't open.
 
 Runtime logs default to `~/.local/state/screenshottool/screenshottool.log` on
 GNUstep/Linux and `~/Library/Logs/ScreenshotTool/screenshottool.log` on macOS.

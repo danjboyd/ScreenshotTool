@@ -13,8 +13,14 @@
     if (self) {
         _message = @"";
         _font = [NSFont boldSystemFontOfSize:13.0f];
+#if defined(GNUSTEP)
         _textColor = [NSColor toolTipTextColor] ?: [NSColor controlTextColor];
         _fillColor = [NSColor toolTipColor] ?: [NSColor controlBackgroundColor];
+#else
+        // AppKit has no public tool tip colours; these follow light and dark mode.
+        _textColor = [NSColor labelColor];
+        _fillColor = [NSColor windowBackgroundColor];
+#endif
         _textPadding = NSMakeSize(20.0f, 12.0f);
         _cornerRadius = 0.0f;
         _hudAlpha = 1.0f;

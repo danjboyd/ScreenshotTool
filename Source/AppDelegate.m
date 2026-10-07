@@ -11,10 +11,11 @@
 #import "STThemeUtilities.h"
 #import "STHudView.h"
 #import "STTextOptionsBar.h"
-#import "GPStandardUpdaterController.h"
 #import <Foundation/NSTask.h>
 #import <dispatch/dispatch.h>
 #if defined(GNUSTEP)
+// The packaged updater (gnustep-packager) serves the Windows and Linux builds.
+#import "GPStandardUpdaterController.h"
 #import <AppKit/NSSegmentedCell.h>
 #import <GNUstepGUI/GSTheme.h>
 #endif
@@ -67,7 +68,6 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 static const NSUInteger STRecentDocumentLimit = 10;
 static NSString * const STRecentDocumentsEmptyTitle = @"No Recent Documents";
 static NSString * const STRecentDocumentsClearTitle = @"Clear Menu";
-#if defined(GNUSTEP)
 static const CGFloat STToolbarToolSegmentWidth = 46.0f;
 static const CGFloat STToolbarToolControlHeight = 32.0f;
 static const CGFloat STToolbarToolIconSize = 22.0f;
@@ -78,7 +78,6 @@ static const CGFloat STToolbarZoomFontSize = 18.0f;
 static const CGFloat STToolbarZoomChevronWidth = 9.0f;
 static const CGFloat STToolbarZoomChevronSpacing = 8.0f;
 static const CGFloat STToolbarZoomHorizontalPadding = 12.0f;
-#endif
 static NSString * const ToolbarIdentifier = @"com.screenshottool.toolbar";
 
 static id STInfoValueForKey(NSString *key);
@@ -104,6 +103,15 @@ static NSString *STInfoStringForKey(NSString *key) {
         return value;
     }
     return nil;
+}
+
+static NSImage *STApplicationIcon(void) {
+#if defined(GNUSTEP)
+    return [NSImage imageNamed:@"ScreenshotToolIcon"];
+#else
+    // The bundle's .icns, shaped for macOS (no square background).
+    return [NSApp applicationIconImage];
+#endif
 }
 
 static NSString *STHomeDirectory(void) {
@@ -180,9 +188,17 @@ static NSString *STSymbolicIconName(NSString *stem) {
 
 /// Names a loaded symbolic icon after its file, which is how the theme knows to tint it.
 static void STMarkSymbolicIcon(NSImage *image, NSString *name) {
-    if (image && [name hasSuffix:@"-symbolic"] && ![[image name] isEqualToString:name]) {
+    if (!image || ![name hasSuffix:@"-symbolic"]) {
+        return;
+    }
+#if defined(GNUSTEP)
+    if (![[image name] isEqualToString:name]) {
         [image setName:name];
     }
+#else
+    // A template image: AppKit tints it for light and dark mode and the selected segment.
+    [image setTemplate:YES];
+#endif
 }
 
 typedef NS_ENUM(NSInteger, STUnsavedChangesChoice) {
@@ -200,7 +216,6 @@ static BOOL STPathUsesTIFFExtension(NSString *path) {
     return [extension isEqualToString:@"tif"] || [extension isEqualToString:@"tiff"];
 }
 
-#if defined(GNUSTEP)
 static NSFont *STToolbarZoomFont(void) {
     return [NSFont systemFontOfSize:STToolbarZoomFontSize];
 }
@@ -222,7 +237,6 @@ static CGFloat STToolbarZoomReservedControlWidth(void) {
     }
     return reservedWidth;
 }
-#endif
 
 #if !defined(GNUSTEP)
 static NSImage *STRasterizeImage(NSSize size, void (^drawingBlock)(NSRect bounds)) {
@@ -391,22 +405,6 @@ static NSImage *STBitmapBackedImageFromFile(NSString *path, NSSize logicalSize) 
     }
     return STBitmapBackedImageFromBitmapRep(normalized, targetSize);
 }
-#else
-static NSBitmapImageRep *STBitmapRepresentationFromImage(NSImage *image) {
-    if (!image) {
-        return nil;
-    }
-    NSData *tiffData = [image TIFFRepresentation];
-    if (!tiffData) {
-        return nil;
-    }
-    NSBitmapImageRep *bitmap = [NSBitmapImageRep imageRepWithData:tiffData];
-    if (bitmap) {
-        [bitmap setSize:image.size];
-    }
-    return bitmap;
-}
-#endif
 
 static BOOL STBitmapRepHasVisiblePixels(NSBitmapImageRep *bitmap) {
     if (!bitmap) {
@@ -452,6 +450,7 @@ static BOOL STImageHasVisiblePixels(NSImage *image) {
     NSBitmapImageRep *fallbackRep = STBitmapRepresentationFromImage(image);
     return STBitmapRepHasVisiblePixels(fallbackRep);
 }
+#endif
 #if !defined(GNUSTEP)
 static NSImage *STRenderToolbarIcon(NSImage *source) {
     if (!source) {
@@ -564,7 +563,6 @@ static NSString *STPathForToolbarResource(NSString *filename, NSString *extensio
     return nil;
 }
 
-#if defined(GNUSTEP)
 @interface STStatusBarBackgroundView : NSView
 @property (nonatomic, strong) NSColor *fillColor;
 @property (nonatomic, strong) NSColor *topBorderColor;
@@ -745,7 +743,6 @@ static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin)
 
 
 
-#endif
 #import <AppKit/NSInterfaceStyle.h>
 #include <math.h>
 #include <stdlib.h>
@@ -991,13 +988,33 @@ static ScreenshotCanvasTool STSettingsToolForTool(ScreenshotCanvasTool tool) {
     return (tool == ScreenshotCanvasToolArrow) ? ScreenshotCanvasToolPen : tool;
 }
 
+static BOOL STEventIsMouseEvent(NSEvent *event) {
+    switch (event.type) {
+        case NSEventTypeLeftMouseDown:
+        case NSEventTypeLeftMouseUp:
+        case NSEventTypeRightMouseDown:
+        case NSEventTypeRightMouseUp:
+        case NSEventTypeOtherMouseDown:
+        case NSEventTypeOtherMouseUp:
+            return YES;
+        default:
+            return NO;
+    }
+}
+
+/// The event's click count, or 0 if it isn't a mouse button event: AppKit throws when asked for
+/// another kind's (the current event of an action sent from the keyboard, say).
+static NSInteger STEventClickCount(NSEvent *event) {
+    return (event && STEventIsMouseEvent(event)) ? event.clickCount : 0;
+}
+
 static NSString *STDebugDescriptionForEvent(NSEvent *event) {
     if (!event) {
         return @"<no NSEvent>";
     }
     NSEventType type = event.type;
-    NSInteger clickCount = event.clickCount;
-    NSInteger buttonNumber = event.buttonNumber;
+    NSInteger clickCount = STEventClickCount(event);
+    NSInteger buttonNumber = STEventIsMouseEvent(event) ? event.buttonNumber : 0;
     unsigned long modifiers = (unsigned long)event.modifierFlags;
     NSPoint location = event.locationInWindow;
     NSTimeInterval timestamp = event.timestamp;
@@ -1049,7 +1066,11 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 @end
 
-@interface AppDelegate () <NSToolbarDelegate, ToolSettingsPopoverControllerDelegate, TextToolPopoverControllerDelegate, ZoomPopoverControllerDelegate, PreferencesWindowControllerDelegate, GPStandardUpdaterControllerDelegate, STTextOptionsBarDelegate>
+@interface AppDelegate () <NSToolbarDelegate, ToolSettingsPopoverControllerDelegate, TextToolPopoverControllerDelegate, ZoomPopoverControllerDelegate, PreferencesWindowControllerDelegate,
+#if defined(GNUSTEP)
+    GPStandardUpdaterControllerDelegate,
+#endif
+    STTextOptionsBarDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NSScrollView *scrollView;
 /// Shown instead of the canvas while no image is open (#55).
@@ -1057,11 +1078,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) ScreenshotCanvasView *canvasView;
 @property (nonatomic, strong) NSToolbar *toolbar;
 @property (nonatomic, strong) NSMutableDictionary<NSToolbarItemIdentifier, NSToolbarItem *> *toolbarItemsByIdentifier;
-#if defined(GNUSTEP)
 @property (nonatomic, strong) STToolbarSegmentedControl *toolbarToolSegmentedControl;
 @property (nonatomic, strong) STToolbarColorWellView *toolbarColorWellView;
 @property (nonatomic, strong) STToolbarZoomButtonView *zoomToolbarButtonView;
-#endif
 @property (nonatomic, strong) NSPopUpButton *zoomPopUpButton;
 @property (nonatomic, strong) NSView *zoomToolbarContainer;
 @property (nonatomic, strong) NSTextField *zoomToolbarLabel;
@@ -1114,7 +1133,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSUndoManager *undoManager;
 @property (nonatomic, assign) BOOL usesDarkTheme;
 @property (nonatomic, assign) BOOL toolWidthMenuCanReset;
+#if defined(GNUSTEP)
 @property (nonatomic, strong) GPStandardUpdaterController *updaterController;
+#endif
 /// Whether the clipboard held an image when last checked, and when (#76).
 @property (nonatomic, assign) BOOL clipboardHadImage;
 @property (nonatomic, assign) NSTimeInterval clipboardCheckedAt;
@@ -1353,6 +1374,13 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     [self setupMenus];
 }
 
+#if !defined(GNUSTEP)
+- (void)showHelp:(id)sender {
+    (void)sender;
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"https://github.com/danjboyd/ScreenshotTool#readme"]];
+}
+#endif
+
 - (void)showAboutPanel:(id)sender {
     (void)sender;
     NSMutableDictionary *options = [[NSMutableDictionary alloc] init];
@@ -1390,7 +1418,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     if (url) {
         options[@"URL"] = url;
     }
-    NSImage *icon = [NSImage imageNamed:@"ScreenshotToolIcon"];
+    NSImage *icon = STApplicationIcon();
     if (icon) {
         options[@"ApplicationIcon"] = icon;
     }
@@ -1475,6 +1503,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 }
 
 - (void)configureUpdater {
+#if defined(GNUSTEP)
     NSError *error = nil;
     self.updaterController = [[GPStandardUpdaterController alloc] initWithPackagedConfiguration:&error];
     if (self.updaterController == nil) {
@@ -1487,16 +1516,27 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     self.updaterController.parentWindow = self.window;
     [self.updaterController start];
     ScreenshotToolAppendLog(@"Updater initialized");
+#endif
+}
+
+- (BOOL)hasUpdater {
+#if defined(GNUSTEP)
+    return (self.updaterController != nil);
+#else
+    return NO;
+#endif
 }
 
 - (IBAction)checkForUpdates:(id)sender {
-    if (self.updaterController == nil) {
+    if (![self hasUpdater]) {
         ScreenshotToolAppendLog(@"Manual update check requested, but updater is unavailable");
         NSBeep();
         return;
     }
 
+#if defined(GNUSTEP)
     [self.updaterController checkForUpdates:sender];
+#endif
 }
 
 - (BOOL)application:(NSApplication *)sender openFile:(NSString *)filename {
@@ -1552,7 +1592,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         return [self.canvasView hasImage];
     }
     if (action == @selector(checkForUpdates:)) {
-        return (self.updaterController != nil);
+        return [self hasUpdater];
     }
     return YES;
 }
@@ -1622,13 +1662,34 @@ static id STInfoValueForKey(NSString *key) {
     [preferencesItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
     [appMenu addItem:preferencesItem];
 
+#if defined(GNUSTEP)
     NSMenuItem *checkForUpdatesItem = [[NSMenuItem alloc] initWithTitle:@"Check for Updates…"
                                                                  action:@selector(checkForUpdates:)
                                                           keyEquivalent:@""];
     [checkForUpdatesItem setTarget:self];
     [appMenu addItem:checkForUpdatesItem];
+#endif
 
     [appMenu addItem:[NSMenuItem separatorItem]];
+
+#if !defined(GNUSTEP)
+    NSMenuItem *servicesItem = [[NSMenuItem alloc] initWithTitle:@"Services" action:NULL keyEquivalent:@""];
+    NSMenu *servicesMenu = [[NSMenu alloc] initWithTitle:@"Services"];
+    [servicesItem setSubmenu:servicesMenu];
+    [appMenu addItem:servicesItem];
+    [NSApp setServicesMenu:servicesMenu];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+
+    [appMenu addItemWithTitle:[NSString stringWithFormat:@"Hide %@", appName]
+                       action:@selector(hide:)
+                keyEquivalent:@"h"];
+    NSMenuItem *hideOthersItem = [appMenu addItemWithTitle:@"Hide Others"
+                                                    action:@selector(hideOtherApplications:)
+                                             keyEquivalent:@"h"];
+    [hideOthersItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagOption)];
+    [appMenu addItemWithTitle:@"Show All" action:@selector(unhideAllApplications:) keyEquivalent:@""];
+    [appMenu addItem:[NSMenuItem separatorItem]];
+#endif
 
     NSString *quitTitle = [NSString stringWithFormat:@"Quit %@", appName];
     NSMenuItem *quitItem = [[NSMenuItem alloc] initWithTitle:quitTitle
@@ -1672,6 +1733,11 @@ static id STInfoValueForKey(NSString *key) {
     [saveProjectItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
     [fileMenu addItem:saveProjectItem];
 
+#if !defined(GNUSTEP)
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+    [fileMenu addItemWithTitle:@"Close" action:@selector(performClose:) keyEquivalent:@"w"];
+#endif
+
     NSMenuItem *fileMenuItem = [[NSMenuItem alloc] initWithTitle:@"File" action:NULL keyEquivalent:@""];
     [fileMenuItem setSubmenu:fileMenu];
     [mainMenu addItem:fileMenuItem];
@@ -1694,12 +1760,24 @@ static id STInfoValueForKey(NSString *key) {
     [editMenu addItem:redoItem];
 
     [editMenu addItem:[NSMenuItem separatorItem]];
+#if !defined(GNUSTEP)
+    [editMenu addItemWithTitle:@"Cut" action:@selector(cut:) keyEquivalent:@"x"];
+#endif
     NSMenuItem *copyItem = [[NSMenuItem alloc] initWithTitle:@"Copy"
                                                       action:@selector(copy:)
                                                keyEquivalent:@"c"];
     [copyItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
+#if defined(GNUSTEP)
     [copyItem setTarget:self];
+#else
+    // Through the responder chain, so a text label being edited copies its text; otherwise the
+    // window delegate (self) copies the image.
+    [copyItem setTarget:nil];
+#endif
     [editMenu addItem:copyItem];
+#if !defined(GNUSTEP)
+    [editMenu addItemWithTitle:@"Paste" action:@selector(paste:) keyEquivalent:@"v"];
+#endif
 
     NSMenuItem *pasteAsNewItem = [[NSMenuItem alloc] initWithTitle:@"Paste as New Image"
                                                             action:@selector(pasteAsNewImage:)
@@ -1716,6 +1794,10 @@ static id STInfoValueForKey(NSString *key) {
     [cropSelectionItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
     [cropSelectionItem setTarget:self];
     [editMenu addItem:cropSelectionItem];
+#if !defined(GNUSTEP)
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
+#endif
 
     NSMenuItem *editMenuItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:NULL keyEquivalent:@""];
     [editMenuItem setSubmenu:editMenu];
@@ -1779,9 +1861,39 @@ static id STInfoValueForKey(NSString *key) {
                                                            keyEquivalent:@""];
     [viewMenu addItem:customizeToolbarItem];
 
+#if !defined(GNUSTEP)
+    [viewMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *fullScreenItem = [viewMenu addItemWithTitle:@"Enter Full Screen"
+                                                     action:@selector(toggleFullScreen:)
+                                              keyEquivalent:@"f"];
+    [fullScreenItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagControl)];
+#endif
+
     NSMenuItem *viewMenuItem = [[NSMenuItem alloc] initWithTitle:@"View" action:NULL keyEquivalent:@""];
     [viewMenuItem setSubmenu:viewMenu];
     [mainMenu addItem:viewMenuItem];
+
+#if !defined(GNUSTEP)
+    NSMenu *windowMenu = [[NSMenu alloc] initWithTitle:@"Window"];
+    [windowMenu addItemWithTitle:@"Minimize" action:@selector(performMiniaturize:) keyEquivalent:@"m"];
+    [windowMenu addItemWithTitle:@"Zoom" action:@selector(performZoom:) keyEquivalent:@""];
+    [windowMenu addItem:[NSMenuItem separatorItem]];
+    [windowMenu addItemWithTitle:@"Bring All to Front" action:@selector(arrangeInFront:) keyEquivalent:@""];
+    NSMenuItem *windowMenuItem = [[NSMenuItem alloc] initWithTitle:@"Window" action:NULL keyEquivalent:@""];
+    [windowMenuItem setSubmenu:windowMenu];
+    [mainMenu addItem:windowMenuItem];
+    [NSApp setWindowsMenu:windowMenu];
+
+    NSMenu *helpMenu = [[NSMenu alloc] initWithTitle:@"Help"];
+    NSMenuItem *helpItem = [helpMenu addItemWithTitle:[NSString stringWithFormat:@"%@ Help", appName]
+                                               action:@selector(showHelp:)
+                                        keyEquivalent:@"?"];
+    [helpItem setTarget:self];
+    NSMenuItem *helpMenuItem = [[NSMenuItem alloc] initWithTitle:@"Help" action:NULL keyEquivalent:@""];
+    [helpMenuItem setSubmenu:helpMenu];
+    [mainMenu addItem:helpMenuItem];
+    [NSApp setHelpMenu:helpMenu];
+#endif
 
     [NSApp setMainMenu:mainMenu];
     ScreenshotToolAppendLog(@"Main menu configured");
@@ -1919,13 +2031,9 @@ static id STInfoValueForKey(NSString *key) {
     self.toolbar.allowsUserCustomization = YES;
     self.toolbar.autosavesConfiguration = YES;
     self.toolbar.sizeMode = NSToolbarSizeModeRegular;
-#if defined(GNUSTEP)
-    // Items have no labels on GNUstep, and libs-gui reserves label space in icon-and-label mode,
-    // which made the toolbar 62px tall for 30px buttons.
+    // The tool, colour and zoom items have no labels. On GNUstep, libs-gui also reserves label
+    // space in icon-and-label mode, which made the toolbar 62px tall for 30px buttons.
     self.toolbar.displayMode = NSToolbarDisplayModeIconOnly;
-#else
-    self.toolbar.displayMode = NSToolbarDisplayModeIconAndLabel;
-#endif
 
     [[NSNotificationCenter defaultCenter] addObserver:self
                                          selector:@selector(toolbarWillAddItemNotification:)
@@ -2044,12 +2152,10 @@ static id STInfoValueForKey(NSString *key) {
     if (!stem) {
         return @[];
     }
-#if defined(GNUSTEP)
     // One monochrome set the theme tints (#57): the selected tool shows as a pressed control,
     // and light or dark is the theme's palette, so there are no active or dark variants.
     (void)active;
     return @[STSymbolicIconName(stem), stem];
-#endif
 
     NSMutableArray<NSString *> *ordered = [[NSMutableArray alloc] init];
     void (^appendUnique)(NSString *) = ^(NSString *candidate) {
@@ -2124,21 +2230,8 @@ static id STInfoValueForKey(NSString *key) {
     NSToolbarItemIdentifier activeIdentifier = [self identifierForTool:self.canvasView.activeTool];
     ScreenshotToolAppendLog([NSString stringWithFormat:@"refreshToolButtonIcons: active=%@", activeIdentifier]);
 
-#if defined(GNUSTEP)
     [self refreshToolbarToolsControl];
     NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[ToolbarItemUndo, ToolbarItemRedo, ToolbarItemCopy, ToolbarItemPreferences];
-#else
-    NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[
-        ToolbarItemSelect,
-        ToolbarItemHighlighter,
-        ToolbarItemPen,
-        ToolbarItemArrow,
-        ToolbarItemEraser,
-        ToolbarItemText,
-        ToolbarItemCopy
-        ,ToolbarItemPreferences
-    ];
-#endif
     for (NSToolbarItemIdentifier identifier in toolIdentifiers) {
         NSToolbarItem *item = [self toolbarItemForIdentifier:identifier];
         if (!item) {
@@ -2195,7 +2288,6 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
-#if defined(GNUSTEP)
     (void)toolbar;
     return @[ToolbarItemUndo,
              ToolbarItemRedo,
@@ -2206,23 +2298,9 @@ static id STInfoValueForKey(NSString *key) {
              ToolbarItemZoom,
              NSToolbarSpaceItemIdentifier,
              NSToolbarFlexibleSpaceItemIdentifier];
-#else
-    return @[ToolbarItemSelect,
-             ToolbarItemHighlighter,
-             ToolbarItemPen,
-             ToolbarItemArrow,
-             ToolbarItemText,
-             ToolbarItemEraser,
-             ToolbarItemCopy,
-             ToolbarItemPreferences,
-             ToolbarItemZoom,
-             NSToolbarSpaceItemIdentifier,
-             NSToolbarFlexibleSpaceItemIdentifier];
-#endif
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
-#if defined(GNUSTEP)
     (void)toolbar;
     // Zoom and Preferences live in the View and app menus (with shortcuts) and can be added back
     // by customising the toolbar (#53). Undo and Redo lead, where GNOME apps keep them (#101).
@@ -2232,16 +2310,6 @@ static id STInfoValueForKey(NSString *key) {
              ToolbarItemColor,
              NSToolbarFlexibleSpaceItemIdentifier,
              ToolbarItemCopy];
-#else
-    return @[ToolbarItemSelect,
-             ToolbarItemHighlighter,
-             ToolbarItemPen,
-             ToolbarItemArrow,
-             ToolbarItemText,
-             ToolbarItemEraser,
-             NSToolbarFlexibleSpaceItemIdentifier,
-             ToolbarItemCopy];
-#endif
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
@@ -2253,11 +2321,9 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (NSToolbarItem *)baselineToolbarItemForIdentifier:(NSToolbarItemIdentifier)identifier {
-#if defined(GNUSTEP)
     if ([identifier isEqualToString:ToolbarItemTools]) {
         return [self toolbarItemForToolControl];
     }
-#endif
     if ([identifier isEqualToString:ToolbarItemHighlighter]) {
         return [self baselineToolbarItemWithIdentifier:ToolbarItemHighlighter
                                                  label:@"Highlighter"
@@ -2312,11 +2378,9 @@ static id STInfoValueForKey(NSString *key) {
                                                 action:@selector(copy:)
                                              imageName:@"CopyImage"];
     }
-#if defined(GNUSTEP)
     if ([identifier isEqualToString:ToolbarItemColor]) {
         return [self toolbarItemForColorControl];
     }
-#endif
     if ([identifier isEqualToString:ToolbarItemPreferences]) {
         return [self baselineToolbarItemWithIdentifier:ToolbarItemPreferences
                                                  label:@"Preferences"
@@ -2614,7 +2678,11 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
     shownHint = YES;
+#if defined(GNUSTEP)
     [self showTransientFeedbackMessage:@"Ctrl+Return or Esc to finish · Return for a new line" duration:3.5];
+#else
+    [self showTransientFeedbackMessage:@"⌘Return or Esc to finish · Return for a new line" duration:3.5];
+#endif
 }
 
 - (NSImage *)toolbarSegmentImageForTool:(ScreenshotCanvasTool)tool selected:(BOOL)selected {
@@ -2630,8 +2698,8 @@ static id STInfoValueForKey(NSString *key) {
     return copy;
 }
 
-#if defined(GNUSTEP)
 - (void)adjustToolbarCustomViewVerticalOffset:(NSView *)view {
+#if defined(GNUSTEP)
     if (!view || !view.superview) {
         return;
     }
@@ -2642,8 +2710,11 @@ static id STInfoValueForKey(NSString *key) {
     }
     frame.origin.y = adjustedY;
     [view setFrame:frame];
-}
+#else
+    // AppKit centres toolbar item views itself.
+    (void)view;
 #endif
+}
 
 - (NSToolbarItem *)toolbarItemForToolControl {
     NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:ToolbarItemTools];
@@ -2653,7 +2724,6 @@ static id STInfoValueForKey(NSString *key) {
     item.target = self;
     item.action = @selector(toolbarToolControlAction:);
 
-#if defined(GNUSTEP)
     if (!self.toolbarToolSegmentedControl) {
         CGFloat toolControlWidth = STToolbarToolSegmentWidth * (CGFloat)STToolbarToolSegmentCount;
         self.toolbarToolSegmentedControl = [[STToolbarSegmentedControl alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, toolControlWidth, STToolbarToolControlHeight)];
@@ -2677,12 +2747,10 @@ static id STInfoValueForKey(NSString *key) {
     item.view = self.toolbarToolSegmentedControl;
     item.minSize = self.toolbarToolSegmentedControl.frame.size;
     item.maxSize = self.toolbarToolSegmentedControl.frame.size;
-#endif
     return item;
 }
 
 - (void)refreshToolbarToolsControl {
-#if defined(GNUSTEP)
     if (!self.toolbarToolSegmentedControl) {
         return;
     }
@@ -2701,7 +2769,6 @@ static id STInfoValueForKey(NSString *key) {
     [self.toolbarToolSegmentedControl setSelectedSegment:selectedSegment];
     [self.toolbarToolSegmentedControl setNeedsDisplay:YES];
     [self adjustToolbarCustomViewVerticalOffset:self.toolbarToolSegmentedControl];
-#endif
 }
 
 - (void)toolbarToolControlAction:(id)sender {
@@ -2755,7 +2822,6 @@ static id STInfoValueForKey(NSString *key) {
     item.target = self;
     item.action = @selector(showActiveToolColorSettings:);
 
-#if defined(GNUSTEP)
     if (!self.toolbarColorWellView) {
         self.toolbarColorWellView = [[STToolbarColorWellView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, STToolbarColorControlWidth, STToolbarColorControlHeight)];
         self.toolbarColorWellView.target = self;
@@ -2764,7 +2830,6 @@ static id STInfoValueForKey(NSString *key) {
     item.view = self.toolbarColorWellView;
     item.minSize = self.toolbarColorWellView.frame.size;
     item.maxSize = self.toolbarColorWellView.frame.size;
-#endif
     return item;
 }
 
@@ -2791,7 +2856,6 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (void)refreshToolbarColorControl {
-#if defined(GNUSTEP)
     NSToolbarItem *item = nil;
     for (NSToolbarItem *candidate in self.toolbar.items) {
         if ([candidate.itemIdentifier isEqualToString:ToolbarItemColor]) {
@@ -2816,7 +2880,6 @@ static id STInfoValueForKey(NSString *key) {
     } else {
         STApplyAccessibilityLabel(colorWellView, @"Color settings unavailable for current tool");
     }
-#endif
 }
 
 - (NSImage *)baselineToolbarImageNamed:(NSString *)name active:(BOOL)active {
@@ -2830,22 +2893,8 @@ static id STInfoValueForKey(NSString *key) {
     }
 
     NSMutableArray<NSString *> *candidates = [[NSMutableArray alloc] init];
-#if defined(GNUSTEP)
     // One monochrome set the theme tints (#57).
     [candidates addObject:STSymbolicIconName(name)];
-#else
-    if (self.usesDarkTheme) {
-        if (active) {
-            [candidates addObject:[name stringByAppendingString:@"-dark-active"]];
-        }
-        [candidates addObject:[name stringByAppendingString:@"-dark"]];
-    } else {
-        if (active) {
-            [candidates addObject:[name stringByAppendingString:@"-light-active"]];
-        }
-        [candidates addObject:[name stringByAppendingString:@"-light"]];
-    }
-#endif
     [candidates addObject:name];
 
     for (NSString *candidate in candidates) {
@@ -2899,21 +2948,11 @@ static id STInfoValueForKey(NSString *key) {
     if (!baseIcon) {
         return nil;
     }
-#if !defined(GNUSTEP)
-    if (self.usesDarkTheme || STThemeIsDark()) {
-        baseIcon = [self darkThemeToolbarImageFromImage:baseIcon active:active];
-    }
-#endif
     NSImage *rendered = [baseIcon copy];
     NSColor *badgeColor = [self badgeColorForToolbarIdentifier:identifier];
     if (badgeColor) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar item %@ color %@", identifier, [self debugDescriptionForColor:badgeColor]]);
     }
-#if !defined(GNUSTEP)
-    if (badgeColor && !active) {
-        rendered = [self imageByAddingColorBadgeToImage:rendered color:badgeColor];
-    }
-#endif
     [rendered setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
 #if defined(GNUSTEP)
     rendered = [self bitmapBackedToolbarImageFromImage:rendered];
@@ -2991,7 +3030,6 @@ static id STInfoValueForKey(NSString *key) {
 #endif
 
 - (NSToolbarItem *)toolbarItemForZoomControl {
-#if defined(GNUSTEP)
     if (!self.zoomToolbarButtonView) {
         CGFloat initialWidth = STToolbarZoomReservedControlWidth();
         self.zoomToolbarButtonView = [[STToolbarZoomButtonView alloc] initWithFrame:NSMakeRect(0, 0, initialWidth, STToolbarZoomControlHeight)];
@@ -3009,62 +3047,9 @@ static id STInfoValueForKey(NSString *key) {
     item.maxSize = self.zoomToolbarButtonView.frame.size;
     [self refreshZoomToolbarControl];
     return item;
-#else
-    if (!self.zoomPopUpButton) {
-        self.zoomPopUpButton = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 160.0, 28.0) pullsDown:NO];
-        [self.zoomPopUpButton setAutoenablesItems:NO];
-        NSArray *titles = @[@"Fit to Window", @"25%", @"50%", @"100%", @"200%"];
-        [self.zoomPopUpButton removeAllItems];
-        [self.zoomPopUpButton addItemsWithTitles:titles];
-        [self.zoomPopUpButton setTarget:self];
-        [self.zoomPopUpButton setAction:@selector(zoomPopUpAction:)];
-        [self.zoomPopUpButton selectItemAtIndex:0];
-        [self.zoomPopUpButton setFont:[NSFont systemFontOfSize:12.0f]];
-    }
-
-    if (!self.zoomToolbarLabel) {
-        NSTextField *label = [[NSTextField alloc] initWithFrame:NSZeroRect];
-        [label setEditable:NO];
-        [label setBezeled:NO];
-        [label setBordered:NO];
-        [label setDrawsBackground:NO];
-        [label setAlignment:NSTextAlignmentCenter];
-        [label setFont:[NSFont boldSystemFontOfSize:11.0f]];
-        [label setTextColor:STThemeToolbarLabelColor()];
-        [label setStringValue:@"Zoom"];
-        self.zoomToolbarLabel = label;
-    }
-
-    if (!self.zoomToolbarContainer) {
-        NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 160.0, 32.0)];
-        [container setAutoresizesSubviews:YES];
-
-        // Label sits at the top; pop-up sits directly beneath within the 32px slot GNUstep allocates.
-        CGFloat labelHeight = 12.0f;
-        [self.zoomToolbarLabel setFrame:NSMakeRect(0, 0, container.frame.size.width, labelHeight)];
-        self.zoomToolbarLabel.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
-        [container addSubview:self.zoomToolbarLabel];
-
-        CGFloat popUpHeight = 20.0f;
-        [self.zoomPopUpButton setFrame:NSMakeRect(0, labelHeight, container.frame.size.width, popUpHeight)];
-        self.zoomPopUpButton.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
-        [container addSubview:self.zoomPopUpButton];
-
-        self.zoomToolbarContainer = container;
-    }
-
-    NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:ToolbarItemZoom];
-    item.label = @"";
-    item.paletteLabel = @"Zoom";
-    item.view = self.zoomToolbarContainer;
-    item.minSize = NSMakeSize(160.0, 32.0);
-    item.maxSize = NSMakeSize(180.0, 32.0);
-    return item;
-#endif
 }
 
 - (void)refreshZoomToolbarControl {
-#if defined(GNUSTEP)
     if (!self.zoomToolbarButtonView) {
         return;
     }
@@ -3102,7 +3087,6 @@ static id STInfoValueForKey(NSString *key) {
     [self adjustToolbarCustomViewVerticalOffset:self.zoomToolbarButtonView];
     NSString *accessibility = hasImage ? [NSString stringWithFormat:@"Zoom %@", title] : @"Zoom unavailable";
     STApplyAccessibilityLabel(self.zoomToolbarButtonView, accessibility);
-#endif
 }
 
 #pragma mark - Status Bar
@@ -3360,9 +3344,7 @@ static id STInfoValueForKey(NSString *key) {
     }
     [self updateHUDAppearance];
     [self refreshToolButtonIcons];
-#if defined(GNUSTEP)
     [self.zoomToolbarButtonView setNeedsDisplay:YES];
-#endif
     [self.zoomPopoverController refresh];
     [self.preferencesWindowController refresh];
 }
@@ -3981,7 +3963,7 @@ static id STInfoValueForKey(NSString *key) {
     if (type != NSEventTypeLeftMouseDown && type != NSEventTypeLeftMouseUp) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"isDoubleClickEvent: ignored event type %ld (clickCount=%ld)",
                                  (long)type,
-                                 (long)event.clickCount]);
+                                 (long)STEventClickCount(event)]);
         return NO;
     }
     BOOL result = event.clickCount >= 2;
@@ -4071,11 +4053,7 @@ static id STInfoValueForKey(NSString *key) {
     if (!anchorView) {
         return;
     }
-#if defined(GNUSTEP)
     NSRect anchor = [self anchorRectForToolbarSubview:self.toolbarColorWellView inView:anchorView];
-#else
-    NSRect anchor = NSZeroRect;
-#endif
     [self showToolSettingsPopoverForTool:activeTool anchorRect:anchor ofView:anchorView event:nil];
 }
 
@@ -4097,11 +4075,7 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
 
-#if defined(GNUSTEP)
     NSRect anchor = [self anchorRectForToolbarSubview:self.zoomToolbarButtonView inView:anchorView];
-#else
-    NSRect anchor = NSZeroRect;
-#endif
     ScreenshotToolAppendLog([NSString stringWithFormat:@"Requesting zoom popover (anchorView=%@ rect=%@)",
                              NSStringFromClass([anchorView class]),
                              NSStringFromRect(anchor)]);
@@ -4783,7 +4757,7 @@ static id STInfoValueForKey(NSString *key) {
     NSView *view = [[NSView alloc] initWithFrame:NSZeroRect];
 
     NSImageView *icon = [[NSImageView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 96.0, 96.0)];
-    [icon setImage:[NSImage imageNamed:@"ScreenshotToolIcon"]];
+    [icon setImage:STApplicationIcon()];
     [icon setImageScaling:NSImageScaleProportionallyUpOrDown];
     [icon setEditable:NO];
     [icon setTag:1];
@@ -5546,7 +5520,7 @@ static id STInfoValueForKey(NSString *key) {
     ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action doubleClick=%@ (clickCount=%ld)",
                              STDebugToolName(ScreenshotCanvasToolHighlighter),
                              openPopover ? @"YES" : @"NO",
-                             (long)(event ? event.clickCount : 0)]);
+                             (long)STEventClickCount(event)]);
     [self selectTool:ScreenshotCanvasToolHighlighter];
     if (openPopover) {
         ScreenshotToolAppendLog(@"Opening Highlighter popover after double-click toolbar activation");
@@ -5571,7 +5545,7 @@ static id STInfoValueForKey(NSString *key) {
     ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action doubleClick=%@ (clickCount=%ld)",
                              STDebugToolName(ScreenshotCanvasToolPen),
                              openPopover ? @"YES" : @"NO",
-                             (long)(event ? event.clickCount : 0)]);
+                             (long)STEventClickCount(event)]);
     [self selectTool:ScreenshotCanvasToolPen];
     if (openPopover) {
         ScreenshotToolAppendLog(@"Opening Pen popover after double-click toolbar activation");
@@ -5595,7 +5569,7 @@ static id STInfoValueForKey(NSString *key) {
     ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action doubleClick=%@ (clickCount=%ld)",
                              STDebugToolName(ScreenshotCanvasToolText),
                              openPopover ? @"YES" : @"NO",
-                             (long)(event ? event.clickCount : 0)]);
+                             (long)STEventClickCount(event)]);
     [self selectTool:ScreenshotCanvasToolText];
     if (openPopover) {
         ScreenshotToolAppendLog(@"Opening Text popover after double-click toolbar activation");
@@ -5843,40 +5817,8 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (void)reflectZoomSelection {
-#if defined(GNUSTEP)
     [self refreshZoomToolbarControl];
     [self.zoomPopoverController refresh];
-#else
-    if (!self.zoomPopUpButton) {
-        return;
-    }
-
-    if (self.canvasView.isFitToWindow) {
-        [self.zoomPopUpButton selectItemAtIndex:0];
-        return;
-    }
-
-    CGFloat scale = self.canvasView.zoomScale;
-    NSString *value = [self displayStringForScale:scale];
-    if (fabs(scale - 0.25) < 0.001) {
-        [self.zoomPopUpButton selectItemAtIndex:1];
-    } else if (fabs(scale - 0.5) < 0.001) {
-        [self.zoomPopUpButton selectItemAtIndex:2];
-    } else if (fabs(scale - 1.0) < 0.001) {
-        [self.zoomPopUpButton selectItemAtIndex:3];
-    } else if (fabs(scale - 2.0) < 0.001) {
-        [self.zoomPopUpButton selectItemAtIndex:4];
-    } else {
-        NSInteger existingIndex = [self.zoomPopUpButton indexOfItemWithTitle:value];
-        if (existingIndex == -1) {
-            [self.zoomPopUpButton addItemWithTitle:value];
-            existingIndex = [self.zoomPopUpButton indexOfItemWithTitle:value];
-        }
-        if (existingIndex >= 0) {
-            [self.zoomPopUpButton selectItemAtIndex:existingIndex];
-        }
-    }
-#endif
 }
 
 - (BOOL)openImageAtURL:(NSURL *)url {

@@ -2,7 +2,8 @@
 
 ## Current Packaging Model
 
-ScreenshotTool now has two packaging paths:
+ScreenshotTool now has two packaging paths for the GNUstep builds (macOS has its own; see
+[macOS](#macos)):
 
 - legacy local AppImage packaging through `scripts/package_appimage.sh`
 - release packaging through `gnustep-packager` using:
@@ -19,6 +20,25 @@ The release path is the authoritative one for phase 11. It is responsible for:
 - `.update-feed.json` sidecar generation
 - GitHub Release asset publication
 - GitHub Pages feed publication
+
+## macOS
+
+The macOS app is built natively with AppKit, outside `gnustep-packager`:
+
+```bash
+VERSION=0.1.0 scripts/build_cocoa.sh          # build/cocoa/ScreenshotTool.app, universal, ad hoc signed
+scripts/smoke_macos_app.sh build/cocoa/ScreenshotTool.app
+VERSION=0.1.0 scripts/package_macos_dmg.sh    # Staging/ScreenshotTool-0.1.0-macOS.dmg
+```
+
+The `package-macos` job in `.github/workflows/release.yml` runs the same steps on a `macos-26`
+runner and adds the DMG to the release. Without `CODESIGN_IDENTITY` the DMG holds the ad hoc
+signed app and a note on opening an unsigned app; with a Developer ID identity and notarization
+credentials (see the script's header) it's signed, notarized and stapled. There's no macOS
+update feed yet.
+
+`Resources/ScreenshotToolIcon-macOS.png`, the source of the app's `.icns`, is made from
+`Resources/ScreenshotToolIcon.png` by `scripts/make_macos_icon.swift`.
 
 ## Local Build And Stage
 

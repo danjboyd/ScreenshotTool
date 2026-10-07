@@ -89,11 +89,34 @@ jobs:
       run-smoke: true
       artifact-name: screenshottool-linux
 
+  package-macos:
+    # Not signed with a Developer ID yet: the DMG carries a note on opening an unsigned app.
+    needs: resolve-version
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ScreenshotTool (Cocoa)
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.package-version }}
+        run: scripts/build_cocoa.sh
+      - name: Smoke test
+        run: scripts/smoke_macos_app.sh build/cocoa/ScreenshotTool.app
+      - name: Package DMG
+        env:
+          VERSION: ${{ needs.resolve-version.outputs.package-version }}
+        run: scripts/package_macos_dmg.sh build/cocoa/ScreenshotTool.app
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshottool-macos-packages
+          path: Staging/*.dmg
+
   publish-release-assets:
     needs:
       - resolve-version
       - package-windows
       - package-linux
+      - package-macos
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -110,6 +133,12 @@ jobs:
           name: screenshottool-linux-packages
           path: dist/linux
 
+      - name: Download macOS package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: screenshottool-macos-packages
+          path: dist/macos
+
       - name: Stage release assets
         shell: bash
         env:
@@ -120,6 +149,8 @@ jobs:
           mkdir -p release-assets site/updates/windows site/updates/linux
           cp dist/windows/* release-assets/
           cp dist/linux/* release-assets/
+          # No update feed for macOS yet: the packaged updater is GNUstep's (Sparkle to come).
+          cp dist/macos/*.dmg release-assets/
           sha256sum release-assets/* > release-assets/SHA256SUMS
           # A Pages deploy replaces the whole site: carry the feeds already published forward.
           for platform in windows linux; do
