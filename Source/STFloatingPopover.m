@@ -3,6 +3,122 @@
 #import "STFloatingPopoverBackgroundView.h"
 #import "AppDelegate.h"
 
+#if !defined(GNUSTEP)
+
+/// On macOS the popover is AppKit's own: the system material, arrow, animation, Escape and
+/// focus handling. It's semitransient, so the colour panel a colour well opens doesn't close it;
+/// clicking the window does.
+@interface STFloatingPopover () <NSPopoverDelegate>
+@property (nonatomic, strong) NSPopover *popover;
+@property (nonatomic, strong) NSViewController *contentController;
+/// The toolbar control the popover is shown from.
+@property (nonatomic, weak) NSView *anchorView;
+@end
+
+@implementation STFloatingPopover
+
+- (instancetype)initWithContentView:(NSView *)contentView {
+    NSParameterAssert(contentView);
+    self = [super init];
+    if (self) {
+        _contentController = [[NSViewController alloc] init];
+        _contentController.view = contentView;
+        _contentSize = contentView.bounds.size;
+        _effectiveScaleFactor = 1.0f;
+        _popover = [[NSPopover alloc] init];
+        _popover.contentViewController = _contentController;
+        _popover.behavior = NSPopoverBehaviorSemitransient;
+        _popover.animates = YES;
+        _popover.delegate = self;
+    }
+    return self;
+}
+
++ (CGFloat)currentScaleFactorForView:(NSView *)view {
+    (void)view;
+    return 1.0f;
+}
+
+- (void)setContentSize:(NSSize)contentSize {
+    _contentSize = contentSize;
+    if (contentSize.width > 0.0f && contentSize.height > 0.0f) {
+        self.popover.contentSize = contentSize;
+    }
+}
+
+- (void)beginTransientInteraction {
+    // NSPopover keeps itself open while its own menus and combo box lists are up.
+}
+
+- (void)endTransientInteraction {
+}
+
+/// Callers anchor the popover to a small rect in the window's content view, under the toolbar
+/// control it belongs to. AppKit positions a popover best against the control itself, so find
+/// the view at the rect's centre (the toolbar control) and anchor to its full height there, which
+/// keeps the arrow on the segment the rect is under.
+- (void)showRelativeToRect:(NSRect)rect ofView:(NSView *)view preferredEdge:(NSRectEdge)edge {
+    if (!view.window) {
+        return;
+    }
+    NSView *anchorView = view;
+    NSRect anchorRect = rect;
+    NSRectEdge anchorEdge = edge;
+    NSView *frameView = view.window.contentView.superview;
+    if (frameView) {
+        NSRect windowRect = [view convertRect:rect toView:nil];
+        NSPoint centre = NSMakePoint(NSMidX(windowRect), NSMidY(windowRect));
+        NSView *hit = [frameView hitTest:[frameView convertPoint:centre fromView:nil]];
+        // A control in the toolbar, not the content view or something inside it.
+        if (hit && hit != view && ![hit isDescendantOf:view.window.contentView]) {
+            anchorView = hit;
+            NSRect hitRect = [hit convertRect:windowRect fromView:nil];
+            anchorRect = NSMakeRect(NSMinX(hitRect), NSMinY(hit.bounds), NSWidth(hitRect), NSHeight(hit.bounds));
+            if (hit.isFlipped != view.isFlipped) {
+                if (edge == NSMinYEdge) {
+                    anchorEdge = NSMaxYEdge;
+                } else if (edge == NSMaxYEdge) {
+                    anchorEdge = NSMinYEdge;
+                }
+            }
+        }
+    }
+    if (self.contentSize.width > 0.0f && self.contentSize.height > 0.0f) {
+        self.popover.contentSize = self.contentSize;
+    }
+    self.anchorView = anchorView;
+    [self.popover showRelativeToRect:anchorRect ofView:anchorView preferredEdge:anchorEdge];
+}
+
+/// A click on the control that opened the popover is left to that control's action, which
+/// toggles it; closing here first would make the action open it again.
+- (BOOL)popoverShouldClose:(NSPopover *)popover {
+    (void)popover;
+    NSEvent *event = [NSApp currentEvent];
+    NSView *anchor = self.anchorView;
+    if (anchor && event.type == NSEventTypeLeftMouseDown && event.window == anchor.window) {
+        NSPoint point = [anchor convertPoint:event.locationInWindow fromView:nil];
+        if (NSPointInRect(point, anchor.bounds)) {
+            return NO;
+        }
+    }
+    return YES;
+}
+
+- (void)close {
+    if (self.popover.isShown) {
+        [self.popover close];
+    }
+}
+
+- (BOOL)isShown {
+    return self.popover.isShown;
+}
+
+@end
+
+#else
+
 static const CGFloat kSTPopoverArrowHeight = 12.0f;
 static const CGFloat kSTPopoverArrowBase = 20.0f;
 static const CGFloat kSTPopoverCornerRadius = 8.0f;
@@ -421,3 +537,5 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
 }
 
 @end
+
+#endif
