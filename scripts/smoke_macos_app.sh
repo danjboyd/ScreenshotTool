@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Lightweight macOS launch smoke: start the app, wait briefly, and kill it.
+# Smoke-launch ScreenshotTool.app long enough to confirm it starts and opens a sample image, as
+# scripts/smoke_appimage.sh does for the AppImage.
+#
+# Usage: scripts/smoke_macos_app.sh [ScreenshotTool.app] [image]
 
 set -euo pipefail
 
@@ -10,24 +13,42 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-APP_BUNDLE="${1:-${ROOT_DIR}/ScreenshotTool.app}"
-LOG_PATH="${LOG_PATH:-${ROOT_DIR}/screenshottool-smoke.log}"
-TIMEOUT="${TIMEOUT:-5}"
+APP_BUNDLE="${1:-${ROOT_DIR}/build/cocoa/ScreenshotTool.app}"
+IMAGE_PATH="${2:-${ROOT_DIR}/Resources/ScreenshotToolIcon.png}"
+TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-8}"
+LOG_PATH="${SCREENSHOT_TOOL_LOG_PATH:-${TMPDIR:-/tmp}/screenshottool-macos-smoke.log}"
+BINARY="${APP_BUNDLE}/Contents/MacOS/ScreenshotTool"
 
-if [[ ! -x "${APP_BUNDLE}/Contents/MacOS/ScreenshotTool" ]]; then
-  echo "Binary missing: ${APP_BUNDLE}/Contents/MacOS/ScreenshotTool" >&2
+if [[ ! -x "${BINARY}" ]]; then
+  echo "Binary missing: ${BINARY}" >&2
+  exit 1
+fi
+if [[ ! -f "${IMAGE_PATH}" ]]; then
+  echo "Smoke-test image missing: ${IMAGE_PATH}" >&2
   exit 1
 fi
 
-: > "${LOG_PATH}"
+rm -f "${LOG_PATH}"
 
-echo "Launching ScreenshotTool.app headlessly for ${TIMEOUT}s (log: ${LOG_PATH})"
-SCREENSHOT_TOOL_LOG_PATH="${LOG_PATH}" "${APP_BUNDLE}/Contents/MacOS/ScreenshotTool" >/dev/null 2>&1 &
+echo "Launching ${APP_BUNDLE} for ${TIMEOUT_SECONDS}s (log: ${LOG_PATH})"
+SCREENSHOT_TOOL_LOG_PATH="${LOG_PATH}" "${BINARY}" "${IMAGE_PATH}" >/dev/null 2>&1 &
 APP_PID=$!
 
-sleep "${TIMEOUT}"
-if ps -p "${APP_PID}" >/dev/null 2>&1; then
-  kill "${APP_PID}" >/dev/null 2>&1 || true
+sleep "${TIMEOUT_SECONDS}"
+if ! kill -0 "${APP_PID}" 2>/dev/null; then
+  status=0
+  wait "${APP_PID}" || status=$?
+  echo "ScreenshotTool exited during the smoke launch (exit ${status}). Recent log output:" >&2
+  tail -n 40 "${LOG_PATH}" >&2 || true
+  exit 1
+fi
+kill "${APP_PID}" 2>/dev/null || true
+wait "${APP_PID}" 2>/dev/null || true
+
+if ! grep -q "openImageAtURL loaded" "${LOG_PATH}"; then
+  echo "Smoke launch did not open the sample image. Recent log output:" >&2
+  tail -n 40 "${LOG_PATH}" >&2 || true
+  exit 1
 fi
 
-echo "Smoke complete. Inspect ${LOG_PATH} for startup traces."
+echo "macOS smoke test passed: ${APP_BUNDLE}"

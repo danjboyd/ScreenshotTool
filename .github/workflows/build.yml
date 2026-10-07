@@ -213,20 +213,22 @@ jobs:
             tests-junit.xml
           if-no-files-found: ignore
 
-  # macos-dmg:
-  #   runs-on: macos-13
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Install dependencies
-  #       run: brew update && brew install gnustep pkg-config freetype fontconfig
-  #     - name: Build ScreenshotTool (macOS)
-  #       run: scripts/build_cocoa.sh
-  #     - name: Smoke launch
-  #       run: scripts/smoke_macos_app.sh
-  #     - name: Package DMG
-  #       run: scripts/package_macos_dmg.sh
-  #     - name: Upload DMG artifact
-  #       uses: actions/upload-artifact@v4
-  #       with:
-  #         name: ScreenshotTool-macOS-DMG
-  #         path: Staging/ScreenshotTool-macOS.dmg
+  macos-app:
+    # The Cocoa build (scripts/build_cocoa.sh): a universal app, launched once and packaged as a
+    # DMG. The macOS 26 SDK gives it the current system look.
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ScreenshotTool (Cocoa)
+        run: scripts/build_cocoa.sh
+      - name: Smoke test
+        run: scripts/smoke_macos_app.sh build/cocoa/ScreenshotTool.app
+      - name: Package DMG
+        run: scripts/package_macos_dmg.sh build/cocoa/ScreenshotTool.app
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenshotTool-macOS
+          path: |
+            Staging/*.dmg
+            Staging/*.dmg.sha256

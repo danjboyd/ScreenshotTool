@@ -11,6 +11,18 @@
 #import "STTextOptionsBar.h"
 #import "STFontFamilyList.h"
 #import "STThemeUtilities.h"
+#import <objc/runtime.h>
+
+/// "Bold (Ctrl+B)" on GNUstep, "Bold (⌘B)" on macOS.
+static NSString *STShortcutToolTip(NSString *title, NSString *gnustepShortcut, NSString *macShortcut) {
+#if defined(GNUSTEP)
+    (void)macShortcut;
+    return [NSString stringWithFormat:@"%@ (%@)", title, gnustepShortcut];
+#else
+    (void)gnustepShortcut;
+    return [NSString stringWithFormat:@"%@ (%@)", title, macShortcut];
+#endif
+}
 
 static const CGFloat STTextOptionsBarHeight = 40.0;
 static const CGFloat STTextOptionsBarPadding = 10.0;
@@ -217,8 +229,8 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
     }
     [self.sizePresets setAction:@selector(sizePresetChanged:)];
     [self prepareControl:self.sizePresets toolTip:@"Size relative to the image"];
-    self.smallerButton = [self smallButtonWithTitle:@"A-" action:@selector(smallerPressed:) toolTip:@"Smaller (Ctrl+Shift+<)"];
-    self.biggerButton = [self smallButtonWithTitle:@"A+" action:@selector(biggerPressed:) toolTip:@"Bigger (Ctrl+Shift+>)"];
+    self.smallerButton = [self smallButtonWithTitle:@"A-" action:@selector(smallerPressed:) toolTip:STShortcutToolTip(@"Smaller", @"Ctrl+Shift+<", @"⇧⌘<")];
+    self.biggerButton = [self smallButtonWithTitle:@"A+" action:@selector(biggerPressed:) toolTip:STShortcutToolTip(@"Bigger", @"Ctrl+Shift+>", @"⇧⌘>")];
 
     // Segments rather than a pop-up: one click to choose, and no menu, which flickered while a
     // text box was being edited (#102). Each segment shows its style on an "A"; tool tips name them.
@@ -259,10 +271,10 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
     [self prepareControl:self.fontField toolTip:@"Font: type a name, or pick from recent fonts and fonts for your language"];
     [self.fontField setRefusesFirstResponder:NO];
 
-    self.boldButton = [self smallButtonWithTitle:@"B" action:@selector(boldPressed:) toolTip:@"Bold (Ctrl+B)"];
+    self.boldButton = [self smallButtonWithTitle:@"B" action:@selector(boldPressed:) toolTip:STShortcutToolTip(@"Bold", @"Ctrl+B", @"⌘B")];
     [self.boldButton setFont:[NSFont boldSystemFontOfSize:12.0]];
     [self.boldButton setButtonType:NSPushOnPushOffButton];
-    self.italicButton = [self smallButtonWithTitle:@"I" action:@selector(italicPressed:) toolTip:@"Italic (Ctrl+I)"];
+    self.italicButton = [self smallButtonWithTitle:@"I" action:@selector(italicPressed:) toolTip:STShortcutToolTip(@"Italic", @"Ctrl+I", @"⌘I")];
     [self.italicButton setButtonType:NSPushOnPushOffButton];
 
     self.alignmentControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(0.0, 0.0, 126.0, STTextOptionsBarControlHeight)];

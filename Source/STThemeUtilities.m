@@ -144,11 +144,20 @@ NSColor *STThemePopoverBorderColor(void) {
 /// Transient notices ("Copied image to clipboard") use the tool tip colours, which each theme
 /// styles: a dark pill with Adwaita, GNUstep's own tool tip colours otherwise.
 NSColor *STThemeHUDBackgroundColor(void) {
+#if defined(GNUSTEP)
     return STSystemColor([NSColor toolTipColor], STThemeCardBackgroundColor());
+#else
+    // AppKit has no public tool tip colours.
+    return STThemeCardBackgroundColor();
+#endif
 }
 
 NSColor *STThemeHUDTextColor(void) {
+#if defined(GNUSTEP)
     return STSystemColor([NSColor toolTipTextColor], STThemePrimaryTextColor());
+#else
+    return STThemePrimaryTextColor();
+#endif
 }
 
 NSColor *STThemeToolbarBackgroundColor(BOOL active) {
