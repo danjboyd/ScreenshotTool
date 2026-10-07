@@ -33,6 +33,15 @@
 }
 @end
 
+/// Runs the run loop until `done` or two seconds pass. Escape commits on the next turn of the run
+/// loop, which can take well over a fixed 50ms in a fresh process (text layout warming up).
+static void STSpinRunLoopUntil(BOOL (^done)(void)) {
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:2.0];
+    while (!done() && [deadline timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+}
+
 @implementation TextToolProbeTests
 
 + (void)load {
@@ -188,7 +197,7 @@
     [self clickCanvas:canvas atViewPoint:NSMakePoint(100.0, 100.0)];
     [canvas.activeTextView insertText:@"Keep me"];
     [canvas textView:canvas.activeTextView doCommandBySelector:@selector(cancelOperation:)];
-    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    STSpinRunLoopUntil(^{ return (BOOL)(canvas.activeTextView == nil); });
 
     XCTAssertNil(canvas.activeTextView, @"Escape ends editing");
     XCTAssertEqual(canvas.texts.count, (NSUInteger)1, @"Escape should keep the new text, which Undo can remove");
@@ -215,7 +224,7 @@
                                      isARepeat:NO
                                        keyCode:9];
     [canvas.activeTextView keyDown:event];
-    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    STSpinRunLoopUntil(^{ return (BOOL)(canvas.activeTextView == nil); });
 
     XCTAssertNil(canvas.activeTextView, @"Escape should end editing");
     XCTAssertEqual(canvas.texts.count, (NSUInteger)1, @"Escape keeps the text");
