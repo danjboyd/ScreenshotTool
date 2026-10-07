@@ -18,15 +18,15 @@ Please follow `WORKFLOW.md` for the expected build/test handoff. Additional cont
 - Rebuild: `make -j$(nproc)`.
 - Full suite: `Tools/run_tests.sh` (sudo may be required on GNUstep for defaults locks).
 - Toolbar assets: `scripts/generate_toolbar_icons.sh`, `scripts/generate_active_icons.sh`, `scripts/normalize_toolbar_icons.sh` as needed. See `docs/ToolbarIconsOnGNUstep.md`.
-- Manual QA: status bar slider syncs pen/highlighter; popovers reflect preferences; default save directory drives Open/Save; hiding status bar reflows the scroll view; toolbar theme swaps icons; zoom/fitting behave in View menu and pop-up.
+- Manual QA: status bar slider syncs pen/highlighter; popovers reflect preferences; default save directory drives Open/Save; hiding status bar reflows the scroll view; theme switches recolour the symbolic icons; zoom/fitting behave in View menu and pop-up.
 
 ## Issue & Status Tracking
-- Active/closed bugs: `OpenIssues.md` / `ClosedIssues.md`.
-- Daily notes and next steps: `STATUS.md`.
+- Bugs, features and planned work: [GitHub Issues](https://github.com/danjboyd/ScreenshotTool/issues).
+- Older notes from before the move to GitHub Issues: `OpenIssues.md`, `ClosedIssues.md` and `STATUS.md` (archived).
 - Tooltip specifics: `docs/GNUstepToolbarTooltips.md`.
 
 ## Daily Wrap-Up (internal)
-1. Append progress + next steps to `STATUS.md`.
-2. Capture unresolved tasks in `OpenIssues.md` with synopsis + theory of the case.
+1. Open or update a GitHub issue for unresolved work, with a synopsis and theory of the case.
+2. Describe the change and its testing in the pull request.
 3. Run `Tools/run_tests.sh` so `tests.log` reflects current state.
 4. Stage/commit changes; truncate `debug.log` before handing off for manual testing.
