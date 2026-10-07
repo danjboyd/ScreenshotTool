@@ -17,6 +17,7 @@ jobs:
     outputs:
       package-version: ${{ steps.version.outputs.package_version }}
       release-tag: ${{ steps.version.outputs.release_tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - name: Resolve package version
         id: version
@@ -27,6 +28,13 @@ jobs:
           package_version="${tag_name#v}"
           echo "release_tag=${tag_name}" >> "${GITHUB_OUTPUT}"
           echo "package_version=${package_version}" >> "${GITHUB_OUTPUT}"
+          # A tag with a pre-release part (v0.1.0-rc1) makes a GitHub prerelease: unsigned, and
+          # its update feeds go to prerelease.json, so the stable feeds don't move (#111).
+          if [[ "${package_version}" == *-* ]]; then
+            echo "prerelease=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "prerelease=false" >> "${GITHUB_OUTPUT}"
+          fi
 
   package-windows:
     needs: resolve-version
@@ -42,7 +50,7 @@ jobs:
       run-validation: true
       run-smoke: true
       artifact-name: screenshottool-windows
-      sign-artifacts: true
+      sign-artifacts: ${{ needs.resolve-version.outputs.prerelease != 'true' }}
       sign-timestamp-url: http://timestamp.digicert.com
     secrets:
       sign_pfx_base64: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}
@@ -88,14 +96,30 @@ jobs:
 
       - name: Stage release assets
         shell: bash
+        env:
+          PRERELEASE: ${{ needs.resolve-version.outputs.prerelease }}
+          PAGES_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
         run: |
           set -euo pipefail
           mkdir -p release-assets site/updates/windows site/updates/linux
           cp dist/windows/* release-assets/
           cp dist/linux/* release-assets/
-          cp dist/windows/*.update-feed.json site/updates/windows/stable.json
-          cp dist/linux/*.update-feed.json site/updates/linux/stable.json
           sha256sum release-assets/* > release-assets/SHA256SUMS
+          # A Pages deploy replaces the whole site: carry the feeds already published forward.
+          for platform in windows linux; do
+            for channel in stable prerelease; do
+              curl -fsSL "${PAGES_URL}/updates/${platform}/${channel}.json" \
+                -o "site/updates/${platform}/${channel}.json" \
+                || rm -f "site/updates/${platform}/${channel}.json"
+            done
+          done
+          channel=stable
+          if [ "${PRERELEASE}" = "true" ]; then
+            channel=prerelease
+          fi
+          cp dist/windows/*.update-feed.json "site/updates/windows/${channel}.json"
+          cp dist/linux/*.update-feed.json "site/updates/linux/${channel}.json"
+          find site -type f | sort
 
       - name: Publish draft GitHub release assets
         uses: softprops/action-gh-release@v2
@@ -103,6 +127,7 @@ jobs:
           tag_name: ${{ needs.resolve-version.outputs.release-tag }}
           generate_release_notes: true
           draft: true
+          prerelease: ${{ needs.resolve-version.outputs.prerelease == 'true' }}
           files: release-assets/*
 
       - name: Upload Pages artifact
