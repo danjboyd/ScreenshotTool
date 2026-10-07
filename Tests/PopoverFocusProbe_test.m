@@ -44,6 +44,15 @@
 }
 @end
 
+// On Windows, hiding the popover makes Windows activate the window behind it, and the win32
+// backend turns that into a makeKeyWindow of its own (from MainWndProc, during orderOut:), so
+// the app's own request can't be counted apart from it.
+#if defined(_WIN32)
+static const BOOL STBackendRequestsKeyOnClose = YES;
+#else
+static const BOOL STBackendRequestsKeyOnClose = NO;
+#endif
+
 @implementation PopoverFocusProbeTests
 
 + (void)load {
@@ -86,6 +95,10 @@
     window.keyRequests = 0;
     [popover close];
     XCTAssertFalse(popover.isShown);
+    if (STBackendRequestsKeyOnClose) {
+        [window orderOut:nil];
+        XCTSkipIf(YES, @"The Windows backend makes the window key itself on close, so the app's request can't be counted");
+    }
     XCTAssertEqual(window.keyRequests, 1u, @"the window it was shown from is made key again");
     [window orderOut:nil];
 }
@@ -97,6 +110,10 @@
     window.keyRequests = 0;
     [popover.window cancelOperation:nil];
     XCTAssertFalse(popover.isShown, @"Escape closes the popover");
+    if (STBackendRequestsKeyOnClose) {
+        [window orderOut:nil];
+        XCTSkipIf(YES, @"The Windows backend makes the window key itself on close, so the app's request can't be counted");
+    }
     XCTAssertEqual(window.keyRequests, 1u);
     [window orderOut:nil];
 }

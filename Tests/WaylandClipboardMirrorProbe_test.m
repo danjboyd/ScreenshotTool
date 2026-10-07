@@ -122,6 +122,11 @@
 }
 
 - (void)testCopyMirrorsPNGToWaylandClipboardWhenWlCopyExists {
+#if defined(_WIN32)
+    // The fake wl-copy is a /bin/sh script found through a ':'-separated PATH; Windows can run
+    // neither, and has no Wayland clipboard to mirror to.
+    XCTSkipIf(YES, @"Wayland's wl-copy doesn't exist on Windows");
+#endif
     [self installFakeWlCopy];
 
     [_appDelegate copy:nil];
