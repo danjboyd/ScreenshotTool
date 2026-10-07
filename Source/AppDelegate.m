@@ -53,6 +53,9 @@ static NSString * const ToolbarItemPreferences = @"com.screenshottool.toolbar.pr
 static NSString * const ToolbarItemUndo = @"com.screenshottool.toolbar.undo";
 static NSString * const ToolbarItemRedo = @"com.screenshottool.toolbar.redo";
 static NSString * const ToolbarItemColor = @"com.screenshottool.toolbar.color";
+#if !defined(GNUSTEP)
+static NSString * const ToolbarItemShare = @"com.screenshottool.toolbar.share";
+#endif
 static const CGFloat StatusBarHeight = 24.0f;
 // Smallest canvas area a window gets, so tiny images still leave room for the title and the
 // whole icon-only toolbar (it overflows below about 556pt with the Adwaita theme).
@@ -168,6 +171,14 @@ static NSString *STDefaultSaveDirectoryPath(void) {
 /// The picture formats Open offers. Not +[NSImage imageFileTypes]: on GNUstep that can include
 /// everything ImageMagick reads (text, HTML, video…), which made Open's file type menu hundreds
 /// of entries long.
+#if !defined(GNUSTEP)
+/// Where dragged-out and shared images are written; cleared at launch.
+static NSURL *STExportDirectoryURL(void) {
+    return [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
+            URLByAppendingPathComponent:@"ScreenshotTool Exports" isDirectory:YES];
+}
+#endif
+
 static NSArray<NSString *> *STOpenableImageFileTypes(void) {
     return @[ @"png", @"jpg", @"jpeg", @"gif", @"bmp", @"tif", @"tiff", @"webp" ];
 }
@@ -741,6 +752,69 @@ static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin)
 
 @end
 
+#if !defined(GNUSTEP)
+/// The Copy toolbar button: a click copies the image; dragging it hands the annotated image (or
+/// the selection) to another app as a PNG file. `dragFileProvider` writes the file as a drag starts.
+@interface STDragExportButton : NSButton <NSDraggingSource>
+@property (nonatomic, copy, nullable) NSURL * _Nullable (^dragFileProvider)(void);
+@end
+
+@implementation STDragExportButton
+
+- (void)mouseDown:(NSEvent *)event {
+    if (!self.enabled || !self.dragFileProvider) {
+        [super mouseDown:event];
+        return;
+    }
+    NSPoint start = event.locationInWindow;
+    self.highlighted = YES;
+    while (YES) {
+        NSEvent *next = [self.window nextEventMatchingMask:(NSEventMaskLeftMouseDragged | NSEventMaskLeftMouseUp)];
+        if (next.type == NSEventTypeLeftMouseUp) {
+            self.highlighted = NO;
+            if (NSPointInRect([self convertPoint:next.locationInWindow fromView:nil], self.bounds)) {
+                [self sendAction:self.action to:self.target];
+            }
+            return;
+        }
+        NSPoint location = next.locationInWindow;
+        if (hypot(location.x - start.x, location.y - start.y) >= 4.0) {
+            self.highlighted = NO;
+            [self beginExportDragWithEvent:event];
+            return;
+        }
+    }
+}
+
+- (void)beginExportDragWithEvent:(NSEvent *)event {
+    NSURL *url = self.dragFileProvider();
+    NSImage *preview = url ? [[NSImage alloc] initWithContentsOfURL:url] : nil;
+    if (!preview) {
+        NSBeep();
+        return;
+    }
+    NSSize size = preview.size;
+    CGFloat scale = MIN(1.0, 160.0 / MAX(MAX(size.width, size.height), 1.0));
+    NSSize dragSize = NSMakeSize(size.width * scale, size.height * scale);
+    NSPoint at = [self convertPoint:event.locationInWindow fromView:nil];
+    NSDraggingItem *item = [[NSDraggingItem alloc] initWithPasteboardWriter:url];
+    [item setDraggingFrame:NSMakeRect(at.x - dragSize.width * 0.5, at.y - dragSize.height * 0.5,
+                                      dragSize.width, dragSize.height)
+                  contents:preview];
+    NSDraggingSession *session = [self beginDraggingSessionWithItems:@[item] event:event source:self];
+    session.animatesToStartingPositionsOnCancelOrFail = YES;
+}
+
+- (NSDragOperation)draggingSession:(NSDraggingSession *)session
+    sourceOperationMaskForDraggingContext:(NSDraggingContext)context {
+    (void)session;
+    (void)context;
+    return NSDragOperationCopy;
+}
+
+@end
+#endif
+
 
 
 #import <AppKit/NSInterfaceStyle.h>
@@ -1069,6 +1143,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @interface AppDelegate () <NSToolbarDelegate, ToolSettingsPopoverControllerDelegate, TextToolPopoverControllerDelegate, ZoomPopoverControllerDelegate, PreferencesWindowControllerDelegate,
 #if defined(GNUSTEP)
     GPStandardUpdaterControllerDelegate,
+#else
+    NSSharingServicePickerToolbarItemDelegate, NSMenuDelegate,
 #endif
     STTextOptionsBarDelegate>
 @property (nonatomic, strong) NSWindow *window;
@@ -1193,7 +1269,11 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         return @"Eraser Tool";
     }
     if ([identifier isEqualToString:ToolbarItemCopy]) {
+#if defined(GNUSTEP)
         return @"Copy Image";
+#else
+        return @"Copy Image — or drag it into another app";
+#endif
     }
     if ([identifier isEqualToString:ToolbarItemUndo]) {
         return @"Undo";
@@ -1375,6 +1455,155 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 }
 
 #if !defined(GNUSTEP)
+#pragma mark - Drag out, share and drop (macOS)
+
+/// Writes the annotated image (or the selection) as a PNG named after the document, for a drag
+/// or a share. Each export gets its own folder, so the file keeps the document's name.
+- (nullable NSURL *)exportAnnotatedImageToTemporaryFile {
+    if (![self.canvasView hasImage]) {
+        return nil;
+    }
+    NSImage *image = [self.canvasView flattenedImageForSelection];
+    NSData *pngData = image ? [self pngDataForImage:image] : nil;
+    if (pngData.length == 0) {
+        return nil;
+    }
+    NSString *name = [[(self.currentImageURL ?: self.currentProjectURL) lastPathComponent] stringByDeletingPathExtension];
+    if (name.length == 0) {
+        name = @"Screenshot";
+    }
+    NSURL *directory = [STExportDirectoryURL() URLByAppendingPathComponent:[[NSUUID UUID] UUIDString] isDirectory:YES];
+    NSError *error = nil;
+    if (![[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:&error]) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Export failed: %@", error.localizedDescription]);
+        return nil;
+    }
+    NSURL *url = [directory URLByAppendingPathComponent:[name stringByAppendingPathExtension:@"png"]];
+    if (![pngData writeToURL:url options:NSDataWritingAtomic error:&error]) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Export failed: %@", error.localizedDescription]);
+        return nil;
+    }
+    return url;
+}
+
+- (NSToolbarItem *)dragExportCopyToolbarItem {
+    NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:ToolbarItemCopy];
+    item.label = @"Copy";
+    item.paletteLabel = @"Copy";
+    NSImage *image = [self baselineToolbarImageNamed:@"CopyImage" active:NO];
+    STDragExportButton *button = [STDragExportButton buttonWithImage:(image ?: [[NSImage alloc] init])
+                                                              target:self
+                                                              action:@selector(copy:)];
+    button.bezelStyle = NSBezelStyleTexturedRounded;
+    __weak AppDelegate *weakSelf = self;
+    button.dragFileProvider = ^NSURL * {
+        return [weakSelf exportAnnotatedImageToTemporaryFile];
+    };
+    STApplyAccessibilityLabel(button, @"Copy image");
+    item.view = button;
+    item.toolTip = [self toolTipForIdentifier:ToolbarItemCopy];
+    return item;
+}
+
+- (NSArray *)itemsForSharingServicePickerToolbarItem:(NSSharingServicePickerToolbarItem *)pickerToolbarItem {
+    (void)pickerToolbarItem;
+    NSURL *url = [self exportAnnotatedImageToTemporaryFile];
+    return url ? @[url] : @[];
+}
+
+/// File > Share lists the services for the annotated image each time it opens.
+- (void)menuNeedsUpdate:(NSMenu *)menu {
+    if (![menu.title isEqualToString:@"Share"]) {
+        return;
+    }
+    [menu removeAllItems];
+    NSURL *url = [self exportAnnotatedImageToTemporaryFile];
+    if (!url) {
+        NSMenuItem *none = [menu addItemWithTitle:@"No Image to Share" action:NULL keyEquivalent:@""];
+        none.enabled = NO;
+        return;
+    }
+    for (NSSharingService *service in [NSSharingService sharingServicesForItems:@[url]]) {
+        NSMenuItem *item = [menu addItemWithTitle:service.menuItemTitle
+                                           action:@selector(shareFromMenuItem:)
+                                    keyEquivalent:@""];
+        item.image = service.image;
+        item.target = self;
+        item.representedObject = @[service, url];
+    }
+}
+
+- (void)shareFromMenuItem:(NSMenuItem *)sender {
+    NSArray *payload = sender.representedObject;
+    NSSharingService *service = payload.firstObject;
+    NSURL *url = payload.lastObject;
+    if ([service isKindOfClass:[NSSharingService class]] && [url isKindOfClass:[NSURL class]]) {
+        [service performWithItems:@[url]];
+    }
+}
+
+/// The image file or project a drag carries, if any.
+- (nullable NSURL *)openableFileURLFromPasteboard:(NSPasteboard *)pasteboard {
+    NSArray<NSURL *> *urls = [pasteboard readObjectsForClasses:@[[NSURL class]]
+                                                       options:@{NSPasteboardURLReadingFileURLsOnlyKey: @YES}];
+    for (NSURL *url in urls) {
+        NSString *extension = url.pathExtension.lowercaseString;
+        if (STURLIsProject(url) || [STOpenableImageFileTypes() containsObject:extension]) {
+            return url;
+        }
+    }
+    return nil;
+}
+
+- (NSDragOperation)dragOperationForDraggingInfo:(id<NSDraggingInfo>)sender {
+    // Not the image being dragged out of this window.
+    if ([[sender draggingSource] isKindOfClass:[STDragExportButton class]]) {
+        return NSDragOperationNone;
+    }
+    NSPasteboard *pasteboard = [sender draggingPasteboard];
+    if ([self openableFileURLFromPasteboard:pasteboard] || [NSImage canInitWithPasteboard:pasteboard]) {
+        return NSDragOperationCopy;
+    }
+    return NSDragOperationNone;
+}
+
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)sender {
+    return [self dragOperationForDraggingInfo:sender];
+}
+
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)sender {
+    return [self dragOperationForDraggingInfo:sender];
+}
+
+/// A dropped image file or project opens like Open…; a dropped image without a file (from a
+/// browser, say) opens untitled, like Paste.
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)sender {
+    if ([self dragOperationForDraggingInfo:sender] == NSDragOperationNone) {
+        return NO;
+    }
+    NSPasteboard *pasteboard = [sender draggingPasteboard];
+    NSURL *url = [self openableFileURLFromPasteboard:pasteboard];
+    NSData *pngData = nil;
+    if (!url) {
+        NSImage *image = [[NSImage alloc] initWithPasteboard:pasteboard];
+        pngData = image ? [self pngDataForImage:image] : nil;
+        if (pngData.length == 0) {
+            return NO;
+        }
+    }
+    // After the drop finishes, so an unsaved-changes alert doesn't run inside the drag.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (![self confirmProceedingWithUnsavedChanges]) {
+            return;
+        }
+        NSURL *target = url ?: [self temporaryClipboardImageURLForPNGData:pngData];
+        if (target) {
+            [self openImageAtURL:target];
+        }
+    });
+    return YES;
+}
+
 - (void)showHelp:(id)sender {
     (void)sender;
     [[NSWorkspace sharedWorkspace] openURL:[NSURL URLWithString:@"https://github.com/danjboyd/ScreenshotTool#readme"]];
@@ -1459,6 +1688,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     ScreenshotToolAppendLog(@"ScreenshotTool launched");
+#if !defined(GNUSTEP)
+    [[NSFileManager defaultManager] removeItemAtURL:STExportDirectoryURL() error:NULL];
+#endif
     self.usesDarkTheme = STThemeIsDark();
 #if defined(GNUSTEP)
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -1735,6 +1967,11 @@ static id STInfoValueForKey(NSString *key) {
 
 #if !defined(GNUSTEP)
     [fileMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *shareItem = [fileMenu addItemWithTitle:@"Share" action:NULL keyEquivalent:@""];
+    NSMenu *shareMenu = [[NSMenu alloc] initWithTitle:@"Share"];
+    shareMenu.delegate = self;
+    [shareItem setSubmenu:shareMenu];
+    [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItemWithTitle:@"Close" action:@selector(performClose:) keyEquivalent:@"w"];
 #endif
 
@@ -1915,6 +2152,10 @@ static id STInfoValueForKey(NSString *key) {
     [self.window center];
     [self.window setDelegate:self];
     [self.window setAcceptsMouseMovedEvents:YES];
+#if !defined(GNUSTEP)
+    // The window passes drags to its delegate (see Drag and drop below).
+    [self.window registerForDraggedTypes:@[NSPasteboardTypeFileURL, NSPasteboardTypePNG, NSPasteboardTypeTIFF]];
+#endif
     self.undoManager = [[NSUndoManager alloc] init];
     self.undoManager.levelsOfUndo = 50;
     // The toolbar's Undo and Redo follow every undo manager: the canvas's and an open text box's (#101).
@@ -2298,6 +2539,9 @@ static id STInfoValueForKey(NSString *key) {
              ToolbarItemTools,
              ToolbarItemColor,
              ToolbarItemCopy,
+#if !defined(GNUSTEP)
+             ToolbarItemShare,
+#endif
              ToolbarItemPreferences,
              ToolbarItemZoom,
              NSToolbarSpaceItemIdentifier,
@@ -2313,6 +2557,9 @@ static id STInfoValueForKey(NSString *key) {
              ToolbarItemTools,
              ToolbarItemColor,
              NSToolbarFlexibleSpaceItemIdentifier,
+#if !defined(GNUSTEP)
+             ToolbarItemShare,
+#endif
              ToolbarItemCopy];
 }
 
@@ -2376,6 +2623,20 @@ static id STInfoValueForKey(NSString *key) {
                                                 action:@selector(redo:)
                                              imageName:@"Redo"];
     }
+#if !defined(GNUSTEP)
+    if ([identifier isEqualToString:ToolbarItemCopy]) {
+        return [self dragExportCopyToolbarItem];
+    }
+    if ([identifier isEqualToString:ToolbarItemShare]) {
+        NSSharingServicePickerToolbarItem *item =
+            [[NSSharingServicePickerToolbarItem alloc] initWithItemIdentifier:ToolbarItemShare];
+        item.label = @"Share";
+        item.paletteLabel = @"Share";
+        item.toolTip = @"Share the annotated image";
+        item.delegate = self;
+        return item;
+    }
+#endif
     if ([identifier isEqualToString:ToolbarItemCopy]) {
         return [self baselineToolbarItemWithIdentifier:ToolbarItemCopy
                                                  label:@"Copy"
