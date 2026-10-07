@@ -41,6 +41,7 @@
 NSString * const ScreenshotCanvasViewDidRestoreStateNotification = @"ScreenshotCanvasViewDidRestoreStateNotification";
 NSString * const ScreenshotCanvasViewRequestsToolNotification = @"ScreenshotCanvasViewRequestsToolNotification";
 NSString * const ScreenshotCanvasViewToolKey = @"tool";
+NSString * const ScreenshotCanvasViewDidChangeZoomNotification = @"ScreenshotCanvasViewDidChangeZoomNotification";
 NSString * const ScreenshotCanvasViewDidBeginTextEditingNotification = @"ScreenshotCanvasViewDidBeginTextEditingNotification";
 NSString * const ScreenshotCanvasViewDidEndTextEditingNotification = @"ScreenshotCanvasViewDidEndTextEditingNotification";
 NSString * const ScreenshotCanvasViewRequestsTextFormatNotification = @"ScreenshotCanvasViewRequestsTextFormatNotification";
@@ -3232,6 +3233,70 @@ static NSError *STProjectError(NSString *message) {
     }
     return imagePoint;
 }
+
+#if !defined(GNUSTEP)
+#pragma mark - Trackpad and mouse zoom
+
+/// Zooms to `scale`, keeping the image point under `windowLocation` where it is on screen.
+- (void)zoomToScale:(CGFloat)scale keepingWindowLocation:(NSPoint)windowLocation {
+    NSScrollView *scrollView = self.hostScrollView;
+    NSClipView *clipView = scrollView.contentView;
+    NSPoint before = [self convertPoint:windowLocation fromView:nil];
+    NSPoint imagePoint = NSMakePoint(before.x / self.zoomScale, before.y / self.zoomScale);
+    NSPoint inClip = [clipView convertPoint:windowLocation fromView:nil];
+    NSPoint offset = NSMakePoint(inClip.x - NSMinX(clipView.bounds), inClip.y - NSMinY(clipView.bounds));
+
+    self.fitToWindow = NO;
+    self.zoomScale = scale;
+
+    if (clipView) {
+        NSPoint after = [clipView convertPoint:[self viewPointForImagePoint:imagePoint] fromView:self];
+        NSRect bounds = clipView.bounds;
+        bounds.origin = NSMakePoint(after.x - offset.x, after.y - offset.y);
+        [clipView scrollToPoint:[clipView constrainBoundsRect:bounds].origin];
+        [scrollView reflectScrolledClipView:clipView];
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewDidChangeZoomNotification
+                                                        object:self];
+}
+
+- (void)magnifyWithEvent:(NSEvent *)event {
+    if (!self.image) {
+        [super magnifyWithEvent:event];
+        return;
+    }
+    [self zoomToScale:self.zoomScale * (1.0 + event.magnification) keepingWindowLocation:event.locationInWindow];
+}
+
+/// A two-finger double tap: 100% at the pointer, or back to Fit.
+- (void)smartMagnifyWithEvent:(NSEvent *)event {
+    if (!self.image) {
+        return;
+    }
+    if (self.fitToWindow || fabs(self.zoomScale - 1.0) > 0.001) {
+        [self zoomToScale:1.0 keepingWindowLocation:event.locationInWindow];
+        return;
+    }
+    self.fitToWindow = YES;
+    [self updateForEnclosingBoundsChange];
+    [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewDidChangeZoomNotification
+                                                        object:self];
+}
+
+/// Command-scroll zooms, for a mouse; plain scrolling pans.
+- (void)scrollWheel:(NSEvent *)event {
+    if (!self.image || (event.modifierFlags & NSEventModifierFlagCommand) == 0) {
+        [super scrollWheel:event];
+        return;
+    }
+    CGFloat delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 200.0 : event.scrollingDeltaY / 20.0;
+    if (fabs(delta) < 0.0001) {
+        return;
+    }
+    delta = MAX(-0.5, MIN(delta, 0.5));
+    [self zoomToScale:self.zoomScale * (1.0 + delta) keepingWindowLocation:event.locationInWindow];
+}
+#endif
 
 - (void)eraseAtPoint:(NSPoint)point {
     [self commitActiveTextIfNeeded];

@@ -121,3 +121,5 @@ extern NSString * const _Nonnull ScreenshotCanvasViewDidEndTextEditingNotificati
 /// @"bold", @"italic", @"bigger" or @"smaller".
 extern NSString * const _Nonnull ScreenshotCanvasViewRequestsTextFormatNotification;
 extern NSString * const _Nonnull ScreenshotCanvasViewTextFormatKey;
+/// Posted when the canvas changes its own zoom (a trackpad pinch, say), for the zoom controls.
+extern NSString * const _Nonnull ScreenshotCanvasViewDidChangeZoomNotification;

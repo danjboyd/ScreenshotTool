@@ -1971,6 +1971,10 @@ static id STInfoValueForKey(NSString *key) {
                                              selector:@selector(canvasViewRequestsTextFormat:)
                                                  name:ScreenshotCanvasViewRequestsTextFormatNotification
                                                object:self.canvasView];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(canvasViewDidChangeZoom:)
+                                                 name:ScreenshotCanvasViewDidChangeZoomNotification
+                                               object:self.canvasView];
 
     [self.scrollView setDocumentView:self.canvasView];
     [container addSubview:self.scrollView];
@@ -2660,6 +2664,11 @@ static id STInfoValueForKey(NSString *key) {
     (void)bar;
     [self applyTextAlignment:alignment persist:YES];
     [self textSettingsChangedFromBar];
+}
+
+- (void)canvasViewDidChangeZoom:(NSNotification *)notification {
+    (void)notification;
+    [self reflectZoomSelection];
 }
 
 - (void)canvasViewRequestsTool:(NSNotification *)notification {
