@@ -1430,6 +1430,10 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
     [self persistRecentDocumentPaths];
     [self rebuildOpenRecentMenu];
+#if !defined(GNUSTEP)
+    // The system's list too: the Dock icon's menu and Recent Items.
+    [[NSDocumentController sharedDocumentController] noteNewRecentDocumentURL:url];
+#endif
 }
 
 - (void)removeRecentDocumentPath:(NSString *)path {
@@ -6194,6 +6198,14 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)validateUndoToolbarItems {
     [self.toolbar validateVisibleItems];
+    [self updateDocumentEditedState];
+}
+
+/// macOS marks a window with unsaved changes with a dot in its close button.
+- (void)updateDocumentEditedState {
+#if !defined(GNUSTEP)
+    [self.window setDocumentEdited:[self hasUnsavedChanges]];
+#endif
 }
 
 - (void)undo:(id)sender {
@@ -6250,6 +6262,7 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)markAnnotationsSaved {
     self.savedAnnotationFingerprint = [self.canvasView annotationFingerprint];
+    [self updateDocumentEditedState];
 }
 
 /// Save… / Don't Save / Cancel. Separate so tests can answer without a modal alert.
