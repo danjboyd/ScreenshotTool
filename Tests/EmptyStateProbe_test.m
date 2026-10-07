@@ -11,6 +11,7 @@
 #import "AppDelegate.h"
 #import "ScreenshotCanvasView.h"
 #import "TestEnvironmentHelpers.h"
+#import <objc/runtime.h>
 
 @interface AppDelegate (EmptyStateTesting)
 - (void)setupWindowAndContent;

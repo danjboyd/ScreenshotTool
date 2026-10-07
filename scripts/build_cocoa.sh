@@ -2,7 +2,9 @@
 # Build a Cocoa-native ScreenshotTool.app without GNUstep dependencies.
 #
 # The sources and resources are the ones GNUmakefile lists for the GNUstep build, so the two
-# builds can't drift apart. The result is a universal (arm64 + x86_64) app, signed ad hoc.
+# builds can't drift apart. Of the resources, macOS needs only the symbolic toolbar icons (the
+# toolbar's one icon set, tinted as template images) and the cursors; the full-colour icons and
+# their TIFFs are GNUstep fallbacks. The result is a universal (arm64 + x86_64) app, signed ad hoc.
 #
 # Environment:
 #   VERSION     version to stamp into Info.plist (default: the manifest's package version)
@@ -50,7 +52,11 @@ makefile_list() {
 SOURCES=()
 while IFS= read -r line; do SOURCES+=("${line}"); done < <(makefile_list ScreenshotTool_OBJC_FILES)
 RESOURCES=()
-while IFS= read -r line; do RESOURCES+=("${line}"); done < <(makefile_list ScreenshotTool_RESOURCE_FILES)
+while IFS= read -r line; do
+  case "${line}" in
+    *-symbolic.png | Resources/Cursors/*) RESOURCES+=("${line}") ;;
+  esac
+done < <(makefile_list ScreenshotTool_RESOURCE_FILES)
 if [[ ${#SOURCES[@]} -eq 0 || ${#RESOURCES[@]} -eq 0 ]]; then
   echo "Couldn't read the source or resource lists from GNUmakefile." >&2
   exit 1

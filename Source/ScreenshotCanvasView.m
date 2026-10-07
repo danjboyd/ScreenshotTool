@@ -41,6 +41,7 @@
 NSString * const ScreenshotCanvasViewDidRestoreStateNotification = @"ScreenshotCanvasViewDidRestoreStateNotification";
 NSString * const ScreenshotCanvasViewRequestsToolNotification = @"ScreenshotCanvasViewRequestsToolNotification";
 NSString * const ScreenshotCanvasViewToolKey = @"tool";
+NSString * const ScreenshotCanvasViewDidChangeZoomNotification = @"ScreenshotCanvasViewDidChangeZoomNotification";
 NSString * const ScreenshotCanvasViewDidBeginTextEditingNotification = @"ScreenshotCanvasViewDidBeginTextEditingNotification";
 NSString * const ScreenshotCanvasViewDidEndTextEditingNotification = @"ScreenshotCanvasViewDidEndTextEditingNotification";
 NSString * const ScreenshotCanvasViewRequestsTextFormatNotification = @"ScreenshotCanvasViewRequestsTextFormatNotification";
@@ -53,7 +54,8 @@ static BOOL ScreenshotUndoLoggingEnabled(void) {
 }
 #endif
 
-#if ST_ENABLE_GNUSTEP_WORKAROUNDS
+/// The text box's editor: the key commands below on every platform, and a transparent
+/// background on GNUstep.
 @interface STTransparentTextView : NSTextView
 /// Modifiers of the key event being handled, so key commands (Ctrl+Return) can see them
 /// without relying on -[NSApp currentEvent].
@@ -65,6 +67,7 @@ static BOOL ScreenshotUndoLoggingEnabled(void) {
     return NO;
 }
 
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
 - (void)drawRect:(NSRect)dirtyRect {
     [super drawRect:dirtyRect];
 }
@@ -72,6 +75,7 @@ static BOOL ScreenshotUndoLoggingEnabled(void) {
 - (void)drawViewBackgroundInRect:(NSRect)rect {
     // Skip GNUstep's default background fill so the text box stays transparent.
 }
+#endif
 
 - (void)keyDown:(NSEvent *)event {
     self.handlingKeyModifierFlags = event.modifierFlags;
@@ -84,8 +88,8 @@ static BOOL ScreenshotUndoLoggingEnabled(void) {
                                                             object:self.delegate
                                                           userInfo:@{ ScreenshotCanvasViewTextFormatKey: format }];
     } else if (isReturn && (event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl)) != 0) {
-        // GNUstep's key bindings have no command for Control+Return; send the one the delegate
-        // reads as "finish" so Ctrl+Return works whichever modifier the Ctrl key maps to.
+        // GNUstep's key bindings have no command for Control+Return, nor AppKit's for
+        // Command+Return; send the one the delegate reads as "finish" so either works.
         [self doCommandBySelector:@selector(insertNewline:)];
     } else {
         [super keyDown:event];
@@ -120,7 +124,6 @@ static BOOL ScreenshotUndoLoggingEnabled(void) {
     return nil;
 }
 @end
-#endif
 
 static BOOL ScreenshotCursorLoggingEnabled(void) {
     static int initialized = 0;
@@ -1293,6 +1296,35 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
         [[undo prepareWithInvocationTarget:self] restoreCanvasStateFromSnapshot:currentSnapshot registeringUndo:YES];
     }
 }
+/// `source` redrawn as 8-bit RGBA with premultiplied alpha, which every graphics context accepts.
+static NSBitmapImageRep *STPremultipliedRGBABitmapFromRep(NSBitmapImageRep *source, NSSize size) {
+    if (!source || source.pixelsWide <= 0 || source.pixelsHigh <= 0) {
+        return nil;
+    }
+    NSBitmapImageRep *converted = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                                          pixelsWide:source.pixelsWide
+                                                                          pixelsHigh:source.pixelsHigh
+                                                                       bitsPerSample:8
+                                                                     samplesPerPixel:4
+                                                                            hasAlpha:YES
+                                                                            isPlanar:NO
+                                                                      colorSpaceName:NSDeviceRGBColorSpace
+                                                                         bytesPerRow:0
+                                                                        bitsPerPixel:0];
+    NSGraphicsContext *context = converted ? [NSGraphicsContext graphicsContextWithBitmapImageRep:converted] : nil;
+    if (!context) {
+        return nil;
+    }
+    [converted setSize:size];
+    [NSGraphicsContext saveGraphicsState];
+    [NSGraphicsContext setCurrentContext:context];
+    [[NSColor clearColor] setFill];
+    NSRectFill(NSMakeRect(0.0, 0.0, size.width, size.height));
+    [source drawInRect:NSMakeRect(0.0, 0.0, size.width, size.height)];
+    [NSGraphicsContext restoreGraphicsState];
+    return converted;
+}
+
 static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) {
     if (!image) {
         return nil;
@@ -2128,6 +2160,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         [scrollView setHasHorizontalScroller:NO];
     } else {
         [scrollView setAutohidesScrollers:YES];
+#if !defined(GNUSTEP)
+        // AppKit's autohiding only shows and hides scrollers the view has; GNUstep's adds them.
+        [scrollView setHasVerticalScroller:YES];
+        [scrollView setHasHorizontalScroller:YES];
+#endif
         [scrollView reflectScrolledClipView:scrollView.contentView];
     }
 }
@@ -2740,12 +2777,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     self.pendingTextRect = NSZeroRect;
 
     NSRect viewRect = [self viewRectForImageRect:imageRect];
-    NSTextView *textView =
-#if ST_ENABLE_GNUSTEP_WORKAROUNDS
-        [[STTransparentTextView alloc] initWithFrame:viewRect];
-#else
-        [[NSTextView alloc] initWithFrame:viewRect];
-#endif
+    NSTextView *textView = [[STTransparentTextView alloc] initWithFrame:viewRect];
     [textView setDelegate:self];
     [textView setRichText:NO];
     [textView setEditable:YES];
@@ -2998,11 +3030,9 @@ static NSError *STProjectError(NSString *message) {
         sel_isEqual(commandSelector, @selector(insertLineBreak:)) ||
         sel_isEqual(commandSelector, @selector(insertNewlineIgnoringFieldEditor:))) {
         NSEventModifierFlags flags = [[NSApp currentEvent] modifierFlags];
-#if ST_ENABLE_GNUSTEP_WORKAROUNDS
         if ([textView isKindOfClass:[STTransparentTextView class]]) {
             flags |= [(STTransparentTextView *)textView handlingKeyModifierFlags];
         }
-#endif
         if ((flags & (NSEventModifierFlagCommand | NSEventModifierFlagControl)) != 0) {
             [self performSelector:@selector(commitActiveTextIfNeeded) withObject:nil afterDelay:0.0];
             return YES;
@@ -3258,6 +3288,70 @@ static NSError *STProjectError(NSString *message) {
     }
     return imagePoint;
 }
+
+#if !defined(GNUSTEP)
+#pragma mark - Trackpad and mouse zoom
+
+/// Zooms to `scale`, keeping the image point under `windowLocation` where it is on screen.
+- (void)zoomToScale:(CGFloat)scale keepingWindowLocation:(NSPoint)windowLocation {
+    NSScrollView *scrollView = self.hostScrollView;
+    NSClipView *clipView = scrollView.contentView;
+    NSPoint before = [self convertPoint:windowLocation fromView:nil];
+    NSPoint imagePoint = NSMakePoint(before.x / self.zoomScale, before.y / self.zoomScale);
+    NSPoint inClip = [clipView convertPoint:windowLocation fromView:nil];
+    NSPoint offset = NSMakePoint(inClip.x - NSMinX(clipView.bounds), inClip.y - NSMinY(clipView.bounds));
+
+    self.fitToWindow = NO;
+    self.zoomScale = scale;
+
+    if (clipView) {
+        NSPoint after = [clipView convertPoint:[self viewPointForImagePoint:imagePoint] fromView:self];
+        NSRect bounds = clipView.bounds;
+        bounds.origin = NSMakePoint(after.x - offset.x, after.y - offset.y);
+        [clipView scrollToPoint:[clipView constrainBoundsRect:bounds].origin];
+        [scrollView reflectScrolledClipView:clipView];
+    }
+    [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewDidChangeZoomNotification
+                                                        object:self];
+}
+
+- (void)magnifyWithEvent:(NSEvent *)event {
+    if (!self.image) {
+        [super magnifyWithEvent:event];
+        return;
+    }
+    [self zoomToScale:self.zoomScale * (1.0 + event.magnification) keepingWindowLocation:event.locationInWindow];
+}
+
+/// A two-finger double tap: 100% at the pointer, or back to Fit.
+- (void)smartMagnifyWithEvent:(NSEvent *)event {
+    if (!self.image) {
+        return;
+    }
+    if (self.fitToWindow || fabs(self.zoomScale - 1.0) > 0.001) {
+        [self zoomToScale:1.0 keepingWindowLocation:event.locationInWindow];
+        return;
+    }
+    self.fitToWindow = YES;
+    [self updateForEnclosingBoundsChange];
+    [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewDidChangeZoomNotification
+                                                        object:self];
+}
+
+/// Command-scroll zooms, for a mouse; plain scrolling pans.
+- (void)scrollWheel:(NSEvent *)event {
+    if (!self.image || (event.modifierFlags & NSEventModifierFlagCommand) == 0) {
+        [super scrollWheel:event];
+        return;
+    }
+    CGFloat delta = event.hasPreciseScrollingDeltas ? event.scrollingDeltaY / 200.0 : event.scrollingDeltaY / 20.0;
+    if (fabs(delta) < 0.0001) {
+        return;
+    }
+    delta = MAX(-0.5, MIN(delta, 0.5));
+    [self zoomToScale:self.zoomScale * (1.0 + delta) keepingWindowLocation:event.locationInWindow];
+}
+#endif
 
 - (void)eraseAtPoint:(NSPoint)point {
     [self commitActiveTextIfNeeded];
@@ -3772,6 +3866,12 @@ static NSError *STProjectError(NSString *message) {
     }
 
     NSGraphicsContext *bitmapContext = [NSGraphicsContext graphicsContextWithBitmapImageRep:bitmap];
+    if (!bitmapContext) {
+        // Core Graphics can't draw into every layout: non-premultiplied alpha, which the copy of
+        // a gray or 16-bit image has, say. Redraw it into one it can.
+        bitmap = STPremultipliedRGBABitmapFromRep(bitmap, size);
+        bitmapContext = bitmap ? [NSGraphicsContext graphicsContextWithBitmapImageRep:bitmap] : nil;
+    }
     if (!bitmapContext) {
         return nil;
     }

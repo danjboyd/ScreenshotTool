@@ -87,6 +87,8 @@ static const BOOL STBackendRequestsKeyOnClose = NO;
     return popover;
 }
 
+#if defined(GNUSTEP)
+// The drawn popover's own focus handling; on macOS STFloatingPopover is AppKit's NSPopover.
 - (void)testClosingGivesTheKeyboardBackToTheWindow {
     XCTSkipIf(_shouldSkip, @"No window server");
     STKeyRequestRecordingWindow *window = [self anchorWindow];
@@ -127,6 +129,17 @@ static const BOOL STBackendRequestsKeyOnClose = NO;
     [popover close];
     XCTAssertEqual(window.keyRequests, 0u, @"a window that has gone isn't brought back");
 }
+#else
+- (void)testCloseHidesThePopoverAtOnce {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STKeyRequestRecordingWindow *window = [self anchorWindow];
+    STFloatingPopover *popover = [self popoverShownFromWindow:window];
+    XCTAssertTrue(popover.isShown);
+    [popover close];
+    XCTAssertFalse(popover.isShown, @"callers toggle on -isShown right after closing");
+    [window orderOut:nil];
+}
+#endif
 
 - (void)testCanvasTakesTheKeyboardWhenTheWindowBecomesKey {
     XCTSkipIf(_shouldSkip, @"No window server");

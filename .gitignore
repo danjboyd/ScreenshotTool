@@ -9,6 +9,7 @@ obj/
 .tests_home/
 screenshottool.log
 tests.log
+tests-macos.log
 tests_runner.log
 clipboard.png
 debug.log

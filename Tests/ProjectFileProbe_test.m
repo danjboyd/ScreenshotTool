@@ -93,9 +93,12 @@
                                                                 colorSpaceName:NSDeviceRGBColorSpace
                                                                    bytesPerRow:0
                                                                   bitsPerPixel:0];
+    // In the rep's colour space: AppKit ignores a colour from another one.
+    NSColor *left = [color colorUsingColorSpaceName:NSDeviceRGBColorSpace];
+    NSColor *right = [[NSColor whiteColor] colorUsingColorSpaceName:NSDeviceRGBColorSpace];
     for (NSInteger y = 0; y < 120; y++) {
         for (NSInteger x = 0; x < 200; x++) {
-            [rep setColor:(x < 100 ? color : [NSColor whiteColor]) atX:x y:y];
+            [rep setColor:(x < 100 ? left : right) atX:x y:y];
         }
     }
     NSData *png = [rep representationUsingType:NSPNGFileType properties:@{}];

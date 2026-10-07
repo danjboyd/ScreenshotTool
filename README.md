@@ -26,6 +26,9 @@ Current build targets:
 - Crop to Selection, Fit to Window, fixed zoom levels and Zoom In/Out.
 - Standard controls throughout, so the GNUstep theme decides the look,
   including the toolbar, symbolic icons and the open and save dialogs.
+- On macOS: drag the annotated image out of the Copy toolbar button into another
+  app, share it from the toolbar or File > Share, drop images on the window to
+  open them, and pinch or Command-scroll to zoom.
 
 ## Screenshots
 
@@ -127,6 +130,10 @@ Results go to `tests.log` and, as JUnit XML, `tests-junit.xml`.
 Most tests need a window server. Without a desktop session (as in CI), run them
 under a virtual display with `xvfb-run -a Tools/run_tests.sh`; the script fails
 if tests had to skip for lack of a display.
+
+On macOS, `Tools/run_tests_macos.sh` builds the same tests against Apple's XCTest
+(it needs Xcode) and runs them, optionally just the classes or tests you name.
+The log goes to `tests-macos.log`.
 
 ### Screenshots
 
