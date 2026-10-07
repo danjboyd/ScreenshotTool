@@ -132,6 +132,87 @@ jobs:
             ${{ steps.naming.outputs.appimage_path }}
             Staging/${{ steps.naming.outputs.appimage_sha_name }}
 
+  windows-tests:
+    # Builds the app and the test bundle under MSYS2 CLANG64 and runs the unit tests (#109).
+    # GNUstep comes from gnustep-cli-new, as in the Windows packaging workflow
+    # (danjboyd/gnustep-packager's package-gnustep-app.yml).
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      GNUSTEP_CLI_MANIFEST_URL: https://github.com/danjboyd/gnustep-cli-new/releases/download/v0.1.0-dev/release-manifest.json
+      GNUSTEP_CLI_BOOTSTRAP_URL: https://raw.githubusercontent.com/danjboyd/gnustep-cli-new/master/scripts/bootstrap/gnustep-bootstrap.ps1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install MSYS2
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANG64
+          update: true
+          install: >-
+            curl
+            tar
+            gzip
+      - name: Install GNUstep (gnustep-cli-new)
+        timeout-minutes: 30
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:RUNNER_TEMP "gnustep-cli-new"
+          $bootstrap = Join-Path $env:RUNNER_TEMP "gnustep-bootstrap.ps1"
+          $env:PATH = (Join-Path '${{ steps.msys2.outputs.msys2-location }}' 'clang64\bin') + ";" + $env:PATH
+          curl.exe --fail --location --show-error --retry 3 --output $bootstrap $env:GNUSTEP_CLI_BOOTSTRAP_URL
+          if ($LASTEXITCODE -ne 0) { throw "Downloading the gnustep-cli-new bootstrap failed" }
+          pwsh -NoProfile -ExecutionPolicy Bypass -File $bootstrap --json --yes setup --user --root $root --manifest $env:GNUSTEP_CLI_MANIFEST_URL
+          if ($LASTEXITCODE -ne 0) { throw "gnustep-cli-new setup failed ($LASTEXITCODE)" }
+          # The PATH the packaging workflow builds with: gnustep-cli-new's tools first, then MSYS2's
+          # CLANG64. build_release.ps1 converts paths with cygpath, which has to be gnustep-cli-new's
+          # (/cygdrive/d/...), not Git for Windows' (/d/...).
+          (Join-Path '${{ steps.msys2.outputs.msys2-location }}' 'clang64\bin') | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          @(
+            (Join-Path $root "bin"),
+            (Join-Path $root "Tools"),
+            (Join-Path $root "System\Tools"),
+            (Join-Path $root "usr\bin"),
+            (Join-Path $root "clang64\bin")
+          ) | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+          "GP_GNUSTEP_CLI_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "MSYS2_LOCATION=${{ steps.msys2.outputs.msys2-location }}" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Build ScreenshotTool
+        run: ./scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json
+      - name: Unit tests
+        # Each test class runs in its own xctest process, as on Linux; the runner's desktop
+        # session is the window server.
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = $env:GP_GNUSTEP_CLI_ROOT
+          $bash = Join-Path $root "usr\bin\bash.exe"
+          # A login shell in the workspace (CHERE_INVOKING), where gnustep-cli-new's CLANG64 is /clang64.
+          $env:MSYSTEM = "CLANG64"
+          $env:CHERE_INVOKING = "1"
+          $command = "set -eo pipefail; " +
+            "set +u; source /clang64/share/GNUstep/Makefiles/GNUstep.sh; set -u; " +
+            "Tools/run_tests.sh"
+          & $bash -lc $command
+          if ($LASTEXITCODE -ne 0) { throw "Unit tests failed ($LASTEXITCODE)" }
+      - name: Show the test log
+        if: failure()
+        run: |
+          if (Test-Path tests.log) { Get-Content tests.log -Tail 400 }
+      - name: Upload unit test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-unit-tests-log
+          path: |
+            tests.log
+            tests-junit.xml
+          if-no-files-found: ignore
+
   # macos-dmg:
   #   runs-on: macos-13
   #   steps:
