@@ -712,6 +712,50 @@ function Write-LicenseFiles {
   Set-Content -Path (Join-Path $DestinationRoot "gnustep-runtime.txt") -Value $runtimeNotice -Encoding utf8
 }
 
+# The license files of the bundled themes: one for each runtime notice that
+# names a theme input, giving its license and its source at the pinned commit,
+# followed by the LGPL 2.1 text. The themes are LGPL "or later", so the 2.1
+# text covers WinUXTheme's LGPL-2.0-or-later too.
+function Write-ThemeLicenseFiles {
+  param(
+    [Parameter(Mandatory = $true)]
+    [hashtable]$Manifest,
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$DestinationRoot
+  )
+
+  $licenseText = Get-Content -Raw -Path (Join-Path $RepoRoot "packaging/licenses/LGPL-2.1.txt")
+  $themes = @{}
+  foreach ($theme in @($Manifest["themeInputs"])) {
+    $themes[$theme["name"]] = $theme
+  }
+  $notices = @()
+  if ($Manifest.ContainsKey("compliance") -and $Manifest["compliance"].ContainsKey("runtimeNotices")) {
+    $notices = @($Manifest["compliance"]["runtimeNotices"])
+  }
+
+  foreach ($notice in $notices) {
+    $theme = $themes[$notice["name"]]
+    if ($null -eq $theme) {
+      continue
+    }
+    $header = @(
+      "$($notice["name"]), a GNUstep theme bundled with ScreenshotTool"
+      "License: $($notice["license"])"
+      "Source: $($theme["repo"]) at commit $($theme["ref"])"
+      ""
+      "The GNU Lesser General Public License, version 2.1, follows."
+      ""
+      ""
+    ) -join "`n"
+    $path = Join-Path $DestinationRoot (Split-Path -Leaf $notice["stageRelativePath"])
+    Set-Content -Path $path -Value ($header + $licenseText) -Encoding utf8 -NoNewline
+    Write-StageLog "Staged theme license: $path"
+  }
+}
+
 $manifest = Get-ManifestData -Path $manifestFullPath
 $version = Get-ReleaseVersion -Manifest $manifest -RequestedVersion $PackageVersion
 
@@ -735,6 +779,10 @@ Write-StageLog "Staged app bundle entry: $normalizedEntryPath"
 
 [void](Copy-FileIfPresent -Source (Join-Path $repoRoot "Resources\ScreenshotToolIcon.png") -Destination (Join-Path $metadataIconRoot "ScreenshotToolIcon.png"))
 Write-LicenseFiles -RepoRoot $repoRoot -DestinationRoot $metadataLicenseRoot -Version $version
+# The themes are bundled only in the MSI (their themeInputs are "msi" only).
+if ($IsWindows) {
+  Write-ThemeLicenseFiles -Manifest $manifest -RepoRoot $repoRoot -DestinationRoot $metadataLicenseRoot
+}
 
 if ($IsLinux) {
   Stage-LinuxRuntime -RepoRoot $repoRoot -RuntimeRootPath $runtimeRoot -StageRoot $resolvedStageRoot
