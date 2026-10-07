@@ -189,6 +189,11 @@ typedef struct {
 static const CGFloat STSelectionHandleSize = 10.0f;
 // The editor has no text padding, so the guide sits outside the text instead of on it.
 static const CGFloat STTextGuideOutset = 4.0f;
+// How far outside the edited label's guide its border can still be grabbed to move it.
+static const CGFloat STTextMoveBorderSlop = 5.0f;
+// How far a press on a label must travel, in view points, before it moves the label instead of
+// editing it.
+static const CGFloat STTextMoveDragThreshold = 3.0f;
 
 static CGFloat STReadGSScaleFactor(void) {
     const char *rawValue = getenv("GSScaleFactor");
@@ -1021,6 +1026,13 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) BOOL isResizingTextBox;
 @property (nonatomic, assign) BOOL isDraggingPointer;
 @property (nonatomic, assign) BOOL textClickOnlyCommitted;
+// Moving a label with the Text tool: the edited one by its guide's border, or one not being edited
+// by pressing on it and dragging (a click without a drag edits it).
+@property (nonatomic, assign) BOOL isMovingTextBox;
+@property (nonatomic, assign) NSPoint textMoveLastImagePoint;
+@property (nonatomic, strong, nullable) MarkupText *pendingTextHit;
+@property (nonatomic, assign) NSPoint pendingTextHitViewPoint;
+@property (nonatomic, strong, nullable) NSDictionary *textMoveSnapshot;
 // Typing has its own undo history while a box is open, so Ctrl+Z undoes keystrokes, not canvas
 // actions, and nothing from a closed editor is left on the canvas's undo stack (#28).
 @property (nonatomic, strong, nullable) NSUndoManager *textEditingUndoManager;
@@ -1600,7 +1612,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 - (nullable NSCursor *)contextCursorAtViewPoint:(NSPoint)viewPoint hover:(nullable id)hover {
     switch (self.activeTool) {
         case ScreenshotCanvasToolText:
-            if (self.isDraggingPointer) {
+            if (self.isDraggingPointer || self.isMovingTextBox) {
                 return [NSCursor closedHandCursor];
             }
             if (self.activeTextView && NSPointInRect(viewPoint, NSInsetRect([self activePointerHandleRectInView], -3.0, -3.0))) {
@@ -1608,6 +1620,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
             }
             if (self.activeTextView && NSPointInRect(viewPoint, [self activeTextHandleHitRectInView])) {
                 return [NSCursor resizeLeftRightCursor];
+            }
+            if ([self isPointOnActiveTextBorder:viewPoint]) {
+                return [NSCursor openHandCursor];
             }
             if (self.activeTextView && NSPointInRect(viewPoint, [self activeTextGuideRectInView])) {
                 return [NSCursor IBeamCursor];
@@ -1627,6 +1642,17 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 - (NSRect)activeTextHandleHitRectInView {
     NSRect handle = [self activeTextHandleRectInView];
     return NSIsEmptyRect(handle) ? handle : NSInsetRect(handle, -3.0, -3.0);
+}
+
+/// Whether a point is on the edited label's border: between its text and a few points outside its
+/// guide. Dragging there moves the label; inside the text, a press places the caret.
+- (BOOL)isPointOnActiveTextBorder:(NSPoint)viewPoint {
+    if (!self.activeTextView || !self.currentTextEntry) {
+        return NO;
+    }
+    NSRect outer = NSInsetRect([self activeTextGuideRectInView], -STTextMoveBorderSlop, -STTextMoveBorderSlop);
+    NSRect text = [self viewRectForImageRect:self.currentTextEntry.bounds];
+    return NSPointInRect(viewPoint, outer) && !NSPointInRect(viewPoint, text);
 }
 
 - (void)drawHoverOutline {
@@ -3373,6 +3399,13 @@ static NSError *STProjectError(NSString *message) {
                 [self updateSelectionAnimationState];
                 return;
             }
+            if ([self isPointOnActiveTextBorder:locationInView]) {
+                // The edit's own undo restores where the label was, so the move needs none.
+                self.isMovingTextBox = YES;
+                self.textMoveLastImagePoint = imagePoint;
+                [[NSCursor closedHandCursor] set];
+                return;
+            }
             if (NSPointInRect(locationInView, activeRect)) {
                 NSWindow *window = self.window;
                 if (window) {
@@ -3392,7 +3425,10 @@ static NSError *STProjectError(NSString *message) {
 
         MarkupText *hitText = [self textOverlayContainingImagePoint:imagePoint];
         if (hitText) {
-            [self beginTextEntryWithImageRect:[hitText bounds] existingText:hitText];
+            // Edited on mouse up, unless the press turns into a drag, which moves it.
+            self.pendingTextHit = hitText;
+            self.pendingTextHitViewPoint = locationInView;
+            self.textMoveLastImagePoint = imagePoint;
             return;
         }
 
@@ -3506,6 +3542,30 @@ static NSError *STProjectError(NSString *message) {
         if (self.isDraggingPointer && self.currentTextEntry) {
             self.currentTextEntry.pointerTarget = imagePoint;
             [self setNeedsDisplay:YES];
+            return;
+        }
+        if (self.pendingTextHit && !self.isMovingTextBox) {
+            NSPoint viewPoint = [self convertPoint:event.locationInWindow fromView:nil];
+            if (hypot(viewPoint.x - self.pendingTextHitViewPoint.x, viewPoint.y - self.pendingTextHitViewPoint.y) < STTextMoveDragThreshold) {
+                return;
+            }
+            self.isMovingTextBox = YES;
+            self.textMoveSnapshot = [self annotationSnapshot];
+            [self setHoverAnnotationIfChanged:nil];
+            [[NSCursor closedHandCursor] set];
+        }
+        if (self.isMovingTextBox) {
+            MarkupText *moving = self.pendingTextHit ?: self.currentTextEntry;
+            NSPoint delta = NSMakePoint(imagePoint.x - self.textMoveLastImagePoint.x,
+                                        imagePoint.y - self.textMoveLastImagePoint.y);
+            if (moving && (fabs(delta.x) > 0.0 || fabs(delta.y) > 0.0)) {
+                [self translateAnnotations:@[ moving ] byDelta:delta];
+                self.textMoveLastImagePoint = imagePoint;
+                if (moving == self.currentTextEntry) {
+                    [self updateActiveTextViewFrame];
+                }
+                [self setNeedsDisplay:YES];
+            }
             return;
         }
         if (self.isCreatingTextBox) {
@@ -3622,6 +3682,25 @@ static NSError *STProjectError(NSString *message) {
         if (self.isDraggingPointer) {
             self.isDraggingPointer = NO;
             [self setNeedsDisplay:YES];
+            return;
+        }
+        if (self.pendingTextHit) {
+            MarkupText *hitText = self.pendingTextHit;
+            BOOL moved = self.isMovingTextBox;
+            self.pendingTextHit = nil;
+            self.isMovingTextBox = NO;
+            if (moved) {
+                [self registerAnnotationUndoWithSnapshot:self.textMoveSnapshot actionName:@"Move"];
+                self.textMoveSnapshot = nil;
+                [self updateHoverAtViewPoint:[self convertPoint:event.locationInWindow fromView:nil]];
+            } else {
+                [self beginTextEntryWithImageRect:[hitText bounds] existingText:hitText];
+            }
+            return;
+        }
+        if (self.isMovingTextBox) {
+            self.isMovingTextBox = NO;
+            [self updateHoverAtViewPoint:[self convertPoint:event.locationInWindow fromView:nil]];
             return;
         }
         if (self.isCreatingTextBox) {

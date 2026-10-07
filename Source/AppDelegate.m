@@ -2754,6 +2754,7 @@ static id STInfoValueForKey(NSString *key) {
     if (!container) {
         return;
     }
+    BOOL wasShowing = (self.textOptionsBar.superview == container && !self.textOptionsBar.isHidden);
     if (!self.textOptionsBar) {
         self.textOptionsBar = [[STTextOptionsBar alloc] initWithFrame:NSMakeRect(0.0, 0.0, NSWidth(self.scrollView.frame), [STTextOptionsBar preferredHeight])];
         self.textOptionsBar.delegate = self;
@@ -2764,11 +2765,34 @@ static id STInfoValueForKey(NSString *key) {
         [self.textOptionsBar setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
         [container addSubview:self.textOptionsBar];
     }
-    // Keep the image's scale while the row takes its space; the canvas slides down instead.
+    // Keep the image's scale while the row takes its space, and keep it where it is on screen:
+    // the row covers the top of the viewport instead of pushing the image down.
     self.canvasView.suspendsFitUpdates = YES;
     [self.textOptionsBar setHidden:NO];
     [self layoutContentSubviews];
+    if (!wasShowing) {
+        [self scrollCanvasVerticallyBy:[STTextOptionsBar preferredHeight]];
+    }
+    [self logWindowFrame:@"text bar shown"];
     [self refreshTextOptionsBar];
+}
+
+/// Scrolls the canvas by delta points (down for positive), within what the clip view allows.
+- (void)scrollCanvasVerticallyBy:(CGFloat)delta {
+    NSClipView *clip = self.scrollView.contentView;
+    if (!clip || ![self.canvasView hasImage]) {
+        return;
+    }
+    NSPoint origin = clip.bounds.origin;
+    origin.y += delta;
+    [clip scrollToPoint:[clip constrainScrollPoint:origin]];
+    [self.scrollView reflectScrolledClipView:clip];
+}
+
+- (void)logWindowFrame:(NSString *)reason {
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"window frame (%@): %@ content %@", reason,
+                             NSStringFromRect(self.window.frame),
+                             NSStringFromSize([(NSView *)self.window.contentView frame].size)]);
 }
 
 - (void)hideTextOptionsBar {
@@ -2777,8 +2801,10 @@ static id STInfoValueForKey(NSString *key) {
     }
     [self.textOptionsBar setHidden:YES];
     [self layoutContentSubviews];
+    [self scrollCanvasVerticallyBy:-[STTextOptionsBar preferredHeight]];
     self.canvasView.suspendsFitUpdates = NO;
     [self.canvasView updateForEnclosingBoundsChange];
+    [self logWindowFrame:@"text bar hidden"];
 }
 
 - (NSFont *)currentTextFont {
@@ -6228,6 +6254,7 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (void)windowDidResize:(NSNotification *)notification {
+    [self logWindowFrame:@"resized"];
     [self layoutContentSubviews];
     [self.canvasView updateForEnclosingBoundsChange];
 }
