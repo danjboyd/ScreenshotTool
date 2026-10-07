@@ -75,10 +75,14 @@ jobs:
       # can't scope it per backend yet (danjboyd/gnustep-packager#3). It also derives
       # packagedDefaults.defaultTheme from a themeInputs entry's "default" flag on every
       # backend, so drop both from the Linux job's copy of the manifest.
+      # The packager's AppImage smoke test launches the app, which needs an X server: start
+      # Xvfb here and give the later steps its DISPLAY.
       preflight-command: >-
         bash ./scripts/bootstrap_gnustep_linux_ci.sh &&
         jq 'del(.packagedDefaults) | .themeInputs |= map(del(.default))' packaging/package.manifest.json > "${RUNNER_TEMP}/manifest.json" &&
-        mv "${RUNNER_TEMP}/manifest.json" packaging/package.manifest.json
+        mv "${RUNNER_TEMP}/manifest.json" packaging/package.manifest.json &&
+        { setsid nohup Xvfb :99 -screen 0 1280x800x24 -nolisten tcp > "${RUNNER_TEMP}/xvfb.log" 2>&1 & } &&
+        echo "DISPLAY=:99" >> "${GITHUB_ENV}"
       run-validation: true
       run-smoke: true
       artifact-name: screenshottool-linux
