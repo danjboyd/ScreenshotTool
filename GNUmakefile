@@ -185,15 +185,24 @@ updater-helper:
 #   make tests XCTEST_ARGS="-only-testing:ScreenshotToolTests/FitViewportRoundingProbeTests"
 XCTEST_ROOT := $(CURDIR)/third_party/tools-xctest
 XCTEST_ARGS ?=
+XCTEST_MAKE_ARGS :=
+XCTEST_RUN_ENV :=
+ifneq ($(filter CLANG64,$(MSYSTEM)),)
+# libdispatch's os/generic_win_base.h (included by Foundation) defines mode_t unless told the C
+# library already has; the app's makefiles pass the same flag.
+XCTEST_MAKE_ARGS := ADDITIONAL_CPPFLAGS=-DHAVE_MODE_T
+# Windows finds DLLs (XCTest.dll here) on PATH, not LD_LIBRARY_PATH.
+XCTEST_RUN_ENV := PATH="$(XCTEST_ROOT)/XCTest/obj:$$PATH"
+endif
 
 tests:
 	@echo "Building tools-xctest..."
-	@$(MAKE) -C "$(XCTEST_ROOT)"
+	@$(MAKE) -C "$(XCTEST_ROOT)" $(XCTEST_MAKE_ARGS)
 	@echo "Building test bundle..."
 	@$(MAKE) -C Tests
 	@echo "Running XCTest bundle..."
 	@LD_LIBRARY_PATH="$(XCTEST_ROOT)/XCTest/obj$${LD_LIBRARY_PATH:+:$$LD_LIBRARY_PATH}" \
-		"$(XCTEST_ROOT)/obj/xctest" Tests/ScreenshotToolTests.bundle $(XCTEST_ARGS)
+		$(XCTEST_RUN_ENV) "$(XCTEST_ROOT)/obj/xctest" Tests/ScreenshotToolTests.bundle $(XCTEST_ARGS)
 
 tests-only:
 	@$(MAKE) tests

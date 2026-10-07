@@ -91,7 +91,14 @@ mkdir -p "${TEST_HOME}"
   [[ -n "${TEST_LIBRARY_DIR:-}" ]] && echo "GNUSTEP_USER_DIR_LIBRARY=${TEST_LIBRARY_DIR}"
 } > "${TEST_GNUSTEP_CONF}"
 chmod 600 "${TEST_GNUSTEP_CONF}"
-export GNUSTEP_CONFIG_FILE="${TEST_GNUSTEP_CONF}"
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    # Not on Windows (MSYS2): the conf's paths are the shell's (/clang64/..., /d/a/...), which
+    # gnustep-make reads but gnustep-base there doesn't, and a drive's colon (D:/...) breaks
+    # gnustep-make. The tests use the account's own settings there, as on a fresh CI runner.
+    ;;
+  *) export GNUSTEP_CONFIG_FILE="${TEST_GNUSTEP_CONF}" ;;
+esac
 
 # Each run starts with empty test defaults, so a setting a test left behind (a theme, say) can't
 # carry into the next run. Then the theme for this run, set in the test defaults' global domain,
