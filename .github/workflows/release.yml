@@ -74,12 +74,14 @@ jobs:
       # The manifest's default theme (WinUITheme) is Windows-only, and the packager
       # can't scope it per backend yet (danjboyd/gnustep-packager#3). It also derives
       # packagedDefaults.defaultTheme from a themeInputs entry's "default" flag on every
-      # backend, so drop both from the Linux job's copy of the manifest.
+      # backend, so drop both from the Linux job's copy of the manifest. The themes'
+      # license notices go too: the AppImage doesn't bundle them, and stage_release.ps1
+      # stages their files only on Windows.
       # The packager's AppImage smoke test launches the app, which needs an X server: start
       # Xvfb here and give the later steps its DISPLAY.
       preflight-command: >-
         bash ./scripts/bootstrap_gnustep_linux_ci.sh &&
-        jq 'del(.packagedDefaults) | .themeInputs |= map(del(.default))' packaging/package.manifest.json > "${RUNNER_TEMP}/manifest.json" &&
+        jq 'del(.packagedDefaults) | .themeInputs |= map(del(.default)) | ([.themeInputs[].name]) as $themes | .compliance.runtimeNotices |= map(select(.name as $n | $themes | index($n) | not))' packaging/package.manifest.json > "${RUNNER_TEMP}/manifest.json" &&
         mv "${RUNNER_TEMP}/manifest.json" packaging/package.manifest.json &&
         { setsid nohup Xvfb :99 -screen 0 1280x800x24 -nolisten tcp > "${RUNNER_TEMP}/xvfb.log" 2>&1 & } &&
         echo "DISPLAY=:99" >> "${GITHUB_ENV}"

@@ -60,7 +60,7 @@
     {
       "name": "WinUITheme",
       "repo": "https://github.com/danjboyd/plugins-themes-winuitheme.git",
-      "ref": "6aaf46ac0c521d437ff0cbfb5278c4e975566bea",
+      "ref": "c9dbf919fcf4975a9451c67dcce384887f654baf",
       "platforms": [
         "msi"
       ],
@@ -181,6 +181,22 @@
         "source": "Bundled GNUstep base/gui/back runtime payload",
         "homepage": "https://gnustep.org/",
         "stageRelativePath": "metadata/licenses/gnustep-runtime.txt"
+      },
+      {
+        "name": "WinUITheme",
+        "version": "c9dbf91",
+        "license": "LGPL-2.1-or-later",
+        "source": "Default Windows theme, from danjboyd/plugins-themes-winuitheme",
+        "homepage": "https://github.com/danjboyd/plugins-themes-winuitheme",
+        "stageRelativePath": "metadata/licenses/WinUITheme.txt"
+      },
+      {
+        "name": "WinUXTheme",
+        "version": "92ab1fb",
+        "license": "LGPL-2.0-or-later",
+        "source": "Windows theme, from gnustep/plugins-themes-WinUXTheme",
+        "homepage": "https://github.com/gnustep/plugins-themes-WinUXTheme",
+        "stageRelativePath": "metadata/licenses/WinUXTheme.txt"
       }
     ]
   },

@@ -575,7 +575,9 @@ function Write-WindowsGNUstepConfig {
     "GNUSTEP_LOCAL_WEB_APPS=$systemRootRelative/Library/WebApplications",
     "GNUSTEP_LOCAL_TOOLS=$systemRootRelative/Tools",
     "GNUSTEP_LOCAL_ADMIN_TOOLS=$systemRootRelative/Tools/Admin",
-    "GNUSTEP_LOCAL_LIBRARY=$systemRootRelative/Library",
+    # gnustep-packager stages the bundled themes under runtime/lib/GNUstep/Themes:
+    # make that the Local domain's library, so GNUstep finds them there.
+    "GNUSTEP_LOCAL_LIBRARY=../lib/GNUstep",
     "GNUSTEP_LOCAL_LIBRARIES=$systemRootRelative/Library/Libraries",
     "GNUSTEP_LOCAL_HEADERS=$systemRootRelative/Library/Headers",
     "GNUSTEP_LOCAL_DOC=$systemRootRelative/Library/Documentation",
@@ -668,6 +670,29 @@ function Stage-WindowsRuntime {
     }
   }
 
+  # gnustep-gui's shared resources: its images (the switch and radio button
+  # images among them), key bindings, colour pickers and the rest. Without
+  # them themes that look images up by name misdraw.
+  foreach ($resourceName in @("Images", "KeyBindings", "Fonts", "ColorPickers", "PostScript", "DTDs", "Services", "Sounds")) {
+    $resourceDir = Join-Path $clang64Root "lib\GNUstep\$resourceName"
+    if (Test-Path $resourceDir) {
+      [void](Copy-DirectoryTree -Source $resourceDir -Destination (Ensure-Directory -Path (Join-Path $RuntimeRootPath "System\Library\$resourceName")))
+    }
+  }
+
+  # The daemons and tools gnustep-base and gnustep-gui start on demand: gdnc
+  # (distributed notifications, at launch), gpbs (the pasteboard) and
+  # make_services (the services cache, on a first launch). Without gdnc the app
+  # raised "Unable to find the gdnc tool" and exited before showing a window.
+  # They load their DLLs from runtime/bin, which the launcher puts on PATH.
+  $runtimeSystemTools = Ensure-Directory -Path (Join-Path $RuntimeRootPath "System\Tools")
+  foreach ($toolName in @("gdnc.exe", "gpbs.exe", "make_services.exe")) {
+    $toolSource = Join-Path $clang64Root "bin\$toolName"
+    if (-not (Copy-FileIfPresent -Source $toolSource -Destination (Join-Path $runtimeSystemTools $toolName))) {
+      throw "GNUstep tool $toolName not found at $toolSource"
+    }
+  }
+
   Write-WindowsGNUstepConfig -RuntimeRootPath $RuntimeRootPath
 }
 
@@ -712,6 +737,50 @@ function Write-LicenseFiles {
   Set-Content -Path (Join-Path $DestinationRoot "gnustep-runtime.txt") -Value $runtimeNotice -Encoding utf8
 }
 
+# The license files of the bundled themes: one for each runtime notice that
+# names a theme input, giving its license and its source at the pinned commit,
+# followed by the LGPL 2.1 text. The themes are LGPL "or later", so the 2.1
+# text covers WinUXTheme's LGPL-2.0-or-later too.
+function Write-ThemeLicenseFiles {
+  param(
+    [Parameter(Mandatory = $true)]
+    [hashtable]$Manifest,
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$DestinationRoot
+  )
+
+  $licenseText = Get-Content -Raw -Path (Join-Path $RepoRoot "packaging/licenses/LGPL-2.1.txt")
+  $themes = @{}
+  foreach ($theme in @($Manifest["themeInputs"])) {
+    $themes[$theme["name"]] = $theme
+  }
+  $notices = @()
+  if ($Manifest.ContainsKey("compliance") -and $Manifest["compliance"].ContainsKey("runtimeNotices")) {
+    $notices = @($Manifest["compliance"]["runtimeNotices"])
+  }
+
+  foreach ($notice in $notices) {
+    $theme = $themes[$notice["name"]]
+    if ($null -eq $theme) {
+      continue
+    }
+    $header = @(
+      "$($notice["name"]), a GNUstep theme bundled with ScreenshotTool"
+      "License: $($notice["license"])"
+      "Source: $($theme["repo"]) at commit $($theme["ref"])"
+      ""
+      "The GNU Lesser General Public License, version 2.1, follows."
+      ""
+      ""
+    ) -join "`n"
+    $path = Join-Path $DestinationRoot (Split-Path -Leaf $notice["stageRelativePath"])
+    Set-Content -Path $path -Value ($header + $licenseText) -Encoding utf8 -NoNewline
+    Write-StageLog "Staged theme license: $path"
+  }
+}
+
 $manifest = Get-ManifestData -Path $manifestFullPath
 $version = Get-ReleaseVersion -Manifest $manifest -RequestedVersion $PackageVersion
 
@@ -735,6 +804,10 @@ Write-StageLog "Staged app bundle entry: $normalizedEntryPath"
 
 [void](Copy-FileIfPresent -Source (Join-Path $repoRoot "Resources\ScreenshotToolIcon.png") -Destination (Join-Path $metadataIconRoot "ScreenshotToolIcon.png"))
 Write-LicenseFiles -RepoRoot $repoRoot -DestinationRoot $metadataLicenseRoot -Version $version
+# The themes are bundled only in the MSI (their themeInputs are "msi" only).
+if ($IsWindows) {
+  Write-ThemeLicenseFiles -Manifest $manifest -RepoRoot $repoRoot -DestinationRoot $metadataLicenseRoot
+}
 
 if ($IsLinux) {
   Stage-LinuxRuntime -RepoRoot $repoRoot -RuntimeRootPath $runtimeRoot -StageRoot $resolvedStageRoot
