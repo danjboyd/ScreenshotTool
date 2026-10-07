@@ -221,6 +221,16 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build ScreenshotTool (Cocoa)
         run: scripts/build_cocoa.sh
+      - name: Unit tests
+        # The suite Tools/run_tests.sh runs under GNUstep, with Apple's XCTest.
+        run: Tools/run_tests_macos.sh
+      - name: Upload unit test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-unit-tests-log
+          path: tests-macos.log
+          if-no-files-found: ignore
       - name: Smoke test
         run: scripts/smoke_macos_app.sh build/cocoa/ScreenshotTool.app
       - name: Package DMG
