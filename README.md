@@ -1,20 +1,31 @@
 # ScreenshotTool
 
-ScreenshotTool is a desktop screenshot annotation app. Open an image, mark it
-up with pen, highlighter, eraser, and text tools, then save or copy the
-annotated result.
+ScreenshotTool is a desktop screenshot annotation app. Open an image or paste
+one from the clipboard, mark it up with pens, highlighters, arrows, text and
+callouts, then copy the result, save it as an image, or save it as a project
+you can keep editing.
 
 Current build targets:
-- GNUstep-based Linux and BSD desktops
+- GNUstep on Linux and BSD desktops
+- Windows, as an MSI built with GNUstep under MSYS2 CLANG64 (see `docs/Packaging.md`)
 - macOS via a Cocoa-native build path
 
 ## Features
-- Pen, highlighter, eraser, and text tools with adjustable width and color.
-- Live color badges on toolbar icons plus theme-aware light, dark, and Auto toolbar variants.
-- Tool popovers on double-click and a full Preferences window for persistent defaults.
-- Fit-to-window and fixed zoom presets (25%, 50%, 100%, 200%) with matching View menu items.
-- Shared status bar controls for tool width, pixel readout, and quick reset/default actions.
-- Copy-to-clipboard preserves transparency; Save As writes PNG or TIFF based on the chosen filename extension.
+- Pen, highlighter, arrow, text, select and eraser tools. Pen, highlighter and
+  text colours and widths are set from each tool's popover (double-click its
+  toolbar button) and remembered as defaults.
+- Text labels with a text bar for font, size, style and alignment; turn on
+  Pointer to make a label a callout with a draggable pointer.
+- Select, move and delete annotations; undo and redo every change from the
+  toolbar or the Edit menu.
+- Paste as New Image from the clipboard; Copy puts the annotated image (or the
+  selection) on the clipboard with transparency intact.
+- Save As writes a flattened PNG or TIFF. Save Project writes a `.screenshottool`
+  file with the original image and editable annotations, which Open and Open
+  Recent read back.
+- Crop to Selection, Fit to Window, fixed zoom levels and Zoom In/Out.
+- Standard controls throughout, so the GNUstep theme decides the look,
+  including the toolbar, symbolic icons and the open and save dialogs.
 
 ## Screenshots
 
@@ -121,23 +132,29 @@ decorations. Your GNUstep defaults are left untouched. CI uploads the images
 as the `screenshots` artifact.
 
 ## Usage Tips
-- Double-click toolbar buttons to open tool popovers.
-- Use Preferences for persistent defaults such as toolbar theme, default save folder, and status bar visibility.
-- Fit the canvas with View > Fit to Window or pick a fixed zoom level from the View menu.
-- Crop to selection, copy annotated output, or Save As PNG/TIFF. The default save directory persists across sessions.
+- Double-click a tool's toolbar button to open its popover.
+- Preferences hold the drawing and text defaults, the default save folder
+  and whether the status bar is shown.
+- While editing text, `Ctrl+Return` or `Esc` finishes the label and `Return`
+  starts a new line.
+- Save As flattens the annotations into the image; use Save Project to keep
+  them editable.
 
 ### Keyboard Shortcuts (GNUstep)
-- Copy: `Ctrl+C`
-- Save As: `Ctrl+S`
+- Open: `Ctrl+O`
+- Save As: `Ctrl+S`; Save Project: `Ctrl+Shift+S`
+- Undo / Redo: `Ctrl+Z` / `Ctrl+Shift+Z`
+- Copy: `Ctrl+C`; Paste as New Image: `Ctrl+Shift+V`
 - Crop to Selection: `Ctrl+K`
-- Zoom In/Out: `Ctrl+=` / `Ctrl+-`
+- Fit to Window: `Ctrl+0`; 100%: `Ctrl+1`
+- Zoom In / Out: `Ctrl+=` / `Ctrl+-`
 - Preferences: `Ctrl+,`
 
 ## Project Docs
 - Contributing and development notes: `CONTRIBUTING.md`
 - Workflow and testing handoff: `WORKFLOW.md`
-- Packaging: `docs/Packaging.md`
-- Bugs and feature requests: GitHub Issues
+- Packaging and releases: `docs/Packaging.md`, `docs/Handoff.md`
+- Bugs, feature requests and planned work: [GitHub Issues](https://github.com/danjboyd/ScreenshotTool/issues)
 
 ## License
 

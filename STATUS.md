@@ -1,5 +1,9 @@
 # ScreenshotTool Status — 2025-12-29
 
+> **Archived (2026-10-07).** This log stopped in December 2025. Planned and in-progress work is
+> tracked in [GitHub Issues](https://github.com/danjboyd/ScreenshotTool/issues), and changes are
+> described in their pull requests. The entries below are kept as history.
+
 _Progress entries run newest → oldest._
 
 ## Progress (2025-12-29)
