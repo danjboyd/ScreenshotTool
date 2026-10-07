@@ -54,7 +54,8 @@ window, adding a text annotation:
 ![Adding text under the Adwaita theme](docs/images/adwaita-text.png)
 
 Under the [Adwaita theme](https://github.com/danjboyd/plugins-themes-Adwaita), as on a GNOME
-desktop: the toolbar sits in the header bar.
+desktop: the toolbar sits in the header bar, and the menus are in its ☰ menu
+(`-GnomeThemeMenuStyle primary`), with no menu bar row.
 
 ![Adding text under GNUstep's default theme](docs/images/gnustep-text.png)
 
@@ -66,7 +67,7 @@ A tool's width and colour, from its toolbar button.
 
 To regenerate these images, run `Tools/screenshots.sh` after building the app. It opens the app on a
 private display under both themes, and saves each screen whole and cropped to its window
-(`*-window.png`). The images here are `adwaita-text-toolbar-window.png`,
+(`*-window.png`; under Adwaita without the theme's shadow, with transparent rounded corners). The images here are `adwaita-text-toolbar-window.png`,
 `default-text-toolbar-window.png` and `adwaita-popover-window.png`.
 
 ## Build
