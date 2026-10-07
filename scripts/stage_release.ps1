@@ -575,7 +575,9 @@ function Write-WindowsGNUstepConfig {
     "GNUSTEP_LOCAL_WEB_APPS=$systemRootRelative/Library/WebApplications",
     "GNUSTEP_LOCAL_TOOLS=$systemRootRelative/Tools",
     "GNUSTEP_LOCAL_ADMIN_TOOLS=$systemRootRelative/Tools/Admin",
-    "GNUSTEP_LOCAL_LIBRARY=$systemRootRelative/Library",
+    # gnustep-packager stages the bundled themes under runtime/lib/GNUstep/Themes:
+    # make that the Local domain's library, so GNUstep finds them there.
+    "GNUSTEP_LOCAL_LIBRARY=../lib/GNUstep",
     "GNUSTEP_LOCAL_LIBRARIES=$systemRootRelative/Library/Libraries",
     "GNUSTEP_LOCAL_HEADERS=$systemRootRelative/Library/Headers",
     "GNUSTEP_LOCAL_DOC=$systemRootRelative/Library/Documentation",
@@ -665,6 +667,29 @@ function Stage-WindowsRuntime {
     if (-not [string]::IsNullOrWhiteSpace($makefilesDir)) {
       [void](Copy-DirectoryTree -Source $makefilesDir -Destination $runtimeSystemMakefiles)
       break
+    }
+  }
+
+  # gnustep-gui's shared resources: its images (the switch and radio button
+  # images among them), key bindings, colour pickers and the rest. Without
+  # them themes that look images up by name misdraw.
+  foreach ($resourceName in @("Images", "KeyBindings", "Fonts", "ColorPickers", "PostScript", "DTDs", "Services", "Sounds")) {
+    $resourceDir = Join-Path $clang64Root "lib\GNUstep\$resourceName"
+    if (Test-Path $resourceDir) {
+      [void](Copy-DirectoryTree -Source $resourceDir -Destination (Ensure-Directory -Path (Join-Path $RuntimeRootPath "System\Library\$resourceName")))
+    }
+  }
+
+  # The daemons and tools gnustep-base and gnustep-gui start on demand: gdnc
+  # (distributed notifications, at launch), gpbs (the pasteboard) and
+  # make_services (the services cache, on a first launch). Without gdnc the app
+  # raised "Unable to find the gdnc tool" and exited before showing a window.
+  # They load their DLLs from runtime/bin, which the launcher puts on PATH.
+  $runtimeSystemTools = Ensure-Directory -Path (Join-Path $RuntimeRootPath "System\Tools")
+  foreach ($toolName in @("gdnc.exe", "gpbs.exe", "make_services.exe")) {
+    $toolSource = Join-Path $clang64Root "bin\$toolName"
+    if (-not (Copy-FileIfPresent -Source $toolSource -Destination (Join-Path $runtimeSystemTools $toolName))) {
+      throw "GNUstep tool $toolName not found at $toolSource"
     }
   }
 
