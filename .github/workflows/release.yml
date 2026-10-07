@@ -67,6 +67,9 @@ jobs:
       packager-repository: danjboyd/gnustep-packager
       packager-ref: main
       skip-default-host-setup: true
+      # The packager rejects its default apt list when it skips host setup; the
+      # preflight script installs those packages itself.
+      appimage-apt-packages: ""
       preflight-shell: bash
       preflight-command: bash ./scripts/bootstrap_gnustep_linux_ci.sh
       run-validation: true
