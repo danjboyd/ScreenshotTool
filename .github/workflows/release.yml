@@ -71,7 +71,13 @@ jobs:
       # preflight script installs those packages itself.
       appimage-apt-packages: ""
       preflight-shell: bash
-      preflight-command: bash ./scripts/bootstrap_gnustep_linux_ci.sh
+      # The manifest's default theme (WinUITheme) is Windows-only, and the packager
+      # can't scope it per backend yet (danjboyd/gnustep-packager#3): drop
+      # packagedDefaults from the Linux job's copy of the manifest.
+      preflight-command: >-
+        bash ./scripts/bootstrap_gnustep_linux_ci.sh &&
+        jq 'del(.packagedDefaults)' packaging/package.manifest.json > "${RUNNER_TEMP}/manifest.json" &&
+        mv "${RUNNER_TEMP}/manifest.json" packaging/package.manifest.json
       run-validation: true
       run-smoke: true
       artifact-name: screenshottool-linux
