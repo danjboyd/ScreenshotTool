@@ -156,5 +156,7 @@ jobs:
       - name: Publish final GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          # This job has no checkout, so gh can't find the repository from git.
+          GH_REPO: ${{ github.repository }}
         run: |
           gh release edit "${{ needs.resolve-version.outputs.release-tag }}" --draft=false
