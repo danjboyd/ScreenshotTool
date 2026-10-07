@@ -170,9 +170,29 @@ shoot() {
   # The window manager's decorations around the client window (its title bar), if it draws any.
   extents="$(xprop -id "${id}" _NET_FRAME_EXTENTS 2>/dev/null | sed -n 's/.*= //p')"
   [[ -n "${extents}" ]] && IFS=', ' read -r left right top bottom <<<"${extents}"
-  convert "${OUT_DIR}/${name}.png" -crop "$((w + left + right))x$((h + top + bottom))+$((x - left))+$((y - top))" \
+  # A theme that draws its own shadow (Adwaita) marks it with _GTK_FRAME_EXTENTS: leave it out, and
+  # make the window's rounded corners transparent instead of the desktop behind them.
+  local shadow sl=0 sr=0 st=0 sb=0
+  shadow="$(xprop -id "${id}" _GTK_FRAME_EXTENTS 2>/dev/null | sed -n 's/.*= //p')"
+  [[ -n "${shadow}" ]] && IFS=', ' read -r sl sr st sb <<<"${shadow}"
+  convert "${OUT_DIR}/${name}.png" \
+    -crop "$((w + left + right - sl - sr))x$((h + top + bottom - st - sb))+$((x - left + sl))+$((y - top + st))" \
     +repage "${OUT_DIR}/${name}-window.png"
+  if [[ -n "${shadow}" ]]; then
+    round_corners "${OUT_DIR}/${name}-window.png" "${CORNER_RADIUS:-12}"
+  fi
   echo "screenshots: ${OUT_DIR}/${name}-window.png"
+}
+
+# round_corners <png> <radius>: makes the area outside rounded corners of that radius transparent.
+round_corners() {
+  local file="$1" r="$2"
+  convert "${file}" -alpha set \
+    \( +clone -alpha extract \
+       -draw "fill black polygon 0,0 0,${r} ${r},0 fill white circle ${r},${r} ${r},0" \
+       \( +clone -flip \) -compose Multiply -composite \
+       \( +clone -flop \) -compose Multiply -composite \) \
+    -alpha off -compose CopyOpacity -composite "${file}"
 }
 
 launch() {
@@ -197,8 +217,11 @@ for theme in ${THEMES}; do
   } >"${CONFIG}"
   chmod 600 "${CONFIG}"
   if [[ "${label}" != "default" ]]; then
-    # The theme, with its header bar (GNUstep draws the title bar), as GNOME users run it.
-    printf '{\n  GSTheme = "%s";\n  GSX11HandlesWindowDecorations = NO;\n}\n' "${theme}" >"${DEFAULTS}/NSGlobalDomain.plist"
+    # The theme, with its header bar (GNUstep draws the title bar), as GNOME users run it. Under
+    # Adwaita the menus go in the header bar's primary menu, with no menu bar row.
+    menu_style=""
+    [[ "${label}" == "adwaita" ]] && menu_style='  GnomeThemeMenuStyle = primary;\n'
+    printf "{\n  GSTheme = \"%s\";\n  GSX11HandlesWindowDecorations = NO;\n${menu_style}}\n" "${theme}" >"${DEFAULTS}/NSGlobalDomain.plist"
   fi
   LOG="${WORK}/app-${label}.log"
 
