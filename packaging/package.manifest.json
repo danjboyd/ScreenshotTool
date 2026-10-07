@@ -183,6 +183,13 @@
         "stageRelativePath": "metadata/licenses/gnustep-runtime.txt"
       },
       {
+        "name": "GNUstep tools",
+        "license": "GPL-3.0-or-later AND GPL-2.0-or-later",
+        "source": "GNUstep command-line tools (defaults, gdnc, gpbs, make_services, ...)",
+        "homepage": "https://gnustep.org/",
+        "stageRelativePath": "metadata/licenses/gnustep-tools.txt"
+      },
+      {
         "name": "WinUITheme",
         "version": "c9dbf91",
         "license": "LGPL-2.1-or-later",
