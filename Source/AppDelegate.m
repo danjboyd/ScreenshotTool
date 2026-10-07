@@ -1479,7 +1479,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
     [self selectTool:ScreenshotCanvasToolHighlighter];
     [self reflectZoomSelection];
-    [self refreshPasteAvailability];
+    // After the window is up: reading the clipboard can wait for the pasteboard server.
+    [self performSelector:@selector(refreshPasteAvailability) withObject:nil afterDelay:0.0];
 }
 
 /// The image named by application:openFile: or on the command line, if any.
@@ -2042,7 +2043,6 @@ static id STInfoValueForKey(NSString *key) {
     [self.window setToolbar:self.toolbar];
     //[self.toolbar setSelectedItemIdentifier:ToolbarItemHighlighter];
     //[self refreshToolButtonIcons];
-    (void)[self imageNamed:@"CopyImage-active"];
 }
 
 - (NSToolbarItemIdentifier)identifierForTool:(ScreenshotCanvasTool)tool {
@@ -3158,7 +3158,10 @@ static id STInfoValueForKey(NSString *key) {
     STApplyAccessibilityLabel(optionsButton, @"Tool width options");
     [container addSubview:optionsButton];
 
-    container.hidden = NO;
+    // Hidden with the status bar (the default), so launch doesn't size the "⋯" button: its glyph
+    // isn't in most UI fonts, and finding a fallback took a quarter of a second.
+    // updateStatusBarVisibility shows it and lays it out.
+    container.hidden = !self.statusBarVisiblePreference;
     [self updateToolWidthControls];
 }
 
@@ -4735,7 +4738,12 @@ static id STInfoValueForKey(NSString *key) {
     // No image: an empty state in the canvas's place instead of a blank scroll view (#55).
     BOOL hasImage = [self.canvasView hasImage];
     [self.scrollView setHidden:!hasImage];
+    BOOL emptyStateWasHidden = self.emptyStateView.isHidden;
     [self.emptyStateView setHidden:hasImage];
+    if (emptyStateWasHidden && !hasImage) {
+        // The last image closed: Paste's state may be out of date.
+        [self performSelector:@selector(refreshPasteAvailability) withObject:nil afterDelay:0.0];
+    }
     // Return opens a file only from the empty state: GNUstep offers key equivalents to hidden
     // buttons too, so with an image open the Open button took every Return no control consumed,
     // a menu's or the font field's among them, and asked about unsaved changes (#103).
@@ -4757,7 +4765,9 @@ static id STInfoValueForKey(NSString *key) {
     NSView *view = [[NSView alloc] initWithFrame:NSZeroRect];
 
     NSImageView *icon = [[NSImageView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 96.0, 96.0)];
-    [icon setImage:STApplicationIcon()];
+    // The application icon is already loaded, and small; ScreenshotToolIcon.png is 1024px and took
+    // ~75ms to load and scale at launch.
+    [icon setImage:[NSApp applicationIconImage] ?: [NSImage imageNamed:@"ScreenshotToolIcon"]];
     [icon setImageScaling:NSImageScaleProportionallyUpOrDown];
     [icon setEditable:NO];
     [icon setTag:1];
@@ -5194,9 +5204,15 @@ static id STInfoValueForKey(NSString *key) {
     return hasImage;
 }
 
-/// Re-checks the clipboard and enables the empty state's Paste button to match (#76).
+/// Re-checks the clipboard and enables the empty state's Paste button to match (#76). Only while
+/// the empty state shows: the first clipboard read starts GNUstep's pasteboard server and waits for
+/// it, so launching with an image never reads it. Paste as New Image checks for itself when its
+/// menu item is validated.
 - (void)refreshPasteAvailability {
     self.clipboardCheckedAt = 0.0;
+    if (!self.emptyStateView || self.emptyStateView.isHidden) {
+        return;
+    }
     BOOL hasImage = [self clipboardHasImage];
     NSButton *paste = [self.emptyStateView viewWithTag:5];
     [paste setEnabled:hasImage];

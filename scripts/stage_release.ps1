@@ -724,6 +724,7 @@ function Write-LicenseFiles {
       "- Linux shared-library closure staged under runtime/lib"
       ""
       "Primary runtime license family: LGPL-2.1-or-later for GNUstep runtime components."
+      "GNUstep's command-line tools in runtime/System/Tools and runtime/bin are GPL: see gnustep-tools.txt."
     )
   } elseif ($IsWindows) {
     $runtimeNotice += @(
@@ -731,6 +732,7 @@ function Write-LicenseFiles {
       "- GNUstep bundles/themes copied into runtime/System"
       ""
       "Primary runtime license family: LGPL-2.1-or-later for GNUstep runtime components."
+      "GNUstep's command-line tools in runtime/System/Tools and runtime/bin are GPL: see gnustep-tools.txt."
     )
   }
 
@@ -781,6 +783,108 @@ function Write-ThemeLicenseFiles {
   }
 }
 
+# The GNU GPL notice for GNUstep's command-line tools in the package: the
+# Windows runtime stages defaults, gdnc, gpbs and make_services; the Linux
+# runtime copies all of the GNUstep install's System/Tools. They're separate
+# programs, licensed as their source headers say (#124).
+function Write-GNUstepToolLicenseFile {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RepoRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$RuntimeRootPath,
+    [Parameter(Mandatory = $true)]
+    [string]$DestinationRoot
+  )
+
+  # From each tool's source header in tools-make, libs-base, libs-gui and libs-back.
+  $gpl2 = @("gdnc", "gdomap")
+  $lgpl2 = @("GSSpeechRecognitionServer")
+  $gpl3 = @("autogsdoc", "cvtenc", "debugapp", "defaults", "gclose", "gcloseall", "gnustep-config",
+    "gnustep-tests", "gopen", "gpbs", "gspath", "HTMLLinker", "make_services", "make_strings", "openapp",
+    "opentool", "pl", "pl2link", "pldes", "plget", "plmerge", "plparse", "plser", "plutil",
+    "set_show_service", "sfparse", "xmlparse")
+
+  $toolFiles = @()
+  $toolsRoot = Join-Path $RuntimeRootPath "System\Tools"
+  if (Test-Path $toolsRoot) {
+    $toolFiles += @(Get-ChildItem -Path $toolsRoot -File)
+  }
+  foreach ($candidate in @("defaults", "defaults.exe")) {
+    $path = Join-Path $RuntimeRootPath "bin\$candidate"
+    if (Test-Path $path) {
+      $toolFiles += Get-Item $path
+    }
+  }
+  $names = @($toolFiles | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Name) } | Sort-Object -Unique)
+  if ($names.Count -eq 0) {
+    return
+  }
+
+  $lines = @()
+  $needsLgpl = $false
+  foreach ($name in $names) {
+    $license = if ($gpl2 -contains $name) {
+      "GPL-2.0-or-later"
+    } elseif ($gpl3 -contains $name) {
+      "GPL-3.0-or-later"
+    } elseif ($lgpl2 -contains $name) {
+      $needsLgpl = $true
+      "LGPL-2.0-or-later"
+    } else {
+      "license not recorded here: see its source"
+    }
+    $lines += "  $name - $license"
+  }
+
+  # The GNUstep versions, from the bundled library names where they carry one.
+  $versions = @()
+  $libraryNames = @(Get-ChildItem -Path $RuntimeRootPath -Recurse -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -match 'gnustep-(base|gui|back)' } | ForEach-Object { $_.Name })
+  foreach ($pattern in @(
+    @{ Name = "gnustep-base"; Regex = 'gnustep-base[.\-](?:so\.)?(\d+)[._](\d+)(?:[._](\d+))?' },
+    @{ Name = "gnustep-gui"; Regex = 'gnustep-gui\.so\.(\d+)\.(\d+)(?:\.(\d+))?' },
+    @{ Name = "gnustep-back"; Regex = 'gnustep-back-(\d)(\d\d)' }
+  )) {
+    $match = $libraryNames | ForEach-Object { [regex]::Match($_, $pattern.Regex) } | Where-Object { $_.Success } |
+      Sort-Object { $_.Groups.Count } -Descending | Select-Object -First 1
+    if ($null -ne $match) {
+      $parts = @($match.Groups | Select-Object -Skip 1 | Where-Object { $_.Success -and $_.Value } | ForEach-Object { [int]$_.Value })
+      $versions += "$($pattern.Name) $($parts -join '.')"
+    }
+  }
+  $versionText = if ($versions.Count -gt 0) { $versions -join ", " } else { "the versions this package was built with" }
+
+  $header = @(
+    "GNUstep tools bundled with ScreenshotTool"
+    ""
+    "The package includes these command-line programs from GNUstep. They are separate"
+    "programs, not part of ScreenshotTool, each under the license its source states:"
+    ""
+  ) + $lines + @(
+    ""
+    "Source: GNUstep ($versionText), from"
+    "  https://github.com/gnustep/tools-make"
+    "  https://github.com/gnustep/libs-base"
+    "  https://github.com/gnustep/libs-gui"
+    "  https://github.com/gnustep/libs-back"
+    "at the release tags for those versions."
+    ""
+    "The GNU General Public License, version 3, follows. Programs licensed under"
+    'version 2 "or any later version" may be used under version 3.'
+    ""
+    ""
+  )
+  $text = ($header -join "`n") + (Get-Content -Raw -Path (Join-Path $RepoRoot "packaging/licenses/GPL-3.0.txt"))
+  if ($needsLgpl) {
+    $text += "`n`nThe GNU Lesser General Public License, version 2.1, follows. Programs licensed under`nversion 2 ""or any later version"" may be used under version 2.1.`n`n" +
+      (Get-Content -Raw -Path (Join-Path $RepoRoot "packaging/licenses/LGPL-2.1.txt"))
+  }
+  $path = Join-Path $DestinationRoot "gnustep-tools.txt"
+  Set-Content -Path $path -Value $text -Encoding utf8 -NoNewline
+  Write-StageLog "Staged GNUstep tools license: $path ($($names.Count) tools)"
+}
+
 $manifest = Get-ManifestData -Path $manifestFullPath
 $version = Get-ReleaseVersion -Manifest $manifest -RequestedVersion $PackageVersion
 
@@ -816,6 +920,7 @@ if ($IsLinux) {
 } else {
   throw "Packaging stage is only implemented for Linux and Windows hosts."
 }
+Write-GNUstepToolLicenseFile -RepoRoot $repoRoot -RuntimeRootPath $runtimeRoot -DestinationRoot $metadataLicenseRoot
 
 Write-StageLog "Stage output created at $resolvedStageRoot"
 Write-Host "Stage output created at $resolvedStageRoot"
