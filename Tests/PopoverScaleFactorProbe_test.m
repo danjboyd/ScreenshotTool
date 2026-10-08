@@ -13,11 +13,13 @@
 
 @interface ToolSettingsPopoverController (Testing)
 @property (nonatomic, strong) STFloatingPopover *popover;
+@property (nonatomic, strong) NSView *contentView;
 - (void)buildPopoverForView:(NSView *)view;
 @end
 
 @interface TextToolPopoverController (Testing)
 @property (nonatomic, strong) STFloatingPopover *popover;
+@property (nonatomic, strong) NSView *contentView;
 - (void)buildPopoverForView:(NSView *)view;
 @end
 
@@ -67,6 +69,15 @@
     XCTAssertEqualWithAccuracy(factor, 1.0f, 0.0f, @"Scale factor should remain logical (no double-scaling)");
 }
 
+/// Fails unless every control lies inside the popover's content: it's as tall as its rows.
+- (void)assertSubviewsOfView:(NSView *)view fitInContentSize:(NSSize)size name:(NSString *)name {
+    NSRect bounds = NSMakeRect(0.0f, 0.0f, size.width, size.height);
+    for (NSView *subview in view.subviews) {
+        XCTAssertTrue(NSContainsRect(NSInsetRect(bounds, -0.5f, -0.5f), subview.frame),
+                      @"%@: %@ at %@ lies outside the %@ content", name, subview, NSStringFromRect(subview.frame), NSStringFromSize(size));
+    }
+}
+
 - (void)testToolSettingsPopoverScalesContentSize {
     XCTSkipIf(_shouldSkip, @"No window server");
     STSetEnvVar("GSScaleFactor", "1.50");
@@ -75,8 +86,17 @@
     [controller buildPopoverForView:anchor];
     [controller showRelativeToRect:NSMakeRect(5.0f, 5.0f, 1.0f, 1.0f) ofView:anchor preferredEdge:NSMaxYEdge];
     XCTAssertNotNil(controller.popover, @"Popover should be constructed");
-    XCTAssertEqualWithAccuracy(controller.popover.contentSize.width, 260.0f, 0.1f, @"Pen popover width should stay logical sized");
-    XCTAssertEqualWithAccuracy(controller.popover.contentSize.height, 216.0f, 0.1f, @"Pen popover height should stay logical sized");
+    // Its size comes from the theme's fonts (at least 260pt wide, wider for wide buttons);
+    // GSScaleFactor mustn't change it.
+    STUnsetEnvVar("GSScaleFactor");
+    ToolSettingsPopoverController *unscaled = [[ToolSettingsPopoverController alloc] initWithTool:ScreenshotCanvasToolPen];
+    [unscaled buildPopoverForView:anchor];
+    XCTAssertGreaterThanOrEqual(controller.popover.contentSize.width, 260.0f, @"Pen popover is at least its designed width");
+    XCTAssertEqualWithAccuracy(controller.popover.contentSize.width, unscaled.popover.contentSize.width, 0.1f,
+                               @"Pen popover width should stay logical sized");
+    XCTAssertEqualWithAccuracy(controller.popover.contentSize.height, unscaled.popover.contentSize.height, 0.1f,
+                               @"Pen popover height should stay logical sized");
+    [self assertSubviewsOfView:unscaled.contentView fitInContentSize:unscaled.popover.contentSize name:@"Pen popover"];
 }
 
 - (void)testTextPopoverScalesContentSize {
@@ -88,7 +108,12 @@
     [controller showRelativeToRect:NSMakeRect(5.0f, 5.0f, 1.0f, 1.0f) ofView:anchor preferredEdge:NSMaxYEdge];
     XCTAssertNotNil(controller.popover, @"Popover should be constructed");
     XCTAssertEqualWithAccuracy(controller.popover.contentSize.width, 340.0f, 0.1f, @"Text popover width should stay logical sized");
-    XCTAssertEqualWithAccuracy(controller.popover.contentSize.height, 392.0f, 0.1f, @"Text popover height should stay logical sized (includes the Style and Align rows)");
+    STUnsetEnvVar("GSScaleFactor");
+    TextToolPopoverController *unscaled = [[TextToolPopoverController alloc] init];
+    [unscaled buildPopoverForView:anchor];
+    XCTAssertEqualWithAccuracy(controller.popover.contentSize.height, unscaled.popover.contentSize.height, 0.1f,
+                               @"Text popover height should stay logical sized");
+    [self assertSubviewsOfView:unscaled.contentView fitInContentSize:unscaled.popover.contentSize name:@"Text popover"];
 }
 
 - (void)testZoomPopoverButtonsFitMeasuredCellSizes {
