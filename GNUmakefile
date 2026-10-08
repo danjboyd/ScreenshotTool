@@ -87,6 +87,79 @@ ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
 	Resources/Preferences-light.png \
 	Resources/Preferences-dark.png
 
+# Toolbar icons at each size they're drawn at, from Resources/Icons (scripts/render_toolbar_icons.py).
+ScreenshotTool_RESOURCE_FILES += \
+	Resources/AddText-16-symbolic.png \
+	Resources/AddText-22-symbolic.png \
+	Resources/AddText-24-symbolic.png \
+	Resources/AddText-32-symbolic.png \
+	Resources/AddText-44-symbolic.png \
+	Resources/AddText-48-symbolic.png \
+	Resources/AddText-64-symbolic.png \
+	Resources/Arrow-16-symbolic.png \
+	Resources/Arrow-22-symbolic.png \
+	Resources/Arrow-24-symbolic.png \
+	Resources/Arrow-32-symbolic.png \
+	Resources/Arrow-44-symbolic.png \
+	Resources/Arrow-48-symbolic.png \
+	Resources/Arrow-64-symbolic.png \
+	Resources/CopyImage-16-symbolic.png \
+	Resources/CopyImage-22-symbolic.png \
+	Resources/CopyImage-24-symbolic.png \
+	Resources/CopyImage-32-symbolic.png \
+	Resources/CopyImage-44-symbolic.png \
+	Resources/CopyImage-48-symbolic.png \
+	Resources/CopyImage-64-symbolic.png \
+	Resources/Eraser-16-symbolic.png \
+	Resources/Eraser-22-symbolic.png \
+	Resources/Eraser-24-symbolic.png \
+	Resources/Eraser-32-symbolic.png \
+	Resources/Eraser-44-symbolic.png \
+	Resources/Eraser-48-symbolic.png \
+	Resources/Eraser-64-symbolic.png \
+	Resources/Highligher-16-symbolic.png \
+	Resources/Highligher-22-symbolic.png \
+	Resources/Highligher-24-symbolic.png \
+	Resources/Highligher-32-symbolic.png \
+	Resources/Highligher-44-symbolic.png \
+	Resources/Highligher-48-symbolic.png \
+	Resources/Highligher-64-symbolic.png \
+	Resources/MarqueeTool-16-symbolic.png \
+	Resources/MarqueeTool-22-symbolic.png \
+	Resources/MarqueeTool-24-symbolic.png \
+	Resources/MarqueeTool-32-symbolic.png \
+	Resources/MarqueeTool-44-symbolic.png \
+	Resources/MarqueeTool-48-symbolic.png \
+	Resources/MarqueeTool-64-symbolic.png \
+	Resources/PenTool-16-symbolic.png \
+	Resources/PenTool-22-symbolic.png \
+	Resources/PenTool-24-symbolic.png \
+	Resources/PenTool-32-symbolic.png \
+	Resources/PenTool-44-symbolic.png \
+	Resources/PenTool-48-symbolic.png \
+	Resources/PenTool-64-symbolic.png \
+	Resources/Preferences-16-symbolic.png \
+	Resources/Preferences-22-symbolic.png \
+	Resources/Preferences-24-symbolic.png \
+	Resources/Preferences-32-symbolic.png \
+	Resources/Preferences-44-symbolic.png \
+	Resources/Preferences-48-symbolic.png \
+	Resources/Preferences-64-symbolic.png \
+	Resources/Redo-16-symbolic.png \
+	Resources/Redo-22-symbolic.png \
+	Resources/Redo-24-symbolic.png \
+	Resources/Redo-32-symbolic.png \
+	Resources/Redo-44-symbolic.png \
+	Resources/Redo-48-symbolic.png \
+	Resources/Redo-64-symbolic.png \
+	Resources/Undo-16-symbolic.png \
+	Resources/Undo-22-symbolic.png \
+	Resources/Undo-24-symbolic.png \
+	Resources/Undo-32-symbolic.png \
+	Resources/Undo-44-symbolic.png \
+	Resources/Undo-48-symbolic.png \
+	Resources/Undo-64-symbolic.png
+
 ScreenshotTool_RESOURCE_FILES += \
 	Resources/Cursors/pen-cursor@1x.png \
 	Resources/Cursors/pen-cursor@1x.tiff \

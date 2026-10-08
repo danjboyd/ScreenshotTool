@@ -592,6 +592,52 @@ static NSString *STPathForToolbarResource(NSString *filename, NSString *extensio
     return nil;
 }
 
+/// The sizes, in points, the toolbar draws its icons at: GNOME's small toolbar, the tool
+/// switcher's segments, Adwaita's toolbar items, and other themes' toolbar items.
+static const NSInteger STToolbarIconPointSizes[] = {16, 22, 24, 32};
+
+/// The toolbar icon `name` (`stem-symbolic`) with a representation for each size the toolbar draws
+/// it at, each rendered from its SVG at that size (scripts/render_toolbar_icons.py), so none is
+/// resampled on screen: drawn at one, an NSImage picks that one. Doubled-up ones are added for
+/// Retina displays on macOS. Nil when the sized files aren't there.
+static NSImage *STSizedToolbarIcon(NSString *name, NSSize size) {
+    NSString *suffix = @"-symbolic";
+    if (![name hasSuffix:suffix]) {
+        return nil;
+    }
+    NSString *stem = [name substringToIndex:name.length - suffix.length];
+#if defined(GNUSTEP)
+    const NSInteger scales[] = {1};
+#else
+    const NSInteger scales[] = {1, 2};
+#endif
+    NSImage *image = [[NSImage alloc] initWithSize:size];
+    for (size_t i = 0; i < sizeof(STToolbarIconPointSizes) / sizeof(STToolbarIconPointSizes[0]); i++) {
+        NSInteger points = STToolbarIconPointSizes[i];
+        for (size_t j = 0; j < sizeof(scales) / sizeof(scales[0]); j++) {
+            NSString *file = [NSString stringWithFormat:@"%@-%ld%@", stem, (long)(points * scales[j]), suffix];
+            NSString *path = STPathForToolbarResource(file, @"png");
+            NSData *data = path ? [NSData dataWithContentsOfFile:path] : nil;
+            NSBitmapImageRep *rep = data ? [NSBitmapImageRep imageRepWithData:data] : nil;
+#if defined(GNUSTEP)
+            rep = rep ? (STDeviceBitmapRepresentationFromBitmapRep(rep) ?: rep) : nil;
+#endif
+            if (!rep) {
+                continue;
+            }
+            [rep setSize:NSMakeSize(points, points)];
+            [image addRepresentation:rep];
+        }
+    }
+    return image.representations.count > 0 ? image : nil;
+}
+
+/// Whether the image is one of STSizedToolbarIcon's: copied and given a size, it's drawn as it is,
+/// not redrawn into one bitmap, which would resample it.
+static BOOL STIsSizedToolbarIcon(NSImage *image) {
+    return image.representations.count > 1;
+}
+
 @interface STStatusBarBackgroundView : NSView
 @property (nonatomic, strong) NSColor *fillColor;
 @property (nonatomic, strong) NSColor *topBorderColor;
@@ -3524,15 +3570,18 @@ static id STInfoValueForKey(NSString *key) {
         if (cached) {
             return cached;
         }
-        NSString *path = STPathForToolbarResource(candidate, @"png");
-        if (!path) {
-            continue;
-        }
+        NSImage *image = STSizedToolbarIcon(candidate, NSMakeSize(ToolbarIconDimension, ToolbarIconDimension));
+        if (!image) {
+            NSString *path = STPathForToolbarResource(candidate, @"png");
+            if (!path) {
+                continue;
+            }
 #if defined(GNUSTEP)
-        NSImage *image = STBitmapBackedImageFromFile(path, NSMakeSize(ToolbarIconDimension, ToolbarIconDimension));
+            image = STBitmapBackedImageFromFile(path, NSMakeSize(ToolbarIconDimension, ToolbarIconDimension));
 #else
-        NSImage *image = [[NSImage alloc] initWithContentsOfFile:path];
+            image = [[NSImage alloc] initWithContentsOfFile:path];
 #endif
+        }
         if (image) {
             [image setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
             STMarkSymbolicIcon(image, candidate);
@@ -3581,7 +3630,9 @@ static id STInfoValueForKey(NSString *key) {
     }
     [rendered setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
 #if defined(GNUSTEP)
-    rendered = [self bitmapBackedToolbarImageFromImage:rendered];
+    if (!STIsSizedToolbarIcon(rendered)) {
+        rendered = [self bitmapBackedToolbarImageFromImage:rendered];
+    }
     if (!STImageHasVisiblePixels(rendered)) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar image %@ still lacks visible pixels after rendering", identifier]);
     }
@@ -6479,7 +6530,12 @@ static id STInfoValueForKey(NSString *key) {
                     }
                 }
 #else
-                icon = STRenderToolbarIcon(base);
+                if (STIsSizedToolbarIcon(base)) {
+                    icon = [base copy];
+                    [icon setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
+                } else {
+                    icon = STRenderToolbarIcon(base);
+                }
 #endif
                 toolbarCache[candidate] = icon;
                 ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: loaded toolbar icon %@", candidate]);
@@ -6507,6 +6563,11 @@ static id STInfoValueForKey(NSString *key) {
     NSImage *cached = cache[filename];
     if (cached) {
         return cached;
+    }
+    NSImage *sized = STSizedToolbarIcon(filename, NSMakeSize(ToolbarIconDimension, ToolbarIconDimension));
+    if (sized) {
+        cache[filename] = sized;
+        return sized;
     }
 
     NSArray<NSString *> *extensions = @[@"png", @"tiff", @"tif", @"bmp"];
