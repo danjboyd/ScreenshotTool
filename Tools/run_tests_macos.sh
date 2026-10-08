@@ -90,7 +90,7 @@ fi
 cd "${ROOT_DIR}"
 status=0
 xcrun xctest "${FILTER[@]+"${FILTER[@]}"}" "${BUNDLE}" > "${LOG_PATH}" 2>&1 || status=$?
-grep -E ": error:|Executed [0-9]+ tests" "${LOG_PATH}" | tail -n 40
+grep -E ": error:|Executed [0-9]+ tests?," "${LOG_PATH}" | tail -n 40 || true
 if [[ "${status}" -ne 0 ]]; then
   echo "Tests failed (exit ${status}); the full log is ${LOG_PATH}." >&2
 fi

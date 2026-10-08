@@ -59,9 +59,9 @@ as its in-window menus and themes expect.
   `STDocumentRouter`; Preferences apply to every window; quitting asks about each window's
   unsaved annotations.
 - A closed window's controller lets go of its observers, timers and pending calls, so it and its
-  canvas are freed. Known issue: about 5 MB per image window opened stays allocated after the
-  window closes, below anything of ours (every controller, canvas and image is freed; empty
-  windows don't do it). Measured in `MultiWindowProbe` work, not yet traced to its owner.
+  canvas are freed. What stays (about 5 MB per large image shown) is Core Graphics' cache of the
+  image as Core Animation drew it, in purgeable memory (`DefaultPurgeableMallocZone`), which
+  macOS reclaims under memory pressure: not a leak of the app's.
 
 Still open: autosave and Versions (`NSDocument`), window restoration, a Settings window that
 looks native, and an Icon Composer icon for the macOS 26 look.
