@@ -3,8 +3,9 @@
  * Copyright (C) 2026 Daniel Boyd
  *
  * File > Take Screenshot… asks the desktop's own screenshot tool: GNOME's through the desktop
- * portal, the Snipping Tool on Windows (STScreenshotCapture). The tool itself needs a desktop
- * session; these check the menu item and that a capture which can't start reports it, once.
+ * portal, the Snipping Tool on Windows, screencapture on macOS (STScreenshotCapture). The tool
+ * itself needs a desktop session; these check the menu item and that a capture which can't start
+ * reports it, once.
  */
 
 #import <XCTest/XCTest.h>
@@ -28,7 +29,6 @@
     STConfigureTestDefaults();
 }
 
-#if defined(GNUSTEP)
 - (NSMenuItem *)takeScreenshotItemIn:(NSMenu *)menu {
     for (NSMenuItem *item in menu.itemArray) {
         if (item.action == @selector(takeScreenshot:)) {
@@ -49,8 +49,13 @@
     NSMenuItem *item = [self takeScreenshotItemIn:[NSApp mainMenu]];
     XCTAssertNotNil(item);
     XCTAssertEqualObjects(item.title, @"Take Screenshot…");
-    XCTAssertEqualObjects(item.keyEquivalent, @"T", @"Ctrl+Shift+T");
+    XCTAssertEqualObjects(item.keyEquivalent, @"T", @"Ctrl+Shift+T, Command-Shift-T on macOS");
     XCTAssertEqual([delegate validateMenuItem:item], [STScreenshotCapture isAvailable]);
+}
+
+#if !defined(GNUSTEP)
+- (void)testScreencaptureIsAvailableOnMacOS {
+    XCTAssertTrue([STScreenshotCapture isAvailable], @"/usr/sbin/screencapture ships with macOS");
 }
 #endif
 

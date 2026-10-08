@@ -17,13 +17,14 @@ typedef void (^STScreenshotCaptureCompletion)(STScreenshotCaptureResult result, 
 
 /// Takes a screenshot with the system's own tool, which lets the user choose an area, a window or
 /// the screen: GNOME's (and other desktops') through the desktop portal's Screenshot interface,
-/// Windows' through the Snipping Tool, whose snip goes to the clipboard. The app keeps running
+/// Windows' through the Snipping Tool, whose snip goes to the clipboard, and macOS's through
+/// screencapture's interactive mode, into a temporary file. The app keeps running
 /// meanwhile; the completion is called once, on the main thread. `failure` is nil when the user
 /// cancelled.
 @interface STScreenshotCapture : NSObject
 
 /// Whether this platform has a capture tool to ask: a session bus with the portal on Linux,
-/// Windows 10 and later; not macOS, which captures on its own.
+/// Windows 10 and later, screencapture on macOS.
 + (BOOL)isAvailable;
 
 /// Whether a capture is under way: a second one isn't started meanwhile.

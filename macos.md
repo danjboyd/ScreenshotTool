@@ -68,6 +68,10 @@ looks native, and an Icon Composer icon for the macOS 26 look.
 
 ## Phase 4: capture
 
+Until then, File > Take Screenshot… (Command-Shift-T, or `--capture` on the command line) runs
+`screencapture -i`, as Command-Shift-4 does, and opens the result untitled. It asks for the
+Screen Recording permission first; an ad hoc signed build loses it each time it's rebuilt.
+
 - Region, window and full-screen capture with ScreenCaptureKit, a global shortcut and a menu
   bar item. Needs the Screen Recording permission, which keeps working across updates only
   with a stable (Developer ID) signature.

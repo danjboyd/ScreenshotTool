@@ -2253,16 +2253,14 @@ static id STInfoValueForKey(NSString *key) {
     [fileMenu addItem:openRecentItem];
     [fileMenu setSubmenu:self.openRecentMenu forItem:openRecentItem];
 
-#if defined(GNUSTEP)
     // With the desktop's own tool: GNOME's screenshot UI through the portal, the Snipping Tool on
-    // Windows. macOS captures with ScreenCaptureKit (macos.md).
+    // Windows, screencapture on macOS (until its own capture, macos.md).
     NSMenuItem *takeScreenshotItem = [[NSMenuItem alloc] initWithTitle:@"Take Screenshot…"
                                                                 action:@selector(takeScreenshot:)
                                                          keyEquivalent:@"T"];
     [takeScreenshotItem setTarget:self];
     [takeScreenshotItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
     [fileMenu addItem:takeScreenshotItem];
-#endif
 
     NSMenuItem *saveAsItem = [[NSMenuItem alloc] initWithTitle:@"Save As…"
                                                         action:@selector(saveDocumentAs:)
@@ -6018,6 +6016,18 @@ static id STInfoValueForKey(NSString *key) {
             [self showTransientFeedbackMessage:@"The snip couldn't be read from the clipboard" duration:2.5];
             return;
         }
+#if !defined(GNUSTEP)
+    } else if (result == STScreenshotCaptureResultFile && url) {
+        // screencapture's file is a temporary one: kept with the pasted images, it opens untitled
+        // as they do, and goes once it's open.
+        NSData *pngData = [NSData dataWithContentsOfURL:url];
+        [[NSFileManager defaultManager] removeItemAtURL:url error:NULL];
+        url = pngData.length > 0 ? [self temporaryClipboardImageURLForPNGData:pngData] : nil;
+        if (!url) {
+            [self showTransientFeedbackMessage:@"The screenshot couldn't be read" duration:2.5];
+            return;
+        }
+#endif
     } else if (result != STScreenshotCaptureResultFile || !url) {
         if (failure.length > 0) {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Take Screenshot failed: %@", failure]);
@@ -6029,11 +6039,18 @@ static id STInfoValueForKey(NSString *key) {
         }
         return;
     }
+#if !defined(GNUSTEP)
+    // The front window if it's empty, otherwise a new one.
+    if (![[self applicationController] openURLInDocumentWindow:url preferring:nil]) {
+        [STFrontDocument() showTransientFeedbackMessage:@"Unable to open the screenshot" duration:2.5];
+    }
+#else
     if (![self.canvasView hasImage]) {
         [self openImageAtURL:url];
     } else if (![self launchNewWindowForImageAtURL:url]) {
         [self showTransientFeedbackMessage:@"Unable to open the screenshot in a new window" duration:2.5];
     }
+#endif
 }
 
 - (void)pasteAsNewImage:(id)sender {
