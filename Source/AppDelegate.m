@@ -3775,14 +3775,23 @@ static id STInfoValueForKey(NSString *key) {
     [container addSubview:valueLabel];
 
     NSButton *optionsButton = [[NSButton alloc] initWithFrame:NSZeroRect];
-    // An ellipsis every UI font has: Segoe UI has no "⋯", which drew as "?" on Windows.
-    optionsButton.title = @"…";
+#if defined(GNUSTEP)
+    // Three middle dots, which every UI font has and which sit centred: Segoe UI has no "⋯"
+    // (it drew as "?" on Windows), and "…" sits on the baseline.
+    optionsButton.title = @"···";
+#else
+    optionsButton.title = @"⋯";
+#endif
 #ifdef NSRoundedBezelStyle
     [optionsButton setBezelStyle:NSRoundedBezelStyle];
 #else
     [optionsButton setBezelStyle:NSRecessedBezelStyle];
 #endif
+#ifdef NSFontWeightSemibold
+    optionsButton.font = [NSFont systemFontOfSize:[NSFont systemFontSize] weight:NSFontWeightSemibold];
+#else
     optionsButton.font = [NSFont boldSystemFontOfSize:[NSFont systemFontSize]];
+#endif
     optionsButton.target = self;
     optionsButton.action = @selector(toolWidthOptionsButtonClicked:);
     optionsButton.toolTip = @"More width options";
