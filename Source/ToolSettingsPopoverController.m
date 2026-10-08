@@ -180,8 +180,10 @@ static CGFloat STToolSettingsNaturalHeight(NSControl *control) {
     [self.contentView addSubview:setDefault];
     [reset sizeToFit];
     [setDefault sizeToFit];
+    // Wide enough for the buttons in the theme's font (Adwaita's are wide).
+    width = MAX(width, NSWidth(reset.frame) + 12.0f + NSWidth(setDefault.frame) + (padding * 2.0f));
 
-    // Heights, measured; then the rows from the top down in a flipped sense, converted at the end.
+    // Heights, measured; then the rows from the top down.
     CGFloat contentWidth = width - (padding * 2.0f);
     CGFloat titleHeight = STToolSettingsNaturalHeight(self.titleLabel);
     CGFloat labelHeight = STToolSettingsNaturalHeight(self.widthLabel);
