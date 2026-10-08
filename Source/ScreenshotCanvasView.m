@@ -2961,20 +2961,55 @@ static NSError *STProjectError(NSString *message) {
         return NO;
     }
     entry.hasPointer = !entry.hasPointer;
-    if (entry.hasPointer && NSPointInRect(entry.pointerTarget, NSInsetRect([entry decoratedTextBounds], -4.0, -4.0))) {
-        // Start the pointer below and to the left of the label, inside the image; drag its handle to aim it.
-        NSRect box = [entry decoratedTextBounds];
-        NSSize size = self.image ? self.image.size : NSMakeSize(NSMaxX(box) + 60.0, NSMaxY(box) + 60.0);
-        NSPoint target = NSMakePoint(NSMinX(box) - 40.0, NSMaxY(box) + 50.0);
-        if (target.y > size.height - 4.0) {
-            target.y = NSMinY(box) - 50.0;
-        }
-        target.x = MAX(4.0, MIN(size.width - 4.0, target.x));
-        target.y = MAX(4.0, MIN(size.height - 4.0, target.y));
-        entry.pointerTarget = target;
+    // A new label's target is the image's corner, (0, 0); place it unless it's been aimed
+    // somewhere that can still be seen and grabbed.
+    if (entry.hasPointer && (NSPointInRect(entry.pointerTarget, NSInsetRect([entry decoratedTextBounds], -4.0, -4.0)) ||
+                             !NSPointInRect(entry.pointerTarget, [self pointerTargetArea]))) {
+        entry.pointerTarget = [self initialPointerTargetForTextBounds:[entry decoratedTextBounds]];
     }
     [self setNeedsDisplay:YES];
     return YES;
+}
+
+/// The part of the image on screen, less room for the handle (12pt across) at its edges: where a
+/// pointer's target can be seen and grabbed.
+- (NSRect)pointerTargetArea {
+    NSSize size = self.image ? self.image.size : NSZeroSize;
+    NSRect area = NSMakeRect(0.0, 0.0, size.width, size.height);
+    CGFloat scale = self.zoomScale > 0.0 ? self.zoomScale : 1.0;
+    NSRect shown = [self visibleRect];
+    if (!NSIsEmptyRect(shown)) {
+        NSRect shownInImage = NSMakeRect(NSMinX(shown) / scale, NSMinY(shown) / scale,
+                                         NSWidth(shown) / scale, NSHeight(shown) / scale);
+        NSRect onScreen = NSIntersectionRect(area, shownInImage);
+        if (!NSIsEmptyRect(onScreen)) {
+            area = onScreen;
+        }
+    }
+    // Room for the handle (12pt across on screen) at the edges.
+    CGFloat margin = 10.0 / scale;
+    area = NSInsetRect(area, MIN(margin, NSWidth(area) / 2.0), MIN(margin, NSHeight(area) / 2.0));
+    return area;
+}
+
+/// Where a new pointer starts: below and to the left of the label, or to the right or above it
+/// where there's no room, inside the part of the image on screen so its handle can be grabbed;
+/// with the image scrolled, inside the image alone put it out of the window.
+- (NSPoint)initialPointerTargetForTextBounds:(NSRect)box {
+    NSRect area = [self pointerTargetArea];
+    if (!self.image) {
+        area = NSUnionRect(area, NSMakeRect(0.0, 0.0, NSMaxX(box) + 60.0, NSMaxY(box) + 60.0));
+    }
+    NSPoint target = NSMakePoint(NSMinX(box) - 40.0, NSMaxY(box) + 50.0);
+    if (target.x < NSMinX(area)) {
+        target.x = NSMaxX(box) + 40.0;
+    }
+    if (target.y > NSMaxY(area)) {
+        target.y = NSMinY(box) - 50.0;
+    }
+    target.x = MAX(NSMinX(area), MIN(NSMaxX(area), target.x));
+    target.y = MAX(NSMinY(area), MIN(NSMaxY(area), target.y));
+    return target;
 }
 
 - (NSRect)activePointerHandleRectInView {
