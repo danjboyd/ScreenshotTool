@@ -63,7 +63,19 @@
     XCTAssertNotNil(hudView.superview, @"HUD view should be attached to a superview");
 
     [_appDelegate hideHUDMessage];
-    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.30]];
+    // The fade takes 0.2s; a loaded CI runner can take longer to run it out, so wait up to 2s.
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:2.0];
+    while ([deadline timeIntervalSinceNow] > 0) {
+#if defined(GNUSTEP)
+        BOOL hidden = hudView.isHidden;
+#else
+        BOOL hidden = !hudView.window.isVisible;
+#endif
+        if (hidden) {
+            break;
+        }
+        [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    }
 #if defined(GNUSTEP)
     XCTAssertTrue(hudView.isHidden, @"HUD view should hide after dismissing");
 #else
