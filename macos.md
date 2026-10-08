@@ -44,16 +44,27 @@ and `docs/Packaging.md`.
 - The bundle carries only the symbolic icons and cursors: 3.6 MB, a 2.2 MB DMG.
 - `Tools/run_tests_macos.sh` runs the test suite with Apple's XCTest, in CI too.
 
-## Later: multiple windows and documents
+## Multiple windows (done)
 
-The app is one window per process: `AppDelegate` holds that window's state, and Paste as New
-Image starts another process (on macOS, a second app in the Dock). Moving it to `NSDocument`
-(a window per document, autosave and Versions, the title bar's document menu, the system's Open
-Recent) means splitting the per-window state out of `AppDelegate` on every platform, so it's
-its own change.
+On macOS each image gets a window of its own, with an `AppDelegate` instance as its controller;
+the one `main.m` makes is also the application's delegate, and keeps what is the application's
+(menus, Open Recent, Preferences, the updater, quitting). GNUstep keeps one window per process,
+as its in-window menus and themes expect.
 
-Also: a Settings window that looks native, window restoration, and an Icon Composer icon for
-the macOS 26 look.
+- Open (several files at once), Open Recent, opening from Finder or the Dock, and Paste as New
+  Image open a window each, filling an empty front window first; an image that's open already
+  just comes to the front. File > New Window (Cmd+N) opens an empty one. Windows tab together
+  when the system asks for tabs.
+- The menus' document commands (Save, Undo, Crop, Zoom, Share) go to the front window through
+  `STDocumentRouter`; Preferences apply to every window; quitting asks about each window's
+  unsaved annotations.
+- A closed window's controller lets go of its observers, timers and pending calls, so it and its
+  canvas are freed. Known issue: about 5 MB per image window opened stays allocated after the
+  window closes, below anything of ours (every controller, canvas and image is freed; empty
+  windows don't do it). Measured in `MultiWindowProbe` work, not yet traced to its owner.
+
+Still open: autosave and Versions (`NSDocument`), window restoration, a Settings window that
+looks native, and an Icon Composer icon for the macOS 26 look.
 
 ## Phase 4: capture
 

@@ -26,9 +26,10 @@ Current build targets:
 - Crop to Selection, Fit to Window, fixed zoom levels and Zoom In/Out.
 - Standard controls throughout, so the GNUstep theme decides the look,
   including the toolbar, symbolic icons and the open and save dialogs.
-- On macOS: drag the annotated image out of the Copy toolbar button into another
-  app, share it from the toolbar or File > Share, drop images on the window to
-  open them, and pinch or Command-scroll to zoom.
+- On macOS: a window per image (File > New Window, Open several at once); drag
+  the annotated image out of the Copy toolbar button into another app, share it
+  from the toolbar or File > Share, drop images on a window to open them, and
+  pinch or Command-scroll to zoom.
 
 ## Screenshots
 

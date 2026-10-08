@@ -35,6 +35,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	EmptyStateProbe_test.m \
 	LaunchCostProbe_test.m \
 	TextMoveProbe_test.m \
+	MultiWindowProbe_test.m \
 	PasteAvailabilityProbe_test.m \
 	PopoverFocusProbe_test.m \
 	FitViewportRoundingProbe_test.m \
