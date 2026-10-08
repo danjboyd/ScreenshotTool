@@ -1187,6 +1187,12 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSData *closeSettledAnnotationFingerprint;
 @property (nonatomic, strong) NSMutableArray<NSString *> *recentDocumentPaths;
 @property (nonatomic, strong) NSMenu *openRecentMenu;
+#if !defined(GNUSTEP)
+/// On the application's delegate: the other document windows' controllers (see Windows below).
+@property (nonatomic, strong) NSMutableArray<AppDelegate *> *documentWindows;
+/// The target of the menus' document commands, which it hands to the front window's controller.
+@property (nonatomic, strong) id documentRouter;
+#endif
 @property (nonatomic, strong) NSUndoManager *undoManager;
 @property (nonatomic, assign) BOOL usesDarkTheme;
 @property (nonatomic, assign) BOOL toolWidthMenuCanReset;
@@ -1207,6 +1213,43 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 - (BOOL)launchNewWindowForImageAtURL:(NSURL *)url;
 - (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
 @end
+
+#if !defined(GNUSTEP)
+/// The controller of the frontmost document window, or the application's delegate if none is
+/// showing (its commands are then disabled: it has no image).
+static AppDelegate *STFrontDocument(void) {
+    for (NSWindow *window in @[NSApp.mainWindow ?: (id)[NSNull null], NSApp.keyWindow ?: (id)[NSNull null]]) {
+        if ([window isKindOfClass:[NSWindow class]] && [window.delegate isKindOfClass:[AppDelegate class]]) {
+            return (AppDelegate *)window.delegate;
+        }
+    }
+    for (NSWindow *window in [NSApp orderedWindows]) {
+        if (window.isVisible && [window.delegate isKindOfClass:[AppDelegate class]]) {
+            return (AppDelegate *)window.delegate;
+        }
+    }
+    return [NSApp.delegate isKindOfClass:[AppDelegate class]] ? (AppDelegate *)NSApp.delegate : nil;
+}
+
+/// The menus' document commands (Save, Undo, Zoom, ...) go to the front window's controller,
+/// validation included. A router rather than the responder chain, so Undo keeps choosing
+/// between typing and the canvas itself (-activeUndoManager).
+@interface STDocumentRouter : NSObject
+@end
+
+@implementation STDocumentRouter
+
+- (BOOL)respondsToSelector:(SEL)selector {
+    return [super respondsToSelector:selector] || [STFrontDocument() respondsToSelector:selector];
+}
+
+- (id)forwardingTargetForSelector:(SEL)selector {
+    (void)selector;
+    return STFrontDocument();
+}
+
+@end
+#endif
 
 @implementation AppDelegate
 
@@ -1400,6 +1443,14 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 }
 
 - (void)addRecentDocumentURL:(NSURL *)url {
+#if !defined(GNUSTEP)
+    AppDelegate *application = [self applicationController];
+    if (application != self) {
+        // The Open Recent menu is the application delegate's.
+        [application addRecentDocumentURL:url];
+        return;
+    }
+#endif
     NSString *path = STStandardizedRecentDocumentPath(url);
     if (path.length == 0) {
         return;
@@ -1443,6 +1494,138 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 }
 
 #if !defined(GNUSTEP)
+#pragma mark - Windows (macOS)
+
+// On macOS each document has a window of its own, with an AppDelegate instance as its
+// controller. The application's delegate (made in main.m) is one of them too, and also owns what
+// is the application's: the menus, Open Recent, Preferences, the updater, quitting. GNUstep keeps
+// one window per process, as its menus and themes expect.
+
+/// The instance that is the application's delegate, which keeps the list of document windows.
+- (AppDelegate *)applicationController {
+    id delegate = NSApp.delegate;
+    return [delegate isKindOfClass:[AppDelegate class]] ? (AppDelegate *)delegate : self;
+}
+
+- (NSArray<AppDelegate *> *)allDocumentControllers {
+    AppDelegate *application = [self applicationController];
+    return [@[application] arrayByAddingObjectsFromArray:application.documentWindows ?: @[]];
+}
+
+/// The menu commands that act on a document: they go to the front window's controller.
+- (void)routeDocumentCommandsInMenu:(NSMenu *)menu {
+    static NSSet<NSString *> *documentCommands = nil;
+    if (!documentCommands) {
+        documentCommands = [NSSet setWithArray:@[@"saveDocumentAs:", @"saveProject:", @"undo:", @"redo:",
+                                                 @"cropImage:", @"zoomFitToWindow:", @"zoomPreset25:",
+                                                 @"zoomPreset50:", @"zoomPreset100:", @"zoomPreset200:",
+                                                 @"zoomIn:", @"zoomOut:"]];
+    }
+    for (NSMenuItem *item in menu.itemArray) {
+        if (item.action && [documentCommands containsObject:NSStringFromSelector(item.action)]) {
+            item.target = self.documentRouter;
+        }
+        if (item.submenu) {
+            [self routeDocumentCommandsInMenu:item.submenu];
+        }
+    }
+}
+
+/// A new, empty document window, cascaded from the front one, not shown yet.
+- (AppDelegate *)makeDocumentWindow {
+    AppDelegate *document = [[AppDelegate alloc] init];
+    document.usesDarkTheme = self.usesDarkTheme;
+    [document setupWindowAndContent];
+    [document setupToolbar];
+    document.lastWidthTool = ScreenshotCanvasToolHighlighter;
+    [document loadToolSettingsFromDefaults];
+    [document selectTool:ScreenshotCanvasToolHighlighter];
+    [document reflectZoomSelection];
+    [document refreshPasteAvailability];
+
+    NSWindow *front = STFrontDocument().window;
+    if (front.isVisible) {
+        NSPoint topLeft = [front cascadeTopLeftFromPoint:NSMakePoint(NSMinX(front.frame), NSMaxY(front.frame))];
+        [document.window setFrameTopLeftPoint:topLeft];
+    }
+    if (!self.documentWindows) {
+        self.documentWindows = [[NSMutableArray alloc] init];
+    }
+    [self.documentWindows addObject:document];
+    return document;
+}
+
+- (IBAction)newDocumentWindow:(id)sender {
+    (void)sender;
+    AppDelegate *document = [[self applicationController] makeDocumentWindow];
+    [document.window makeKeyAndOrderFront:nil];
+}
+
+/// Opens `url` in a window: the one already showing it, an empty one (`preferred` first), or a
+/// new one.
+- (BOOL)openURLInDocumentWindow:(NSURL *)url preferring:(nullable AppDelegate *)preferred {
+    NSString *path = [url.path stringByStandardizingPath];
+    for (AppDelegate *document in [self allDocumentControllers]) {
+        NSURL *shown = document.currentProjectURL ?: document.currentImageURL;
+        if (document.window.isVisible && path.length > 0 && [[shown.path stringByStandardizingPath] isEqualToString:path]) {
+            [document.window makeKeyAndOrderFront:nil];
+            return YES;
+        }
+    }
+
+    AppDelegate *target = nil;
+    AppDelegate *front = STFrontDocument();
+    if (preferred && ![preferred.canvasView hasImage]) {
+        target = preferred;
+    } else if (front.window.isVisible && ![front.canvasView hasImage]) {
+        target = front;
+    } else if (!self.window.isVisible) {
+        // This window was closed, which settled its annotations: use it again.
+        target = self;
+    }
+    if (target) {
+        BOOL opened = [target openImageAtURL:url];
+        [target.window makeKeyAndOrderFront:nil];
+        return opened;
+    }
+
+    AppDelegate *document = [self makeDocumentWindow];
+    // Opened before it's shown, so the window appears at the image's size.
+    if (![document openImageAtURL:url]) {
+        [self.documentWindows removeObject:document];
+        return NO;
+    }
+    [document.window makeKeyAndOrderFront:nil];
+    return YES;
+}
+
+/// A document window's controller goes when its window closes; the application delegate's stays.
+- (void)windowWillClose:(NSNotification *)notification {
+    if (notification.object != self.window) {
+        return;
+    }
+    AppDelegate *application = [self applicationController];
+    if (application != self && [application.documentWindows containsObject:self]) {
+        // Nothing may keep a closed window's controller: its observers, timers and pending calls.
+        [[NSNotificationCenter defaultCenter] removeObserver:self];
+        [NSObject cancelPreviousPerformRequestsWithTarget:self];
+        [self.statusClearTimer invalidate];
+        [self.hudDismissTimer invalidate];
+        [self.hudFadeTimer invalidate];
+        [self.canvasView clearSelection];
+        // After the close finishes, which still needs this controller.
+        [application performSelector:@selector(removeDocumentWindow:) withObject:self afterDelay:0.0];
+    }
+}
+
+- (void)removeDocumentWindow:(AppDelegate *)document {
+    // AppKit holds on to a closed window for a while (macOS 26's scroll edge effects reach
+    // across windows); emptied, it doesn't keep the canvas, its layers and the image with it.
+    [document.window setToolbar:nil];
+    [document.window setContentView:nil];
+    [self.documentWindows removeObject:document];
+}
+
 #pragma mark - Drag out, share and drop (macOS)
 
 /// Writes the annotated image (or the selection) as a PNG named after the document, for a drag
@@ -1540,7 +1723,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         return;
     }
     [menu removeAllItems];
-    NSURL *url = [self exportAnnotatedImageToTemporaryFile];
+    NSURL *url = [(STFrontDocument() ?: self) exportAnnotatedImageToTemporaryFile];
     if (!url) {
         NSMenuItem *none = [menu addItemWithTitle:@"No Image to Share" action:NULL keyEquivalent:@""];
         none.enabled = NO;
@@ -1813,10 +1996,15 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"Canvas not ready; deferring open for %@", filename ?: @"<nil>"]);
         return YES;
     }
+#if defined(GNUSTEP)
     if (![self confirmProceedingWithUnsavedChanges]) {
         return NO;
     }
     BOOL opened = [self openImageAtURL:[NSURL fileURLWithPath:filename]];
+#else
+    // From Finder, the Dock or Open With: a window of its own.
+    BOOL opened = [self openURLInDocumentWindow:[NSURL fileURLWithPath:filename] preferring:nil];
+#endif
     ScreenshotToolAppendLog([NSString stringWithFormat:@"application:openFile: %@ %@", opened ? @"opened" : @"failed",
                              filename ?: @"<nil>"]);
     return opened;
@@ -1967,6 +2155,13 @@ static id STInfoValueForKey(NSString *key) {
 
     // File menu
     NSMenu *fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
+
+#if !defined(GNUSTEP)
+    NSMenuItem *newWindowItem = [fileMenu addItemWithTitle:@"New Window"
+                                                    action:@selector(newDocumentWindow:)
+                                             keyEquivalent:@"n"];
+    [newWindowItem setTarget:self];
+#endif
 
     NSMenuItem *openItem = [[NSMenuItem alloc] initWithTitle:@"Open…"
                                                       action:@selector(openDocument:)
@@ -2167,6 +2362,11 @@ static id STInfoValueForKey(NSString *key) {
     [NSApp setHelpMenu:helpMenu];
 #endif
 
+#if !defined(GNUSTEP)
+    // Each window has its own controller; the commands that act on a document go to the front one.
+    self.documentRouter = [[STDocumentRouter alloc] init];
+    [self routeDocumentCommandsInMenu:mainMenu];
+#endif
     [NSApp setMainMenu:mainMenu];
     ScreenshotToolAppendLog(@"Main menu configured");
 }
@@ -2186,6 +2386,9 @@ static id STInfoValueForKey(NSString *key) {
     [self.window setBackgroundColor:STThemeWindowBackgroundColor()];
     [self.window center];
     [self.window setDelegate:self];
+    // The property owns it (ARC): a window that also released itself on close was over-released,
+    // and showing it again (from the Dock, say) crashed.
+    [self.window setReleasedWhenClosed:NO];
     [self.window setAcceptsMouseMovedEvents:YES];
 #if !defined(GNUSTEP)
     // The window passes drags to its delegate (see Drag and drop below).
@@ -4556,6 +4759,11 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)preferencesController:(PreferencesWindowController *)controller didChangeDefaultWidth:(CGFloat)width forTool:(ScreenshotCanvasTool)tool {
     (void)controller;
+#if !defined(GNUSTEP)
+    for (AppDelegate *document in self.documentWindows) {
+        [document preferencesController:controller didChangeDefaultWidth:width forTool:tool];
+    }
+#endif
     [self setDefaultWidth:width forTool:tool];
     [self applyWidth:width toTool:tool persist:YES];
 }
@@ -4567,6 +4775,11 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)preferencesController:(PreferencesWindowController *)controller didChangeDefaultColor:(NSColor *)color forTool:(ScreenshotCanvasTool)tool {
     (void)controller;
+#if !defined(GNUSTEP)
+    for (AppDelegate *document in self.documentWindows) {
+        [document preferencesController:controller didChangeDefaultColor:color forTool:tool];
+    }
+#endif
     [self setDefaultColor:color forTool:tool];
     [self applyColor:color toTool:tool persist:YES];
 }
@@ -4578,6 +4791,11 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)preferencesController:(PreferencesWindowController *)controller didChangeDefaultTextFont:(NSFont *)font {
     (void)controller;
+#if !defined(GNUSTEP)
+    for (AppDelegate *document in self.documentWindows) {
+        [document preferencesController:controller didChangeDefaultTextFont:font];
+    }
+#endif
     [self setDefaultTextFont:font];
     [self applyTextFont:font persist:YES];
 }
@@ -4589,6 +4807,11 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)preferencesController:(PreferencesWindowController *)controller didChangeDefaultTextColor:(NSColor *)color {
     (void)controller;
+#if !defined(GNUSTEP)
+    for (AppDelegate *document in self.documentWindows) {
+        [document preferencesController:controller didChangeDefaultTextColor:color];
+    }
+#endif
     [self setDefaultColor:color forTool:ScreenshotCanvasToolText];
     [self applyColor:color toTool:ScreenshotCanvasToolText persist:YES];
 }
@@ -4619,6 +4842,11 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)preferencesController:(PreferencesWindowController *)controller didToggleStatusBar:(BOOL)show {
     (void)controller;
+#if !defined(GNUSTEP)
+    for (AppDelegate *document in self.documentWindows) {
+        [document preferencesController:controller didToggleStatusBar:show];
+    }
+#endif
     self.statusBarVisiblePreference = show;
     [[NSUserDefaults standardUserDefaults] setBool:show forKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
@@ -4626,6 +4854,11 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller {
     (void)controller;
+#if !defined(GNUSTEP)
+    for (AppDelegate *document in self.documentWindows) {
+        [document preferencesControllerRestoreDefaults:controller];
+    }
+#endif
     [self setDefaultWidth:STPenWidthDefault forTool:ScreenshotCanvasToolPen];
     [self applyWidth:STPenWidthDefault toTool:ScreenshotCanvasToolPen persist:YES];
     [self setDefaultWidth:STHighlighterWidthDefault forTool:ScreenshotCanvasToolHighlighter];
@@ -5186,11 +5419,17 @@ static id STInfoValueForKey(NSString *key) {
 #pragma mark - Actions
 
 - (void)openDocument:(id)sender {
+#if defined(GNUSTEP)
     if (![self confirmProceedingWithUnsavedChanges]) {
         return;
     }
+#endif
     NSOpenPanel *panel = [NSOpenPanel openPanel];
+#if defined(GNUSTEP)
     [panel setAllowsMultipleSelection:NO];
+#else
+    [panel setAllowsMultipleSelection:YES];
+#endif
     [panel setCanChooseDirectories:NO];
     [panel setAllowedFileTypes:[STOpenableImageFileTypes() arrayByAddingObject:STProjectFileExtension]];
 
@@ -5214,7 +5453,14 @@ static id STInfoValueForKey(NSString *key) {
             [alert runModal];
             return;
         }
+#if defined(GNUSTEP)
         [self openImageAtURL:selectedURL];
+#else
+        // Each in a window of its own (this one, if it's empty).
+        for (NSURL *url in panel.URLs) {
+            [[self applicationController] openURLInDocumentWindow:url preferring:self];
+        }
+#endif
     }
 }
 
@@ -5229,9 +5475,11 @@ static id STInfoValueForKey(NSString *key) {
     if (path.length == 0) {
         return;
     }
+#if defined(GNUSTEP)
     if (![self confirmProceedingWithUnsavedChanges]) {
         return;
     }
+#endif
 
     BOOL isDirectory = NO;
     if (![[NSFileManager defaultManager] fileExistsAtPath:path isDirectory:&isDirectory] || isDirectory) {
@@ -5245,7 +5493,11 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
 
+#if defined(GNUSTEP)
     [self openImageAtURL:[NSURL fileURLWithPath:path]];
+#else
+    [[self applicationController] openURLInDocumentWindow:[NSURL fileURLWithPath:path] preferring:nil];
+#endif
 }
 
 - (void)clearRecentDocuments:(id)sender {
@@ -5517,6 +5769,11 @@ static id STInfoValueForKey(NSString *key) {
     (void)notification;
     // Another app may have changed the clipboard.
     [self refreshPasteAvailability];
+#if !defined(GNUSTEP)
+    for (AppDelegate *document in self.documentWindows) {
+        [document refreshPasteAvailability];
+    }
+#endif
 }
 
 - (BOOL)isTemporaryClipboardImageURL:(NSURL *)url {
@@ -5559,6 +5816,10 @@ static id STInfoValueForKey(NSString *key) {
     if (!url.isFileURL || url.path.length == 0) {
         return NO;
     }
+#if !defined(GNUSTEP)
+    // A window in this process; GNUstep starts another (one window per process there).
+    return [[self applicationController] openURLInDocumentWindow:url preferring:self];
+#endif
 
     @try {
         NSTask *task = [[NSTask alloc] init];
@@ -6133,7 +6394,16 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (void)undoStateDidChange:(NSNotification *)notification {
+#if !defined(GNUSTEP)
+    // Only this window's: the canvas's, or its text box's. With several windows, every other
+    // undo manager's checkpoints would keep each one revalidating, and a closed one alive.
+    id manager = notification.object;
+    if (manager != self.undoManager && manager != [self.canvasView activeTextUndoManager]) {
+        return;
+    }
+#else
     (void)notification;
+#endif
     // -canRedo posts a checkpoint: validating mustn't schedule another validation, or the app
     // never idles and redraws the toolbar on every turn of the run loop.
     if (self.validatingUndoToolbarItems) {
@@ -6191,6 +6461,17 @@ static id STInfoValueForKey(NSString *key) {
 
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender {
     (void)sender;
+#if !defined(GNUSTEP)
+    // Every open document window, minimized ones too (closed ones have left the list).
+    for (AppDelegate *document in [self.documentWindows copy]) {
+        if ([document hasUnsavedChanges]) {
+            [document.window makeKeyAndOrderFront:nil];
+            if (![document confirmProceedingWithUnsavedChanges]) {
+                return NSTerminateCancel;
+            }
+        }
+    }
+#endif
     // GNUstep quits when the last window closes under some menu styles (in-window menus); the
     // close has just asked, so don't ask again about the same annotations.
     NSData *settled = self.closeSettledAnnotationFingerprint;
