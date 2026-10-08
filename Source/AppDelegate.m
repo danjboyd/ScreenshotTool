@@ -2563,7 +2563,7 @@ static id STInfoValueForKey(NSString *key) {
     [statusField setBordered:NO];
     [statusField setDrawsBackground:NO];
     [statusField setTextColor:STThemeStatusPrimaryTextColor()];
-    [statusField setFont:[NSFont systemFontOfSize:12.0f]];
+    [statusField setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
     [statusField setAlignment:NSTextAlignmentLeft];
     statusField.autoresizingMask = (NSViewWidthSizable | NSViewHeightSizable);
     [statusField setStringValue:@""];
@@ -3690,7 +3690,7 @@ static id STInfoValueForKey(NSString *key) {
     [titleLabel setBordered:NO];
     [titleLabel setDrawsBackground:NO];
     [titleLabel setAlignment:NSTextAlignmentRight];
-    [titleLabel setFont:[NSFont boldSystemFontOfSize:12.0f]];
+    [titleLabel setFont:[NSFont boldSystemFontOfSize:[NSFont smallSystemFontSize]]];
     [titleLabel setTextColor:STThemeStatusValueTextColor()];
     self.toolWidthTitleLabel = titleLabel;
     [container addSubview:titleLabel];
@@ -3715,7 +3715,7 @@ static id STInfoValueForKey(NSString *key) {
     [valueLabel setDrawsBackground:YES];
     [valueLabel setBackgroundColor:STThemeStatusValueBackgroundColor()];
     [valueLabel setAlignment:NSTextAlignmentRight];
-    [valueLabel setFont:[NSFont systemFontOfSize:12.0f]];
+    [valueLabel setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
     [valueLabel setTextColor:STThemeStatusValueTextColor()];
     [valueLabel setStringValue:@"0 px"];
     self.toolWidthValueLabel = valueLabel;
@@ -3723,17 +3723,14 @@ static id STInfoValueForKey(NSString *key) {
     [container addSubview:valueLabel];
 
     NSButton *optionsButton = [[NSButton alloc] initWithFrame:NSZeroRect];
-    optionsButton.title = @"⋯";
+    // An ellipsis every UI font has: Segoe UI has no "⋯", which drew as "?" on Windows.
+    optionsButton.title = @"…";
 #ifdef NSRoundedBezelStyle
     [optionsButton setBezelStyle:NSRoundedBezelStyle];
 #else
     [optionsButton setBezelStyle:NSRecessedBezelStyle];
 #endif
-#ifdef NSFontWeightSemibold
-    optionsButton.font = [NSFont systemFontOfSize:13.0f weight:NSFontWeightSemibold];
-#else
-    optionsButton.font = [NSFont boldSystemFontOfSize:13.0f];
-#endif
+    optionsButton.font = [NSFont boldSystemFontOfSize:[NSFont systemFontSize]];
     optionsButton.target = self;
     optionsButton.action = @selector(toolWidthOptionsButtonClicked:);
     optionsButton.toolTip = @"More width options";
@@ -3741,8 +3738,8 @@ static id STInfoValueForKey(NSString *key) {
     STApplyAccessibilityLabel(optionsButton, @"Tool width options");
     [container addSubview:optionsButton];
 
-    // Hidden with the status bar (the default), so launch doesn't size the "⋯" button: its glyph
-    // isn't in most UI fonts, and finding a fallback took a quarter of a second.
+    // Hidden with the status bar (the default), so launch doesn't lay it out (with "⋯", whose
+    // glyph needed a font fallback, sizing it took a quarter of a second).
     // updateStatusBarVisibility shows it and lays it out.
     container.hidden = !self.statusBarVisiblePreference;
     [self updateToolWidthControls];
@@ -5086,7 +5083,7 @@ static id STInfoValueForKey(NSString *key) {
     self.hudView.textPadding = NSMakeSize(STHudHorizontalPadding, STHudVerticalPadding);
     self.hudView.cornerRadius = STHudCornerRadius;
 
-    NSDictionary *attributes = @{ NSFontAttributeName: self.hudView.font ?: [NSFont systemFontOfSize:13.0f] };
+    NSDictionary *attributes = @{ NSFontAttributeName: self.hudView.font ?: [NSFont systemFontOfSize:0.0f] };
     NSSize textSize = [message sizeWithAttributes:attributes];
     CGFloat width = MIN(STHudMaxWidth, textSize.width + (STHudHorizontalPadding * 2.0f));
     CGFloat height = textSize.height + (STHudVerticalPadding * 2.0f);
@@ -5234,7 +5231,7 @@ static id STInfoValueForKey(NSString *key) {
     if (!self.hudView) {
         return;
     }
-    self.hudView.font = [NSFont boldSystemFontOfSize:13.0f];
+    self.hudView.font = [NSFont boldSystemFontOfSize:[NSFont systemFontSize]];
 #if defined(GNUSTEP)
     self.hudView.fillColor = STThemeHUDBackgroundColor();
     self.hudView.textColor = STThemeHUDTextColor();
@@ -5402,7 +5399,7 @@ static id STInfoValueForKey(NSString *key) {
     [icon setTag:1];
     [view addSubview:icon];
 
-    NSTextField *title = [self emptyStateLabel:@"No Image" font:[NSFont boldSystemFontOfSize:20.0]];
+    NSTextField *title = [self emptyStateLabel:@"No Image" font:[NSFont boldSystemFontOfSize:round([NSFont systemFontSize] * 1.5)]];
     [title setTag:2];
     [view addSubview:title];
 

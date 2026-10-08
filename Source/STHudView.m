@@ -12,7 +12,7 @@
     self = [super initWithFrame:frameRect];
     if (self) {
         _message = @"";
-        _font = [NSFont boldSystemFontOfSize:13.0f];
+        _font = [NSFont boldSystemFontOfSize:[NSFont systemFontSize]];
 #if defined(GNUSTEP)
         _textColor = [NSColor toolTipTextColor] ?: [NSColor controlTextColor];
         _fillColor = [NSColor toolTipColor] ?: [NSColor controlBackgroundColor];
@@ -74,7 +74,7 @@
     NSColor *text = self.textColor ?: [NSColor controlTextColor];
     NSColor *fill = self.fillColor ?: [NSColor controlBackgroundColor];
     [self.label setStringValue:self.message ?: @""];
-    [self.label setFont:self.font ?: [NSFont systemFontOfSize:13.0f]];
+    [self.label setFont:self.font ?: [NSFont systemFontOfSize:0.0f]];
     [self.label setTextColor:[text colorWithAlphaComponent:text.alphaComponent * self.hudAlpha]];
     [self.label setBackgroundColor:[fill colorWithAlphaComponent:fill.alphaComponent * self.hudAlpha]];
     [self.label setFrame:self.bounds];
