@@ -1472,10 +1472,45 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     return item;
 }
 
+/// AppKit asks for these whenever it validates the toolbar (after each undoable change, typing
+/// included), not only when Share is clicked. So hand it a provider that exports the image only
+/// when a service asks for it: exporting flattens the image, which would end a label being edited.
 - (NSArray *)itemsForSharingServicePickerToolbarItem:(NSSharingServicePickerToolbarItem *)pickerToolbarItem {
     (void)pickerToolbarItem;
-    NSURL *url = [self exportAnnotatedImageToTemporaryFile];
-    return url ? @[url] : @[];
+    if (![self.canvasView hasImage]) {
+        return @[];
+    }
+    NSItemProvider *provider = [[NSItemProvider alloc] init];
+    NSString *name = [[(self.currentImageURL ?: self.currentProjectURL) lastPathComponent] stringByDeletingPathExtension];
+    provider.suggestedName = name.length > 0 ? name : @"Screenshot";
+    __weak AppDelegate *weakSelf = self;
+    [provider registerFileRepresentationForTypeIdentifier:@"public.png"
+                                              fileOptions:0
+                                               visibility:NSItemProviderRepresentationVisibilityAll
+                                              loadHandler:^NSProgress *(void (^completionHandler)(NSURL *, BOOL, NSError *)) {
+        __block NSURL *url = nil;
+        void (^export)(void) = ^{
+            url = [weakSelf exportAnnotatedImageToTemporaryFile];
+        };
+        if ([NSThread isMainThread]) {
+            export();
+        } else {
+            dispatch_sync(dispatch_get_main_queue(), export);
+        }
+        completionHandler(url, NO, url ? nil : [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil]);
+        return nil;
+    }];
+    return @[provider];
+}
+
+/// The Share menu has no key equivalents. Saying so keeps AppKit from calling -menuNeedsUpdate:
+/// to look for one on every key command, which would export (and end a label being edited).
+- (BOOL)menuHasKeyEquivalent:(NSMenu *)menu forEvent:(NSEvent *)event target:(id *)target action:(SEL *)action {
+    (void)menu;
+    (void)event;
+    (void)target;
+    (void)action;
+    return NO;
 }
 
 /// File > Share lists the services for the annotated image each time it opens.
