@@ -1230,7 +1230,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) id documentRouter;
 #endif
 @property (nonatomic, strong) NSUndoManager *undoManager;
-@property (nonatomic, assign) BOOL usesDarkTheme;
 @property (nonatomic, assign) BOOL toolWidthMenuCanReset;
 #if defined(GNUSTEP)
 @property (nonatomic, strong) GPStandardUpdaterController *updaterController;
@@ -1612,7 +1611,6 @@ static AppDelegate *STFrontDocument(void) {
 /// A new, empty document window, cascaded from the front one, not shown yet.
 - (AppDelegate *)makeDocumentWindow {
     AppDelegate *document = [[AppDelegate alloc] init];
-    document.usesDarkTheme = self.usesDarkTheme;
     [document setupWindowAndContent];
     [document setupToolbar];
     document.lastWidthTool = ScreenshotCanvasToolHighlighter;
@@ -2005,7 +2003,6 @@ static AppDelegate *STFrontDocument(void) {
 #if !defined(GNUSTEP)
     [[NSFileManager defaultManager] removeItemAtURL:STExportDirectoryURL() error:NULL];
 #endif
-    self.usesDarkTheme = STThemeIsDark();
 #if defined(GNUSTEP)
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(themeDidActivate:)
@@ -2589,8 +2586,8 @@ static id STInfoValueForKey(NSString *key) {
 
 #if defined(GNUSTEP)
     STStatusBarBackgroundView *statusBar = [[STStatusBarBackgroundView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, contentBounds.size.width, StatusBarHeight)];
-    statusBar.fillColor = STThemeStatusBarBackgroundColorForTheme(self.usesDarkTheme);
-    statusBar.topBorderColor = STThemeStatusBarBorderColorForTheme(self.usesDarkTheme);
+    statusBar.fillColor = STThemeStatusBarBackgroundColor();
+    statusBar.topBorderColor = STThemeStatusBarBorderColor();
 #else
     NSView *statusBar = [[NSView alloc] initWithFrame:NSMakeRect(0.0f, 0.0f, contentBounds.size.width, StatusBarHeight)];
 #endif
@@ -2735,25 +2732,6 @@ static id STInfoValueForKey(NSString *key) {
     return nil;
 }
 
-- (NSString *)legacyActiveIconNameForIdentifier:(NSToolbarItemIdentifier)identifier {
-    if ([identifier isEqualToString:ToolbarItemHighlighter]) {
-        return @"Highligher-active";
-    }
-    if ([identifier isEqualToString:ToolbarItemPen]) {
-        return @"PenTool-active";
-    }
-    if ([identifier isEqualToString:ToolbarItemEraser]) {
-        return @"Eraser-active";
-    }
-    if ([identifier isEqualToString:ToolbarItemText]) {
-        return @"AddText-active";
-    }
-    if ([identifier isEqualToString:ToolbarItemSelect]) {
-        return @"MarqueeTool-active";
-    }
-    return nil;
-}
-
 - (NSArray<NSString *> *)iconNameCandidatesForToolbarIdentifier:(NSToolbarItemIdentifier)identifier active:(BOOL)active {
     NSString *stem = [self baseIconStemForToolbarIdentifier:identifier];
     if (!stem) {
@@ -2763,56 +2741,6 @@ static id STInfoValueForKey(NSString *key) {
     // and light or dark is the theme's palette, so there are no active or dark variants.
     (void)active;
     return @[STSymbolicIconName(stem), stem];
-
-    NSMutableArray<NSString *> *ordered = [[NSMutableArray alloc] init];
-    void (^appendUnique)(NSString *) = ^(NSString *candidate) {
-        if (candidate.length == 0) {
-            return;
-        }
-        if (![ordered containsObject:candidate]) {
-            [ordered addObject:candidate];
-        }
-    };
-    BOOL darkTheme = self.usesDarkTheme;
-    ScreenshotToolAppendLog([NSString stringWithFormat:@"icon candidates %@ dark=%@ active=%@",
-                             identifier,
-                             darkTheme ? @"YES" : @"NO",
-                             active ? @"YES" : @"NO"]);
-#if defined(GNUSTEP)
-    if (darkTheme) {
-        if (active) {
-            appendUnique([stem stringByAppendingString:@"-dark-active-gnustep"]);
-        }
-        appendUnique([stem stringByAppendingString:@"-dark-gnustep"]);
-    } else {
-        if (active) {
-            appendUnique([stem stringByAppendingString:@"-light-active-gnustep"]);
-        }
-        appendUnique([stem stringByAppendingString:@"-light-gnustep"]);
-    }
-#endif
-    if (darkTheme) {
-        if (active) {
-            appendUnique([stem stringByAppendingString:@"-dark-active"]);
-        }
-        appendUnique([stem stringByAppendingString:@"-dark"]);
-    } else {
-        if (active) {
-            appendUnique([stem stringByAppendingString:@"-light-active"]);
-        }
-        appendUnique([stem stringByAppendingString:@"-light"]);
-    }
-
-    if (active) {
-        NSString *legacyActive = [self legacyActiveIconNameForIdentifier:identifier];
-        if (legacyActive.length > 0) {
-            appendUnique(legacyActive);
-        }
-    }
-
-    appendUnique(stem);
-
-    return [ordered copy];
 }
 
 
@@ -3930,12 +3858,9 @@ static id STInfoValueForKey(NSString *key) {
 
 #if defined(GNUSTEP)
 - (void)themeDidActivate:(NSNotification *)notification {
-    // A newly activated theme can change whether Auto resolves to the light or dark icons.
-    BOOL dark = STThemeIsDark();
-    if (dark != self.usesDarkTheme) {
-        self.usesDarkTheme = dark;
-        [self refreshInterfaceThemeAppearance];
-    }
+    (void)notification;
+    // A newly activated theme brings its own colours.
+    [self refreshInterfaceThemeAppearance];
 }
 #endif
 
@@ -3943,8 +3868,8 @@ static id STInfoValueForKey(NSString *key) {
 #if defined(GNUSTEP)
     if ([self.statusBarView isKindOfClass:[STStatusBarBackgroundView class]]) {
         STStatusBarBackgroundView *backgroundView = (STStatusBarBackgroundView *)self.statusBarView;
-        backgroundView.fillColor = STThemeStatusBarBackgroundColorForTheme(self.usesDarkTheme);
-        backgroundView.topBorderColor = STThemeStatusBarBorderColorForTheme(self.usesDarkTheme);
+        backgroundView.fillColor = STThemeStatusBarBackgroundColor();
+        backgroundView.topBorderColor = STThemeStatusBarBorderColor();
     }
 #endif
     if (self.window) {

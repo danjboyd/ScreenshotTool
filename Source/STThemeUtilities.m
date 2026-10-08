@@ -1,51 +1,6 @@
 #import "STThemeUtilities.h"
 #import "ScreenshotToolSettings.h"
 
-static NSString *STCurrentThemeName(void) {
-    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-    NSString *direct = [defaults stringForKey:@"GSTheme"];
-    if (direct.length > 0) {
-        return direct;
-    }
-    NSDictionary *global = [defaults persistentDomainForName:NSGlobalDomain];
-    NSString *globalTheme = [global objectForKey:@"GSTheme"];
-    return globalTheme ?: @"";
-}
-
-BOOL STThemeNameIndicatesDark(NSString *theme) {
-    NSString *lower = [theme lowercaseString];
-    if (lower.length == 0) {
-        return NO;
-    }
-    return ([lower containsString:@"dark"] ||
-            [lower containsString:@"black"] ||
-            [lower containsString:@"night"] ||
-            [lower containsString:@"sombre"]);
-}
-
-BOOL STThemeBackgroundColorIsDark(NSColor *color) {
-    NSColor *background = [color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
-    if (!background) {
-        return NO;
-    }
-    CGFloat red = 1.0f, green = 1.0f, blue = 1.0f, alpha = 1.0f;
-    [background getRed:&red green:&green blue:&blue alpha:&alpha];
-    CGFloat luminance = (0.2126f * red) + (0.7152f * green) + (0.0722f * blue);
-    return luminance < 0.45f;
-}
-
-BOOL STDefaultInterfaceThemeIsDark(void) {
-    // Themes such as Adwaita keep one name and switch palettes with the desktop's colour scheme,
-    // so the active window background is checked as well as the theme's name.
-    NSString *theme = STCurrentThemeName();
-    return STThemeNameIndicatesDark(theme) || STThemeBackgroundColorIsDark([NSColor windowBackgroundColor]);
-}
-
-/// Light or dark is the theme's choice (and the desktop's), not an app setting (#56).
-BOOL STThemeIsDark(void) {
-    return STDefaultInterfaceThemeIsDark();
-}
-
 // Every colour below is a system colour the active theme defines, so each theme gives the app
 // its own look (#57). No blends, fixed palettes or accent of the app's own.
 
@@ -103,18 +58,8 @@ NSColor *STThemeCanvasImageBorderColor(void) {
     return STThemeHairlineColor();
 }
 
-NSColor *STThemeStatusBarBackgroundColorForTheme(BOOL darkTheme) {
-    (void)darkTheme;
-    return STThemeWindowBackgroundColor();
-}
-
 NSColor *STThemeStatusBarBackgroundColor(void) {
     return STThemeWindowBackgroundColor();
-}
-
-NSColor *STThemeStatusBarBorderColorForTheme(BOOL darkTheme) {
-    (void)darkTheme;
-    return STThemeHairlineColor();
 }
 
 NSColor *STThemeStatusBarBorderColor(void) {

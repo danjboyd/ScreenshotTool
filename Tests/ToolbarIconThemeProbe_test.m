@@ -17,7 +17,6 @@
 
 #pragma mark - Testing Category
 @interface AppDelegate (ToolbarExposure)
-@property (nonatomic, assign) BOOL usesDarkTheme;
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
     itemForItemIdentifier:(NSToolbarItemIdentifier)itemIdentifier
  willBeInsertedIntoToolbar:(BOOL)flag;
@@ -52,7 +51,6 @@
             [[NSUserDefaults standardUserDefaults] synchronize];
         }
         _appDelegate = [[AppDelegate alloc] init];
-        _appDelegate.usesDarkTheme = YES;
     } @catch (NSException *exception) {
         NSLog(@"Skipping test: failed to connect to window server (%@)", [exception reason]);
         _shouldSkip = YES;
