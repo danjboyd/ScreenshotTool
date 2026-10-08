@@ -84,17 +84,20 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 
 - (void)buildInterface {
     NSRect frame = NSMakeRect(0, 0, STPreferencesWidth, STPreferencesHeight);
-    self.window = [[NSWindow alloc] initWithContentRect:frame
-                                              styleMask:(NSWindowStyleMaskTitled |
-                                                         NSWindowStyleMaskClosable |
-                                                         NSWindowStyleMaskMiniaturizable |
-                                                         NSWindowStyleMaskResizable)
-                                                backing:NSBackingStoreBuffered
-                                                  defer:NO];
+    // A panel, as preferences are everywhere: it never becomes the main window, so a theme that puts
+    // the menu bar in the window gives it none, and it has no minimize button.
+    NSPanel *panel = [[NSPanel alloc] initWithContentRect:frame
+                                                styleMask:(NSWindowStyleMaskTitled |
+                                                           NSWindowStyleMaskClosable |
+                                                           NSWindowStyleMaskResizable)
+                                                  backing:NSBackingStoreBuffered
+                                                    defer:NO];
+    [panel setHidesOnDeactivate:NO];
+    [panel setFloatingPanel:NO];
+    self.window = panel;
     [self.window setReleasedWhenClosed:NO];
     self.window.title = @"Preferences";
     self.window.delegate = self;
-    [self.window setBackgroundColor:STThemeWindowBackgroundColor()];
 
     STPreferencesBackgroundView *content = [[STPreferencesBackgroundView alloc] initWithFrame:NSMakeRect(0, 0, STPreferencesWidth, STPreferencesHeight)];
     self.backgroundView = content;
@@ -114,11 +117,10 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [content addSubview:self.sectionControl];
 
     self.pageTitleLabel = [self headerLabelWithString:@"Appearance"];
-    [self.pageTitleLabel setFont:[NSFont boldSystemFontOfSize:18.0f]];
+    [self.pageTitleLabel setFont:[NSFont boldSystemFontOfSize:round([NSFont systemFontSize] * 1.35)]];
     [content addSubview:self.pageTitleLabel];
 
     self.pageDescriptionLabel = [self fieldLabelWithString:@"" frame:NSZeroRect];
-    [self.pageDescriptionLabel setFont:[NSFont systemFontOfSize:13.0f]];
     [[self.pageDescriptionLabel cell] setWraps:YES];
     [[self.pageDescriptionLabel cell] setScrollable:NO];
     [[self.pageDescriptionLabel cell] setLineBreakMode:NSLineBreakByWordWrapping];
@@ -128,7 +130,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [content addSubview:self.drawingHeaderLabel];
 
     self.penLabel = [self fieldLabelWithString:@"Pen" frame:NSZeroRect];
-    [self.penLabel setFont:[NSFont boldSystemFontOfSize:12.0f]];
+    [self.penLabel setFont:[NSFont boldSystemFontOfSize:0.0f]];
     [content addSubview:self.penLabel];
 
     self.penWidthSlider = [[NSSlider alloc] initWithFrame:NSZeroRect];
@@ -169,7 +171,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [content addSubview:self.penColorWell];
 
     self.highlighterLabel = [self fieldLabelWithString:@"Highlighter" frame:NSZeroRect];
-    [self.highlighterLabel setFont:[NSFont boldSystemFontOfSize:12.0f]];
+    [self.highlighterLabel setFont:[NSFont boldSystemFontOfSize:0.0f]];
     [content addSubview:self.highlighterLabel];
 
     self.highlighterWidthSlider = [[NSSlider alloc] initWithFrame:NSZeroRect];
@@ -249,7 +251,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.saveDirectoryField setBezeled:YES];
     [self.saveDirectoryField setBordered:YES];
     [self.saveDirectoryField setDrawsBackground:YES];
-    [self.saveDirectoryField setFont:[NSFont systemFontOfSize:12.0f]];
     [content addSubview:self.saveDirectoryField];
 
     self.chooseDirectoryButton = [[NSButton alloc] initWithFrame:NSZeroRect];
@@ -265,7 +266,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 
     // On/off settings are switches, labelled on the left: standard controls the theme draws (#56).
     self.statusBarLabel = [self fieldLabelWithString:@"Show status bar" frame:NSZeroRect];
-    [self.statusBarLabel setFont:[NSFont systemFontOfSize:[NSFont systemFontSize]]];
     [content addSubview:self.statusBarLabel];
     self.statusBarSwitch = [[NSSwitch alloc] initWithFrame:NSZeroRect];
     [self.statusBarSwitch setTarget:self];
@@ -280,7 +280,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.restoreDefaultsButton setAction:@selector(restoreDefaultsPressed:)];
     [content addSubview:self.restoreDefaultsButton];
 
-    [self.window setContentMinSize:NSMakeSize(STPreferencesWidth, STPreferencesHeight)];
+    [self.window setContentMinSize:NSMakeSize(560.0f, 400.0f)];
     [self layoutContentView];
     [self applyThemeAppearance];
 }
@@ -292,7 +292,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [label setBordered:NO];
     [label setDrawsBackground:NO];
     [label setSelectable:NO];
-    [label setFont:[NSFont boldSystemFontOfSize:14.0f]];
+    [label setFont:[NSFont boldSystemFontOfSize:0.0f]];
     [label setTextColor:STThemeSectionHeaderColor()];
     [label setStringValue:string ?: @""];
     return label;
@@ -305,8 +305,8 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [label setBordered:NO];
     [label setDrawsBackground:NO];
     [label setSelectable:NO];
-    [label setFont:[NSFont systemFontOfSize:12.0f]];
-    [label setTextColor:STThemeSecondaryTextColor()];
+    [label setFont:[NSFont systemFontOfSize:0.0f]];
+    [label setTextColor:STThemePrimaryTextColor()];
     [label setStringValue:string ?: @""];
     return label;
 }
@@ -317,7 +317,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [label setBordered:NO];
     [label setDrawsBackground:NO];
     [label setSelectable:NO];
-    [label setFont:[NSFont systemFontOfSize:12.0f]];
+    [label setFont:[NSFont systemFontOfSize:0.0f]];
     [label setTextColor:STThemePrimaryTextColor()];
 }
 
@@ -387,7 +387,6 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 }
 
 - (void)applyThemeAppearance {
-    [self.window setBackgroundColor:STThemeWindowBackgroundColor()];
     [self.sectionControl setSelectedSegment:self.currentSection];
     [self.pageTitleLabel setTextColor:STThemePrimaryTextColor()];
     [self.pageDescriptionLabel setTextColor:STThemeSecondaryTextColor()];
@@ -395,21 +394,31 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.textHeaderLabel setTextColor:STThemeSectionHeaderColor()];
     [self.workspaceHeaderLabel setTextColor:STThemeSectionHeaderColor()];
     [self.interfaceHeaderLabel setTextColor:STThemeSectionHeaderColor()];
-    [self.penColorLabel setTextColor:STThemeSecondaryTextColor()];
-    [self.highlighterColorLabel setTextColor:STThemeSecondaryTextColor()];
-    [self.saveDirectoryField setBackgroundColor:STThemeInsetBackgroundColor()];
-    [self.saveDirectoryField setTextColor:STThemePrimaryTextColor()];
+    [self.penColorLabel setTextColor:STThemePrimaryTextColor()];
+    [self.highlighterColorLabel setTextColor:STThemePrimaryTextColor()];
     [self.textFontSummaryLabel setTextColor:STThemePrimaryTextColor()];
     [self.penWidthValueLabel setTextColor:STThemePrimaryTextColor()];
     [self.highlighterWidthValueLabel setTextColor:STThemePrimaryTextColor()];
     [self.statusBarLabel setTextColor:STThemePrimaryTextColor()];
-    [self.directoryLabel setTextColor:STThemeSecondaryTextColor()];
-    [self.textColorLabel setTextColor:STThemeSecondaryTextColor()];
-    [self.textFontLabel setTextColor:STThemeSecondaryTextColor()];
+    [self.directoryLabel setTextColor:STThemePrimaryTextColor()];
+    [self.textColorLabel setTextColor:STThemePrimaryTextColor()];
+    [self.textFontLabel setTextColor:STThemePrimaryTextColor()];
     [self.penLabel setTextColor:STThemePrimaryTextColor()];
     [self.highlighterLabel setTextColor:STThemePrimaryTextColor()];
     [self.pageTitleLabel setStringValue:[self titleForSection:self.currentSection]];
     [self.pageDescriptionLabel setStringValue:[self descriptionForSection:self.currentSection]];
+}
+
+/// The size a control asks for in the theme's font and metrics, or the fallback where it has no opinion.
+static NSSize STPreferencesNaturalSize(NSControl *control, NSSize fallback) {
+    NSSize size = [[control cell] cellSize];
+    return NSMakeSize(size.width > 0.0f ? ceil(size.width) : fallback.width,
+                      size.height > 0.0f ? ceil(size.height) : fallback.height);
+}
+
+/// Places a view of the given height centred in a row, so labels line up with the controls beside them.
+static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFloat height, CGFloat rowY, CGFloat rowHeight) {
+    [view setFrame:NSMakeRect(x, rowY + floor((rowHeight - height) / 2.0f), width, height)];
 }
 
 - (void)layoutContentView {
@@ -418,57 +427,63 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
         return;
     }
 
-    CGFloat outerPadding = 24.0f;
-    CGFloat switcherHeight = 40.0f;
-    CGFloat switcherGap = 16.0f;
-    CGFloat cardInnerPadding = 28.0f;
-    CGFloat footerHeight = 32.0f;
-    CGFloat footerInset = 24.0f;
-    CGFloat contentWidth = MAX(620.0f, content.bounds.size.width - (outerPadding * 2.0f));
+    // Only spacing is the app's; every size comes from the theme's fonts and controls.
+    CGFloat padding = 24.0f;
+    CGFloat gap = 12.0f;
+    CGFloat rowGap = 10.0f;
+    CGFloat groupGap = 22.0f;
+    NSSize switchSize = NSMakeSize(44.0f, 24.0f); // NSSwitch has no cell to ask
 
-    CGFloat switcherY = content.bounds.size.height - outerPadding - switcherHeight;
-    [self.sectionControl setFrame:NSMakeRect(outerPadding, switcherY, contentWidth, switcherHeight)];
-    CGFloat segmentWidth = floor(contentWidth / 4.0f);
+    CGFloat innerX = padding;
+    CGFloat innerWidth = MAX(200.0f, NSWidth(content.bounds) - (padding * 2.0f));
+    self.backgroundView.contentCardRect = NSInsetRect(content.bounds, padding, padding);
+
+    // A push button's height is the theme's control height; some cells (segmented, slider, text
+    // field) report only what their text needs, so they get at least this much.
+    NSSize buttonSize = STPreferencesNaturalSize(self.restoreDefaultsButton, NSMakeSize(150.0f, 24.0f));
+    CGFloat controlHeight = buttonSize.height;
+    NSSize colorWellSize = NSMakeSize(round(controlHeight * 1.75f), controlHeight);
+
+    CGFloat y = NSMaxY(content.bounds) - padding;
+    CGFloat switcherHeight = MAX(controlHeight, STPreferencesNaturalSize(self.sectionControl, NSZeroSize).height);
+    y -= switcherHeight;
+    [self.sectionControl setFrame:NSMakeRect(innerX, y, innerWidth, switcherHeight)];
+    CGFloat segmentWidth = floor(innerWidth / 4.0f);
     for (NSInteger segment = 0; segment < 4; segment++) {
-        CGFloat width = (segment == 3) ? (contentWidth - (segmentWidth * 3.0f)) : segmentWidth;
+        CGFloat width = (segment == 3) ? (innerWidth - (segmentWidth * 3.0f)) : segmentWidth;
         [self.sectionControl setWidth:width forSegment:segment];
     }
+    y -= groupGap;
 
-    NSRect cardRect = NSMakeRect(outerPadding,
-                                 outerPadding,
-                                 contentWidth,
-                                 MAX(220.0f, switcherY - switcherGap - outerPadding));
-    self.backgroundView.contentCardRect = cardRect;
+    CGFloat titleHeight = STPreferencesNaturalSize(self.pageTitleLabel, NSZeroSize).height;
+    y -= titleHeight;
+    [self.pageTitleLabel setFrame:NSMakeRect(innerX, y, innerWidth, titleHeight)];
+    y -= 4.0f;
+    CGFloat descriptionHeight = ceil([[self.pageDescriptionLabel cell] cellSizeForBounds:NSMakeRect(0.0f, 0.0f, innerWidth, 10000.0f)].height);
+    y -= descriptionHeight;
+    [self.pageDescriptionLabel setFrame:NSMakeRect(innerX, y, innerWidth, descriptionHeight)];
+    y -= groupGap;
 
-    CGFloat innerX = NSMinX(cardRect) + cardInnerPadding;
-    CGFloat innerWidth = NSWidth(cardRect) - (cardInnerPadding * 2.0f);
-    CGFloat y = NSMaxY(cardRect) - cardInnerPadding;
-
-    [self.pageTitleLabel setFrame:NSMakeRect(innerX, y - 28.0f, innerWidth, 28.0f)];
-    y -= 34.0f;
-    [self.pageDescriptionLabel setFrame:NSMakeRect(innerX, y - 36.0f, innerWidth, 36.0f)];
-    y -= 52.0f;
-
-    CGFloat footerY = NSMinY(cardRect) + footerInset;
-    [self.restoreDefaultsButton setFrame:NSMakeRect(innerX, footerY, 150.0f, footerHeight)];
+    [self.restoreDefaultsButton setFrame:NSMakeRect(innerX, padding, buttonSize.width, controlHeight)];
 
     [self hideAllPageControls];
 
-    CGFloat rowLabelWidth = 138.0f;
-    CGFloat valueWidth = 72.0f;
-    CGFloat contentBottom = footerY + footerHeight + 20.0f;
+    CGFloat labelWidth = 0.0f;
+    for (NSTextField *label in @[self.penLabel, self.highlighterLabel, self.textColorLabel, self.textFontLabel]) {
+        labelWidth = MAX(labelWidth, STPreferencesNaturalSize(label, NSZeroSize).width);
+    }
+    CGFloat fieldX = innerX + labelWidth + gap;
 
     switch (self.currentSection) {
         case STPreferencesSectionAppearance: {
             // Label on the left, switch on the right, a row each.
-            CGFloat switchWidth = 44.0f;
-            CGFloat switchHeight = 24.0f;
-            CGFloat rowHeight = 28.0f;
-            CGFloat switchX = innerX + innerWidth - switchWidth;
-            CGFloat labelWidth = innerWidth - switchWidth - 16.0f;
             [self setViews:@[self.statusBarLabel, self.statusBarSwitch] hidden:NO];
-            [self.statusBarLabel setFrame:NSMakeRect(innerX, y - rowHeight + 4.0f, labelWidth, 20.0f)];
-            [self.statusBarSwitch setFrame:NSMakeRect(switchX, y - rowHeight + 2.0f, switchWidth, switchHeight)];
+            CGFloat rowHeight = MAX(controlHeight, switchSize.height);
+            y -= rowHeight;
+            STPreferencesPlaceInRow(self.statusBarLabel, innerX, innerWidth - switchSize.width - gap,
+                                    STPreferencesNaturalSize(self.statusBarLabel, NSZeroSize).height, y, rowHeight);
+            STPreferencesPlaceInRow(self.statusBarSwitch, innerX + innerWidth - switchSize.width, switchSize.width,
+                                    switchSize.height, y, rowHeight);
             break;
         }
 
@@ -495,60 +510,66 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
                                      colorLabel:self.penColorLabel
                                       colorWell:self.penColorWell
                                              y:y
-                                   contentWidth:innerWidth
-                                        padding:innerX
-                                     labelWidth:rowLabelWidth
-                                     valueWidth:valueWidth];
-            y -= 18.0f;
-            if (y > contentBottom) {
-                y = [self layoutToolSectionWithLabel:self.highlighterLabel
-                                              slider:self.highlighterWidthSlider
-                                         valueLabel:self.highlighterWidthValueLabel
-                                        quickButtons:self.highlighterQuickButtons
-                                         colorLabel:self.highlighterColorLabel
-                                          colorWell:self.highlighterColorWell
-                                                 y:y
-                                       contentWidth:innerWidth
-                                            padding:innerX
-                                         labelWidth:rowLabelWidth
-                                         valueWidth:valueWidth];
-            }
+                                        labelX:innerX
+                                        fieldX:fieldX
+                                         right:innerX + innerWidth
+                                 controlHeight:controlHeight
+                                 colorWellSize:colorWellSize];
+            y -= groupGap;
+            [self layoutToolSectionWithLabel:self.highlighterLabel
+                                      slider:self.highlighterWidthSlider
+                                 valueLabel:self.highlighterWidthValueLabel
+                                quickButtons:self.highlighterQuickButtons
+                                 colorLabel:self.highlighterColorLabel
+                                  colorWell:self.highlighterColorWell
+                                         y:y
+                                    labelX:innerX
+                                    fieldX:fieldX
+                                     right:innerX + innerWidth
+                             controlHeight:controlHeight
+                             colorWellSize:colorWellSize];
             break;
         }
 
         case STPreferencesSectionText: {
             [self setViews:@[self.textColorLabel, self.textColorWell, self.textFontLabel, self.textFontSummaryLabel, self.textFontButton] hidden:NO];
-            CGFloat colorRowY = y - 30.0f;
-            [self.textColorLabel setFrame:NSMakeRect(innerX, colorRowY + 5.0f, rowLabelWidth, 20.0f)];
-            [self.textColorWell setFrame:NSMakeRect(innerX + rowLabelWidth + 16.0f, colorRowY - 1.0f, 54.0f, 32.0f)];
-            y = colorRowY - 24.0f;
+            y -= controlHeight;
+            STPreferencesPlaceInRow(self.textColorLabel, innerX, labelWidth,
+                                    STPreferencesNaturalSize(self.textColorLabel, NSZeroSize).height, y, controlHeight);
+            STPreferencesPlaceInRow(self.textColorWell, fieldX, colorWellSize.width, colorWellSize.height, y, controlHeight);
+            y -= rowGap + controlHeight;
 
-            CGFloat fontButtonWidth = 140.0f;
-            CGFloat fontRowY = y - 30.0f;
-            CGFloat summaryWidth = MAX(170.0f, innerWidth - rowLabelWidth - fontButtonWidth - 28.0f);
-            [self.textFontLabel setFrame:NSMakeRect(innerX, fontRowY + 5.0f, rowLabelWidth, 20.0f)];
-            [self.textFontSummaryLabel setFrame:NSMakeRect(innerX + rowLabelWidth + 16.0f, fontRowY + 5.0f, summaryWidth, 20.0f)];
-            [self.textFontButton setFrame:NSMakeRect(NSMaxX(cardRect) - cardInnerPadding - fontButtonWidth,
-                                                     fontRowY - 1.0f,
-                                                     fontButtonWidth,
-                                                     30.0f)];
+            CGFloat fontButtonWidth = STPreferencesNaturalSize(self.textFontButton, NSMakeSize(140.0f, controlHeight)).width;
+            CGFloat fontButtonX = innerX + innerWidth - fontButtonWidth;
+            STPreferencesPlaceInRow(self.textFontLabel, innerX, labelWidth,
+                                    STPreferencesNaturalSize(self.textFontLabel, NSZeroSize).height, y, controlHeight);
+            STPreferencesPlaceInRow(self.textFontSummaryLabel, fieldX, MAX(0.0f, fontButtonX - gap - fieldX),
+                                    STPreferencesNaturalSize(self.textFontSummaryLabel, NSZeroSize).height, y, controlHeight);
+            STPreferencesPlaceInRow(self.textFontButton, fontButtonX, fontButtonWidth, controlHeight, y, controlHeight);
             break;
         }
 
         case STPreferencesSectionWorkspace: {
             [self setViews:@[self.directoryLabel, self.saveDirectoryField, self.chooseDirectoryButton] hidden:NO];
-            [self.directoryLabel setFrame:NSMakeRect(innerX, y - 18.0f, innerWidth, 18.0f)];
-            y -= 28.0f;
-            CGFloat chooseWidth = 116.0f;
-            CGFloat fieldRowY = y - 30.0f;
-            CGFloat fieldWidth = MAX(180.0f, innerWidth - chooseWidth - 12.0f);
-            [self.saveDirectoryField setFrame:NSMakeRect(innerX, fieldRowY, fieldWidth, 30.0f)];
-            [self.chooseDirectoryButton setFrame:NSMakeRect(innerX + fieldWidth + 12.0f, fieldRowY - 1.0f, chooseWidth, 30.0f)];
+            CGFloat labelHeight = STPreferencesNaturalSize(self.directoryLabel, NSZeroSize).height;
+            y -= labelHeight;
+            [self.directoryLabel setFrame:NSMakeRect(innerX, y, innerWidth, labelHeight)];
+            y -= 6.0f;
+
+            CGFloat chooseWidth = STPreferencesNaturalSize(self.chooseDirectoryButton, NSMakeSize(116.0f, controlHeight)).width;
+            CGFloat fieldHeight = MAX(controlHeight, STPreferencesNaturalSize(self.saveDirectoryField, NSZeroSize).height);
+            CGFloat rowHeight = MAX(controlHeight, fieldHeight);
+            CGFloat fieldWidth = MAX(0.0f, innerWidth - chooseWidth - gap);
+            y -= rowHeight;
+            STPreferencesPlaceInRow(self.saveDirectoryField, innerX, fieldWidth, fieldHeight, y, rowHeight);
+            STPreferencesPlaceInRow(self.chooseDirectoryButton, innerX + fieldWidth + gap, chooseWidth, controlHeight, y, rowHeight);
             break;
         }
     }
 }
 
+/// Lays out a tool's two rows (label, slider and value; then the quick widths and colour), and returns
+/// the y below them.
 - (CGFloat)layoutToolSectionWithLabel:(NSTextField *)label
                                slider:(NSSlider *)slider
                           valueLabel:(NSTextField *)valueLabel
@@ -556,57 +577,52 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
                           colorLabel:(NSTextField *)colorLabel
                            colorWell:(NSColorWell *)colorWell
                                   y:(CGFloat)y
-                        contentWidth:(CGFloat)contentWidth
-                             padding:(CGFloat)padding
-                          labelWidth:(CGFloat)labelWidth
-                          valueWidth:(CGFloat)valueWidth {
+                              labelX:(CGFloat)labelX
+                              fieldX:(CGFloat)fieldX
+                               right:(CGFloat)right
+                       controlHeight:(CGFloat)controlHeight
+                       colorWellSize:(NSSize)colorWellSize {
     if (!label || !slider || !valueLabel || !colorLabel || !colorWell) {
         return y;
     }
 
-    CGFloat sliderHeight = 22.0f;
-    CGFloat sliderSpacing = 12.0f;
-    CGFloat valueHeight = 18.0f;
-    CGFloat rowSpacing = 8.0f;
-    CGFloat quickHeight = 26.0f;
-    CGFloat quickSpacing = 8.0f;
-    CGFloat postSpacing = 12.0f;
-    CGFloat colorLabelWidth = 50.0f;
-    CGFloat colorWellWidth = 52.0f;
+    CGFloat gap = 12.0f;
+    CGFloat rowGap = 10.0f;
 
-    CGFloat sliderWidth = MAX(180.0f, contentWidth - labelWidth - valueWidth - (sliderSpacing * 2.0f));
-    CGFloat sliderRowY = y - sliderHeight;
-    [label setFrame:NSMakeRect(padding, sliderRowY + 2.0f, labelWidth, 20.0f)];
-    [slider setFrame:NSMakeRect(padding + labelWidth + sliderSpacing, sliderRowY, sliderWidth, sliderHeight)];
-    [valueLabel setFrame:NSMakeRect(NSMaxX(slider.frame) + sliderSpacing, sliderRowY + 2.0f, valueWidth, valueHeight)];
+    // Wide enough for the widest value the slider can show.
+    NSDictionary *valueAttributes = @{ NSFontAttributeName: valueLabel.font ?: [NSFont systemFontOfSize:0.0f] };
+    CGFloat valueWidth = ceil([[self displayStringForWidth:STToolWidthMax] sizeWithAttributes:valueAttributes].width) + 8.0f;
+    CGFloat sliderHeight = MAX(controlHeight, STPreferencesNaturalSize(slider, NSZeroSize).height);
+    CGFloat rowHeight = MAX(controlHeight, sliderHeight);
 
-    CGFloat quickRowY = sliderRowY - rowSpacing - quickHeight;
+    y -= rowHeight;
+    CGFloat sliderWidth = MAX(80.0f, right - valueWidth - gap - fieldX);
+    STPreferencesPlaceInRow(label, labelX, MAX(0.0f, fieldX - gap - labelX),
+                            STPreferencesNaturalSize(label, NSZeroSize).height, y, rowHeight);
+    STPreferencesPlaceInRow(slider, fieldX, sliderWidth, sliderHeight, y, rowHeight);
+    STPreferencesPlaceInRow(valueLabel, right - valueWidth, valueWidth,
+                            STPreferencesNaturalSize(valueLabel, NSZeroSize).height, y, rowHeight);
 
-    CGFloat colorWellX = padding + contentWidth - colorWellWidth;
-    CGFloat colorLabelX = colorWellX - 6.0f - colorLabelWidth;
-    [colorLabel setFrame:NSMakeRect(colorLabelX, quickRowY + 4.0f, colorLabelWidth, 18.0f)];
-    [colorWell setFrame:NSMakeRect(colorWellX, quickRowY - 2.0f, colorWellWidth, 30.0f)];
+    y -= rowGap + controlHeight;
+    CGFloat colorWellX = right - colorWellSize.width;
+    CGFloat colorLabelWidth = STPreferencesNaturalSize(colorLabel, NSZeroSize).width;
+    CGFloat colorLabelX = colorWellX - 8.0f - colorLabelWidth;
+    STPreferencesPlaceInRow(colorLabel, colorLabelX, colorLabelWidth,
+                            STPreferencesNaturalSize(colorLabel, NSZeroSize).height, y, controlHeight);
+    STPreferencesPlaceInRow(colorWell, colorWellX, colorWellSize.width, colorWellSize.height, y, controlHeight);
 
-    CGFloat quickStartX = padding + labelWidth;
-    CGFloat quickEndX = colorLabelX - 10.0f;
-    CGFloat availableQuickWidth = MAX(0.0f, quickEndX - quickStartX);
-    CGFloat quickButtonWidth = 0.0f;
-    NSInteger count = (NSInteger)quickButtons.count;
-    if (count > 0) {
-        quickButtonWidth = (availableQuickWidth - (quickSpacing * (count - 1))) / (CGFloat)count;
-        quickButtonWidth = MIN(64.0f, MAX(44.0f, quickButtonWidth));
-    }
     // Never narrower than the theme needs for the widest title, or two-digit widths get clipped.
+    CGFloat quickButtonWidth = round(controlHeight * 1.75f);
     for (NSButton *button in quickButtons) {
-        quickButtonWidth = MAX(quickButtonWidth, ceil([[button cell] cellSize].width));
+        quickButtonWidth = MAX(quickButtonWidth, STPreferencesNaturalSize(button, NSZeroSize).width);
     }
-    CGFloat quickX = quickStartX;
+    CGFloat quickX = fieldX;
     for (NSButton *button in quickButtons) {
-        [button setFrame:NSMakeRect(quickX, quickRowY, quickButtonWidth, quickHeight)];
-        quickX += quickButtonWidth + quickSpacing;
+        STPreferencesPlaceInRow(button, quickX, quickButtonWidth, controlHeight, y, controlHeight);
+        quickX += quickButtonWidth + 8.0f;
     }
 
-    return quickRowY - postSpacing;
+    return y;
 }
 
 - (void)showRelativeToWindow:(NSWindow *)window {
