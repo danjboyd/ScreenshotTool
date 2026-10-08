@@ -34,8 +34,16 @@ VERSION=0.1.0 scripts/package_macos_dmg.sh    # Staging/ScreenshotTool-0.1.0-mac
 The `package-macos` job in `.github/workflows/release.yml` runs the same steps on a `macos-26`
 runner and adds the DMG to the release. Without `CODESIGN_IDENTITY` the DMG holds the ad hoc
 signed app and a note on opening an unsigned app; with a Developer ID identity and notarization
-credentials (see the script's header) it's signed, notarized and stapled. There's no macOS
-update feed yet.
+credentials (see the script's header) it's signed, notarized and stapled.
+
+Updates come from Sparkle, which the build fetches (`scripts/fetch_sparkle.sh`, a pinned,
+checksummed release) and embeds. The job signs the DMG with the `SPARKLE_ED_PRIVATE_KEY`
+repository secret and writes its appcast (`scripts/make_macos_appcast.sh`); the publish job puts
+that on Pages as `updates/macos/<channel>.xml`, the feed the app's `SUFeedURL` names. The app's
+`SUPublicEDKey` (in `Resources/Info-cocoa.plist`) checks the signature. The private key is also
+in the maintainer's login keychain, under the account `ScreenshotTool` (Sparkle's
+`generate_keys --account ScreenshotTool -x <file>` exports it): keep a backup, since a lost key
+means existing installs can't verify new updates.
 
 `Resources/ScreenshotToolIcon-macOS.png`, the source of the app's `.icns`, is made from
 `Resources/ScreenshotToolIcon.png` by `scripts/make_macos_icon.swift`.

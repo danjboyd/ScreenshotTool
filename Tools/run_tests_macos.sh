@@ -51,7 +51,7 @@ CFLAGS=(
   -g
   -Wall
   -Wno-deprecated-declarations
-  -mmacosx-version-min=11.0
+  -mmacosx-version-min=12.0
   -I"${ROOT_DIR}/Source"
   -I"${ROOT_DIR}/Tests"
   -F"${FRAMEWORKS}"
@@ -62,7 +62,7 @@ for file in "${SOURCES[@]}" "${TESTS[@]/#/${ROOT_DIR}/}"; do
   clang "${CFLAGS[@]}" -c "${file}" -o "${OBJ_DIR}/$(basename "${file}" .m).o"
 done
 
-clang -bundle -arch "${ARCH}" -mmacosx-version-min=11.0 "${OBJ_DIR}"/*.o \
+clang -bundle -arch "${ARCH}" -mmacosx-version-min=12.0 "${OBJ_DIR}"/*.o \
   -F"${FRAMEWORKS}" -framework XCTest -framework AppKit \
   -Xlinker -rpath -Xlinker "${FRAMEWORKS}" \
   -o "${BUNDLE}/Contents/MacOS/ScreenshotToolTests"
