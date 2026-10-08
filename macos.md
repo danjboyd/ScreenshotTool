@@ -16,15 +16,20 @@ and `docs/Packaging.md`.
   (Open With, drops on the Dock icon) without taking over from Preview.
 - The app icon is shaped for macOS (`scripts/make_macos_icon.swift`).
 - CI builds, smoke-tests and packages the app on `macos-26`; releases include the DMG.
-- The packaged updater is GNUstep's, so the macOS build leaves it out; Check for Updates is
-  hidden there.
 
-## Phase 2: signing and updates (needs an Apple Developer account)
+## Phase 2: updates (done) and signing (needs an Apple Developer account)
 
-- Developer ID signing with the hardened runtime, notarization and stapling in the release job.
-  `scripts/package_macos_dmg.sh` already does this given `CODESIGN_IDENTITY` and notarization
-  credentials; the job needs the certificate imported into a keychain from repository secrets.
-- Sparkle 2 for updates, with an appcast published to Pages next to the Windows and Linux feeds.
+- Sparkle 2 updates the macOS app (Check for Updates…, and automatic checks once you allow
+  them). The release job signs each DMG with an EdDSA key and publishes an appcast to Pages as
+  `updates/macos/stable.xml` or `prerelease.xml`, next to the Windows and Linux feeds; a
+  prerelease build follows the prerelease feed. Sparkle doesn't need a Developer ID. The build
+  number (`CFBundleVersion`, the commit count) is what Sparkle compares: it ignores a version's
+  `-rc8` suffix.
+- Still to do with the account: Developer ID signing with the hardened runtime, notarization and
+  stapling in the release job. `scripts/package_macos_dmg.sh` already does this given
+  `CODESIGN_IDENTITY` and notarization credentials (`scripts/codesign_macos_app.sh` signs
+  Sparkle's helpers first); the job needs the certificate imported into a keychain from
+  repository secrets.
 
 ## Phase 3: native polish (done)
 

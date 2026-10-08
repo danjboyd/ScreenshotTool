@@ -45,8 +45,7 @@ ln -s /Applications "${STAGING_DIR}/Applications"
 
 if [[ -n "${CODESIGN_IDENTITY:-}" ]]; then
   echo "Signing ScreenshotTool.app with '${CODESIGN_IDENTITY}'"
-  codesign --force --options runtime --timestamp --sign "${CODESIGN_IDENTITY}" "${STAGING_DIR}/ScreenshotTool.app"
-  codesign --verify --strict --verbose=2 "${STAGING_DIR}/ScreenshotTool.app"
+  "${SCRIPT_DIR}/codesign_macos_app.sh" "${STAGING_DIR}/ScreenshotTool.app" "${CODESIGN_IDENTITY}"
 else
   cat > "${STAGING_DIR}/Opening an unsigned app.txt" <<'NOTE'
 This build of ScreenshotTool isn't signed by an Apple Developer ID yet, so the first

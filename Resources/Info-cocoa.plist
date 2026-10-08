@@ -23,6 +23,10 @@
     <string>0.1.0</string>
     <key>CFBundleShortVersionString</key>
     <string>0.1.0</string>
+    <!-- Sparkle: the key the release job's EdDSA signatures check against. The build sets
+         SUFeedURL to the stable or prerelease feed. -->
+    <key>SUPublicEDKey</key>
+    <string>fXqmzuRxV6TkC42/QrZAZSyYsvieYCnbDf7qO3/afs8=</string>
     <key>NSHumanReadableCopyright</key>
     <string>Copyright © 2025 Daniel Boyd. Released under the GNU GPLv2 or later.</string>
     <key>NSPrincipalClass</key>
@@ -32,7 +36,7 @@
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
     <key>LSMinimumSystemVersion</key>
-    <string>11.0</string>
+    <string>12.0</string>
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.graphics-design</string>
     <key>CFBundleDocumentTypes</key>

@@ -18,6 +18,10 @@
 #import "GPStandardUpdaterController.h"
 #import <AppKit/NSSegmentedCell.h>
 #import <GNUstepGUI/GSTheme.h>
+#elif defined(ST_HAS_SPARKLE)
+// Sparkle updates the macOS build; scripts/build_cocoa.sh embeds it (the tests build without).
+#import <Sparkle/Sparkle.h>
+#define ST_USES_SPARKLE 1
 #endif
 
 #ifndef NSAboutPanelOptionApplicationIcon
@@ -1187,6 +1191,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) BOOL toolWidthMenuCanReset;
 #if defined(GNUSTEP)
 @property (nonatomic, strong) GPStandardUpdaterController *updaterController;
+#elif ST_USES_SPARKLE
+@property (nonatomic, strong) SPUStandardUpdaterController *sparkleController;
 #endif
 /// Whether the clipboard held an image when last checked, and when (#76).
 @property (nonatomic, assign) BOOL clipboardHadImage;
@@ -1764,12 +1770,21 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     self.updaterController.parentWindow = self.window;
     [self.updaterController start];
     ScreenshotToolAppendLog(@"Updater initialized");
+#elif ST_USES_SPARKLE
+    // The feed (SUFeedURL) and its signing key (SUPublicEDKey) are in Info.plist; Sparkle asks
+    // before it checks automatically.
+    self.sparkleController = [[SPUStandardUpdaterController alloc] initWithStartingUpdater:YES
+                                                                           updaterDelegate:nil
+                                                                        userDriverDelegate:nil];
+    ScreenshotToolAppendLog(@"Sparkle updater initialized");
 #endif
 }
 
 - (BOOL)hasUpdater {
 #if defined(GNUSTEP)
     return (self.updaterController != nil);
+#elif ST_USES_SPARKLE
+    return self.sparkleController.updater.canCheckForUpdates;
 #else
     return NO;
 #endif
@@ -1784,6 +1799,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 #if defined(GNUSTEP)
     [self.updaterController checkForUpdates:sender];
+#elif ST_USES_SPARKLE
+    [self.sparkleController checkForUpdates:sender];
 #endif
 }
 
@@ -1910,7 +1927,7 @@ static id STInfoValueForKey(NSString *key) {
     [preferencesItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
     [appMenu addItem:preferencesItem];
 
-#if defined(GNUSTEP)
+#if defined(GNUSTEP) || ST_USES_SPARKLE
     NSMenuItem *checkForUpdatesItem = [[NSMenuItem alloc] initWithTitle:@"Check for Updates…"
                                                                  action:@selector(checkForUpdates:)
                                                           keyEquivalent:@""];

@@ -8,8 +8,12 @@
 #
 # Environment:
 #   VERSION     version to stamp into Info.plist (default: the manifest's package version)
+#   BUILD_NUMBER  CFBundleVersion, which Sparkle compares to find updates (default: the number of
+#                 commits, which only grows; Sparkle ignores a "-rc8" suffix when comparing)
 #   ARCHS       architectures to build (default: "arm64 x86_64")
 #   BUILD_DIR   output directory (default: build/cocoa)
+#   SPARKLE     0 builds without the Sparkle updater (default: 1; scripts/fetch_sparkle.sh)
+#   FEED_URL    the update feed (default: the release's stable or prerelease feed on Pages)
 
 set -euo pipefail
 
@@ -27,12 +31,18 @@ APP_MACOS="${APP_DIR}/Contents/MacOS"
 APP_RESOURCES="${APP_DIR}/Contents/Resources"
 MODULE_CACHE="${BUILD_DIR}/ModuleCache"
 ARCHS="${ARCHS:-arm64 x86_64}"
-MIN_MACOS="11.0"
+# Sparkle 2.10 needs macOS 12.
+MIN_MACOS="12.0"
+SPARKLE="${SPARKLE:-1}"
+# The update feeds the release job publishes: a prerelease (a version with a "-") follows the
+# prerelease channel, as the Windows and Linux builds do.
+FEED_BASE="https://danjboyd.github.io/ScreenshotTool/updates/macos"
 
 if [[ -z "${VERSION:-}" ]]; then
   VERSION="$(plutil -extract package.version raw -o - "${ROOT_DIR}/packaging/package.manifest.json")"
 fi
 VERSION="${VERSION#v}"
+BUILD_NUMBER="${BUILD_NUMBER:-$(git -C "${ROOT_DIR}" rev-list --count HEAD 2>/dev/null || echo 1)}"
 
 # Prints the entries of a GNUmakefile list variable (all its "=" and "+=" lines).
 makefile_list() {
@@ -92,6 +102,12 @@ LDFLAGS=(
   -framework CoreText
 )
 
+if [[ "${SPARKLE}" != 0 ]]; then
+  SPARKLE_DIR="$("${SCRIPT_DIR}/fetch_sparkle.sh")"
+  CFLAGS+=(-F"${SPARKLE_DIR}" -DST_HAS_SPARKLE=1)
+  LDFLAGS+=(-F"${SPARKLE_DIR}" -framework Sparkle -Xlinker -rpath -Xlinker @executable_path/../Frameworks)
+fi
+
 echo "Compiling ${#SOURCES[@]} Objective-C files for ${ARCHS}..."
 for src in "${SOURCES[@]}"; do
   base="$(basename "${src}" .m)"
@@ -128,14 +144,28 @@ done
 INFO_PLIST="${APP_DIR}/Contents/Info.plist"
 cp "${ROOT_DIR}/Resources/Info-cocoa.plist" "${INFO_PLIST}"
 plutil -replace CFBundleShortVersionString -string "${VERSION}" "${INFO_PLIST}"
-plutil -replace CFBundleVersion -string "${VERSION}" "${INFO_PLIST}"
+plutil -replace CFBundleVersion -string "${BUILD_NUMBER}" "${INFO_PLIST}"
 plutil -replace LSMinimumSystemVersion -string "${MIN_MACOS}" "${INFO_PLIST}"
 printf 'APPL????' > "${APP_DIR}/Contents/PkgInfo"
+
+if [[ "${SPARKLE}" != 0 ]]; then
+  echo "Embedding Sparkle..."
+  mkdir -p "${APP_DIR}/Contents/Frameworks"
+  ditto "${SPARKLE_DIR}/Sparkle.framework" "${APP_DIR}/Contents/Frameworks/Sparkle.framework"
+  # Only sandboxed apps need Sparkle's XPC services.
+  rm -rf "${APP_DIR}/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices"
+  rm -f "${APP_DIR}/Contents/Frameworks/Sparkle.framework/XPCServices"
+  channel="stable"
+  [[ "${VERSION}" == *-* ]] && channel="prerelease"
+  plutil -replace SUFeedURL -string "${FEED_URL:-${FEED_BASE}/${channel}.xml}" "${INFO_PLIST}"
+else
+  plutil -remove SUPublicEDKey "${INFO_PLIST}" 2>/dev/null || true
+fi
 
 # An ad hoc signature seals the bundle; Apple Silicon won't run an unsigned binary. A Developer
 # ID signature replaces it when the app is packaged with CODESIGN_IDENTITY set.
 echo "Signing ad hoc..."
-codesign --force --sign - --timestamp=none "${APP_DIR}"
+"${SCRIPT_DIR}/codesign_macos_app.sh" "${APP_DIR}" -
 
-echo "Cocoa build complete: ${APP_DIR} (version ${VERSION}, $(lipo -archs "${APP_MACOS}/ScreenshotTool"))"
+echo "Cocoa build complete: ${APP_DIR} (version ${VERSION}, build ${BUILD_NUMBER}, $(lipo -archs "${APP_MACOS}/ScreenshotTool"))"
 echo "Run it with: open \"${APP_DIR}\""

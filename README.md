@@ -101,7 +101,9 @@ hoc. Set `VERSION` to stamp a version, or `ARCHS=arm64` for a quicker one-archit
 Release DMGs aren't signed with a Developer ID yet, so macOS won't open the app the first
 time: after the warning, click **Open Anyway** in System Settings → Privacy & Security, or
 run `xattr -dr com.apple.quarantine /Applications/ScreenshotTool.app`. The DMG includes
-these steps. Sparkle updates, Developer ID signing and notarization are planned (`macos.md`).
+these steps. Once installed, the app updates itself (Check for Updates…, with Sparkle).
+Developer ID signing and notarization are planned (`macos.md`). The macOS app needs macOS 12
+or later.
 
 ## Run
 
