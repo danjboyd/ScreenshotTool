@@ -3121,6 +3121,8 @@ static id STInfoValueForKey(NSString *key) {
     origin.y += delta;
     [clip scrollToPoint:[clip constrainScrollPoint:origin]];
     [self.scrollView reflectScrolledClipView:clip];
+    // The canvas's cursor covers the part on screen, which just moved.
+    [self.window invalidateCursorRectsForView:self.canvasView];
 }
 
 - (void)logWindowFrame:(NSString *)reason {
@@ -5370,6 +5372,7 @@ static id STInfoValueForKey(NSString *key) {
         [self.textOptionsBar setFrame:NSMakeRect(0.0f, NSMaxY(scrollFrame), bounds.size.width, textBarHeight)];
         [self.textOptionsBar setNeedsDisplay:YES];
     }
+    [self.window invalidateCursorRectsForView:self.canvasView];
 }
 
 #pragma mark - Empty state (#55)

@@ -1488,15 +1488,20 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
                         isArrow);
 }
 
+/// The canvas is a scroll view's document view: its bounds run on past what the clip view shows,
+/// above it too while the text bar's row has scrolled the image down. The cursor, the tracking
+/// rect and "inside" are the part on screen only, or the crosshair stayed over the text bar and
+/// the header bar.
 - (void)resetCursorRects {
     [super resetCursorRects];
+    NSRect shownRect = [self visibleRect];
     BOOL currentlyInside = self.mouseInsideCanvas;
     if (self.window) {
         currentlyInside = [self updateMouseInsideFromWindowLocation];
     }
     self.mouseInsideCanvas = currentlyInside;
     if (![self hasImage]) {
-        [self addCursorRect:self.bounds cursor:[NSCursor arrowCursor]];
+        [self addCursorRect:shownRect cursor:[NSCursor arrowCursor]];
         if (self.cursorTrackingTag != 0) {
             [self removeTrackingRect:self.cursorTrackingTag];
             self.cursorTrackingTag = 0;
@@ -1505,24 +1510,30 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         return;
     }
     NSCursor *rectCursor = [self shouldShowCanvasCursor] ? [self cursorForActiveTool] : [NSCursor arrowCursor];
-    [self addCursorRect:self.bounds cursor:rectCursor];
+    [self addCursorRect:shownRect cursor:rectCursor];
     if (self.cursorTrackingTag != 0) {
         [self removeTrackingRect:self.cursorTrackingTag];
         self.cursorTrackingTag = 0;
     }
-    self.cursorTrackingTag = [self addTrackingRect:self.bounds
+    self.cursorTrackingTag = [self addTrackingRect:shownRect
                                              owner:self
                                           userData:NULL
                                       assumeInside:self.mouseInsideCanvas];
     NSString *toolName = STCursorToolName(self.activeTool);
     BOOL isArrow = (rectCursor == [NSCursor arrowCursor]);
-    ScreenshotCursorLog(@"[CursorRectApplied] tool=%@ bounds=%@ trackingTag=%ld assumeInside=%d cursor=%@ isArrow=%d",
+    ScreenshotCursorLog(@"[CursorRectApplied] tool=%@ rect=%@ trackingTag=%ld assumeInside=%d cursor=%@ isArrow=%d",
                         toolName,
-                        NSStringFromRect(self.bounds),
+                        NSStringFromRect(shownRect),
                         (long)self.cursorTrackingTag,
                         self.mouseInsideCanvas,
                         NSStringFromClass([rectCursor class]),
                         isArrow);
+}
+
+/// Whether a point (in the canvas's coordinates) is on the part of the canvas on screen: the
+/// bounds run on past the clip view (see -resetCursorRects).
+- (BOOL)isPointOnShownCanvas:(NSPoint)viewPoint {
+    return NSMouseInRect(viewPoint, [self visibleRect], self.isFlipped);
 }
 
 - (BOOL)updateMouseInsideFromWindowLocation {
@@ -1531,11 +1542,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     }
     NSPoint mouseLocation = [self.window mouseLocationOutsideOfEventStream];
     NSPoint localPoint = [self convertPoint:mouseLocation fromView:nil];
-    BOOL inside = NSMouseInRect(localPoint, self.bounds, self.isFlipped);
+    BOOL inside = [self isPointOnShownCanvas:localPoint];
     if (inside != self.mouseInsideCanvas) {
-        ScreenshotCursorLog(@"[CursorEvent] event=mouseLocation point=%@ bounds=%@ flipped=%d inside=%d",
+        ScreenshotCursorLog(@"[CursorEvent] event=mouseLocation point=%@ shown=%@ flipped=%d inside=%d",
                             NSStringFromPoint(localPoint),
-                            NSStringFromRect(self.bounds),
+                            NSStringFromRect([self visibleRect]),
                             self.isFlipped,
                             inside);
         self.mouseInsideCanvas = inside;
@@ -1564,7 +1575,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         return;
     }
     NSPoint localPoint = [self convertPoint:event.locationInWindow fromView:nil];
-    BOOL inside = NSMouseInRect(localPoint, self.bounds, self.isFlipped);
+    BOOL inside = [self isPointOnShownCanvas:localPoint];
     if (inside != self.mouseInsideCanvas) {
         self.mouseInsideCanvas = inside;
         ScreenshotCursorLog(@"[CursorEvent] event=mouseMoved point=%@ inside=%d",
