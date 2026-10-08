@@ -77,7 +77,7 @@
     XCTAssertNotNil(canvas, @"Canvas should not be nil");
     XCTAssertNotNil(window, @"Window should not be nil");
 
-    NSImage *originalImage = [self createFilledImageOfSize:NSMakeSize(640.0, 480.0)];
+    NSImage *originalImage = [self createFilledImageOfSize:NSMakeSize(800.0, 600.0)];
     XCTAssertNotNil(originalImage, @"Failed to create original image");
     
     canvas.image = originalImage;
