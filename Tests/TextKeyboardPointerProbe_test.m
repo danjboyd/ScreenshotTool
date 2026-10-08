@@ -95,6 +95,15 @@
     [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
 }
 
+/// Finishing commits on a later turn of the run loop: waits for it, up to 2s, rather than a fixed
+/// time a slow CI runner can overrun.
+- (void)waitForEditingToEndIn:(ScreenshotCanvasView *)canvas {
+    NSDate *until = [NSDate dateWithTimeIntervalSinceNow:2.0];
+    while (canvas.activeTextView && [until timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.02]];
+    }
+}
+
 - (NSEvent *)keyEvent:(unichar)key flags:(NSUInteger)flags canvas:(ScreenshotCanvasView *)canvas {
     NSString *characters = [NSString stringWithCharacters:&key length:1];
     return [NSEvent keyEventWithType:NSKeyDown location:NSZeroPoint modifierFlags:flags timestamp:0
@@ -136,7 +145,7 @@
 
     [canvas.activeTextView insertText:@"Second"];
     [canvas.activeTextView keyDown:[self keyEvent:NSCarriageReturnCharacter flags:NSEventModifierFlagControl canvas:canvas]];
-    [self spinRunLoop];
+    [self waitForEditingToEndIn:canvas];
     XCTAssertNil(canvas.activeTextView, @"Ctrl+Return (Control modifier) finishes editing");
     XCTAssertEqual(canvas.texts.count, (NSUInteger)1);
     XCTAssertEqualObjects(canvas.texts.firstObject.text, @"First\nSecond", @"Ctrl+Return doesn't add a line of its own");
@@ -145,7 +154,7 @@
     [canvas beginTextEntryWithImageRect:NSMakeRect(50.0, 150.0, 1.0, 1.0) existingText:nil];
     [canvas.activeTextView insertText:@"Third"];
     [canvas.activeTextView keyDown:[self keyEvent:NSCarriageReturnCharacter flags:NSEventModifierFlagCommand canvas:canvas]];
-    [self spinRunLoop];
+    [self waitForEditingToEndIn:canvas];
     XCTAssertNil(canvas.activeTextView, @"Cmd+Return finishes editing");
     XCTAssertEqual(canvas.texts.count, (NSUInteger)2);
 }
