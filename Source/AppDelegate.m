@@ -6224,7 +6224,6 @@ static id STInfoValueForKey(NSString *key) {
         NSBeep();
         [self reflectZoomSelection];
     }
-#endif
 }
 
 - (void)zoomIn:(id)sender {
