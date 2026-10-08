@@ -40,6 +40,11 @@ const NSUInteger STRecentFontFamiliesLimit = 6;
         for (NSString *family in _allFamilies) {
             byName[[family lowercaseString]] = family;
         }
+        // The system font isn't among the installed families on macOS; it goes by "System Font".
+        NSString *systemFamily = [NSFont systemFontOfSize:0.0].familyName;
+        if ([systemFamily hasPrefix:@"."]) {
+            byName[@"system font"] = systemFamily;
+        }
         _familiesByLowercaseName = [byName copy];
         // Only families that are installed: fontconfig and AppKit can disagree about a few names.
         NSMutableArray<NSString *> *covered = nil;
@@ -118,6 +123,10 @@ const NSUInteger STRecentFontFamiliesLimit = 6;
     self.recentFamilies = recent;
     [[NSUserDefaults standardUserDefaults] setObject:recent forKey:STRecentFontFamiliesDefaultsKey];
     [self rebuildListedFamilies];
+}
+
++ (NSString *)displayNameForFamily:(NSString *)family {
+    return [family hasPrefix:@"."] ? @"System Font" : family;
 }
 
 + (NSString *)userLanguage {

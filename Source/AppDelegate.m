@@ -172,6 +172,19 @@ static NSString *STDefaultSaveDirectoryPath(void) {
 /// everything ImageMagick reads (text, HTML, video…), which made Open's file type menu hundreds
 /// of entries long.
 #if !defined(GNUSTEP)
+/// A mask that rounds a view's corners at any size (a stretchable image).
+static NSImage *STRoundedMaskImage(CGFloat radius) {
+    CGFloat edge = radius * 2.0 + 1.0;
+    NSImage *mask = [NSImage imageWithSize:NSMakeSize(edge, edge) flipped:NO drawingHandler:^BOOL(NSRect rect) {
+        [[NSColor blackColor] setFill];
+        [[NSBezierPath bezierPathWithRoundedRect:rect xRadius:radius yRadius:radius] fill];
+        return YES;
+    }];
+    mask.capInsets = NSEdgeInsetsMake(radius, radius, radius, radius);
+    mask.resizingMode = NSImageResizingModeStretch;
+    return mask;
+}
+
 /// Where dragged-out and shared images are written; cleared at launch.
 static NSURL *STExportDirectoryURL(void) {
     return [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
@@ -4841,10 +4854,20 @@ static id STInfoValueForKey(NSString *key) {
     [window setReleasedWhenClosed:NO];
     [window setCollectionBehavior:NSWindowCollectionBehaviorTransient];
 
+    // The system's translucent material, rounded, under a clear label: like macOS's own notices,
+    // in light and dark mode.
+    NSVisualEffectView *material = [[NSVisualEffectView alloc] initWithFrame:rect];
+    material.material = NSVisualEffectMaterialPopover;
+    material.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+    material.state = NSVisualEffectStateActive;
+    material.maskImage = STRoundedMaskImage(STHudCornerRadius);
+    [window setContentView:material];
+
     STHudView *hudView = [[STHudView alloc] initWithFrame:rect];
     hudView.cornerRadius = STHudCornerRadius;
     hudView.textPadding = NSMakeSize(STHudHorizontalPadding, STHudVerticalPadding);
-    [window setContentView:hudView];
+    hudView.autoresizingMask = (NSViewWidthSizable | NSViewHeightSizable);
+    [material addSubview:hudView];
 
     self.hudWindow = window;
     self.hudView = hudView;
@@ -4857,8 +4880,14 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
     self.hudView.font = [NSFont boldSystemFontOfSize:13.0f];
+#if defined(GNUSTEP)
     self.hudView.fillColor = STThemeHUDBackgroundColor();
     self.hudView.textColor = STThemeHUDTextColor();
+#else
+    // On the window's material (see -ensureHUDWindow).
+    self.hudView.fillColor = [NSColor clearColor];
+    self.hudView.textColor = [NSColor labelColor];
+#endif
     [self.hudView setNeedsDisplay:YES];
 }
 
