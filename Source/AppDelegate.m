@@ -65,8 +65,9 @@ static NSString * const ToolbarItemShare = @"com.screenshottool.toolbar.share";
 #endif
 static const CGFloat StatusBarHeight = 24.0f;
 // Smallest canvas area a window gets, so tiny images still leave room for the title and the
-// whole icon-only toolbar (it overflows below about 556pt with the Adwaita theme).
-static const CGFloat STMinimumCanvasWidth = 576.0f;
+// whole icon-only toolbar: under Adwaita the colour well and Copy overflow below about 640pt
+// (WinUI needs about 550). macOS measures its own, wider minimum (-resizeWindowToImageSize:).
+static const CGFloat STMinimumCanvasWidth = 640.0f;
 static const CGFloat STMinimumCanvasHeight = 240.0f;
 static const CGFloat STHudCornerRadius = 10.0f;
 static const CGFloat STHudHorizontalPadding = 20.0f;
