@@ -140,6 +140,15 @@
     NSWindow *window = [delegate valueForKey:@"window"];
     [window orderFront:nil];
     [[delegate undoManager] canRedo];
+    // A checkpoint from the window's own undo manager (each window heeds only its own): -canRedo
+    // doesn't always post one.
+    [[NSNotificationCenter defaultCenter] postNotificationName:NSUndoManagerCheckpointNotification
+                                                        object:[delegate undoManager]];
+    NSDate *first = [NSDate dateWithTimeIntervalSinceNow:2.0];
+    while (delegate.validations == 0 && [first timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.01]];
+    }
+    // Then long enough for a validation that schedules another to show.
     NSDate *until = [NSDate dateWithTimeIntervalSinceNow:0.5];
     while ([until timeIntervalSinceNow] > 0) {
         [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:until];
