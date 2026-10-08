@@ -16,6 +16,8 @@
   NSHumanReadableCopyright = "Copyright (C) 2025 Daniel Boyd — GNU GPLv2 or later.";
   NSPrincipalClass = NSApplication;
   ApplicationIcon = "ScreenshotToolIcon.tiff";
+  /* The key GNUstep reads for the application icon: with ApplicationIcon alone, it used its own. */
+  NSIcon = "ScreenshotToolIcon.tiff";
   /* Declares that the toolbar suits a header bar (a few icons, a flexible space): a theme with
      one, such as Adwaita, may put the toolbar in the title bar. Other themes ignore it (#52). */
   GnomeThemeHeaderBarToolbar = YES;

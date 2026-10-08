@@ -112,4 +112,19 @@
     }
 }
 
+/// GNUstep takes the application icon from NSIcon (or CFBundleIconFile), not ApplicationIcon: without
+/// it, the empty state and the windows showed GNUstep's own icon.
+- (void)testInfoPlistNamesTheApplicationIconForGNUstep {
+    // `make tests` runs from the repository root; the app ships this file as its Info-gnustep.plist.
+    NSDictionary *info = [NSDictionary dictionaryWithContentsOfFile:@"Resources/Info-gnustep.plist"];
+    NSString *iconName = info[@"NSIcon"];
+    XCTAssertEqualObjects(iconName, @"ScreenshotToolIcon.tiff");
+    NSString *path = [@"Resources" stringByAppendingPathComponent:iconName ?: @""];
+    NSBitmapImageRep *rep = [NSBitmapImageRep imageRepWithContentsOfFile:path];
+    XCTAssertNotNil(rep, @"%@ loads", path);
+    XCTAssertLessThanOrEqual(rep.pixelsWide, 256, @"small: it goes to the X server with every window");
+    XCTAssertTrue(rep.hasAlpha, @"transparent around the rounded square, not a grey tile");
+    XCTAssertEqualWithAccuracy([[rep colorAtX:0 y:0] alphaComponent], 0.0, 0.01, @"a transparent corner");
+}
+
 @end
