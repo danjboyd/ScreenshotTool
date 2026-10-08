@@ -11,6 +11,9 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#else
+#define ST_CAPTURE_SCREENCAPTURE 1
+#import <CoreGraphics/CoreGraphics.h>
 #endif
 
 /// The capture under way, if any.
@@ -270,6 +273,73 @@ static BOOL STClipboardHasImage(void) {
 
 @end
 
+#elif ST_CAPTURE_SCREENCAPTURE
+
+/// macOS's screencapture in its interactive mode, as Command-Shift-4 starts it: drag an area, or
+/// Space then click a window; Esc cancels, leaving no file.
+static NSString * const STScreencapturePath = @"/usr/sbin/screencapture";
+
+@interface STScreencaptureCapture : NSObject
+@property (nonatomic, copy) STScreenshotCaptureCompletion completion;
+@property (nonatomic, strong) NSTimer *timer;
+@property (nonatomic, strong) NSTask *task;
+@property (nonatomic, strong) NSURL *url;
+- (BOOL)start:(NSString **)failure;
+@end
+
+@implementation STScreencaptureCapture
+
+- (BOOL)start:(NSString **)failure {
+    // Without the Screen Recording permission screencapture still runs, but shows only the
+    // desktop: ask for it (macOS shows its prompt once) and say where it's given.
+    if (!CGPreflightScreenCaptureAccess()) {
+        CGRequestScreenCaptureAccess();
+        *failure = @"Allow ScreenshotTool under Privacy & Security > Screen Recording in System Settings, then try again.";
+        return NO;
+    }
+    NSString *name = [NSString stringWithFormat:@"ScreenshotTool-capture-%@.png", [NSUUID UUID].UUIDString];
+    self.url = [NSURL fileURLWithPath:[NSTemporaryDirectory() stringByAppendingPathComponent:name]];
+    self.task = [[NSTask alloc] init];
+    self.task.executableURL = [NSURL fileURLWithPath:STScreencapturePath];
+    self.task.arguments = @[@"-i", @"-t", @"png", self.url.path];
+    NSError *error = nil;
+    if (![self.task launchAndReturnError:&error]) {
+        *failure = [NSString stringWithFormat:@"screencapture couldn't be started (%@).",
+                    error.localizedDescription ?: @"unknown error"];
+        return NO;
+    }
+    self.timer = STCapturePollTimer(0.1, self, @selector(poll:));
+    return YES;
+}
+
+- (void)poll:(NSTimer *)timer {
+    (void)timer;
+    if (self.task.isRunning) {
+        return;
+    }
+    [self.timer invalidate];
+    self.timer = nil;
+
+    STScreenshotCaptureResult result = STScreenshotCaptureResultNone;
+    NSURL *url = nil;
+    NSString *failure = nil;
+    NSNumber *size = nil;
+    [self.url getResourceValue:&size forKey:NSURLFileSizeKey error:NULL];
+    if (size.unsignedLongLongValue > 0) {
+        result = STScreenshotCaptureResultFile;
+        url = self.url;
+    } else if (self.task.terminationReason != NSTaskTerminationReasonExit) {
+        failure = @"screencapture stopped before it took the screenshot.";
+    }
+    // Otherwise cancelled: Esc leaves no file.
+    STScreenshotCaptureCompletion completion = self.completion;
+    self.completion = nil;
+    STCurrentCapture = nil;
+    completion(result, url, failure);
+}
+
+@end
+
 #endif
 
 @implementation STScreenshotCapture
@@ -286,6 +356,8 @@ static BOOL STClipboardHasImage(void) {
         && [[NSFileManager defaultManager] fileExistsAtPath:[runtime stringByAppendingPathComponent:@"bus"]];
 #elif ST_CAPTURE_SNIPPING_TOOL
     return YES;
+#elif ST_CAPTURE_SCREENCAPTURE
+    return [[NSFileManager defaultManager] isExecutableFileAtPath:STScreencapturePath];
 #else
     return NO;
 #endif
@@ -310,6 +382,14 @@ static BOOL STClipboardHasImage(void) {
 #elif ST_CAPTURE_SNIPPING_TOOL
     (void)window;
     STSnippingToolCapture *capture = [[STSnippingToolCapture alloc] init];
+    capture.completion = completion;
+    STCurrentCapture = capture;
+    if ([capture start:&failure]) {
+        return;
+    }
+#elif ST_CAPTURE_SCREENCAPTURE
+    (void)window;
+    STScreencaptureCapture *capture = [[STScreencaptureCapture alloc] init];
     capture.completion = completion;
     STCurrentCapture = capture;
     if ([capture start:&failure]) {

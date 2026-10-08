@@ -1253,6 +1253,26 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @end
 
 #if !defined(GNUSTEP)
+/// Open… in the empty state: AppKit's split button, whose arrow lists recent files (GNUstep has
+/// STSplitButton). NSComboButton has no key equivalent, so this one takes Return itself, as the
+/// plain Open… button it replaces did.
+API_AVAILABLE(macos(13.0))
+@interface STOpenComboButton : NSComboButton
+@end
+
+@implementation STOpenComboButton
+- (BOOL)performKeyEquivalent:(NSEvent *)event {
+    NSEventModifierFlags modifiers = event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagOption |
+                                                            NSEventModifierFlagControl | NSEventModifierFlagShift);
+    if (modifiers == 0 && [event.charactersIgnoringModifiers isEqualToString:@"\r"] &&
+        self.isEnabled && self.window && !self.isHiddenOrHasHiddenAncestor) {
+        [self sendAction:self.action to:self.target];
+        return YES;
+    }
+    return [super performKeyEquivalent:event];
+}
+@end
+
 /// The controller of the frontmost document window, or the application's delegate if none is
 /// showing (its commands are then disabled: it has no image).
 static AppDelegate *STFrontDocument(void) {
@@ -1432,6 +1452,15 @@ static AppDelegate *STFrontDocument(void) {
 }
 
 - (void)rebuildOpenRecentMenu {
+#if !defined(GNUSTEP)
+    // Each window's empty state lists them too, from Open…'s arrow.
+    for (AppDelegate *document in [self allDocumentControllers]) {
+        NSMenu *recent = [document emptyStateRecentMenu];
+        if (recent) {
+            [self fillRecentDocumentsMenu:recent];
+        }
+    }
+#endif
     if (!self.openRecentMenu) {
         return;
     }
@@ -1768,6 +1797,11 @@ static AppDelegate *STFrontDocument(void) {
 
 /// File > Share lists the services for the annotated image each time it opens.
 - (void)menuNeedsUpdate:(NSMenu *)menu {
+    if (menu == [self emptyStateRecentMenu]) {
+        // The empty state's recent files, as File > Open Recent lists them.
+        [[self applicationController] fillRecentDocumentsMenu:menu];
+        return;
+    }
     if (![menu.title isEqualToString:@"Share"]) {
         return;
     }
@@ -1786,6 +1820,15 @@ static AppDelegate *STFrontDocument(void) {
         item.target = self;
         item.representedObject = @[service, url];
     }
+}
+
+/// The menu of the empty state's Open… split button, if it has one.
+- (NSMenu *)emptyStateRecentMenu {
+    if (@available(macOS 13.0, *)) {
+        NSComboButton *open = [self.emptyStateView viewWithTag:4];
+        return [open isKindOfClass:[NSComboButton class]] ? open.menu : nil;
+    }
+    return nil;
 }
 
 - (void)shareFromMenuItem:(NSMenuItem *)sender {
@@ -2253,16 +2296,14 @@ static id STInfoValueForKey(NSString *key) {
     [fileMenu addItem:openRecentItem];
     [fileMenu setSubmenu:self.openRecentMenu forItem:openRecentItem];
 
-#if defined(GNUSTEP)
     // With the desktop's own tool: GNOME's screenshot UI through the portal, the Snipping Tool on
-    // Windows. macOS captures with ScreenCaptureKit (macos.md).
+    // Windows, screencapture on macOS (until its own capture, macos.md).
     NSMenuItem *takeScreenshotItem = [[NSMenuItem alloc] initWithTitle:@"Take Screenshot…"
                                                                 action:@selector(takeScreenshot:)
                                                          keyEquivalent:@"T"];
     [takeScreenshotItem setTarget:self];
     [takeScreenshotItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
     [fileMenu addItem:takeScreenshotItem];
-#endif
 
     NSMenuItem *saveAsItem = [[NSMenuItem alloc] initWithTitle:@"Save As…"
                                                         action:@selector(saveDocumentAs:)
@@ -5376,7 +5417,10 @@ static id STInfoValueForKey(NSString *key) {
     // Return opens a file only from the empty state: GNUstep offers key equivalents to hidden
     // buttons too, so with an image open the Open button took every Return no control consumed,
     // a menu's or the font field's among them, and asked about unsaved changes (#103).
-    [(NSButton *)[self.emptyStateView viewWithTag:4] setKeyEquivalent:(hasImage ? @"" : @"\r")];
+    NSButton *openButton = [self.emptyStateView viewWithTag:4];
+    if ([openButton isKindOfClass:[NSButton class]]) {
+        [openButton setKeyEquivalent:(hasImage ? @"" : @"\r")];
+    }
     if (!hasImage) {
         [self layoutEmptyStateViewInFrame:scrollFrame];
     }
@@ -5388,7 +5432,8 @@ static id STInfoValueForKey(NSString *key) {
 
 #pragma mark - Empty state (#55)
 
-/// What the window shows with no image: the app's icon, "No Image", and Open… / Paste. Standard
+/// What the window shows with no image: the app's icon, "No Image", and Open… / Take Screenshot… /
+/// Paste (Take Screenshot only where the system has a capture tool). Standard
 /// controls on a view that draws nothing, so the theme styles it (as libadwaita's status page).
 - (NSView *)newEmptyStateView {
     NSView *view = [[NSView alloc] initWithFrame:NSZeroRect];
@@ -5406,7 +5451,10 @@ static id STInfoValueForKey(NSString *key) {
     [title setTag:2];
     [view addSubview:title];
 
-    NSTextField *detail = [self emptyStateLabel:@"Open a screenshot, or paste one from the clipboard."
+    NSString *detailText = [STScreenshotCapture isAvailable]
+        ? @"Open a screenshot, take one, or paste one from the clipboard."
+        : @"Open a screenshot, or paste one from the clipboard.";
+    NSTextField *detail = [self emptyStateLabel:detailText
                                            font:[NSFont systemFontOfSize:[NSFont systemFontSize]]];
     [detail setTextColor:STThemeSecondaryTextColor()];
     [detail setTag:3];
@@ -5425,16 +5473,41 @@ static id STInfoValueForKey(NSString *key) {
     open.menuProvider = ^NSMenu *{
         return [weakSelf newRecentDocumentsMenu];
     };
+    [open setKeyEquivalent:@"\r"];
 #else
-    NSButton *open = [self emptyStateButton:@"Open…" action:@selector(openDocument:)];
+    NSControl *open = nil;
+    if (@available(macOS 13.0, *)) {
+        // Filled now and whenever the list changes (-rebuildOpenRecentMenu): AppKit doesn't open
+        // an empty menu, so -menuNeedsUpdate: alone would never get to fill it.
+        NSMenu *recent = [[NSMenu alloc] initWithTitle:@"Open Recent"];
+        [recent setAutoenablesItems:NO];
+        [recent setDelegate:self];
+        [[self applicationController] fillRecentDocumentsMenu:recent];
+        STOpenComboButton *combo = [STOpenComboButton comboButtonWithTitle:@"Open…"
+                                                                      menu:recent
+                                                                    target:self
+                                                                    action:@selector(openDocument:)];
+        [combo setToolTip:@"Open a screenshot; the arrow lists recent files"];
+        [combo setFrameSize:NSMakeSize(MAX(120.0, combo.fittingSize.width), combo.fittingSize.height)];
+        open = combo;
+    } else {
+        NSButton *button = [self emptyStateButton:@"Open…" action:@selector(openDocument:)];
+        [button setKeyEquivalent:@"\r"];
+        open = button;
+    }
 #endif
     [open setTag:4];
-    [open setKeyEquivalent:@"\r"];
     [view addSubview:open];
 
     NSButton *paste = [self emptyStateButton:@"Paste" action:@selector(pasteAsNewImage:)];
     [paste setTag:5];
     [view addSubview:paste];
+
+    NSButton *capture = [self emptyStateButton:@"Take Screenshot…" action:@selector(takeScreenshot:)];
+    [capture setFrameSize:NSMakeSize(MAX(120.0, ceil([[capture cell] cellSize].width) + 8.0), 32.0)];
+    [capture setTag:6];
+    [capture setHidden:![STScreenshotCapture isAvailable]];
+    [view addSubview:capture];
     return view;
 }
 
@@ -5469,13 +5542,24 @@ static id STInfoValueForKey(NSString *key) {
     NSView *icon = [view viewWithTag:1];
     NSTextField *title = [view viewWithTag:2];
     NSTextField *detail = [view viewWithTag:3];
-    NSView *open = [view viewWithTag:4];
-    NSView *paste = [view viewWithTag:5];
+    // In a row: Open…, Take Screenshot… (unless hidden), Paste.
+    NSMutableArray<NSView *> *buttons = [NSMutableArray array];
+    for (NSNumber *tag in @[@4, @6, @5]) {
+        NSView *button = [view viewWithTag:tag.integerValue];
+        if (button && !button.isHidden) {
+            [buttons addObject:button];
+        }
+    }
     [title sizeToFit];
     [detail sizeToFit];
     CGFloat gap = 12.0, buttonGap = 12.0;
-    CGFloat buttonsWidth = NSWidth(open.frame) + buttonGap + NSWidth(paste.frame);
-    CGFloat total = NSHeight(icon.frame) + gap + NSHeight(title.frame) + 6.0 + NSHeight(detail.frame) + 18.0 + NSHeight(open.frame);
+    CGFloat buttonsWidth = buttonGap * (CGFloat)(buttons.count - 1);
+    CGFloat rowHeight = 0.0;
+    for (NSView *button in buttons) {
+        buttonsWidth += NSWidth(button.frame);
+        rowHeight = MAX(rowHeight, NSHeight(button.frame));
+    }
+    CGFloat total = NSHeight(icon.frame) + gap + NSHeight(title.frame) + 6.0 + NSHeight(detail.frame) + 18.0 + rowHeight;
     CGFloat midX = floor(NSWidth(frame) / 2.0);
     CGFloat y = floor((NSHeight(frame) + total) / 2.0);
     y -= NSHeight(icon.frame);
@@ -5484,10 +5568,13 @@ static id STInfoValueForKey(NSString *key) {
     [title setFrameOrigin:NSMakePoint(midX - floor(NSWidth(title.frame) / 2.0), y)];
     y -= 6.0 + NSHeight(detail.frame);
     [detail setFrameOrigin:NSMakePoint(midX - floor(NSWidth(detail.frame) / 2.0), y)];
-    y -= 18.0 + NSHeight(open.frame);
+    y -= 18.0 + rowHeight;
     CGFloat x = midX - floor(buttonsWidth / 2.0);
-    [open setFrameOrigin:NSMakePoint(x, y)];
-    [paste setFrameOrigin:NSMakePoint(x + NSWidth(open.frame) + buttonGap, y)];
+    for (NSView *button in buttons) {
+        // Centred on the row: NSComboButton is shorter than the 32pt push buttons.
+        [button setFrameOrigin:NSMakePoint(x, y + floor((rowHeight - NSHeight(button.frame)) / 2.0))];
+        x += NSWidth(button.frame) + buttonGap;
+    }
     [view setNeedsDisplay:YES];
 }
 
@@ -6018,6 +6105,18 @@ static id STInfoValueForKey(NSString *key) {
             [self showTransientFeedbackMessage:@"The snip couldn't be read from the clipboard" duration:2.5];
             return;
         }
+#if !defined(GNUSTEP)
+    } else if (result == STScreenshotCaptureResultFile && url) {
+        // screencapture's file is a temporary one: kept with the pasted images, it opens untitled
+        // as they do, and goes once it's open.
+        NSData *pngData = [NSData dataWithContentsOfURL:url];
+        [[NSFileManager defaultManager] removeItemAtURL:url error:NULL];
+        url = pngData.length > 0 ? [self temporaryClipboardImageURLForPNGData:pngData] : nil;
+        if (!url) {
+            [self showTransientFeedbackMessage:@"The screenshot couldn't be read" duration:2.5];
+            return;
+        }
+#endif
     } else if (result != STScreenshotCaptureResultFile || !url) {
         if (failure.length > 0) {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Take Screenshot failed: %@", failure]);
@@ -6029,11 +6128,18 @@ static id STInfoValueForKey(NSString *key) {
         }
         return;
     }
+#if !defined(GNUSTEP)
+    // The front window if it's empty, otherwise a new one.
+    if (![[self applicationController] openURLInDocumentWindow:url preferring:nil]) {
+        [STFrontDocument() showTransientFeedbackMessage:@"Unable to open the screenshot" duration:2.5];
+    }
+#else
     if (![self.canvasView hasImage]) {
         [self openImageAtURL:url];
     } else if (![self launchNewWindowForImageAtURL:url]) {
         [self showTransientFeedbackMessage:@"Unable to open the screenshot in a new window" duration:2.5];
     }
+#endif
 }
 
 - (void)pasteAsNewImage:(id)sender {
