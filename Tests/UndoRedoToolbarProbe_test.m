@@ -13,12 +13,26 @@
 
 @interface AppDelegate (UndoRedoToolbarTesting)
 - (void)setupWindowAndContent;
+- (void)setupToolbar;
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar;
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar itemForItemIdentifier:(NSToolbarItemIdentifier)identifier willBeInsertedIntoToolbar:(BOOL)flag;
 - (BOOL)validateToolbarItem:(NSToolbarItem *)item;
 - (BOOL)validateMenuItem:(NSMenuItem *)item;
 - (NSUndoManager *)undoManager;
 - (void)undo:(id)sender;
+- (void)validateUndoToolbarItems;
+@end
+
+/// Counts the toolbar's revalidations after undo state changes.
+@interface UndoRedoValidationCountingDelegate : AppDelegate
+@property (nonatomic, assign) NSInteger validations;
+@end
+
+@implementation UndoRedoValidationCountingDelegate
+- (void)validateUndoToolbarItems {
+    self.validations += 1;
+    [super validateUndoToolbarItems];
+}
 @end
 
 /// Something to undo: a counter the undo manager steps back.
@@ -114,6 +128,31 @@
     XCTAssertTrue([_appDelegate validateToolbarItem:redo]);
     XCTAssertEqual([_appDelegate validateToolbarItem:redo], [self menuValidates:@selector(redo:)]);
     [undoManager setGroupsByEvent:YES];
+}
+
+/// -canRedo posts a checkpoint. Validating mustn't schedule another validation, or the app never
+/// idles: it redrew the toolbar on every turn of the run loop, and the header bar flickered.
+- (void)testValidationDoesNotScheduleAnother {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    UndoRedoValidationCountingDelegate *delegate = [[UndoRedoValidationCountingDelegate alloc] init];
+    [delegate setupWindowAndContent];
+    [delegate setupToolbar];
+    NSWindow *window = [delegate valueForKey:@"window"];
+    [window orderFront:nil];
+    [[delegate undoManager] canRedo];
+    NSDate *until = [NSDate dateWithTimeIntervalSinceNow:0.5];
+    while ([until timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:until];
+    }
+    XCTAssertGreaterThan(delegate.validations, 0, @"A checkpoint revalidates the toolbar");
+    XCTAssertLessThan(delegate.validations, 5, @"Validating doesn't schedule another validation");
+    // The window outlives this app delegate: nothing may call back into it.
+    [window orderOut:nil];
+    [window.toolbar setDelegate:nil];
+    [window setToolbar:nil];
+    [window setDelegate:nil];
+    [[NSNotificationCenter defaultCenter] removeObserver:delegate];
+    [NSObject cancelPreviousPerformRequestsWithTarget:delegate];
 }
 
 @end

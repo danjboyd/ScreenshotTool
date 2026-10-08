@@ -9,6 +9,7 @@
 #import "ZoomPopoverController.h"
 #import "PreferencesWindowController.h"
 #import "STThemeUtilities.h"
+#import "STSegmentToolTips.h"
 #import "STHudView.h"
 #import "STTextOptionsBar.h"
 #import <Foundation/NSTask.h>
@@ -1202,6 +1203,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 #endif
 /// Whether the clipboard held an image when last checked, and when (#76).
 @property (nonatomic, assign) BOOL clipboardHadImage;
+@property (nonatomic, assign) BOOL validatingUndoToolbarItems;
 @property (nonatomic, assign) NSTimeInterval clipboardCheckedAt;
 - (NSData *)clipboardPNGDataForPasteAsNewImage;
 - (BOOL)clipboardHasImage;
@@ -1273,7 +1275,7 @@ static AppDelegate *STFrontDocument(void) {
 
 - (NSString *)toolTipForIdentifier:(NSToolbarItemIdentifier)identifier {
     if ([identifier isEqualToString:ToolbarItemTools]) {
-        return @"Tools";
+        return nil; // Each tool's segment has its own tip.
     }
     if ([identifier isEqualToString:ToolbarItemHighlighter]) {
         return @"Highlighter Tool — double-click to configure";
@@ -3273,6 +3275,7 @@ static id STInfoValueForKey(NSString *key) {
             [cell setToolTip:[self toolbarSegmentToolTipForTool:tool] forSegment:segment];
         }
         STApplyAccessibilityLabel(self.toolbarToolSegmentedControl, @"Tool switcher");
+        STInstallSegmentToolTips(self.toolbarToolSegmentedControl);
     }
     [self refreshToolbarToolsControl];
     item.view = self.toolbarToolSegmentedControl;
@@ -6401,14 +6404,21 @@ static id STInfoValueForKey(NSString *key) {
 #else
     (void)notification;
 #endif
+    // -canRedo posts a checkpoint: validating mustn't schedule another validation, or the app
+    // never idles and redraws the toolbar on every turn of the run loop.
+    if (self.validatingUndoToolbarItems) {
+        return;
+    }
     // Once per turn of the run loop, after the group being closed has closed: checkpoints are frequent.
     [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(validateUndoToolbarItems) object:nil];
     [self performSelector:@selector(validateUndoToolbarItems) withObject:nil afterDelay:0.0];
 }
 
 - (void)validateUndoToolbarItems {
+    self.validatingUndoToolbarItems = YES;
     [self.toolbar validateVisibleItems];
     [self updateDocumentEditedState];
+    self.validatingUndoToolbarItems = NO;
 }
 
 /// macOS marks a window with unsaved changes with a dot in its close button.

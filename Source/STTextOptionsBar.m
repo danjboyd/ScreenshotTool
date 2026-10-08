@@ -11,6 +11,7 @@
 #import "STTextOptionsBar.h"
 #import "STFontFamilyList.h"
 #import "STThemeUtilities.h"
+#import "STSegmentToolTips.h"
 #import <objc/runtime.h>
 
 /// "Bold (Ctrl+B)" on GNUstep, "Bold (⌘B)" on macOS.
@@ -244,7 +245,8 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
         [[self.styleControl cell] setToolTip:styleNames[idx] forSegment:(NSInteger)idx];
     }
     [self.styleControl setAction:@selector(styleChanged:)];
-    [self prepareControl:self.styleControl toolTip:@"Text style"];
+    [self prepareControl:self.styleControl toolTip:nil];
+    STInstallSegmentToolTips(self.styleControl);
 
     self.pointerButton = [self smallButtonWithTitle:@"Pointer" action:@selector(pointerPressed:) toolTip:@"Callout pointer — drag its handle to aim it"];
     [self.pointerButton setFrameSize:NSMakeSize(60.0, STTextOptionsBarControlHeight)];
