@@ -109,6 +109,28 @@ const NSUInteger STRecentFontFamiliesLimit = 6;
     return nil;
 }
 
+- (NSArray<NSString *> *)familiesMatching:(NSString *)query limit:(NSUInteger)limit {
+    NSString *trimmed = [query stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+    if (trimmed.length == 0) {
+        return limit < self.allFamilies.count ? [self.allFamilies subarrayWithRange:NSMakeRange(0, limit)] : self.allFamilies;
+    }
+    NSMutableArray<NSString *> *starting = [[NSMutableArray alloc] init];
+    NSMutableArray<NSString *> *containing = [[NSMutableArray alloc] init];
+    for (NSString *family in self.allFamilies) {
+        NSRange found = [family rangeOfString:trimmed options:NSCaseInsensitiveSearch];
+        if (found.location == 0) {
+            [starting addObject:family];
+            if (starting.count >= limit) {
+                break;
+            }
+        } else if (found.location != NSNotFound && containing.count < limit) {
+            [containing addObject:family];
+        }
+    }
+    [starting addObjectsFromArray:containing];
+    return starting.count > limit ? [starting subarrayWithRange:NSMakeRange(0, limit)] : starting;
+}
+
 - (void)noteUsedFamily:(NSString *)family {
     NSString *installed = [self familyNamed:family];
     if (!installed) {

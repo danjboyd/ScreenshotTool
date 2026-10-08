@@ -13,6 +13,7 @@
 #import "ScreenshotCanvasView.h"
 #import "STFontFamilyList.h"
 #import "STTextOptionsBar.h"
+#import "STFontPicker.h"
 #import "TestEnvironmentHelpers.h"
 
 @interface STTextOptionsBar (TextFontFieldTesting)
@@ -20,6 +21,22 @@
 @property (nonatomic, strong) STFontFamilyList *fontFamilies;
 - (void)fontEntered:(id)sender;
 - (BOOL)control:(NSControl *)control textView:(NSTextView *)textView doCommandBySelector:(SEL)commandSelector;
+#if defined(GNUSTEP)
+- (NSPopUpButton *)fontButton;
+- (void)fontPicker:(STFontPicker *)picker didChooseFamily:(NSString *)family;
+- (void)fontPickerDidClose:(STFontPicker *)picker;
+#endif
+@end
+
+/// Records what the font picker reports.
+@interface TextFontPickerRecorder : NSObject <STFontPickerDelegate>
+@property (nonatomic, copy) NSString *chosenFamily;
+@property (nonatomic, assign) NSInteger closes;
+@end
+
+@implementation TextFontPickerRecorder
+- (void)fontPicker:(STFontPicker *)picker didChooseFamily:(NSString *)family { self.chosenFamily = family; }
+- (void)fontPickerDidClose:(STFontPicker *)picker { self.closes++; }
 @end
 
 @interface AppDelegate (TextFontFieldTesting)
@@ -153,6 +170,81 @@
     return bar;
 }
 
+#if defined(GNUSTEP)
+- (void)testFontIsADropdownButtonShowingTheFamily {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STTextOptionsBar *bar = [self barWithRecorder:[[TextFontFieldRecorder alloc] init]];
+    XCTAssertTrue([bar.fontButton isKindOfClass:[NSPopUpButton class]], @"drawn by the theme as a dropdown");
+    XCTAssertNil(bar.fontField, @"no combo box on GNUstep");
+    XCTAssertEqualObjects(bar.fontButton.titleOfSelectedItem,
+                          [STFontFamilyList displayNameForFamily:[NSFont systemFontOfSize:20.0].familyName]);
+    XCTAssertTrue([bar.visibleControls containsObject:bar.fontButton]);
+}
+
+- (void)testPickerListsRecentThenLanguageFamiliesUnderHeadings {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STFontPicker *picker = [[STFontPicker alloc] initWithFamilies:[self sampleList]];
+    NSArray<NSString *> *titles = [picker shownRowTitles];
+    XCTAssertEqual(titles.count, (NSUInteger)6, @"%@", titles);
+    XCTAssertEqualObjects(titles[0], @"# Recent");
+    XCTAssertEqualObjects(titles[1], @"Arial");
+    XCTAssertTrue([titles[2] hasPrefix:@"# "], @"the language's heading: %@", titles[2]);
+    XCTAssertEqualObjects([titles subarrayWithRange:NSMakeRange(3, 3)], (@[@"Cantarell", @"DejaVu Sans", @"Noto Sans"]));
+}
+
+- (void)testSearchListsEveryInstalledMatchStartingWithItFirst {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STFontPicker *picker = [[STFontPicker alloc] initWithFamilies:[self sampleList]];
+    [picker setSearchString:@"sans"];
+    XCTAssertEqualObjects([picker shownRowTitles], (@[@"DejaVu Sans", @"Noto Sans", @"Noto Sans Bengali"]),
+                          @"any installed family, not only the listed ones, with no headings");
+    [picker setSearchString:@"noto"];
+    XCTAssertEqualObjects([picker shownRowTitles], (@[@"Noto Sans", @"Noto Sans Bengali"]));
+    [picker setSearchString:@"Ben"];
+    XCTAssertEqualObjects([picker shownRowTitles], (@[@"Noto Sans Bengali"]));
+    [picker setSearchString:@"zzz"];
+    XCTAssertEqualObjects([picker shownRowTitles], (@[]));
+}
+
+- (void)testUpDownSkipHeadingsAndReturnChooses {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STFontPicker *picker = [[STFontPicker alloc] initWithFamilies:[self sampleList]];
+    TextFontPickerRecorder *recorder = [[TextFontPickerRecorder alloc] init];
+    picker.delegate = recorder;
+    XCTAssertEqual([picker selectedRow], -1, @"nothing selected: Return takes the first family");
+    [picker moveSelectionBy:1];
+    XCTAssertEqual([picker selectedRow], 1, @"over the Recent heading");
+    [picker moveSelectionBy:1];
+    XCTAssertEqual([picker selectedRow], 3, @"over the language's heading");
+    [picker chooseSelectedOrFirst];
+    XCTAssertEqualObjects(recorder.chosenFamily, @"Cantarell");
+
+    [picker setSearchString:@"dej"];
+    [picker chooseSelectedOrFirst];
+    XCTAssertEqualObjects(recorder.chosenFamily, @"DejaVu Sans", @"Return on a search takes the first match");
+    XCTAssertEqualObjects(picker.currentFamily, @"DejaVu Sans", @"and checks it");
+}
+
+- (void)testChoosingPicksTheFamilyAndClosingGivesTheKeyboardBackOnce {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    TextFontFieldRecorder *recorder = [[TextFontFieldRecorder alloc] init];
+    STTextOptionsBar *bar = [self barWithRecorder:recorder];
+    [bar fontPicker:nil didChooseFamily:@"cantarell"];
+    [bar fontPickerDidClose:nil];
+    XCTAssertEqualObjects(recorder.pickedFamily, @"Cantarell");
+    XCTAssertEqualObjects(bar.fontButton.titleOfSelectedItem, @"Cantarell");
+    XCTAssertEqual(recorder.finishedEntries, 1, @"the keyboard goes back to the text box, once");
+    XCTAssertEqualObjects(bar.fontFamilies.listedFamilies.firstObject, @"Cantarell", @"It's now the most recent");
+
+    // Closed without a choice (Escape, a click elsewhere): the font stays.
+    recorder.pickedFamily = nil;
+    [bar fontPickerDidClose:nil];
+    XCTAssertNil(recorder.pickedFamily);
+    XCTAssertEqualObjects(bar.fontButton.titleOfSelectedItem, @"Cantarell");
+    XCTAssertEqual(recorder.finishedEntries, 2);
+}
+
+#else
 - (void)testFieldIsAnEditableComboBoxOfTheListedFamilies {
     XCTSkipIf(_shouldSkip, @"No window server");
     STTextOptionsBar *bar = [self barWithRecorder:[[TextFontFieldRecorder alloc] init]];
@@ -195,6 +287,8 @@
     XCTAssertEqualObjects(bar.fontField.stringValue, shown);
     XCTAssertEqual(recorder.finishedEntries, 2);
 }
+
+#endif
 
 #pragma mark - The canvas keeps editing
 
