@@ -421,10 +421,11 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
     [view setFrame:NSMakeRect(x, rowY + floor((rowHeight - height) / 2.0f), width, height)];
 }
 
-- (void)layoutContentView {
+/// Lays out the current page, and returns the content height it needs.
+- (CGFloat)layoutContentView {
     NSView *content = self.contentView ?: self.window.contentView;
     if (!content) {
-        return;
+        return 0.0f;
     }
 
     // Only spacing is the app's; every size comes from the theme's fonts and controls.
@@ -432,7 +433,11 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
     CGFloat gap = 12.0f;
     CGFloat rowGap = 10.0f;
     CGFloat groupGap = 22.0f;
-    NSSize switchSize = NSMakeSize(44.0f, 24.0f); // NSSwitch has no cell to ask
+#if defined(GNUSTEP)
+    NSSize switchSize = NSMakeSize(44.0f, 24.0f); // GNUstep's NSSwitch has no size of its own to ask
+#else
+    NSSize switchSize = self.statusBarSwitch.intrinsicContentSize;
+#endif
 
     CGFloat innerX = padding;
     CGFloat innerWidth = MAX(200.0f, NSWidth(content.bounds) - (padding * 2.0f));
@@ -516,7 +521,7 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
                                  controlHeight:controlHeight
                                  colorWellSize:colorWellSize];
             y -= groupGap;
-            [self layoutToolSectionWithLabel:self.highlighterLabel
+            y = [self layoutToolSectionWithLabel:self.highlighterLabel
                                       slider:self.highlighterWidthSlider
                                  valueLabel:self.highlighterWidthValueLabel
                                 quickButtons:self.highlighterQuickButtons
@@ -566,6 +571,21 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
             break;
         }
     }
+
+    // The page, then a gap, then Restore Defaults on the bottom margin.
+    return (NSMaxY(content.bounds) - y) + groupGap + controlHeight + padding;
+}
+
+/// The content height the tallest page needs.
+- (CGFloat)contentHeightForTallestPage {
+    STPreferencesSection shown = self.currentSection;
+    CGFloat height = 0.0f;
+    for (NSInteger section = STPreferencesSectionAppearance; section <= STPreferencesSectionWorkspace; section++) {
+        self.currentSection = (STPreferencesSection)section;
+        height = MAX(height, ceil([self layoutContentView]));
+    }
+    self.currentSection = shown;
+    return height;
 }
 
 /// Lays out a tool's two rows (label, slider and value; then the quick widths and colour), and returns
@@ -629,6 +649,11 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
     if (!self.window) {
         return;
     }
+    // As tall as the tallest page needs in the theme's fonts, so no page leaves a gap or clips.
+    CGFloat height = [self contentHeightForTallestPage];
+    NSRect frame = [self.window frameRectForContentRect:NSMakeRect(0.0f, 0.0f, NSWidth([self.window.contentView bounds]), height)];
+    [self.window setContentMinSize:NSMakeSize(560.0f, height)];
+    [self.window setFrame:NSMakeRect(NSMinX(self.window.frame), NSMaxY(self.window.frame) - NSHeight(frame), NSWidth(frame), NSHeight(frame)) display:NO];
     [self layoutContentView];
     [self refresh];
     if (window) {
