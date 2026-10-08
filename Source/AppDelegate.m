@@ -1075,6 +1075,14 @@ static BOOL STToolUsesColor(ScreenshotCanvasTool tool) {
             tool == ScreenshotCanvasToolArrow);
 }
 
+/// Whether a double-click on the tool opens a settings popover. Arrows have none: they use the
+/// pen's colour and width.
+static BOOL STToolHasSettingsPopover(ScreenshotCanvasTool tool) {
+    return (tool == ScreenshotCanvasToolPen ||
+            tool == ScreenshotCanvasToolHighlighter ||
+            tool == ScreenshotCanvasToolText);
+}
+
 /// Arrows draw with the pen's colour and width, so their settings are the pen's (#33).
 static ScreenshotCanvasTool STSettingsToolForTool(ScreenshotCanvasTool tool) {
     return (tool == ScreenshotCanvasToolArrow) ? ScreenshotCanvasToolPen : tool;
@@ -1342,7 +1350,7 @@ static AppDelegate *STFrontDocument(void) {
         return @"Pen Tool — double-click to configure";
     }
     if ([identifier isEqualToString:ToolbarItemArrow]) {
-        return @"Arrow Tool — double-click to configure";
+        return @"Arrow Tool";
     }
     if ([identifier isEqualToString:ToolbarItemText]) {
         return @"Text Tool — double-click to configure";
@@ -3058,7 +3066,7 @@ static id STInfoValueForKey(NSString *key) {
 
 - (NSString *)toolbarSegmentToolTipForTool:(ScreenshotCanvasTool)tool {
     NSString *title = [NSString stringWithFormat:@"%@ Tool (%@)", [self toolbarTitleForTool:tool], [self toolbarShortcutForTool:tool]];
-    if (STToolUsesColor(tool)) {
+    if (STToolHasSettingsPopover(tool)) {
         return [title stringByAppendingString:@" — double-click to configure"];
     }
     return title;
@@ -3399,7 +3407,7 @@ static id STInfoValueForKey(NSString *key) {
                              (long)control.lastClickCount,
                              STDebugDescriptionForEvent(event)]);
     [self selectTool:tool];
-    if (openPopover && STToolUsesColor(tool)) {
+    if (openPopover && STToolHasSettingsPopover(tool)) {
         NSView *anchorView = self.window.contentView;
         if (anchorView) {
             CGFloat segmentWidth = [control widthForSegment:selectedSegment];

@@ -65,6 +65,13 @@
         [tips addObject:tip ?: @""];
     }
     XCTAssertEqual(tips.count, (NSUInteger)control.segmentCount, @"Each tool's tip is its own");
+
+    // Only the tools with a settings popover offer one; the arrow uses the pen's settings.
+    for (NSString *tip in tips) {
+        BOOL offersSettings = [tip containsString:@"double-click to configure"];
+        BOOL hasPopover = [tip hasPrefix:@"Pen"] || [tip hasPrefix:@"Highlighter"] || [tip hasPrefix:@"Text"];
+        XCTAssertEqual(offersSettings, hasPopover, @"%@", tip);
+    }
 }
 
 - (void)testSegmentAreasTileTheControl {
