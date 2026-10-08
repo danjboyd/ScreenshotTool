@@ -144,22 +144,27 @@ static CGFloat STZoomScaleForSliderValue(CGFloat sliderValue) {
     CGFloat fitButtonWidth = fitButtonSize.width;
     CGFloat resetButtonWidth = resetButtonSize.width;
     CGFloat contentWidthTarget = fitButtonWidth + STZoomPopoverButtonGap + resetButtonWidth + (padding * 2.0f);
-    NSRect contentFrame = NSMakeRect(0, 0, MAX(284.0f, contentWidthTarget), 132.0f);
+    // As tall as its rows in the theme's fonts and controls.
+    CGFloat titleHeight = ceil([[NSFont boldSystemFontOfSize:[NSFont systemFontSize]] boundingRectForFont].size.height) + 4.0f;
+    CGFloat sliderHeight = MAX(fitButtonSize.height, 22.0f);
+    CGFloat rowGap = 10.0f;
+    CGFloat contentHeight = padding + titleHeight + rowGap + sliderHeight + rowGap + fitButtonSize.height + padding;
+    NSRect contentFrame = NSMakeRect(0, 0, MAX(284.0f, contentWidthTarget), ceil(contentHeight));
     self.contentView = [[NSView alloc] initWithFrame:contentFrame];
     self.popover = [[STFloatingPopover alloc] initWithContentView:self.contentView];
     self.popover.contentSize = contentFrame.size;
     self.popover.effectiveScaleFactor = scaleFactor;
 
     CGFloat contentWidth = NSWidth(contentFrame) - (padding * 2.0f);
-    CGFloat y = NSHeight(contentFrame) - padding - (22.0f * scaleFactor);
+    CGFloat y = NSHeight(contentFrame) - padding - titleHeight;
 
-    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 120.0f, 22.0f)];
+    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 120.0f, titleHeight)];
     [title setEditable:NO];
     [title setSelectable:NO];
     [title setBezeled:NO];
     [title setBordered:NO];
     [title setDrawsBackground:NO];
-    [title setFont:[NSFont boldSystemFontOfSize:13.0f]];
+    [title setFont:[NSFont boldSystemFontOfSize:[NSFont systemFontSize]]];
     [title setStringValue:@"Zoom"];
     self.titleLabel = title;
     [self.contentView addSubview:title];
@@ -167,20 +172,20 @@ static CGFloat STZoomScaleForSliderValue(CGFloat sliderValue) {
     NSTextField *value = [[NSTextField alloc] initWithFrame:NSMakeRect(NSMaxX(contentFrame) - padding - 70.0f,
                                                                        y,
                                                                        70.0f,
-                                                                       22.0f)];
+                                                                       titleHeight)];
     [value setEditable:NO];
     [value setSelectable:NO];
     [value setBezeled:NO];
     [value setBordered:NO];
     [value setDrawsBackground:NO];
     [value setAlignment:NSTextAlignmentRight];
-    [value setFont:[NSFont boldSystemFontOfSize:12.0f]];
+    [value setFont:[NSFont boldSystemFontOfSize:[NSFont systemFontSize]]];
     [value setStringValue:@"100%"];
     self.valueLabel = value;
     [self.contentView addSubview:value];
 
-    y -= 30.0f * scaleFactor;
-    NSSlider *slider = [[NSSlider alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, 22.0f)];
+    y -= rowGap + sliderHeight;
+    NSSlider *slider = [[NSSlider alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, sliderHeight)];
     [slider setMinValue:0.0f];
     [slider setMaxValue:STZoomPopoverSliderMaxValue];
     [slider setContinuous:YES];
@@ -189,7 +194,7 @@ static CGFloat STZoomScaleForSliderValue(CGFloat sliderValue) {
     self.slider = slider;
     [self.contentView addSubview:slider];
 
-    y -= 42.0f * scaleFactor;
+    y -= rowGap + fitButtonSize.height;
     NSButton *fitButton = [[NSButton alloc] initWithFrame:NSMakeRect(padding, y, fitButtonWidth, fitButtonSize.height)];
     [fitButton setTitle:@"Fit to Window"];
     [fitButton setButtonType:NSMomentaryPushInButton];

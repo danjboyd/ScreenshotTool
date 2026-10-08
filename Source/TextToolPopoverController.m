@@ -153,78 +153,87 @@
 
 #pragma mark - Private helpers
 
-- (void)buildPopoverForView:(NSView *)view {
-    ScreenshotToolAppendLog(@"TextToolPopoverController buildPopover begin");
-    CGFloat scaleFactor = 1.0f;
-    
-    CGFloat popoverWidth = 340.0f;
-    CGFloat popoverHeight = 392.0f;
+/// The height a control asks for in the theme's font and metrics, or the fallback where it has none.
+static CGFloat STTextPopoverNaturalHeight(NSControl *control, CGFloat fallback) {
+    CGFloat height = ceil([[control cell] cellSize].height);
+    return (height > 0.0f) ? height : fallback;
+}
 
-    STTextPopoverContentView *content = [[STTextPopoverContentView alloc] initWithFrame:NSMakeRect(0, 0, popoverWidth, popoverHeight)];
+/// Places a view of the given height centred in a row, so labels line up with the controls beside them.
+static void STTextPopoverPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFloat height, CGFloat rowY, CGFloat rowHeight) {
+    [view setFrame:NSMakeRect(x, rowY + floor((rowHeight - height) / 2.0f), width, height)];
+}
+
+- (void)buildPopoverForView:(NSView *)view {
+    (void)view;
+    ScreenshotToolAppendLog(@"TextToolPopoverController buildPopover begin");
+    // Only spacing and the width are the app's: heights come from the theme's fonts and controls,
+    // the rows are laid out from the top, and the popover is as tall as they are.
+    CGFloat popoverWidth = 340.0f;
+    CGFloat workingHeight = 2000.0f;
+    CGFloat padding = 14.0f;
+    CGFloat rowGap = 10.0f;
+    CGFloat columnGap = 8.0f;
+
+    STTextPopoverContentView *content = [[STTextPopoverContentView alloc] initWithFrame:NSMakeRect(0, 0, popoverWidth, workingHeight)];
     content.owner = self;
     self.contentView = content;
-    self.popover = [[STFloatingPopover alloc] initWithContentView:self.contentView];
-    self.popover.contentSize = self.contentView.bounds.size;
-    self.popover.effectiveScaleFactor = scaleFactor;
-    ScreenshotToolAppendLog(@"TextToolPopoverController floating popover created");
+    CGFloat contentWidth = popoverWidth - (padding * 2.0f);
+    NSFont *labelFont = [NSFont systemFontOfSize:0.0f];
 
-    CGFloat padding = 14.0f * scaleFactor;
-    CGFloat contentWidth = self.contentView.bounds.size.width - (padding * 2.0f);
-    CGFloat y = self.contentView.bounds.size.height - padding - (22.0f * scaleFactor);
+    // The theme's control height: a push button's.
+    NSButton *probe = [[NSButton alloc] initWithFrame:NSZeroRect];
+    [probe setBezelStyle:NSRoundedBezelStyle];
+    [probe setTitle:@"A"];
+    CGFloat controlHeight = MAX(24.0f, STTextPopoverNaturalHeight(probe, 24.0f));
 
-    NSTextField *title = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, 22.0f * scaleFactor)];
-    [self configureLabel:title font:[NSFont boldSystemFontOfSize:13.0f * scaleFactor]];
+    NSTextField *title = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    [self configureLabel:title font:[NSFont boldSystemFontOfSize:[NSFont systemFontSize]]];
     [title setStringValue:@"Text Settings"];
     [title setTextColor:STThemeSectionHeaderColor()];
     [self.contentView addSubview:title];
 
-    y -= 30.0f * scaleFactor;
-    NSTextField *fontLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60.0f * scaleFactor, 18.0f * scaleFactor)];
-    [self configureLabel:fontLabel font:[NSFont systemFontOfSize:12.0f * scaleFactor]];
-    [fontLabel setStringValue:@"Font"];
-    [self.contentView addSubview:fontLabel];
-
-    CGFloat typefaceWidth = 130.0f * scaleFactor;
-    CGFloat typefaceSpacing = 8.0f * scaleFactor;
-    CGFloat familyFieldX = padding + (64.0f * scaleFactor);
-    CGFloat familyWidth = contentWidth - (64.0f * scaleFactor) - typefaceSpacing - typefaceWidth;
-    if (familyWidth < 140.0f * scaleFactor) {
-        CGFloat deficit = (140.0f * scaleFactor) - familyWidth;
-        familyWidth = 140.0f * scaleFactor;
-        typefaceWidth = MAX(90.0f * scaleFactor, typefaceWidth - deficit);
+    NSMutableArray<NSTextField *> *rowLabels = [[NSMutableArray alloc] init];
+    for (NSString *string in @[@"Font", @"Size", @"Color", @"Style", @"Align"]) {
+        NSTextField *label = [[NSTextField alloc] initWithFrame:NSZeroRect];
+        [self configureLabel:label font:labelFont];
+        [label setStringValue:string];
+        [self.contentView addSubview:label];
+        [rowLabels addObject:label];
     }
+    CGFloat labelWidth = 0.0f;
+    for (NSTextField *label in rowLabels) {
+        labelWidth = MAX(labelWidth, ceil([[label cell] cellSize].width));
+    }
+    CGFloat labelHeight = STTextPopoverNaturalHeight(rowLabels.firstObject, 18.0f);
+    CGFloat fieldX = padding + labelWidth + columnGap;
+    CGFloat fieldWidth = padding + contentWidth - fieldX;
 
-    self.fontComboBox = [[NSComboBox alloc] initWithFrame:NSMakeRect(familyFieldX,
-                                                                     y - (4.0f * scaleFactor),
-                                                                     familyWidth,
-                                                                     26.0f * scaleFactor)];
+    CGFloat y = workingHeight - padding;
+    CGFloat titleHeight = STTextPopoverNaturalHeight(title, 22.0f);
+    y -= titleHeight;
+    [title setFrame:NSMakeRect(padding, y, contentWidth, titleHeight)];
+
+    // Font: the family (type to filter) and its typeface.
+    y -= rowGap + controlHeight;
+    STTextPopoverPlaceInRow(rowLabels[0], padding, labelWidth, labelHeight, y, controlHeight);
+    CGFloat typefaceWidth = floor((fieldWidth - columnGap) * 0.42f);
+    CGFloat familyWidth = fieldWidth - columnGap - typefaceWidth;
+    self.fontComboBox = [[NSComboBox alloc] initWithFrame:NSMakeRect(fieldX, y, familyWidth, controlHeight)];
     [self.fontComboBox setUsesDataSource:YES];
     [self.fontComboBox setCompletes:NO];
     [self.fontComboBox setDelegate:self];
     [self.fontComboBox setDataSource:self];
     [self.fontComboBox setNumberOfVisibleItems:12];
-    [self.fontComboBox setAutoresizingMask:NSViewWidthSizable];
     [self populateFontFamilies];
     [self.contentView addSubview:self.fontComboBox];
-    [fontLabel setAutoresizingMask:(NSViewMaxYMargin | NSViewWidthSizable)];
 
-    NSTextField *typefaceLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(NSMaxX(self.fontComboBox.frame) + typefaceSpacing,
-                                                                               y,
-                                                                               typefaceWidth,
-                                                                               18.0f * scaleFactor)];
-    [self configureLabel:typefaceLabel font:[NSFont systemFontOfSize:12.0f * scaleFactor]];
-    [typefaceLabel setStringValue:@"Typeface"];
-    [typefaceLabel setAlignment:NSTextAlignmentLeft];
-    [typefaceLabel setAutoresizingMask:(NSViewMaxYMargin | NSViewMinXMargin)];
-    [self.contentView addSubview:typefaceLabel];
-
-    self.fontFacePopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(typefaceLabel.frame.origin.x,
-                                                                         y - (4.0f * scaleFactor),
+    self.fontFacePopUp = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(NSMaxX(self.fontComboBox.frame) + columnGap,
+                                                                         y,
                                                                          typefaceWidth,
-                                                                         26.0f * scaleFactor)];
+                                                                         controlHeight)];
     [self.fontFacePopUp setTarget:self];
     [self.fontFacePopUp setAction:@selector(fontFaceChanged:)];
-    [self.fontFacePopUp setAutoresizingMask:(NSViewMinXMargin)];
     [self.contentView addSubview:self.fontFacePopUp];
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(fontFacePopUpWillPopUp:)
@@ -239,45 +248,37 @@
                                                  name:NSMenuDidEndTrackingNotification
                                                object:nil];
 
-    y -= 36.0f * scaleFactor;
-    NSTextField *sizeLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60.0f * scaleFactor, 18.0f * scaleFactor)];
-    [self configureLabel:sizeLabel font:[NSFont systemFontOfSize:12.0f * scaleFactor]];
-    [sizeLabel setStringValue:@"Size"];
-    [self.contentView addSubview:sizeLabel];
-
-    CGFloat sizeFieldWidth = 64.0f * scaleFactor;
-    self.fontSizeField = [[NSTextField alloc] initWithFrame:NSMakeRect(padding + (64.0f * scaleFactor),
-                                                                       y - (2.0f * scaleFactor),
-                                                                       sizeFieldWidth,
-                                                                       24.0f * scaleFactor)];
-    [self.fontSizeField setFont:[NSFont systemFontOfSize:12.0f * scaleFactor]];
+    // Size: the exact size with a stepper, then S / M / L / XL from the image (#27).
+    y -= rowGap + controlHeight;
+    STTextPopoverPlaceInRow(rowLabels[1], padding, labelWidth, labelHeight, y, controlHeight);
+    CGFloat sizeFieldWidth = 56.0f;
+    self.fontSizeField = [[NSTextField alloc] initWithFrame:NSMakeRect(fieldX, y, sizeFieldWidth, controlHeight)];
     [self.fontSizeField setAlignment:NSTextAlignmentRight];
     [self.fontSizeField setDelegate:self];
-    [self.fontSizeField setAutoresizingMask:NSViewMaxYMargin];
     [self.fontSizeField setTarget:self];
     [self.fontSizeField setAction:@selector(fontSizeFieldChanged:)];
     [self.fontSizeField setStringValue:@"14"];
     [self.contentView addSubview:self.fontSizeField];
 
-    self.fontSizeStepper = [[NSStepper alloc] initWithFrame:NSMakeRect(NSMaxX(self.fontSizeField.frame) + (6.0f * scaleFactor),
-                                                                       y - (2.0f * scaleFactor),
-                                                                       18.0f * scaleFactor,
-                                                                       24.0f * scaleFactor)];
+    self.fontSizeStepper = [[NSStepper alloc] initWithFrame:NSZeroRect];
     [self.fontSizeStepper setMinValue:STTextPopoverMinFontSize];
     [self.fontSizeStepper setMaxValue:STTextPopoverMaxFontSize];
     [self.fontSizeStepper setIncrement:1.0];
     [self.fontSizeStepper setTarget:self];
     [self.fontSizeStepper setAction:@selector(fontSizeStepperChanged:)];
+    NSSize stepperSize = [[self.fontSizeStepper cell] cellSize];
+    if (stepperSize.width <= 0.0f || stepperSize.height <= 0.0f) {
+        stepperSize = NSMakeSize(18.0f, controlHeight);
+    }
+    stepperSize.height = MIN(stepperSize.height, controlHeight);
+    STTextPopoverPlaceInRow(self.fontSizeStepper, NSMaxX(self.fontSizeField.frame) + 4.0f, ceil(stepperSize.width),
+                            ceil(stepperSize.height), y, controlHeight);
+    [self.contentView addSubview:self.fontSizeStepper];
 
-    // S / M / L / XL size from the image (#27); the exact field and stepper sit to their left.
-    CGFloat presetX = NSMaxX(self.fontSizeStepper.frame) + (10.0f * scaleFactor);
-    NSSegmentedControl *sizePresets = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(presetX,
-                                                                                          y - (2.0f * scaleFactor),
-                                                                                          padding + contentWidth - presetX,
-                                                                                          24.0f * scaleFactor)];
+    CGFloat presetX = NSMaxX(self.fontSizeStepper.frame) + columnGap;
+    NSSegmentedControl *sizePresets = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(presetX, y, padding + contentWidth - presetX, controlHeight)];
     NSArray<NSString *> *presetTitles = @[@"S", @"M", @"L", @"XL"];
     [sizePresets setSegmentCount:(NSInteger)presetTitles.count];
-    [sizePresets setFont:[NSFont systemFontOfSize:11.0f * scaleFactor]];
     CGFloat presetWidth = floor(NSWidth(sizePresets.frame) / presetTitles.count);
     for (NSUInteger idx = 0; idx < presetTitles.count; idx++) {
         [sizePresets setLabel:presetTitles[idx] forSegment:(NSInteger)idx];
@@ -286,26 +287,15 @@
     [sizePresets setToolTip:@"Size relative to the image"];
     [sizePresets setTarget:self];
     [sizePresets setAction:@selector(sizePresetChanged:)];
-    [sizePresets setAutoresizingMask:NSViewMaxYMargin];
     [self.contentView addSubview:sizePresets];
     self.sizePresetControl = sizePresets;
-    [self.fontSizeStepper setAutoresizingMask:NSViewMaxYMargin];
-    [self.contentView addSubview:self.fontSizeStepper];
 
-    y -= 44.0f * scaleFactor;
-    NSTextField *colorTitleLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y, 60.0f * scaleFactor, 18.0f * scaleFactor)];
-    [self configureLabel:colorTitleLabel font:[NSFont systemFontOfSize:12.0f * scaleFactor]];
-    [colorTitleLabel setStringValue:@"Color"];
-    [self.contentView addSubview:colorTitleLabel];
-
-    CGFloat colorWellWidth = 44.0f * scaleFactor;
-    self.colorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(padding + (64.0f * scaleFactor),
-                                                                   y - (4.0f * scaleFactor),
-                                                                   colorWellWidth,
-                                                                   28.0f * scaleFactor)];
+    // Color: the well, then a row of common colours.
+    y -= rowGap + controlHeight;
+    STTextPopoverPlaceInRow(rowLabels[2], padding, labelWidth, labelHeight, y, controlHeight);
+    self.colorWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(fieldX, y, round(controlHeight * 1.6f), controlHeight)];
     [self.colorWell setTarget:self];
     [self.colorWell setAction:@selector(colorChanged:)];
-    [self.colorWell setAutoresizingMask:NSViewMaxYMargin];
     [self.contentView addSubview:self.colorWell];
 
     NSArray<NSColor *> *swatches = [NSArray arrayWithObjects:
@@ -319,45 +309,21 @@
         [NSColor colorWithCalibratedRed:0.60 green:0.25 blue:0.77 alpha:1.0],
         nil];
     self.colorSwatches = swatches;
-    CGFloat swatchSize = 26.0f * scaleFactor;
     NSUInteger columns = swatches.count;
-    CGFloat swatchSpacing = 6.0f * scaleFactor;
+    CGFloat swatchSpacing = 6.0f;
     CGFloat availableWidth = MAX(0.0f, contentWidth - ((columns - 1) * swatchSpacing));
-    CGFloat effectiveSwatchSize = MIN(swatchSize, MAX(20.0f * scaleFactor, availableWidth / MAX(columns, 1)));
-    self.colorSwatchSize = effectiveSwatchSize;
-    CGFloat swatchAreaHeight = effectiveSwatchSize;
-
-    CGFloat buttonAreaHeight = 32.0f * scaleFactor;
-    CGFloat previewBottom = padding + buttonAreaHeight + (18.0f * scaleFactor);
-    CGFloat swatchTopLimit = y - (8.0f * scaleFactor);
-    CGFloat swatchBottom = swatchTopLimit - swatchAreaHeight;
-    CGFloat minimumPreviewGap = 12.0f * scaleFactor;
-    if (swatchBottom < previewBottom + minimumPreviewGap) {
-        swatchBottom = previewBottom + minimumPreviewGap;
-    }
-
-    NSRect swatchContainerFrame = NSMakeRect(padding,
-                                             swatchBottom,
-                                             contentWidth,
-                                             swatchAreaHeight);
-    NSView *swatchContainer = [[NSView alloc] initWithFrame:swatchContainerFrame];
-    [swatchContainer setAutoresizingMask:(NSViewMinYMargin | NSViewWidthSizable)];
+    CGFloat swatchSize = MIN(26.0f, MAX(20.0f, floor(availableWidth / MAX(columns, 1))));
+    self.colorSwatchSize = swatchSize;
+    y -= 8.0f + swatchSize;
+    NSView *swatchContainer = [[NSView alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, swatchSize)];
     [self.contentView addSubview:swatchContainer];
-
     NSMutableArray<NSButton *> *swatchButtons = [[NSMutableArray alloc] initWithCapacity:swatches.count];
     for (NSUInteger idx = 0; idx < swatches.count; idx++) {
-        NSUInteger col = idx;
-        CGFloat originX = (effectiveSwatchSize + swatchSpacing) * col;
-        CGFloat originY = 0.0f;
-        NSButton *swatch = [[NSButton alloc] initWithFrame:NSMakeRect(originX,
-                                                                      originY,
-                                                                      effectiveSwatchSize,
-                                                                      effectiveSwatchSize)];
+        NSButton *swatch = [[NSButton alloc] initWithFrame:NSMakeRect((swatchSize + swatchSpacing) * idx, 0.0f, swatchSize, swatchSize)];
         [swatch setButtonType:NSMomentaryChangeButton];
         [swatch setBordered:NO];
         [swatch setBezelStyle:NSShadowlessSquareBezelStyle];
-        [swatch setImage:[self swatchImageWithColor:swatches[idx] highlighted:NO size:effectiveSwatchSize]];
-        [swatch setAutoresizingMask:NSViewMaxXMargin];
+        [swatch setImage:[self swatchImageWithColor:swatches[idx] highlighted:NO size:swatchSize]];
         swatch.target = self;
         swatch.action = @selector(colorSwatchPressed:);
         swatch.tag = (NSInteger)idx;
@@ -367,72 +333,45 @@
     self.colorSwatchButtons = swatchButtons;
     [self updateSwatchSelectionForColor:self.colorWell.color];
 
-    y = NSMinY(swatchContainer.frame) - (12.0f * scaleFactor);
-
     // How the text stands out from the image: plain, outlined, shadowed or on a box.
-    CGFloat styleRowHeight = 24.0f * scaleFactor;
-    y -= styleRowHeight;
-    NSTextField *styleLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y + (3.0f * scaleFactor), 40.0f * scaleFactor, 18.0f * scaleFactor)];
-    [self configureLabel:styleLabel font:[NSFont systemFontOfSize:12.0f * scaleFactor]];
-    [styleLabel setStringValue:@"Style"];
-    [styleLabel setAutoresizingMask:NSViewMinYMargin];
-    [self.contentView addSubview:styleLabel];
-
-    // A narrower label column and the small label font keep "Outline" and "Shadow" unclipped.
-    CGFloat styleControlX = padding + (44.0f * scaleFactor);
-    NSSegmentedControl *styleControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(styleControlX, y, padding + contentWidth - styleControlX, styleRowHeight)];
+    y -= rowGap + controlHeight;
+    STTextPopoverPlaceInRow(rowLabels[3], padding, labelWidth, labelHeight, y, controlHeight);
+    NSSegmentedControl *styleControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(fieldX, y, fieldWidth, controlHeight)];
     NSArray<NSString *> *styleTitles = @[@"Plain", @"Outline", @"Shadow", @"Box"];
     [styleControl setSegmentCount:(NSInteger)styleTitles.count];
-    [styleControl setFont:[NSFont systemFontOfSize:11.0f * scaleFactor]];
-    CGFloat segmentWidth = floor(NSWidth(styleControl.frame) / styleTitles.count);
+    CGFloat segmentWidth = floor(fieldWidth / styleTitles.count);
     for (NSUInteger idx = 0; idx < styleTitles.count; idx++) {
         [styleControl setLabel:styleTitles[idx] forSegment:(NSInteger)idx];
         [styleControl setWidth:segmentWidth forSegment:(NSInteger)idx];
     }
     [styleControl setTarget:self];
     [styleControl setAction:@selector(styleChanged:)];
-    [styleControl setAutoresizingMask:NSViewMinYMargin];
     [self.contentView addSubview:styleControl];
     self.styleControl = styleControl;
-    y -= 12.0f * scaleFactor;
 
     // Left / Centre / Right for multi-line labels (#31).
-    y -= styleRowHeight;
-    NSTextField *alignLabel = [[NSTextField alloc] initWithFrame:NSMakeRect(padding, y + (3.0f * scaleFactor), 40.0f * scaleFactor, 18.0f * scaleFactor)];
-    [self configureLabel:alignLabel font:[NSFont systemFontOfSize:12.0f * scaleFactor]];
-    [alignLabel setStringValue:@"Align"];
-    [alignLabel setAutoresizingMask:NSViewMinYMargin];
-    [self.contentView addSubview:alignLabel];
-
-    NSSegmentedControl *alignmentControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(styleControlX, y, padding + contentWidth - styleControlX, styleRowHeight)];
+    y -= rowGap + controlHeight;
+    STTextPopoverPlaceInRow(rowLabels[4], padding, labelWidth, labelHeight, y, controlHeight);
+    NSSegmentedControl *alignmentControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(fieldX, y, fieldWidth, controlHeight)];
     NSArray<NSString *> *alignTitles = @[@"Left", @"Centre", @"Right"];
     [alignmentControl setSegmentCount:(NSInteger)alignTitles.count];
-    [alignmentControl setFont:[NSFont systemFontOfSize:11.0f * scaleFactor]];
-    CGFloat alignWidth = floor(NSWidth(alignmentControl.frame) / alignTitles.count);
+    CGFloat alignWidth = floor(fieldWidth / alignTitles.count);
     for (NSUInteger idx = 0; idx < alignTitles.count; idx++) {
         [alignmentControl setLabel:alignTitles[idx] forSegment:(NSInteger)idx];
         [alignmentControl setWidth:alignWidth forSegment:(NSInteger)idx];
     }
     [alignmentControl setTarget:self];
     [alignmentControl setAction:@selector(alignmentChanged:)];
-    [alignmentControl setAutoresizingMask:NSViewMinYMargin];
     [self.contentView addSubview:alignmentControl];
     self.alignmentControl = alignmentControl;
-    y -= 12.0f * scaleFactor;
-    CGFloat previewAvailableHeight = y - previewBottom;
-    if (previewAvailableHeight < 0.0f) {
-        previewAvailableHeight = 0.0f;
-    }
-    CGFloat previewHeight = previewAvailableHeight;
-    NSScrollView *previewScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(padding,
-                                                                                 previewBottom,
-                                                                                 contentWidth,
-                                                                                 previewHeight)];
+
+    // A sample in the chosen font, about two lines of it.
+    CGFloat previewHeight = MAX(48.0f, ceil([STDefaultTextFont() boundingRectForFont].size.height) * 2.0f);
+    y -= rowGap + previewHeight;
+    NSScrollView *previewScroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(padding, y, contentWidth, previewHeight)];
     [previewScroll setBorderType:NSNoBorder];
     [previewScroll setHasVerticalScroller:NO];
     [previewScroll setHasHorizontalScroller:NO];
-    [previewScroll setAutoresizingMask:(NSViewWidthSizable | NSViewMaxYMargin)];
-
     STTextPopoverPreviewTextView *preview = [[STTextPopoverPreviewTextView alloc] initWithFrame:previewScroll.contentView.bounds];
     [preview setRichText:NO];
     [preview setAllowsUndo:YES];
@@ -451,33 +390,36 @@
     self.previewTextView = preview;
     self.previewSampleText = @"Sample Text";
 
-    CGFloat buttonY = padding;
-
     self.resetButton = [STHyperlinkButton hyperlinkButtonWithTitle:@"Reset"
                                                           target:self
                                                           action:@selector(resetPressed:)];
     [self.contentView addSubview:self.resetButton];
-
     self.defaultButton = [STHyperlinkButton hyperlinkButtonWithTitle:@"Set as Default"
                                                              target:self
                                                              action:@selector(defaultPressed:)];
     [self.contentView addSubview:self.defaultButton];
-
     [self.resetButton sizeToFit];
     [self.defaultButton sizeToFit];
-    [self.resetButton setAutoresizingMask:NSViewMaxYMargin];
-    [self.defaultButton setAutoresizingMask:NSViewMaxYMargin];
-
-    CGFloat buttonsWidth = self.resetButton.frame.size.width + (12.0f * scaleFactor) + self.defaultButton.frame.size.width;
+    CGFloat buttonsHeight = MAX(NSHeight(self.resetButton.frame), NSHeight(self.defaultButton.frame));
+    y -= rowGap + buttonsHeight;
+    CGFloat buttonsWidth = NSWidth(self.resetButton.frame) + 12.0f + NSWidth(self.defaultButton.frame);
     CGFloat originX = padding + (contentWidth - buttonsWidth);
-    self.resetButton.frame = NSMakeRect(originX,
-                                        buttonY,
-                                        self.resetButton.frame.size.width,
-                                        self.resetButton.frame.size.height);
-    self.defaultButton.frame = NSMakeRect(NSMaxX(self.resetButton.frame) + (12.0f * scaleFactor),
-                                          buttonY,
-                                          self.defaultButton.frame.size.width,
-                                          self.defaultButton.frame.size.height);
+    self.resetButton.frame = NSMakeRect(originX, y, NSWidth(self.resetButton.frame), NSHeight(self.resetButton.frame));
+    self.defaultButton.frame = NSMakeRect(NSMaxX(self.resetButton.frame) + 12.0f, y,
+                                          NSWidth(self.defaultButton.frame), NSHeight(self.defaultButton.frame));
+
+    // Down to the content's own height: everything moves down by what's unused above the padding.
+    CGFloat unused = y - padding;
+    for (NSView *subview in self.contentView.subviews) {
+        [subview setFrameOrigin:NSMakePoint(NSMinX(subview.frame), NSMinY(subview.frame) - unused)];
+    }
+    [self.contentView setAutoresizesSubviews:NO];
+    [self.contentView setFrameSize:NSMakeSize(popoverWidth, workingHeight - unused)];
+
+    self.popover = [[STFloatingPopover alloc] initWithContentView:self.contentView];
+    self.popover.contentSize = self.contentView.bounds.size;
+    self.popover.effectiveScaleFactor = 1.0f;
+    ScreenshotToolAppendLog(@"TextToolPopoverController floating popover created");
 }
 
 - (void)configureLabel:(NSTextField *)label font:(NSFont *)font {
