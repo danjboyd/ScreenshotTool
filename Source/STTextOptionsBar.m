@@ -25,10 +25,34 @@ static NSString *STShortcutToolTip(NSString *title, NSString *gnustepShortcut, N
 #endif
 }
 
-static const CGFloat STTextOptionsBarHeight = 40.0;
 static const CGFloat STTextOptionsBarPadding = 10.0;
 static const CGFloat STTextOptionsBarGroupGap = 10.0;
-static const CGFloat STTextOptionsBarControlHeight = 26.0;
+/// Space above and below the controls.
+static const CGFloat STTextOptionsBarMargin = 7.0;
+/// The smallest control height, and the smallest a small button is wide.
+static const CGFloat STTextOptionsBarMinControlHeight = 26.0;
+
+/// The theme's control height: what a push button asks for in the theme's font.
+static CGFloat STTextOptionsBarControlHeight(void) {
+    NSButton *probe = [[NSButton alloc] initWithFrame:NSZeroRect];
+    [probe setBezelStyle:NSRoundedBezelStyle];
+    [probe setTitle:@"A"];
+    return MAX(STTextOptionsBarMinControlHeight, ceil([[probe cell] cellSize].height));
+}
+
+/// Sizes each segment of a text-labelled segmented control to its label in the control's font, and
+/// the control to its segments.
+static void STTextOptionsBarSizeSegments(NSSegmentedControl *control, CGFloat minimumWidth, CGFloat height) {
+    NSDictionary *attributes = @{NSFontAttributeName: [control font] ?: [NSFont systemFontOfSize:0.0]};
+    CGFloat total = 0.0;
+    for (NSInteger segment = 0; segment < [control segmentCount]; segment++) {
+        NSString *label = [control labelForSegment:segment] ?: @"";
+        CGFloat width = MAX(minimumWidth, ceil([label sizeWithAttributes:attributes].width) + 12.0);
+        [control setWidth:width forSegment:segment];
+        total += width;
+    }
+    [control setFrameSize:NSMakeSize(total, height)];
+}
 
 /// A round colour swatch with a ring when it's the current colour.
 @interface STTextOptionsSwatch : NSButton
@@ -140,6 +164,37 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
     return image;
 }
 
+/// Lines of text set left, centred or right, as a symbolic icon for the alignment control: words
+/// don't fit a narrow bar in larger theme fonts. Named -symbolic so themes that tint icons tint it.
+static NSImage *STTextAlignmentImage(NSInteger index) {
+    // Made once per alignment: an image name can belong to only one image.
+    static NSImage *images[3];
+    index = MAX(0, MIN(index, 2));
+    if (images[index]) {
+        return images[index];
+    }
+    NSString *names[] = {@"Left", @"Centre", @"Right"};
+    CGFloat lengths[] = {14.0, 9.0, 12.0, 7.0};
+    NSSize size = NSMakeSize(16.0, 14.0);
+    NSImage *image = [[NSImage alloc] initWithSize:size];
+    [image lockFocus];
+    [STSymbolicIconColor() setFill];
+    for (NSInteger line = 0; line < 4; line++) {
+        CGFloat length = lengths[line];
+        CGFloat x = 1.0;
+        if (index == 1) {
+            x = floor((size.width - length) * 0.5);
+        } else if (index == 2) {
+            x = size.width - 1.0 - length;
+        }
+        NSRectFill(NSMakeRect(x, size.height - 2.0 - (3.5 * line) - 2.0, length, 2.0));
+    }
+    [image unlockFocus];
+    [image setName:[NSString stringWithFormat:@"ScreenshotToolTextAlign%@-symbolic", names[index]]];
+    images[index] = image;
+    return image;
+}
+
 /// The font field: an editable combo box that, unlike the bar's other controls, takes the keyboard.
 /// It says so as AppKit asks, which is before the text box gives the keyboard up.
 @interface STFontComboBox : NSComboBox
@@ -159,7 +214,7 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
 @implementation STTextOptionsBar
 
 + (CGFloat)preferredHeight {
-    return STTextOptionsBarHeight;
+    return STTextOptionsBarControlHeight() + (2.0 * STTextOptionsBarMargin);
 }
 
 - (instancetype)initWithFrame:(NSRect)frameRect {
@@ -189,17 +244,27 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
     [self addSubview:control];
 }
 
+/// As wide as its title needs in its font, and at least 28pt: measured from the text rather than the
+/// cell, whose bezel padding (macOS's and WinUI's are wide) would push the bar past a typical window.
+- (void)sizeButtonToTitle:(NSButton *)button {
+    NSDictionary *attributes = @{NSFontAttributeName: [button font] ?: [NSFont systemFontOfSize:0.0]};
+    CGFloat width = ceil([[button title] sizeWithAttributes:attributes].width) + 14.0;
+    [button setFrameSize:NSMakeSize(MAX(28.0, width), NSHeight([button frame]))];
+}
+
 - (NSButton *)smallButtonWithTitle:(NSString *)title action:(SEL)action toolTip:(NSString *)toolTip {
-    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 28.0, STTextOptionsBarControlHeight)];
+    CGFloat height = STTextOptionsBarControlHeight();
+    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 28.0, height)];
     [button setTitle:title];
     [button setBezelStyle:NSRoundedBezelStyle];
-    [button setFont:[NSFont systemFontOfSize:12.0]];
+    [self sizeButtonToTitle:button];
     [button setAction:action];
     [self prepareControl:button toolTip:toolTip];
     return button;
 }
 
 - (void)buildControls {
+    CGFloat controlHeight = STTextOptionsBarControlHeight();
     NSArray<NSColor *> *colors = @[
         [NSColor colorWithDeviceRed:0.90 green:0.11 blue:0.14 alpha:1.0],
         [NSColor colorWithDeviceRed:0.96 green:0.83 blue:0.18 alpha:1.0],
@@ -220,14 +285,13 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
     }
     self.swatches = swatches;
 
-    self.sizePresets = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(0.0, 0.0, 112.0, STTextOptionsBarControlHeight)];
+    self.sizePresets = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(0.0, 0.0, 112.0, controlHeight)];
     NSArray<NSString *> *presetTitles = @[@"S", @"M", @"L", @"XL"];
     [self.sizePresets setSegmentCount:(NSInteger)presetTitles.count];
-    [self.sizePresets setFont:[NSFont systemFontOfSize:11.0]];
     for (NSUInteger idx = 0; idx < presetTitles.count; idx++) {
         [self.sizePresets setLabel:presetTitles[idx] forSegment:(NSInteger)idx];
-        [self.sizePresets setWidth:28.0 forSegment:(NSInteger)idx];
     }
+    STTextOptionsBarSizeSegments(self.sizePresets, 28.0, controlHeight);
     [self.sizePresets setAction:@selector(sizePresetChanged:)];
     [self prepareControl:self.sizePresets toolTip:@"Size relative to the image"];
     self.smallerButton = [self smallButtonWithTitle:@"A-" action:@selector(smallerPressed:) toolTip:STShortcutToolTip(@"Smaller", @"Ctrl+Shift+<", @"⇧⌘<")];
@@ -236,7 +300,7 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
     // Segments rather than a pop-up: one click to choose, and no menu, which flickered while a
     // text box was being edited (#102). Each segment shows its style on an "A"; tool tips name them.
     NSArray<NSString *> *styleNames = @[@"Plain", @"Outline", @"Shadow", @"Box"];
-    self.styleControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(0.0, 0.0, 4.0 * 22.0 + 4.0, STTextOptionsBarControlHeight)];
+    self.styleControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(0.0, 0.0, 4.0 * 22.0 + 4.0, controlHeight)];
     [self.styleControl setSegmentCount:(NSInteger)styleNames.count];
     for (NSUInteger idx = 0; idx < styleNames.count; idx++) {
         [self.styleControl setImage:STTextStyleSampleImage((MarkupTextStyle)idx) forSegment:(NSInteger)idx];
@@ -249,21 +313,18 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
     STInstallSegmentToolTips(self.styleControl);
 
     self.pointerButton = [self smallButtonWithTitle:@"Pointer" action:@selector(pointerPressed:) toolTip:@"Callout pointer — drag its handle to aim it"];
-    [self.pointerButton setFrameSize:NSMakeSize(60.0, STTextOptionsBarControlHeight)];
-    [self.pointerButton setFont:[NSFont systemFontOfSize:11.0]];
     [self.pointerButton setButtonType:NSPushOnPushOffButton];
 
     // An editable combo box: type part of a name to complete it (any installed family), or pick
     // from a scrolling list of recent fonts and those for the user's language (#103). The list is
     // its data source, so thousands of families cost nothing until it opens.
     self.fontFamilies = [[STFontFamilyList alloc] init];
-    STFontComboBox *fontField = [[STFontComboBox alloc] initWithFrame:NSMakeRect(0.0, 0.0, 120.0, STTextOptionsBarControlHeight)];
+    STFontComboBox *fontField = [[STFontComboBox alloc] initWithFrame:NSMakeRect(0.0, 0.0, 120.0, controlHeight)];
     [fontField setUsesDataSource:YES];
     [fontField setDataSource:self];
     [fontField setDelegate:self];
     [fontField setCompletes:YES];
     [fontField setNumberOfVisibleItems:12];
-    [fontField setFont:[NSFont systemFontOfSize:12.0]];
     [fontField setAction:@selector(fontEntered:)];
     __weak STTextOptionsBar *weakSelf = self;
     fontField.willTakeFocus = ^{
@@ -274,19 +335,22 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
     [self.fontField setRefusesFirstResponder:NO];
 
     self.boldButton = [self smallButtonWithTitle:@"B" action:@selector(boldPressed:) toolTip:STShortcutToolTip(@"Bold", @"Ctrl+B", @"⌘B")];
-    [self.boldButton setFont:[NSFont boldSystemFontOfSize:12.0]];
+    // An explicit size: macOS draws a button's boldSystemFontOfSize:0 in regular weight.
+    [self.boldButton setFont:[NSFont boldSystemFontOfSize:[NSFont systemFontSize]]];
+    [self sizeButtonToTitle:self.boldButton];
     [self.boldButton setButtonType:NSPushOnPushOffButton];
     self.italicButton = [self smallButtonWithTitle:@"I" action:@selector(italicPressed:) toolTip:STShortcutToolTip(@"Italic", @"Ctrl+I", @"⌘I")];
     [self.italicButton setButtonType:NSPushOnPushOffButton];
 
-    self.alignmentControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(0.0, 0.0, 126.0, STTextOptionsBarControlHeight)];
+    self.alignmentControl = [[NSSegmentedControl alloc] initWithFrame:NSMakeRect(0.0, 0.0, 126.0, controlHeight)];
     NSArray<NSString *> *alignTitles = @[@"Left", @"Centre", @"Right"];
     [self.alignmentControl setSegmentCount:(NSInteger)alignTitles.count];
-    [self.alignmentControl setFont:[NSFont systemFontOfSize:11.0]];
     for (NSUInteger idx = 0; idx < alignTitles.count; idx++) {
 #if defined(GNUSTEP)
-        [self.alignmentControl setLabel:alignTitles[idx] forSegment:(NSInteger)idx];
-        [self.alignmentControl setWidth:42.0 forSegment:(NSInteger)idx];
+        [self.alignmentControl setImage:STTextAlignmentImage((NSInteger)idx) forSegment:(NSInteger)idx];
+        [self.alignmentControl setLabel:@"" forSegment:(NSInteger)idx];
+        [self.alignmentControl setWidth:28.0 forSegment:(NSInteger)idx];
+        [[self.alignmentControl cell] setToolTip:[NSString stringWithFormat:@"Align %@", alignTitles[idx]] forSegment:(NSInteger)idx];
 #else
         // The system's alignment symbols, as in macOS's own text bars; the words don't fit 42pt
         // in macOS's system font.
@@ -302,11 +366,16 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
         [self.alignmentControl setToolTip:[NSString stringWithFormat:@"Align %@", alignTitles[idx]] forSegment:(NSInteger)idx];
 #endif
     }
-#if !defined(GNUSTEP)
+#if defined(GNUSTEP)
+    [self.alignmentControl setFrameSize:NSMakeSize(3.0 * 28.0, controlHeight)];
+#else
     [self.alignmentControl sizeToFit];
 #endif
     [self.alignmentControl setAction:@selector(alignmentChanged:)];
     [self prepareControl:self.alignmentControl toolTip:@"Alignment"];
+#if defined(GNUSTEP)
+    STInstallSegmentToolTips(self.alignmentControl);
+#endif
 
     self.groups = @[
         self.swatches,
@@ -344,7 +413,7 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
         for (NSView *view in group) {
             [view setHidden:!fits];
             if (fits) {
-                CGFloat y = floor((STTextOptionsBarHeight - NSHeight(view.frame)) * 0.5);
+                CGFloat y = floor((NSHeight(self.bounds) - NSHeight(view.frame)) * 0.5);
                 [view setFrameOrigin:NSMakePoint(x, y)];
                 x += NSWidth(view.frame) + 4.0;
             }
