@@ -4,6 +4,7 @@
 #import "AppDelegate.h"
 #import "STFloatingPopover.h"
 #import "STThemeUtilities.h"
+#import "STFontFamilyList.h"
 #include <math.h>
 
 #define STTextPopoverMinFontSize 8.0f
@@ -689,6 +690,12 @@
     if (index != NSNotFound && (NSUInteger)index < self.allFontFamilies.count) {
         return self.allFontFamilies[(NSUInteger)index];
     }
+    // "System Font" is shown for the system font's hidden family (".AppleSystemUIFont" on macOS).
+    NSString *systemFamily = [NSFont systemFontOfSize:0.0].familyName;
+    if (systemFamily.length > 0 &&
+        [input caseInsensitiveCompare:[STFontFamilyList displayNameForFamily:systemFamily]] == NSOrderedSame) {
+        return systemFamily;
+    }
     for (NSString *candidate in self.allFontFamilies) {
         if ([candidate rangeOfString:input options:NSCaseInsensitiveSearch].location != NSNotFound) {
             return candidate;
@@ -698,7 +705,8 @@
 }
 
 - (void)setFontComboBoxStringValue:(NSString *)value allowDuringEditing:(BOOL)allowEditing {
-    NSString *target = value ?: @"";
+    // A hidden family (the system font's on macOS) shows as "System Font", as in the text bar.
+    NSString *target = [STFontFamilyList displayNameForFamily:value ?: @""];
     if (!allowEditing && [self.fontComboBox currentEditor]) {
         self.pendingFontComboStringValue = target;
         return;
