@@ -69,6 +69,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	TooltipsSuppressedProbe_test.m \
 	UndoRedoToolbarProbe_test.m \
 	ToolSegmentToolTipsProbe_test.m \
+	SplitButtonProbe_test.m \
 	WaylandClipboardMirrorProbe_test.m \
 	WaylandPasteCheckProbe_test.m \
 	ZoomToolbarWidthProbe_test.m \
@@ -94,7 +95,8 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STTextOptionsBar.m \
 	../Source/STFontFamilyList.m \
 	../Source/STThemeUtilities.m \
-	../Source/STSegmentToolTips.m
+	../Source/STSegmentToolTips.m \
+	../Source/STSplitButton.m
 
 
 # We need to tell the compiler where to find the source headers

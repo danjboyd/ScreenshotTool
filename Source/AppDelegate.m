@@ -10,6 +10,7 @@
 #import "PreferencesWindowController.h"
 #import "STThemeUtilities.h"
 #import "STSegmentToolTips.h"
+#import "STSplitButton.h"
 #import "STHudView.h"
 #import "STTextOptionsBar.h"
 #import <Foundation/NSTask.h>
@@ -1354,16 +1355,27 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     if (!self.openRecentMenu) {
         return;
     }
+    [self fillRecentDocumentsMenu:self.openRecentMenu];
+}
 
+/// File > Open Recent's items; the empty state's Open button shows a menu of its own with them.
+- (NSMenu *)newRecentDocumentsMenu {
+    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Open Recent"];
+    [menu setAutoenablesItems:NO];
+    [self fillRecentDocumentsMenu:menu];
+    return menu;
+}
+
+- (void)fillRecentDocumentsMenu:(NSMenu *)menu {
     [self ensureRecentDocumentPathsLoaded];
-    [self.openRecentMenu removeAllItems];
+    [menu removeAllItems];
 
     if (self.recentDocumentPaths.count == 0) {
         NSMenuItem *emptyItem = [[NSMenuItem alloc] initWithTitle:STRecentDocumentsEmptyTitle
                                                            action:NULL
                                                     keyEquivalent:@""];
         [emptyItem setEnabled:NO];
-        [self.openRecentMenu addItem:emptyItem];
+        [menu addItem:emptyItem];
         return;
     }
 
@@ -1387,16 +1399,16 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
                                                keyEquivalent:@""];
         [item setTarget:self];
         [item setRepresentedObject:path];
-        [self.openRecentMenu addItem:item];
+        [menu addItem:item];
     }
 
-    [self.openRecentMenu addItem:[NSMenuItem separatorItem]];
+    [menu addItem:[NSMenuItem separatorItem]];
 
     NSMenuItem *clearItem = [[NSMenuItem alloc] initWithTitle:STRecentDocumentsClearTitle
                                                        action:@selector(clearRecentDocuments:)
                                                 keyEquivalent:@""];
     [clearItem setTarget:self];
-    [self.openRecentMenu addItem:clearItem];
+    [menu addItem:clearItem];
 }
 
 - (void)addRecentDocumentURL:(NSURL *)url {
@@ -5077,7 +5089,22 @@ static id STInfoValueForKey(NSString *key) {
     [detail setTag:3];
     [view addSubview:detail];
 
+#if defined(GNUSTEP)
+    // Open… with a menu of recent files at its right, as libadwaita's split button.
+    STSplitButton *open = [[STSplitButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 148.0, 32.0)];
+    [open setButtonType:NSMomentaryPushInButton];
+    [open setBezelStyle:NSRoundedBezelStyle];
+    [open setTitle:@"Open…"];
+    [open setTarget:self];
+    [open setAction:@selector(openDocument:)];
+    [open setToolTip:@"Open a screenshot; the arrow lists recent files"];
+    __weak typeof(self) weakSelf = self;
+    open.menuProvider = ^NSMenu *{
+        return [weakSelf newRecentDocumentsMenu];
+    };
+#else
     NSButton *open = [self emptyStateButton:@"Open…" action:@selector(openDocument:)];
+#endif
     [open setTag:4];
     [open setKeyEquivalent:@"\r"];
     [view addSubview:open];
