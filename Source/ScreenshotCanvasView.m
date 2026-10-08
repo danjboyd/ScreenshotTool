@@ -2742,8 +2742,21 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [self.activeTextView setFont:[self scaledFontForEditingWithBaseFont:editingFont]];
     NSColor *editingColor = [entry glyphColor];
     [self.activeTextView setAlignment:entry.alignment];
-    [self.activeTextView setTextColor:editingColor];
+    [self.activeTextView setTextColor:[self editingTextViewColorForEntry:entry]];
     [self.activeTextView setInsertionPointColor:editingColor];
+}
+
+/// The editing text view's glyph colour. On GNUstep the canvas draws the glyphs with their outline,
+/// shadow or background in one pass and the text view's are clear, leaving it the caret and the
+/// selection: drawn in two layers, the glyphs landed a fraction of a pixel off the outline from one
+/// keystroke to the next, and a thin outline flickered on and off while typing.
+- (NSColor *)editingTextViewColorForEntry:(MarkupText *)entry {
+#if ST_ENABLE_GNUSTEP_WORKAROUNDS
+    (void)entry;
+    return [NSColor clearColor];
+#else
+    return [entry glyphColor];
+#endif
 }
 
 - (void)beginTextEntryWithImageRect:(NSRect)imageRect existingText:(MarkupText * _Nullable)existingText {
@@ -2811,7 +2824,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 #endif
     // No padding, so text sits at the box origin as it will once committed and exported.
     [[textView textContainer] setLineFragmentPadding:0.0];
-    [textView setTextColor:[entry glyphColor]];
+    [textView setTextColor:[self editingTextViewColorForEntry:entry]];
     [textView setFont:[self scaledFontForEditingWithBaseFont:entry.font]];
     [textView setInsertionPointColor:entry.color];
     [textView setHorizontallyResizable:NO];
@@ -3204,7 +3217,7 @@ static NSError *STProjectError(NSString *message) {
         [self.currentTextEntry drawInCanvasAtScale:self.zoomScale];
     }
     if (self.currentTextEntry && self.activeTextView) {
-        [self.currentTextEntry drawAtScale:self.zoomScale unflippedHeight:0.0 decorationsOnly:YES];
+        [self.currentTextEntry drawAtScale:self.zoomScale unflippedHeight:0.0 decorationsOnly:!ST_ENABLE_GNUSTEP_WORKAROUNDS];
     }
 
     if (self.activeTool == ScreenshotCanvasToolText || self.activeTextView) {
