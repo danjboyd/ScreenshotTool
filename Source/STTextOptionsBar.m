@@ -244,13 +244,20 @@ static NSImage *STTextAlignmentImage(NSInteger index) {
     [self addSubview:control];
 }
 
+/// As wide as its title needs in its font, and at least 28pt: measured from the text rather than the
+/// cell, whose bezel padding (macOS's and WinUI's are wide) would push the bar past a typical window.
+- (void)sizeButtonToTitle:(NSButton *)button {
+    NSDictionary *attributes = @{NSFontAttributeName: [button font] ?: [NSFont systemFontOfSize:0.0]};
+    CGFloat width = ceil([[button title] sizeWithAttributes:attributes].width) + 14.0;
+    [button setFrameSize:NSMakeSize(MAX(28.0, width), NSHeight([button frame]))];
+}
+
 - (NSButton *)smallButtonWithTitle:(NSString *)title action:(SEL)action toolTip:(NSString *)toolTip {
     CGFloat height = STTextOptionsBarControlHeight();
     NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 28.0, height)];
     [button setTitle:title];
     [button setBezelStyle:NSRoundedBezelStyle];
-    // As wide as the theme's font needs.
-    [button setFrameSize:NSMakeSize(MAX(28.0, ceil([[button cell] cellSize].width)), height)];
+    [self sizeButtonToTitle:button];
     [button setAction:action];
     [self prepareControl:button toolTip:toolTip];
     return button;
@@ -328,7 +335,9 @@ static NSImage *STTextAlignmentImage(NSInteger index) {
     [self.fontField setRefusesFirstResponder:NO];
 
     self.boldButton = [self smallButtonWithTitle:@"B" action:@selector(boldPressed:) toolTip:STShortcutToolTip(@"Bold", @"Ctrl+B", @"⌘B")];
-    [self.boldButton setFont:[NSFont boldSystemFontOfSize:0.0]];
+    // An explicit size: macOS draws a button's boldSystemFontOfSize:0 in regular weight.
+    [self.boldButton setFont:[NSFont boldSystemFontOfSize:[NSFont systemFontSize]]];
+    [self sizeButtonToTitle:self.boldButton];
     [self.boldButton setButtonType:NSPushOnPushOffButton];
     self.italicButton = [self smallButtonWithTitle:@"I" action:@selector(italicPressed:) toolTip:STShortcutToolTip(@"Italic", @"Ctrl+I", @"⌘I")];
     [self.italicButton setButtonType:NSPushOnPushOffButton];

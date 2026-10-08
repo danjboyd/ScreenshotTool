@@ -130,7 +130,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [content addSubview:self.drawingHeaderLabel];
 
     self.penLabel = [self fieldLabelWithString:@"Pen" frame:NSZeroRect];
-    [self.penLabel setFont:[NSFont boldSystemFontOfSize:0.0f]];
+    [self.penLabel setFont:[NSFont boldSystemFontOfSize:[NSFont systemFontSize]]];
     [content addSubview:self.penLabel];
 
     self.penWidthSlider = [[NSSlider alloc] initWithFrame:NSZeroRect];
@@ -171,7 +171,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [content addSubview:self.penColorWell];
 
     self.highlighterLabel = [self fieldLabelWithString:@"Highlighter" frame:NSZeroRect];
-    [self.highlighterLabel setFont:[NSFont boldSystemFontOfSize:0.0f]];
+    [self.highlighterLabel setFont:[NSFont boldSystemFontOfSize:[NSFont systemFontSize]]];
     [content addSubview:self.highlighterLabel];
 
     self.highlighterWidthSlider = [[NSSlider alloc] initWithFrame:NSZeroRect];
@@ -292,7 +292,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [label setBordered:NO];
     [label setDrawsBackground:NO];
     [label setSelectable:NO];
-    [label setFont:[NSFont boldSystemFontOfSize:0.0f]];
+    [label setFont:[NSFont boldSystemFontOfSize:[NSFont systemFontSize]]];
     [label setTextColor:STThemeSectionHeaderColor()];
     [label setStringValue:string ?: @""];
     return label;
