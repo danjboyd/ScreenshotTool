@@ -71,6 +71,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	UndoRedoToolbarProbe_test.m \
 	ToolSegmentToolTipsProbe_test.m \
 	SplitButtonProbe_test.m \
+	SymbolicToolbarIconsProbe_test.m \
 	WaylandClipboardMirrorProbe_test.m \
 	WaylandPasteCheckProbe_test.m \
 	ZoomToolbarWidthProbe_test.m \
