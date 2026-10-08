@@ -8,3 +8,8 @@ Categories=Graphics;
 Keywords=screenshot;annotation;markup;image;
 StartupWMClass=ScreenshotTool
 Terminal=false
+Actions=take-screenshot;
+
+[Desktop Action take-screenshot]
+Name=Take Screenshot
+Exec=screenshottool --capture

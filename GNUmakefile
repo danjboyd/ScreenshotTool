@@ -11,9 +11,14 @@ else
 ifneq ($(filter CLANG64,$(MSYSTEM)),)
 FONTCONFIG_CFLAGS := -I/clang64/include/freetype2
 FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
+# Take Screenshot opens the Snipping Tool (ShellExecuteW) and watches the clipboard.
+CAPTURE_LDFLAGS := -lshell32 -luser32
 else
 FONTCONFIG_CFLAGS := -I/usr/include/freetype2
 FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
+# Take Screenshot asks the desktop portal over D-Bus. GNUstep's backend already loads GIO.
+CAPTURE_CFLAGS := $(shell pkg-config --cflags gio-2.0)
+CAPTURE_LDFLAGS := $(shell pkg-config --libs gio-2.0)
 endif
 endif
 
@@ -137,19 +142,22 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/STFontFamilyList.m \
 	Source/STThemeUtilities.m \
 	Source/STSegmentToolTips.m \
-	Source/STSplitButton.m
+	Source/STSplitButton.m \
+	Source/STScreenshotCapture.m
 
 CLANG_WRAPPER := $(shell pwd)/Tools/clang-wrapper.sh
 CC = $(CLANG_WRAPPER)
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
 ADDITIONAL_OBJCFLAGS += -DHAVE_MODE_T
 ADDITIONAL_OBJCFLAGS += $(FONTCONFIG_CFLAGS)
+ADDITIONAL_OBJCFLAGS += $(CAPTURE_CFLAGS)
 ADDITIONAL_INCLUDE_DIRS += -I$(UPDATER_CORE_DIR)/Headers
 ADDITIONAL_INCLUDE_DIRS += -I$(UPDATER_UI_DIR)/Headers
 ADDITIONAL_LIB_DIRS += -L$(UPDATER_CORE_DIR)
 ADDITIONAL_LIB_DIRS += -L$(UPDATER_UI_DIR)
 ADDITIONAL_GUI_LIBS += -lGPUpdaterUI -lGPUpdaterCore
 ADDITIONAL_LDFLAGS += $(FONTCONFIG_LDFLAGS)
+ADDITIONAL_LDFLAGS += $(CAPTURE_LDFLAGS)
 ADDITIONAL_LDFLAGS += -lstdc++
 ADDITIONAL_LDFLAGS += -lobjc
 

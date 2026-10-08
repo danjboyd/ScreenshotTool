@@ -11,6 +11,7 @@
 #import "STThemeUtilities.h"
 #import "STSegmentToolTips.h"
 #import "STSplitButton.h"
+#import "STScreenshotCapture.h"
 #import "STHudView.h"
 #import "STTextOptionsBar.h"
 #import <Foundation/NSTask.h>
@@ -209,6 +210,8 @@ static NSString * const STGnomeThemeHeaderBarToolbarKey = @"GnomeThemeHeaderBarT
 static NSString * const STDefaultsClearedHeaderBarToolbarKey = @"ScreenshotToolClearedHeaderBarToolbar";
 
 static NSString * const STProjectFileExtension = @"screenshottool";
+/// `ScreenshotTool --capture` takes a screenshot instead of opening an image.
+static NSString * const STCaptureLaunchArgument = @"--capture";
 
 /// `stem`-symbolic: GNOME's name for a single-colour icon. Themes that tint template images
 /// (Adwaita) recognise it by the name, since GNUstep 0.32 has no -[NSImage setTemplate:] (#57).
@@ -1237,6 +1240,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 /// Whether the clipboard held an image when last checked, and when (#76).
 @property (nonatomic, assign) BOOL clipboardHadImage;
 @property (nonatomic, assign) BOOL validatingUndoToolbarItems;
+/// The window is out of the way of the desktop's screenshot tool.
+@property (nonatomic, assign) BOOL hiddenForScreenshot;
 @property (nonatomic, assign) NSTimeInterval clipboardCheckedAt;
 - (NSData *)clipboardPNGDataForPasteAsNewImage;
 - (BOOL)clipboardHasImage;
@@ -1912,6 +1917,19 @@ static AppDelegate *STFrontDocument(void) {
 /// The paths among the launch arguments: GNUstep reads `-Key value` pairs (e.g. `-GSTheme Adwaita`,
 /// `-GSBackend libgnustep-back`) into the defaults, so they and their values aren't files (#68).
 /// Everything after a `--` is a path.
+/// Whether the command line asks for a screenshot (--capture) rather than an image to open.
+- (BOOL)launchArgumentsRequestCapture:(NSArray<NSString *> *)arguments {
+    for (NSUInteger idx = 1; idx < arguments.count; idx++) {
+        if ([arguments[idx] isEqualToString:@"--"]) {
+            return NO;
+        }
+        if ([arguments[idx] isEqualToString:STCaptureLaunchArgument]) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
 - (NSArray<NSString *> *)imagePathsFromLaunchArguments:(NSArray<NSString *> *)arguments {
     NSMutableArray<NSString *> *paths = [[NSMutableArray alloc] init];
     BOOL onlyPaths = NO;
@@ -1922,6 +1940,9 @@ static AppDelegate *STFrontDocument(void) {
         }
         if (!onlyPaths && [argument isEqualToString:@"--"]) {
             onlyPaths = YES;
+            continue;
+        }
+        if (!onlyPaths && [argument isEqualToString:STCaptureLaunchArgument]) {
             continue;
         }
         if (!onlyPaths && [argument hasPrefix:@"-"]) {
@@ -1976,6 +1997,11 @@ static AppDelegate *STFrontDocument(void) {
         NSArray<NSString *> *arguments = [[NSProcessInfo processInfo] arguments];
         ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: argc=%lu",
                                  (unsigned long)arguments.count]);
+        if ([self launchArgumentsRequestCapture:arguments]) {
+            // `ScreenshotTool --capture`, for a keyboard shortcut of the desktop's.
+            [self performSelector:@selector(takeScreenshot:) withObject:nil afterDelay:0.0];
+            return;
+        }
         for (NSString *candidate in [self imagePathsFromLaunchArguments:arguments]) {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"applicationDidFinishLaunching: CLI path %@", candidate]);
             if ([self openImageAtURL:[NSURL fileURLWithPath:candidate]]) {
@@ -2072,6 +2098,9 @@ static AppDelegate *STFrontDocument(void) {
     }
     if (action == @selector(pasteAsNewImage:)) {
         return [self clipboardHasImage];
+    }
+    if (action == @selector(takeScreenshot:)) {
+        return [STScreenshotCapture isAvailable] && ![STScreenshotCapture isCapturing];
     }
     if (action == @selector(undo:)) {
         NSUndoManager *undo = [self activeUndoManager];
@@ -2223,6 +2252,17 @@ static id STInfoValueForKey(NSString *key) {
     [self rebuildOpenRecentMenu];
     [fileMenu addItem:openRecentItem];
     [fileMenu setSubmenu:self.openRecentMenu forItem:openRecentItem];
+
+#if defined(GNUSTEP)
+    // With the desktop's own tool: GNOME's screenshot UI through the portal, the Snipping Tool on
+    // Windows. macOS captures with ScreenCaptureKit (macos.md).
+    NSMenuItem *takeScreenshotItem = [[NSMenuItem alloc] initWithTitle:@"Take Screenshot…"
+                                                                action:@selector(takeScreenshot:)
+                                                         keyEquivalent:@"T"];
+    [takeScreenshotItem setTarget:self];
+    [takeScreenshotItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
+    [fileMenu addItem:takeScreenshotItem];
+#endif
 
     NSMenuItem *saveAsItem = [[NSMenuItem alloc] initWithTitle:@"Save As…"
                                                         action:@selector(saveDocumentAs:)
@@ -5934,6 +5974,66 @@ static id STInfoValueForKey(NSString *key) {
                                  exception.reason ?: @"<no reason>"]);
     }
     return NO;
+}
+
+#pragma mark - Take Screenshot
+
+/// Takes a screenshot with the desktop's own tool and opens it to annotate: in this window when it
+/// has no image, otherwise in a new one, as Paste as New Image does.
+- (void)takeScreenshot:(id)sender {
+    (void)sender;
+    if ([STScreenshotCapture isCapturing]) {
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    STScreenshotCaptureCompletion completion = ^(STScreenshotCaptureResult result, NSURL *url, NSString *failure) {
+        [weakSelf finishScreenshotWithResult:result url:url failure:failure];
+    };
+#if defined(GNUSTEP) && !defined(_WIN32)
+    // GNOME's tool freezes the screen as it opens: this window would be in the way. It comes back
+    // when the tool answers, cancelled or not. (The Snipping Tool's cancel can't be seen.)
+    if (self.window.isVisible) {
+        self.hiddenForScreenshot = YES;
+        [self.window orderOut:nil];
+        [self performSelector:@selector(startScreenshotCapture:) withObject:completion afterDelay:0.3];
+        return;
+    }
+#endif
+    [self startScreenshotCapture:completion];
+}
+
+- (void)startScreenshotCapture:(STScreenshotCaptureCompletion)completion {
+    [STScreenshotCapture captureForWindow:(self.hiddenForScreenshot ? nil : self.window) completion:completion];
+}
+
+- (void)finishScreenshotWithResult:(STScreenshotCaptureResult)result url:(NSURL *)url failure:(NSString *)failure {
+    if (self.hiddenForScreenshot) {
+        self.hiddenForScreenshot = NO;
+        [self.window makeKeyAndOrderFront:nil];
+    }
+    if (result == STScreenshotCaptureResultClipboard) {
+        NSData *pngData = [self clipboardPNGDataForPasteAsNewImage];
+        url = pngData.length > 0 ? [self temporaryClipboardImageURLForPNGData:pngData] : nil;
+        if (!url) {
+            [self showTransientFeedbackMessage:@"The snip couldn't be read from the clipboard" duration:2.5];
+            return;
+        }
+    } else if (result != STScreenshotCaptureResultFile || !url) {
+        if (failure.length > 0) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Take Screenshot failed: %@", failure]);
+            NSAlert *alert = [[NSAlert alloc] init];
+            alert.messageText = @"Unable to Take Screenshot";
+            alert.informativeText = failure;
+            [alert addButtonWithTitle:@"OK"];
+            [alert runModal];
+        }
+        return;
+    }
+    if (![self.canvasView hasImage]) {
+        [self openImageAtURL:url];
+    } else if (![self launchNewWindowForImageAtURL:url]) {
+        [self showTransientFeedbackMessage:@"Unable to open the screenshot in a new window" duration:2.5];
+    }
 }
 
 - (void)pasteAsNewImage:(id)sender {

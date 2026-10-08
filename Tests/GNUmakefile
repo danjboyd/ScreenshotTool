@@ -12,6 +12,9 @@ ifneq ($(filter CLANG64,$(MSYSTEM)),)
 FONTCONFIG_CFLAGS := -I/clang64/include/freetype2
 else
 FONTCONFIG_CFLAGS := -I/usr/include/freetype2
+# Take Screenshot asks the desktop portal over D-Bus (STScreenshotCapture).
+CAPTURE_CFLAGS := $(shell pkg-config --cflags gio-2.0)
+CAPTURE_LDFLAGS := $(shell pkg-config --libs gio-2.0)
 endif
 endif
 
@@ -72,6 +75,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	ToolSegmentToolTipsProbe_test.m \
 	SplitButtonProbe_test.m \
 	SymbolicToolbarIconsProbe_test.m \
+	TakeScreenshotProbe_test.m \
 	WaylandClipboardMirrorProbe_test.m \
 	WaylandPasteCheckProbe_test.m \
 	ZoomToolbarWidthProbe_test.m \
@@ -98,13 +102,15 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STFontFamilyList.m \
 	../Source/STThemeUtilities.m \
 	../Source/STSegmentToolTips.m \
-	../Source/STSplitButton.m
+	../Source/STSplitButton.m \
+	../Source/STScreenshotCapture.m
 
 
 # We need to tell the compiler where to find the source headers
 ADDITIONAL_OBJCFLAGS += -I../Source
 ADDITIONAL_OBJCFLAGS += -I$(XCTEST_ROOT)
 ADDITIONAL_OBJCFLAGS += $(FONTCONFIG_CFLAGS)
+ADDITIONAL_OBJCFLAGS += $(CAPTURE_CFLAGS)
 ADDITIONAL_OBJCFLAGS += -fobjc-arc
 ADDITIONAL_OBJCFLAGS += -DHAVE_MODE_T
 # AppDelegate links the vendored updater; the top-level build compiles these static libs first.
@@ -119,12 +125,13 @@ ifneq ($(filter CLANG64,$(MSYSTEM)),)
 # gnustep-make links a Windows bundle's LDFLAGS inside -Wl,--whole-archive, which pulls in every
 # member of these import libraries (and their duplicate __NULL_IMPORT_DESCRIPTORs); as bundle
 # libraries they come after -Wl,--no-whole-archive.
-ScreenshotToolTests_BUNDLE_LIBS += -lstdc++ -lobjc -lfontconfig -lfreetype -ldispatch
+ScreenshotToolTests_BUNDLE_LIBS += -lstdc++ -lobjc -lfontconfig -lfreetype -ldispatch -lshell32 -luser32
 ADDITIONAL_LDFLAGS += -nostartfiles /clang64/lib/dllcrt2.o -Wl,--entry,DllMainCRTStartup
 else
 ADDITIONAL_LDFLAGS += -lstdc++
 ADDITIONAL_LDFLAGS += -lobjc
 ADDITIONAL_LDFLAGS += -lfontconfig -lfreetype -ldispatch
+ADDITIONAL_LDFLAGS += $(CAPTURE_LDFLAGS)
 endif
 
 # Include the bundle makefile
