@@ -151,7 +151,8 @@ jobs:
           cp dist/linux/* release-assets/
           # No update feed for macOS yet: the packaged updater is GNUstep's (Sparkle to come).
           cp dist/macos/*.dmg release-assets/
-          sha256sum release-assets/* > release-assets/SHA256SUMS
+          # Bare file names, so `sha256sum -c SHA256SUMS` works next to the downloads.
+          (cd release-assets && sha256sum -- * > ../SHA256SUMS) && mv SHA256SUMS release-assets/
           # A Pages deploy replaces the whole site: carry the feeds already published forward.
           for platform in windows linux; do
             for channel in stable prerelease; do
