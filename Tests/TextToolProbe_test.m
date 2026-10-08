@@ -204,6 +204,24 @@ static void STSpinRunLoopUntil(BOOL (^done)(void)) {
     XCTAssertEqualObjects(canvas.texts.firstObject.text, @"Keep me");
 }
 
+#if !defined(GNUSTEP)
+/// AppKit asks the Share toolbar item for its items whenever it validates the toolbar, after each
+/// keystroke included; answering mustn't flatten the image, which ends the label being typed.
+- (void)testSharingItemsDontEndEditing {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = [self canvasWithTextTool];
+    [self clickCanvas:canvas atViewPoint:NSMakePoint(100.0, 100.0)];
+    [canvas.activeTextView insertText:@"Typing"];
+
+    id<NSSharingServicePickerToolbarItemDelegate> sharing = (id<NSSharingServicePickerToolbarItemDelegate>)_appDelegate;
+    NSSharingServicePickerToolbarItem *item = [[NSSharingServicePickerToolbarItem alloc] initWithItemIdentifier:@"share"];
+    NSArray *items = [sharing itemsForSharingServicePickerToolbarItem:item];
+    XCTAssertEqual(items.count, (NSUInteger)1, @"there's an image to share");
+    XCTAssertNotNil(canvas.activeTextView, @"asking what Share would share keeps the label open");
+    XCTAssertEqual(canvas.texts.count, (NSUInteger)0, @"and doesn't commit it");
+}
+#endif
+
 - (void)testEscapeKeyEventEndsEditing {
     XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTextTool];

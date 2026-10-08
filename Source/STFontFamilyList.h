@@ -46,6 +46,10 @@ extern const NSUInteger STRecentFontFamiliesLimit;
 /// The user's language as fontconfig names it, e.g. "en" for en_US.
 + (NSString *)userLanguage;
 
+/// The name to show for a family: "System Font" for the system's own, whose family name on macOS
+/// (.AppleSystemUIFont) is private.
++ (NSString *)displayNameForFamily:(NSString *)family;
+
 @end
 
 NS_ASSUME_NONNULL_END

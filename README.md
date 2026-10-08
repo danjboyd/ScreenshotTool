@@ -32,6 +32,22 @@ Current build targets:
 
 ## Screenshots
 
+### macOS
+
+The native macOS app, adding a text annotation:
+
+![Adding text on macOS](docs/images/macos-text.png)
+
+In dark mode, a tool's width and colour, from its toolbar button:
+
+![The highlighter's settings popover on macOS in dark mode](docs/images/macos-dark-popover.png)
+
+To regenerate these, run `Tools/screenshots_macos.sh` after `scripts/build_cocoa.sh`; it saves
+`macos-text.png` and `macos-dark-popover.png` in `build/screenshots-macos/`. The terminal needs
+the Screen Recording permission.
+
+### Linux and BSD (GNUstep)
+
 The app is built from standard controls, and the GNUstep theme decides how it looks. The same
 window, adding a text annotation:
 

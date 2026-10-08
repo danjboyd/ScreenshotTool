@@ -282,9 +282,27 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
     [self.alignmentControl setSegmentCount:(NSInteger)alignTitles.count];
     [self.alignmentControl setFont:[NSFont systemFontOfSize:11.0]];
     for (NSUInteger idx = 0; idx < alignTitles.count; idx++) {
+#if defined(GNUSTEP)
         [self.alignmentControl setLabel:alignTitles[idx] forSegment:(NSInteger)idx];
         [self.alignmentControl setWidth:42.0 forSegment:(NSInteger)idx];
+#else
+        // The system's alignment symbols, as in macOS's own text bars; the words don't fit 42pt
+        // in macOS's system font.
+        NSArray<NSString *> *symbols = @[@"text.alignleft", @"text.aligncenter", @"text.alignright"];
+        NSImage *image = [NSImage imageWithSystemSymbolName:symbols[idx] accessibilityDescription:alignTitles[idx]];
+        if (image) {
+            [self.alignmentControl setImage:image forSegment:(NSInteger)idx];
+            [self.alignmentControl setWidth:32.0 forSegment:(NSInteger)idx];
+        } else {
+            [self.alignmentControl setLabel:alignTitles[idx] forSegment:(NSInteger)idx];
+            [self.alignmentControl setWidth:42.0 forSegment:(NSInteger)idx];
+        }
+        [self.alignmentControl setToolTip:[NSString stringWithFormat:@"Align %@", alignTitles[idx]] forSegment:(NSInteger)idx];
+#endif
     }
+#if !defined(GNUSTEP)
+    [self.alignmentControl sizeToFit];
+#endif
     [self.alignmentControl setAction:@selector(alignmentChanged:)];
     [self prepareControl:self.alignmentControl toolTip:@"Alignment"];
 
@@ -390,7 +408,7 @@ static BOOL STTextOptionsColorsMatch(NSColor *a, NSColor *b) {
         self.shownFontFamily = family;
         // Not while a name is being typed there.
         if (![self.fontField currentEditor]) {
-            [self.fontField setStringValue:family];
+            [self.fontField setStringValue:[STFontFamilyList displayNameForFamily:family]];
         }
     }
 
@@ -478,7 +496,7 @@ static BOOL STTextOptionsColorsMatch(NSColor *a, NSColor *b) {
     if ([self.fontField currentEditor]) {
         [[self.fontField window] endEditingFor:self.fontField];
     }
-    [self.fontField setStringValue:self.shownFontFamily ?: @""];
+    [self.fontField setStringValue:[STFontFamilyList displayNameForFamily:self.shownFontFamily ?: @""]];
 }
 
 /// Return in the field: the typed name, or the family it completes to.

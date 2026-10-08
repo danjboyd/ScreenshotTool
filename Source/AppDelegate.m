@@ -172,6 +172,19 @@ static NSString *STDefaultSaveDirectoryPath(void) {
 /// everything ImageMagick reads (text, HTML, video…), which made Open's file type menu hundreds
 /// of entries long.
 #if !defined(GNUSTEP)
+/// A mask that rounds a view's corners at any size (a stretchable image).
+static NSImage *STRoundedMaskImage(CGFloat radius) {
+    CGFloat edge = radius * 2.0 + 1.0;
+    NSImage *mask = [NSImage imageWithSize:NSMakeSize(edge, edge) flipped:NO drawingHandler:^BOOL(NSRect rect) {
+        [[NSColor blackColor] setFill];
+        [[NSBezierPath bezierPathWithRoundedRect:rect xRadius:radius yRadius:radius] fill];
+        return YES;
+    }];
+    mask.capInsets = NSEdgeInsetsMake(radius, radius, radius, radius);
+    mask.resizingMode = NSImageResizingModeStretch;
+    return mask;
+}
+
 /// Where dragged-out and shared images are written; cleared at launch.
 static NSURL *STExportDirectoryURL(void) {
     return [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
@@ -1472,10 +1485,45 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     return item;
 }
 
+/// AppKit asks for these whenever it validates the toolbar (after each undoable change, typing
+/// included), not only when Share is clicked. So hand it a provider that exports the image only
+/// when a service asks for it: exporting flattens the image, which would end a label being edited.
 - (NSArray *)itemsForSharingServicePickerToolbarItem:(NSSharingServicePickerToolbarItem *)pickerToolbarItem {
     (void)pickerToolbarItem;
-    NSURL *url = [self exportAnnotatedImageToTemporaryFile];
-    return url ? @[url] : @[];
+    if (![self.canvasView hasImage]) {
+        return @[];
+    }
+    NSItemProvider *provider = [[NSItemProvider alloc] init];
+    NSString *name = [[(self.currentImageURL ?: self.currentProjectURL) lastPathComponent] stringByDeletingPathExtension];
+    provider.suggestedName = name.length > 0 ? name : @"Screenshot";
+    __weak AppDelegate *weakSelf = self;
+    [provider registerFileRepresentationForTypeIdentifier:@"public.png"
+                                              fileOptions:0
+                                               visibility:NSItemProviderRepresentationVisibilityAll
+                                              loadHandler:^NSProgress *(void (^completionHandler)(NSURL *, BOOL, NSError *)) {
+        __block NSURL *url = nil;
+        void (^export)(void) = ^{
+            url = [weakSelf exportAnnotatedImageToTemporaryFile];
+        };
+        if ([NSThread isMainThread]) {
+            export();
+        } else {
+            dispatch_sync(dispatch_get_main_queue(), export);
+        }
+        completionHandler(url, NO, url ? nil : [NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil]);
+        return nil;
+    }];
+    return @[provider];
+}
+
+/// The Share menu has no key equivalents. Saying so keeps AppKit from calling -menuNeedsUpdate:
+/// to look for one on every key command, which would export (and end a label being edited).
+- (BOOL)menuHasKeyEquivalent:(NSMenu *)menu forEvent:(NSEvent *)event target:(id *)target action:(SEL *)action {
+    (void)menu;
+    (void)event;
+    (void)target;
+    (void)action;
+    return NO;
 }
 
 /// File > Share lists the services for the annotated image each time it opens.
@@ -4806,10 +4854,20 @@ static id STInfoValueForKey(NSString *key) {
     [window setReleasedWhenClosed:NO];
     [window setCollectionBehavior:NSWindowCollectionBehaviorTransient];
 
+    // The system's translucent material, rounded, under a clear label: like macOS's own notices,
+    // in light and dark mode.
+    NSVisualEffectView *material = [[NSVisualEffectView alloc] initWithFrame:rect];
+    material.material = NSVisualEffectMaterialPopover;
+    material.blendingMode = NSVisualEffectBlendingModeBehindWindow;
+    material.state = NSVisualEffectStateActive;
+    material.maskImage = STRoundedMaskImage(STHudCornerRadius);
+    [window setContentView:material];
+
     STHudView *hudView = [[STHudView alloc] initWithFrame:rect];
     hudView.cornerRadius = STHudCornerRadius;
     hudView.textPadding = NSMakeSize(STHudHorizontalPadding, STHudVerticalPadding);
-    [window setContentView:hudView];
+    hudView.autoresizingMask = (NSViewWidthSizable | NSViewHeightSizable);
+    [material addSubview:hudView];
 
     self.hudWindow = window;
     self.hudView = hudView;
@@ -4822,8 +4880,14 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
     self.hudView.font = [NSFont boldSystemFontOfSize:13.0f];
+#if defined(GNUSTEP)
     self.hudView.fillColor = STThemeHUDBackgroundColor();
     self.hudView.textColor = STThemeHUDTextColor();
+#else
+    // On the window's material (see -ensureHUDWindow).
+    self.hudView.fillColor = [NSColor clearColor];
+    self.hudView.textColor = [NSColor labelColor];
+#endif
     [self.hudView setNeedsDisplay:YES];
 }
 
