@@ -26,6 +26,8 @@
 - (void)beginTextEntryWithImageRect:(NSRect)imageRect existingText:(MarkupText *)existingText;
 - (void)commitActiveTextIfNeeded;
 - (NSRect)activePointerHandleRectInView;
+- (BOOL)toggleActiveTextPointer;
+- (MarkupText *)activeTextEntry;
 @end
 
 @interface ArrowCalloutProbeTests : XCTestCase {
@@ -206,6 +208,55 @@
         }];
         XCTAssertTrue(nearTarget > 10, @"Style %@: the pointer reaches its target in the export (%ld)", style, (long)nearTarget);
     }
+}
+
+/// With the image bigger than the window and scrolled, a new pointer's handle is on screen: a
+/// label near the left edge of the view put it 40pt further left, inside the image but out of the
+/// window.
+- (void)testNewPointerHandleIsOnScreenWhenScrolled {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    // A 400x300 window scrolled over a 3000x2000 image, as the app's window over a big capture.
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(100, 100, 400, 300)
+                                                   styleMask:NSWindowStyleMaskTitled
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:NO];
+    NSScrollView *scrollView = [[NSScrollView alloc] initWithFrame:NSMakeRect(0, 0, 400, 300)];
+    ScreenshotCanvasView *canvas = [[ScreenshotCanvasView alloc] initWithFrame:NSMakeRect(0, 0, 400, 300)];
+    [scrollView setDocumentView:canvas];
+    [[window contentView] addSubview:scrollView];
+    NSImage *big = [[NSImage alloc] initWithSize:NSMakeSize(3000.0, 2000.0)];
+    [big lockFocus];
+    [[NSColor whiteColor] setFill];
+    NSRectFill(NSMakeRect(0.0, 0.0, 3000.0, 2000.0));
+    [big unlockFocus];
+    [canvas loadImage:big];
+    canvas.fitToWindow = NO;
+    canvas.zoomScale = 1.0;
+    canvas.textFont = [NSFont fontWithName:@"DejaVuSans" size:24.0] ?: [NSFont systemFontOfSize:24.0];
+    canvas.textSizePreset = STTextSizePresetExact;
+    canvas.activeTool = ScreenshotCanvasToolText;
+    [canvas setFrameSize:NSMakeSize(3000.0, 2000.0)];
+    [window orderFront:nil];
+    NSClipView *clip = [scrollView contentView];
+    [clip scrollToPoint:[clip constrainScrollPoint:NSMakePoint(1000.0, 600.0)]];
+    [scrollView reflectScrolledClipView:clip];
+    NSRect shown = [canvas visibleRect];
+    XCTAssertGreaterThan(NSMinX(shown), 100.0, @"scrolled right: %@", NSStringFromRect(shown));
+
+    // A label just inside the left edge of what's shown.
+    [canvas beginTextEntryWithImageRect:NSMakeRect(NSMinX(shown) + 10.0, NSMinY(shown) + 40.0, 1.0, 1.0) existingText:nil];
+    [canvas.activeTextView insertText:@"Callout"];
+    XCTAssertTrue([canvas toggleActiveTextPointer]);
+    NSRect handle = [canvas activePointerHandleRectInView];
+    XCTAssertTrue(NSContainsRect(shown, handle), @"the handle %@ is on screen (%@)",
+                  NSStringFromRect(handle), NSStringFromRect(shown));
+    MarkupText *entry = [canvas activeTextEntry];
+    NSRect label = [entry decoratedTextBounds];
+    XCTAssertFalse(NSPointInRect(entry.pointerTarget, label), @"and outside the label");
+    XCTAssertTrue(NSPointInRect(entry.pointerTarget, NSInsetRect(label, -100.0, -100.0)),
+                  @"next to it, not at the image's corner: %@ for %@", NSStringFromPoint(entry.pointerTarget), NSStringFromRect(label));
+    [canvas commitActiveTextIfNeeded];
+    [window orderOut:nil];
 }
 
 - (void)testPointerToggleAndDragWhileEditing {
