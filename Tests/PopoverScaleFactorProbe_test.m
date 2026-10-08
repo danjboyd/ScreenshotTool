@@ -86,11 +86,14 @@
     [controller buildPopoverForView:anchor];
     [controller showRelativeToRect:NSMakeRect(5.0f, 5.0f, 1.0f, 1.0f) ofView:anchor preferredEdge:NSMaxYEdge];
     XCTAssertNotNil(controller.popover, @"Popover should be constructed");
-    XCTAssertEqualWithAccuracy(controller.popover.contentSize.width, 260.0f, 0.1f, @"Pen popover width should stay logical sized");
-    // Its height comes from the theme's fonts; GSScaleFactor mustn't change it.
+    // Its size comes from the theme's fonts (at least 260pt wide, wider for wide buttons);
+    // GSScaleFactor mustn't change it.
     STUnsetEnvVar("GSScaleFactor");
     ToolSettingsPopoverController *unscaled = [[ToolSettingsPopoverController alloc] initWithTool:ScreenshotCanvasToolPen];
     [unscaled buildPopoverForView:anchor];
+    XCTAssertGreaterThanOrEqual(controller.popover.contentSize.width, 260.0f, @"Pen popover is at least its designed width");
+    XCTAssertEqualWithAccuracy(controller.popover.contentSize.width, unscaled.popover.contentSize.width, 0.1f,
+                               @"Pen popover width should stay logical sized");
     XCTAssertEqualWithAccuracy(controller.popover.contentSize.height, unscaled.popover.contentSize.height, 0.1f,
                                @"Pen popover height should stay logical sized");
     [self assertSubviewsOfView:unscaled.contentView fitInContentSize:unscaled.popover.contentSize name:@"Pen popover"];
