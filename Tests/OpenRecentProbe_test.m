@@ -14,6 +14,7 @@
 - (void)addRecentDocumentURL:(NSURL *)url;
 - (void)clearRecentDocuments:(id)sender;
 - (NSMenu *)openRecentMenu;
+- (NSMenu *)newRecentDocumentsMenu;
 @end
 
 @interface OpenRecentProbeTests : XCTestCase {
@@ -94,6 +95,29 @@
     XCTAssertTrue([[secondItem title] hasPrefix:@"capture.png ("], @"Duplicate basenames should include directory context");
     XCTAssertTrue([[menu itemAtIndex:2] isSeparatorItem], @"Open Recent should separate document entries from the clear action");
     XCTAssertEqualObjects([[menu itemAtIndex:3] title], @"Clear Menu");
+}
+
+/// The empty state's Open button lists the same files in a menu of its own: one NSMenu can't be
+/// File > Open Recent's submenu and pop up from the button too.
+- (void)testOpenButtonMenuMatchesOpenRecent {
+    NSString *alpha = [self createRecentDocumentNamed:@"first.png" inSubdirectory:@"alpha"];
+    NSString *beta = [self createRecentDocumentNamed:@"second.png" inSubdirectory:@"beta"];
+    [_appDelegate addRecentDocumentURL:[NSURL fileURLWithPath:alpha]];
+    [_appDelegate addRecentDocumentURL:[NSURL fileURLWithPath:beta]];
+
+    NSMenu *submenu = [_appDelegate openRecentMenu];
+    NSMenu *buttonMenu = [_appDelegate newRecentDocumentsMenu];
+    XCTAssertNotEqual(buttonMenu, submenu, @"a menu of its own");
+    XCTAssertNil([buttonMenu supermenu]);
+    XCTAssertEqual(buttonMenu.numberOfItems, submenu.numberOfItems);
+    for (NSInteger index = 0; index < submenu.numberOfItems; index++) {
+        NSMenuItem *expected = [submenu itemAtIndex:index];
+        NSMenuItem *item = [buttonMenu itemAtIndex:index];
+        XCTAssertEqualObjects(item.title, expected.title);
+        XCTAssertEqual(item.action, expected.action);
+        XCTAssertEqualObjects(item.representedObject, expected.representedObject);
+    }
+    XCTAssertEqualObjects([buttonMenu itemAtIndex:0].representedObject, beta, @"most recent first");
 }
 
 - (void)testClearRecentDocumentsRestoresEmptyPlaceholder {
