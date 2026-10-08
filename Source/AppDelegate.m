@@ -2930,7 +2930,18 @@ static id STInfoValueForKey(NSString *key) {
  willBeInsertedIntoToolbar:(BOOL)flag {
     (void)toolbar;
     (void)flag;
-    return [self baselineToolbarItemForIdentifier:itemIdentifier];
+    NSToolbarItem *item = [self baselineToolbarItemForIdentifier:itemIdentifier];
+#if !defined(GNUSTEP)
+    // When the window is too narrow, Undo, Redo and Share go to the overflow menu first: they're
+    // in the menus with shortcuts too. The tools and colour stay, as they're used most.
+    if ([itemIdentifier isEqualToString:ToolbarItemTools] || [itemIdentifier isEqualToString:ToolbarItemColor]) {
+        item.visibilityPriority = NSToolbarItemVisibilityPriorityHigh;
+    } else if ([itemIdentifier isEqualToString:ToolbarItemUndo] || [itemIdentifier isEqualToString:ToolbarItemRedo] ||
+               [itemIdentifier isEqualToString:ToolbarItemShare]) {
+        item.visibilityPriority = NSToolbarItemVisibilityPriorityLow;
+    }
+#endif
+    return item;
 }
 
 - (NSToolbarItem *)baselineToolbarItemForIdentifier:(NSToolbarItemIdentifier)identifier {
@@ -5578,6 +5589,52 @@ static id STInfoValueForKey(NSString *key) {
     [view setNeedsDisplay:YES];
 }
 
+#if !defined(GNUSTEP)
+/// The narrowest content width, from `from` up to `limit`, at which every toolbar item shows, or
+/// with `highPriorityOnly` every item of high visibility priority (`limit` if none does). Measured
+/// by laying the window out, as the title's width counts too; the window keeps its size. A window
+/// not yet on screen lays out all the same.
+- (CGFloat)contentWidthShowingToolbarItems:(BOOL)highPriorityOnly atMost:(CGFloat)limit from:(CGFloat)from {
+    NSToolbar *toolbar = self.window.toolbar;
+    if (!toolbar || !toolbar.isVisible || from >= limit) {
+        return from;
+    }
+    NSMutableSet<NSString *> *wanted = [NSMutableSet set];
+    for (NSToolbarItem *item in toolbar.items) {
+        if (!highPriorityOnly || item.visibilityPriority >= NSToolbarItemVisibilityPriorityHigh) {
+            [wanted addObject:item.itemIdentifier];
+        }
+    }
+    NSSize original = self.window.contentView.frame.size;
+    NSSize originalMinimum = self.window.contentMinSize;
+    [self.window setContentMinSize:NSMakeSize(1.0, originalMinimum.height)];
+    BOOL (^fits)(CGFloat) = ^BOOL(CGFloat width) {
+        [self.window setContentSize:NSMakeSize(width, original.height)];
+        [self.window layoutIfNeeded];
+        NSSet *visible = [NSSet setWithArray:[toolbar.visibleItems valueForKey:@"itemIdentifier"]];
+        return [wanted isSubsetOfSet:visible];
+    };
+    CGFloat low = from, high = limit;
+    if (fits(low)) {
+        high = low;
+    } else if (!fits(high)) {
+        low = high;
+    }
+    // To within 8pt, rounded up.
+    while (high - low > 8.0) {
+        CGFloat middle = floor((low + high) / 2.0);
+        if (fits(middle)) {
+            high = middle;
+        } else {
+            low = middle;
+        }
+    }
+    [self.window setContentMinSize:originalMinimum];
+    [self.window setContentSize:original];
+    return ceil(high);
+}
+#endif
+
 - (void)resizeWindowToImageSize:(NSSize)imageSize {
     if (imageSize.width <= 0.0f || imageSize.height <= 0.0f || !self.window) {
         return;
@@ -5608,7 +5665,16 @@ static id STInfoValueForKey(NSString *key) {
     // Tiny images get a usable window; the canvas centres them on its backdrop.
     CGFloat minimumWidth = MIN(STMinimumCanvasWidth, maxWidth);
     CGFloat minimumHeight = MIN(STMinimumCanvasHeight, maxContentHeight);
+#if !defined(GNUSTEP)
+    // macOS's toolbar shares its row with the title, so the minimum is too narrow for it. The
+    // window can't be made so narrow that the tools and colour go to the overflow menu (only
+    // Undo, Redo and Share do), and opens wide enough for the whole toolbar.
+    minimumWidth = MAX(minimumWidth, [self contentWidthShowingToolbarItems:YES atMost:maxWidth from:minimumWidth]);
     CGFloat targetWidth = MAX(contentWidth, minimumWidth);
+    targetWidth = MAX(targetWidth, [self contentWidthShowingToolbarItems:NO atMost:maxWidth from:targetWidth]);
+#else
+    CGFloat targetWidth = MAX(contentWidth, minimumWidth);
+#endif
     CGFloat targetHeight = MAX(contentHeight, minimumHeight) + barHeight;
 
     [self.window setContentMinSize:NSMakeSize(minimumWidth, minimumHeight + barHeight)];
