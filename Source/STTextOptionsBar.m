@@ -164,6 +164,7 @@ static NSImage *STTextStyleSampleImage(MarkupTextStyle style) {
     return image;
 }
 
+#if defined(GNUSTEP)
 /// Lines of text set left, centred or right, as a symbolic icon for the alignment control: words
 /// don't fit a narrow bar in larger theme fonts. Named -symbolic so themes that tint icons tint it.
 static NSImage *STTextAlignmentImage(NSInteger index) {
@@ -194,6 +195,7 @@ static NSImage *STTextAlignmentImage(NSInteger index) {
     images[index] = image;
     return image;
 }
+#endif
 
 /// The font field: an editable combo box that, unlike the bar's other controls, takes the keyboard.
 /// It says so as AppKit asks, which is before the text box gives the keyboard up.
