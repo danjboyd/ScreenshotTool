@@ -55,6 +55,11 @@ StartupNotify=false
 StartupWMClass=ScreenshotTool
 Categories=Graphics;Utility;
 MimeType=image/png;image/jpeg;image/jpg;image/webp;image/tiff;
+Actions=take-screenshot;
+
+[Desktop Action take-screenshot]
+Name=Take Screenshot
+Exec=$LAUNCHER_SCRIPT --capture
 EOF
 
 chmod 644 "$DESKTOP_FILE"
