@@ -9,6 +9,7 @@
 #import "ZoomPopoverController.h"
 #import "PreferencesWindowController.h"
 #import "STThemeUtilities.h"
+#import "STSegmentToolTips.h"
 #import "STHudView.h"
 #import "STTextOptionsBar.h"
 #import <Foundation/NSTask.h>
@@ -1225,7 +1226,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 - (NSString *)toolTipForIdentifier:(NSToolbarItemIdentifier)identifier {
     if ([identifier isEqualToString:ToolbarItemTools]) {
-        return @"Tools";
+        return nil; // Each tool's segment has its own tip.
     }
     if ([identifier isEqualToString:ToolbarItemHighlighter]) {
         return @"Highlighter Tool — double-click to configure";
@@ -3054,6 +3055,7 @@ static id STInfoValueForKey(NSString *key) {
             [cell setToolTip:[self toolbarSegmentToolTipForTool:tool] forSegment:segment];
         }
         STApplyAccessibilityLabel(self.toolbarToolSegmentedControl, @"Tool switcher");
+        STInstallSegmentToolTips(self.toolbarToolSegmentedControl);
     }
     [self refreshToolbarToolsControl];
     item.view = self.toolbarToolSegmentedControl;

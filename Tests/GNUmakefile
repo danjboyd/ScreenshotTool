@@ -68,6 +68,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	PopoverScaleFactorProbe_test.m \
 	TooltipsSuppressedProbe_test.m \
 	UndoRedoToolbarProbe_test.m \
+	ToolSegmentToolTipsProbe_test.m \
 	WaylandClipboardMirrorProbe_test.m \
 	WaylandPasteCheckProbe_test.m \
 	ZoomToolbarWidthProbe_test.m \
@@ -92,7 +93,8 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/PreferencesWindowController.m \
 	../Source/STTextOptionsBar.m \
 	../Source/STFontFamilyList.m \
-	../Source/STThemeUtilities.m
+	../Source/STThemeUtilities.m \
+	../Source/STSegmentToolTips.m
 
 
 # We need to tell the compiler where to find the source headers
