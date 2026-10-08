@@ -13,6 +13,9 @@
 
 @interface ScreenshotCanvasView (TextStyleExportProbe)
 @property (nonatomic, strong) NSMutableArray<MarkupText *> *texts;
+@property (nonatomic, strong) NSTextView *activeTextView;
+- (void)beginTextEntryWithImageRect:(NSRect)imageRect existingText:(MarkupText *)existingText;
+- (void)commitActiveTextIfNeeded;
 @end
 
 @interface TextStyleExportProbeTests : XCTestCase {
@@ -215,5 +218,53 @@ static NSColor *STProbePixel(NSBitmapImageRep *rep, NSInteger x, NSInteger y) {
     MarkupText *copy = [text copy];
     XCTAssertEqual(copy.style, MarkupTextStyleShadow, @"Undo snapshots copy the style");
 }
+
+#if defined(GNUSTEP)
+/// While a label is edited the canvas draws its glyphs along with the outline, and the text view's
+/// are clear: drawn in two layers, the glyphs landed a fraction of a pixel off the outline from one
+/// keystroke to the next and a thin outline flickered while typing.
+- (void)testEditingLabelGlyphsAreDrawnWithTheirOutline {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(100, 100, STProbeCanvasSize.width, STProbeCanvasSize.height)
+                                                   styleMask:NSWindowStyleMaskTitled
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:NO];
+    ScreenshotCanvasView *canvas = [[ScreenshotCanvasView alloc] initWithFrame:NSMakeRect(0.0, 0.0, STProbeCanvasSize.width, STProbeCanvasSize.height)];
+    [[window contentView] addSubview:canvas];
+    [canvas loadImage:[self whiteImage]];
+    canvas.fitToWindow = NO;
+    canvas.zoomScale = 1.0;
+    canvas.textFont = [NSFont fontWithName:@"DejaVuSans" size:28.0] ?: [NSFont systemFontOfSize:28.0];
+    // Yellow, so the outline is black and shows on the white image.
+    canvas.textColor = [NSColor colorWithDeviceRed:0.95 green:0.85 blue:0.1 alpha:1.0];
+    canvas.textStyle = MarkupTextStyleOutline;
+    [window orderFront:nil];
+    [canvas beginTextEntryWithImageRect:NSMakeRect(30.0, 40.0, 1.0, 1.0) existingText:nil];
+    [canvas.activeTextView insertText:@"Check"];
+
+    XCTAssertEqualWithAccuracy([canvas.activeTextView.textColor alphaComponent], 0.0, 0.001,
+                               @"the text view draws only the caret and the selection");
+    // The canvas alone, without its text view.
+    [canvas lockFocus];
+    [canvas drawRect:canvas.bounds];
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithFocusedViewRect:canvas.bounds];
+    [canvas unlockFocus];
+    NSInteger glyph = 0, dark = 0;
+    for (NSInteger y = 0; y < rep.pixelsHigh; y++) {
+        for (NSInteger x = 0; x < rep.pixelsWide; x++) {
+            NSColor *c = [[rep colorAtX:x y:y] colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
+            if (c.redComponent > 0.8 && c.greenComponent > 0.7 && c.blueComponent < 0.3) {
+                glyph++;
+            } else if (c.redComponent < 0.2 && c.greenComponent < 0.2 && c.blueComponent < 0.2) {
+                dark++;
+            }
+        }
+    }
+    XCTAssertGreaterThan(glyph, 50, @"the canvas draws the glyphs");
+    XCTAssertGreaterThan(dark, 50, @"and their outline");
+    [canvas commitActiveTextIfNeeded];
+    [window orderOut:nil];
+}
+#endif
 
 @end
