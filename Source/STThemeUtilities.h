@@ -2,11 +2,8 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-BOOL STThemeIsDark(void);
-BOOL STDefaultInterfaceThemeIsDark(void);
-/// Whether a theme's name says it's dark ("Adwaita-dark", "Sombre").
-BOOL STThemeNameIndicatesDark(NSString *theme);
-BOOL STThemeBackgroundColorIsDark(NSColor *color);
+// Light or dark is the theme's choice (and the desktop's), and the app never guesses it: every
+// colour here is a system colour the active theme defines (#56, #57).
 
 NSColor *STThemeCanvasBackgroundColor(void);
 NSColor *STThemeCanvasBackdropColor(void);
@@ -22,8 +19,6 @@ NSColor *STThemeAccentColor(void);
 NSColor *STThemeLinkColor(void);
 NSColor *STThemeStatusBarBackgroundColor(void);
 NSColor *STThemeStatusBarBorderColor(void);
-NSColor *STThemeStatusBarBackgroundColorForTheme(BOOL darkTheme);
-NSColor *STThemeStatusBarBorderColorForTheme(BOOL darkTheme);
 NSColor *STThemeStatusPrimaryTextColor(void);
 NSColor *STThemeStatusValueTextColor(void);
 NSColor *STThemeStatusValueBackgroundColor(void);
