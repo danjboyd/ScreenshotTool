@@ -231,6 +231,38 @@ static void STMarkSymbolicIcon(NSImage *image, NSString *name) {
 #endif
 }
 
+#if defined(GNUSTEP)
+/// GNUstep's -[NSImage copy] has no name, nor has an image redrawn into a new bitmap, so the
+/// theme left a symbolic icon's toolbar copy untinted (dark grey on Adwaita's dark header bar). A
+/// registered name can't be given to a second image: the copy for each use gets a name of its
+/// own, `stem-use-symbolic`, and is kept, so it's named once and handed out again after.
+static NSMutableDictionary<NSString *, NSImage *> *STSymbolicCopies(void) {
+    static NSMutableDictionary<NSString *, NSImage *> *copies = nil;
+    if (!copies) {
+        copies = [[NSMutableDictionary alloc] init];
+    }
+    return copies;
+}
+
+/// `stem-use-symbolic` for a copy of `source` made for `use`, or nil when `source` isn't symbolic.
+static NSString *STSymbolicCopyName(NSImage *source, NSString *use) {
+    NSString *name = [source name];
+    NSString *suffix = @"-symbolic";
+    if (![name hasSuffix:suffix]) {
+        return nil;
+    }
+    return [NSString stringWithFormat:@"%@-%@%@", [name substringToIndex:name.length - suffix.length], use, suffix];
+}
+
+/// Names `copy` and keeps it, when it can take the name.
+static NSImage *STKeepSymbolicCopy(NSImage *copy, NSString *name) {
+    if (copy && name && [copy setName:name]) {
+        STSymbolicCopies()[name] = copy;
+    }
+    return copy;
+}
+#endif
+
 typedef NS_ENUM(NSInteger, STUnsavedChangesChoice) {
     STUnsavedChangesChoiceSave = 0,
     STUnsavedChangesChoiceDiscard = 1,
@@ -3238,8 +3270,18 @@ static id STInfoValueForKey(NSString *key) {
     if (!image) {
         return nil;
     }
+#if defined(GNUSTEP)
+    NSString *symbolicName = STSymbolicCopyName(image, @"segment");
+    NSImage *kept = symbolicName ? STSymbolicCopies()[symbolicName] : nil;
+    if (kept) {
+        return kept;
+    }
+#endif
     NSImage *copy = [image copy];
     [copy setSize:NSMakeSize(STToolbarToolIconSize, STToolbarToolIconSize)];
+#if defined(GNUSTEP)
+    copy = STKeepSymbolicCopy(copy, symbolicName);
+#endif
     return copy;
 }
 
@@ -3494,6 +3536,13 @@ static id STInfoValueForKey(NSString *key) {
     if (!baseIcon) {
         return nil;
     }
+#if defined(GNUSTEP)
+    NSString *symbolicName = STSymbolicCopyName(baseIcon, @"toolbar");
+    NSImage *kept = symbolicName ? STSymbolicCopies()[symbolicName] : nil;
+    if (kept) {
+        return kept;
+    }
+#endif
     NSImage *rendered = [baseIcon copy];
     NSColor *badgeColor = [self badgeColorForToolbarIdentifier:identifier];
     if (badgeColor) {
@@ -3505,6 +3554,7 @@ static id STInfoValueForKey(NSString *key) {
     if (!STImageHasVisiblePixels(rendered)) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"Toolbar image %@ still lacks visible pixels after rendering", identifier]);
     }
+    rendered = STKeepSymbolicCopy(rendered, symbolicName);
 #endif
     return rendered;
 }
@@ -6207,6 +6257,11 @@ static id STInfoValueForKey(NSString *key) {
                 if (icon) {
                     [icon setSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
                     STMarkSymbolicIcon(icon, candidate);
+                    if ([candidate hasSuffix:@"-symbolic"] && ![[icon name] isEqualToString:candidate]) {
+                        // The toolbar's first image already holds the file's name.
+                        NSString *stem = [candidate substringToIndex:candidate.length - [@"-symbolic" length]];
+                        [icon setName:[stem stringByAppendingString:@"-item-symbolic"]];
+                    }
                 }
 #else
                 icon = STRenderToolbarIcon(base);
