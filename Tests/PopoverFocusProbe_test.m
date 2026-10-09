@@ -170,7 +170,7 @@ static const BOOL STBackendRequestsKeyOnClose = NO;
     XCTAssertFalse(popover.backgroundView.drawsPanel, @"the app draws no panel of its own");
     STFloatingPopoverWindow *panel = popover.window;
     XCTAssertGreaterThan(panel.popoverArrowHeight, 0.0, @"the popover points");
-    XCTAssertGreaterThan(panel.popoverArrowWidth, 0.0);
+    XCTAssertEqualWithAccuracy(panel.popoverArrowWidth, 2.0 * panel.popoverArrowHeight, 0.5, @"sides at 45°, as libadwaita's");
     XCTAssertEqualWithAccuracy(NSHeight(panel.frame), 120.0 + panel.popoverArrowHeight, 0.5, @"room is kept for the arrow");
     XCTAssertEqual(panel.popoverArrowEdge, popover.backgroundView.arrowEdge);
     BOOL horizontal = panel.popoverArrowEdge == NSMinYEdge || panel.popoverArrowEdge == NSMaxYEdge;

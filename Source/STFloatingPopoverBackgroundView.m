@@ -12,7 +12,7 @@ static inline CGFloat STFPClamp(CGFloat value, CGFloat minValue, CGFloat maxValu
     if (self) {
         _arrowEdge = NSMaxYEdge;
         _arrowOffset = 0.0;
-        _arrowBase = 20.0;
+        _arrowBase = 24.0;
         _arrowHeight = 12.0;
         _cornerRadius = 8.0;
         _drawsPanel = YES;

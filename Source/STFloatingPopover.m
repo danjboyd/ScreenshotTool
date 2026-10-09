@@ -131,7 +131,8 @@
 #else
 
 static const CGFloat kSTPopoverArrowHeight = 12.0f;
-static const CGFloat kSTPopoverArrowBase = 20.0f;
+/// Twice the height, so the arrow's sides are at 45°, as libadwaita's.
+static const CGFloat kSTPopoverArrowBase = 24.0f;
 static const CGFloat kSTPopoverCornerRadius = 8.0f;
 static const CGFloat kSTPopoverArrowMargin = 4.0f;
 static const CGFloat kSTPopoverWindowGap = 7.0f;
