@@ -77,6 +77,40 @@
         XCTAssertEqual([_appDelegate toolbarSegmentImageForTool:tools[index] selected:NO], image);
     }
 }
+/// Each icon has a bitmap rendered at each size the toolbar draws it at, and the one drawn at a size
+/// is that size's, pixel for pixel: icons resampled to fit looked soft.
+- (void)testIconsHaveARepresentationAtEachDrawnSize {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSMutableArray<NSImage *> *images = [NSMutableArray array];
+    for (NSString *identifier in @[@"com.screenshottool.toolbar.undo", @"com.screenshottool.toolbar.redo",
+                                   @"com.screenshottool.toolbar.copy"]) {
+        // The item first, as the toolbar makes it: it names the first image.
+        [_appDelegate toolbar:nil itemForItemIdentifier:identifier willBeInsertedIntoToolbar:YES];
+        NSImage *image = [_appDelegate toolbarImageForIdentifier:identifier active:NO];
+        XCTAssertNotNil(image, @"%@", identifier);
+        if (image) {
+            [images addObject:image];
+        }
+    }
+    ScreenshotCanvasTool tools[] = {ScreenshotCanvasToolSelect, ScreenshotCanvasToolHighlighter, ScreenshotCanvasToolPen,
+                                    ScreenshotCanvasToolArrow, ScreenshotCanvasToolText, ScreenshotCanvasToolEraser};
+    for (size_t index = 0; index < sizeof(tools) / sizeof(tools[0]); index++) {
+        NSImage *image = [_appDelegate toolbarSegmentImageForTool:tools[index] selected:NO];
+        XCTAssertNotNil(image);
+        if (image) {
+            [images addObject:image];
+        }
+    }
+    for (NSImage *image in images) {
+        for (NSNumber *points in @[@16, @22, @24, @32]) {
+            CGFloat size = points.doubleValue;
+            NSImageRep *rep = [image bestRepresentationForRect:NSMakeRect(0.0, 0.0, size, size) context:nil hints:nil];
+            XCTAssertTrue([rep isKindOfClass:[NSBitmapImageRep class]], @"%@ at %@", [image name], points);
+            XCTAssertEqual(rep.pixelsWide, (NSInteger)size, @"%@ is drawn at %@ from a bitmap that size", [image name], points);
+            XCTAssertEqualWithAccuracy(rep.size.width, size, 0.001, @"%@ at %@", [image name], points);
+        }
+    }
+}
 #endif
 
 @end
