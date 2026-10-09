@@ -31,6 +31,7 @@
 /// Records what the font picker reports.
 @interface STFontPicker (TextFontFieldTesting)
 @property (nonatomic, strong) NSSearchField *searchField;
+@property (nonatomic, strong) NSTableView *tableView;
 @end
 
 @interface TextFontPickerRecorder : NSObject <STFontPickerDelegate>
@@ -233,6 +234,44 @@
     XCTAssertEqualObjects([picker shownRowTitles], (@[@"Noto Sans", @"Noto Sans Bengali"]));
     [picker close];
     [window orderOut:nil];
+}
+
+/// The list's visible part, after showing the picker with this family current.
+- (NSRect)visibleListShowingFamily:(NSString *)family ofFamilies:(NSArray<NSString *> *)families picker:(STFontPicker **)pickerOut {
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(100, 100, 400, 300)
+                                                   styleMask:NSWindowStyleMaskTitled
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:NO];
+    [window setReleasedWhenClosed:NO];
+    [window orderFront:nil];
+    NSView *anchor = [[NSView alloc] initWithFrame:NSMakeRect(20, 200, 120, 30)];
+    [window.contentView addSubview:anchor];
+    STFontPicker *picker = [[STFontPicker alloc] initWithFamilies:[[STFontFamilyList alloc] initWithFamilies:families coveredFamilies:nil recent:@[]]];
+    picker.currentFamily = family;
+    [picker showBelowView:anchor];
+    *pickerOut = picker;
+    NSRect visible = picker.tableView.visibleRect;
+    [picker close];
+    [window orderOut:nil];
+    return visible;
+}
+
+- (void)testOpensWithTheCurrentFamilyAmongTheRowsAroundIt {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSMutableArray<NSString *> *families = [[NSMutableArray alloc] init];
+    for (NSInteger i = 0; i < 60; i++) {
+        [families addObject:[NSString stringWithFormat:@"Family %02ld", (long)i]];
+    }
+    STFontPicker *picker = nil;
+    NSRect visible = [self visibleListShowingFamily:@"Family 02" ofFamilies:families picker:&picker];
+    XCTAssertEqualWithAccuracy(NSMinY(visible), 0.0, 0.5, @"in the first screenful: the list stays at the top, heading and all");
+
+    visible = [self visibleListShowingFamily:@"Family 40" ofFamilies:families picker:&picker];
+    NSRect row = [picker.tableView rectOfRow:[[picker shownRowTitles] indexOfObject:@"Family 40"]];
+    XCTAssertEqualWithAccuracy(NSMidY(row), NSMidY(visible), 1.0, @"further down: in the middle of the list");
+
+    visible = [self visibleListShowingFamily:@"Family 59" ofFamilies:families picker:&picker];
+    XCTAssertEqualWithAccuracy(NSMaxY(visible), NSHeight(picker.tableView.frame), 0.5, @"the last one: the list ends at the bottom");
 }
 
 - (void)testUpDownSkipHeadingsAndReturnChooses {
