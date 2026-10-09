@@ -13,6 +13,8 @@
 #import "ScreenshotCanvasView.h"
 #import "STFloatingPopover.h"
 #import "STFloatingPopoverWindow.h"
+#import "STFloatingPopoverBackgroundView.h"
+#import "STThemeUtilities.h"
 #import "TestEnvironmentHelpers.h"
 
 @interface AppDelegate (PopoverFocusTesting)
@@ -25,6 +27,8 @@
 
 @interface STFloatingPopover (PopoverFocusTesting)
 @property (nonatomic, strong) STFloatingPopoverWindow *window;
+@property (nonatomic, strong) STFloatingPopoverBackgroundView *backgroundView;
+@property (nonatomic, assign) BOOL themeDrawsPanel;
 @end
 
 /// Counts requests to become key.
@@ -138,6 +142,33 @@ static const BOOL STBackendRequestsKeyOnClose = NO;
     XCTAssertEqualWithAccuracy(NSWidth(dropdown.window.frame), 200.0, 0.5);
     XCTAssertEqualWithAccuracy(NSHeight(content.frame), 120.0, 0.5, @"the content keeps its height");
     [dropdown close];
+    [window orderOut:nil];
+}
+
+- (void)testThePanelIsMarkedForThemesThatDrawPopovers {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STKeyRequestRecordingWindow *window = [self anchorWindow];
+    STFloatingPopover *popover = [self popoverShownFromWindow:window];
+    // A theme finds the mark by name (#67), so it must be registered with the runtime.
+    Protocol *mark = NSProtocolFromString(@"GSThemePopoverPanel");
+    XCTAssertNotNil(mark);
+    XCTAssertTrue([popover.window conformsToProtocol:mark]);
+    XCTAssertEqual(popover.backgroundView.drawsPanel, !STThemeDrawsPopoverPanels(), @"the app draws the panel unless the theme says it does");
+    [popover close];
+    [window orderOut:nil];
+}
+
+- (void)testAThemeThatDrawsThePanelGetsItWithoutAnArrow {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STKeyRequestRecordingWindow *window = [self anchorWindow];
+    NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 200, 120)];
+    STFloatingPopover *popover = [[STFloatingPopover alloc] initWithContentView:content];
+    popover.themeDrawsPanel = YES;
+    [popover showRelativeToRect:NSMakeRect(20, 20, 10, 10) ofView:window.contentView preferredEdge:NSMaxYEdge];
+    XCTAssertFalse(popover.backgroundView.drawsPanel, @"the app draws no panel of its own");
+    XCTAssertEqualWithAccuracy(NSHeight(popover.window.frame), 120.0, 0.5, @"and no arrow: the window is the content's height");
+    XCTAssertTrue([popover.window canBecomeKeyWindow], @"its sliders and fields still take the keyboard");
+    [popover close];
     [window orderOut:nil];
 }
 

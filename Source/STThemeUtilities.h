@@ -31,4 +31,8 @@ NSColor *STThemeToolbarBorderColor(BOOL active);
 CGFloat STThemeToolbarIconFraction(BOOL active);
 NSColor *STThemeToolbarLabelColor(void);
 
+/// Whether the theme draws the panels of popovers marked GSThemePopoverPanel itself, which it
+/// declares with GSThemeDrawsPopoverPanels = YES in its Info-gnustep.plist. Always NO on macOS.
+BOOL STThemeDrawsPopoverPanels(void);
+
 NS_ASSUME_NONNULL_END
