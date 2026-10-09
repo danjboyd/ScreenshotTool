@@ -1,5 +1,10 @@
 # Toolbar Icons on GNUstep
 
+> **Historical (2026-10-08).** The light, dark and active icon sets described below are gone. The
+> toolbar has one monochrome set, `Resources/<Stem>-symbolic.png`, which the GNUstep theme tints
+> for its palette, and the selected tool shows as a pressed control (#57). The notes on PNG
+> encoding still apply.
+
 This guide documents everything we have learned about getting toolbar icons looking correct on GNUstep, including the asset pipeline, script support, and the runtime code that selects the proper PNG for active vs. inactive state.
 
 ## 1. Asset Requirements

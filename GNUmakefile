@@ -41,34 +41,14 @@ ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
 	Resources/Preferences-symbolic.png \
 	Resources/Undo-symbolic.png \
 	Resources/Redo-symbolic.png \
-	Resources/CopyImage-light.png \
-	Resources/CopyImage-dark.png \
 	Resources/Highligher.png \
-	Resources/Highligher-light.png \
-	Resources/Highligher-dark.png \
 	Resources/HighligherChangeColor.png \
 	Resources/PenTool.png \
-	Resources/PenTool-light.png \
-	Resources/PenTool-dark.png \
 	Resources/Arrow.png \
-	Resources/Arrow-light.png \
-	Resources/Arrow-dark.png \
 	Resources/PenChangeColor.png \
 	Resources/Eraser.png \
-	Resources/Eraser-light.png \
-	Resources/Eraser-dark.png \
 	Resources/AddText.png \
-	Resources/AddText-light.png \
-	Resources/AddText-dark.png \
 	Resources/MarqueeTool.png \
-	Resources/MarqueeTool-light.png \
-	Resources/MarqueeTool-dark.png \
-	Resources/Highligher-active.png \
-	Resources/PenTool-active.png \
-	Resources/Eraser-active.png \
-	Resources/AddText-active.png \
-	Resources/MarqueeTool-active.png \
-	Resources/CopyImage-active.png \
 	Resources/CopyImage.tiff \
 	Resources/ScreenshotToolIcon.png \
 	Resources/ScreenshotToolIcon.tiff \
@@ -77,15 +57,7 @@ ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
 	Resources/PenTool.tiff \
 	Resources/PenChangeColor.tiff \
 	Resources/Eraser.tiff \
-	Resources/AddText-active.tiff \
-	Resources/MarqueeTool-active.tiff \
-	Resources/Highligher-active.tiff \
-	Resources/PenTool-active.tiff \
-	Resources/Eraser-active.tiff \
-	Resources/CopyImage-active.tiff \
-	Resources/Preferences.png \
-	Resources/Preferences-light.png \
-	Resources/Preferences-dark.png
+	Resources/Preferences.png
 
 ScreenshotTool_RESOURCE_FILES += \
 	Resources/Cursors/pen-cursor@1x.png \

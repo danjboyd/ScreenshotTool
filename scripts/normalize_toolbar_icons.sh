@@ -5,10 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BASE_DIR="${ROOT}/Resources"
 
 patterns=(
-  "*-dark.png"
-  "*-light.png"
-  "*-dark-active.png"
-  "*-light-active.png"
+  "*-symbolic.png"
 )
 
 for pattern in "${patterns[@]}"; do

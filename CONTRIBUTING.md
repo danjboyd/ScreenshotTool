@@ -17,7 +17,7 @@ Please follow `WORKFLOW.md` for the expected build/test handoff. Additional cont
 ## Build & QA Reminders
 - Rebuild: `make -j$(nproc)`.
 - Full suite: `Tools/run_tests.sh` (sudo may be required on GNUstep for defaults locks).
-- Toolbar assets: `scripts/generate_toolbar_icons.sh`, `scripts/generate_active_icons.sh`, `scripts/normalize_toolbar_icons.sh` as needed. See `docs/ToolbarIconsOnGNUstep.md`.
+- Toolbar assets: one monochrome `Resources/<Stem>-symbolic.png` per icon, which the theme tints (no light, dark or active variants); `scripts/normalize_toolbar_icons.sh` re-encodes them as 8-bit RGBA.
 - Manual QA: status bar slider syncs pen/highlighter; popovers reflect preferences; default save directory drives Open/Save; hiding status bar reflows the scroll view; theme switches recolour the symbolic icons; zoom/fitting behave in View menu and pop-up.
 
 ## Issue & Status Tracking
