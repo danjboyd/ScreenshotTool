@@ -127,11 +127,20 @@ NSColor *STThemeToolbarLabelColor(void) {
     return STThemeSecondaryTextColor();
 }
 
-BOOL STThemeDrawsPopoverPanels(void) {
+static BOOL STThemeDeclares(NSString *key) {
 #if defined(GNUSTEP)
-    id value = [[[GSTheme theme] infoDictionary] objectForKey:@"GSThemeDrawsPopoverPanels"];
+    id value = [[[GSTheme theme] infoDictionary] objectForKey:key];
     return [value respondsToSelector:@selector(boolValue)] && [value boolValue];
 #else
+    (void)key;
     return NO;
 #endif
+}
+
+BOOL STThemeDrawsPopoverPanels(void) {
+    return STThemeDeclares(@"GSThemeDrawsPopoverPanels");
+}
+
+BOOL STThemeDrawsPopoverArrows(void) {
+    return STThemeDrawsPopoverPanels() && STThemeDeclares(@"GSThemeDrawsPopoverArrows");
 }
