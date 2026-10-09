@@ -11,8 +11,9 @@ else
 ifneq ($(filter CLANG64,$(MSYSTEM)),)
 FONTCONFIG_CFLAGS := -I/clang64/include/freetype2
 FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
-# Take Screenshot opens the Snipping Tool (ShellExecuteW) and watches the clipboard.
-CAPTURE_LDFLAGS := -lshell32 -luser32
+# Take Screenshot opens the Snipping Tool (ShellExecuteW) and watches the clipboard;
+# STWindowsIntegration copies and pastes images through it, converting bitmaps with GDI.
+CAPTURE_LDFLAGS := -lshell32 -luser32 -lgdi32
 else
 FONTCONFIG_CFLAGS := -I/usr/include/freetype2
 FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
@@ -166,7 +167,8 @@ ScreenshotTool_HEADERS = Source/AppDelegate.h \
 	Source/ToolSettingsPopoverController.h \
 	Source/TextToolPopoverController.h \
 	Source/PreferencesWindowController.h \
-	Source/STThemeUtilities.h
+	Source/STThemeUtilities.h \
+	Source/STWindowsIntegration.h
 
 ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/AppDelegate.m \
@@ -189,6 +191,7 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/STSegmentToolTips.m \
 	Source/STSplitButton.m \
 	Source/STScreenshotCapture.m \
+	Source/STWindowsIntegration.m \
 	Source/STFontPicker.m
 
 CLANG_WRAPPER := $(shell pwd)/Tools/clang-wrapper.sh
