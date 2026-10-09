@@ -120,6 +120,40 @@ static const BOOL STBackendRequestsKeyOnClose = NO;
     [window orderOut:nil];
 }
 
+- (void)testAPopoverWithoutAnArrowIsJustItsContent {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STKeyRequestRecordingWindow *window = [self anchorWindow];
+    NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 200, 120)];
+
+    STFloatingPopover *pointing = [[STFloatingPopover alloc] initWithContentView:content];
+    [pointing showRelativeToRect:NSMakeRect(20, 20, 10, 10) ofView:window.contentView preferredEdge:NSMaxYEdge];
+    CGFloat pointingHeight = NSHeight(pointing.window.frame);
+    [pointing close];
+    XCTAssertGreaterThan(pointingHeight, 120.0, @"a popover is taller than its content by its arrow");
+
+    STFloatingPopover *dropdown = [[STFloatingPopover alloc] initWithContentView:content];
+    dropdown.showsArrow = NO;
+    [dropdown showRelativeToRect:NSMakeRect(20, 20, 10, 10) ofView:window.contentView preferredEdge:NSMaxYEdge];
+    XCTAssertEqualWithAccuracy(NSHeight(dropdown.window.frame), 120.0, 0.5, @"without an arrow, the window is the content's height");
+    XCTAssertEqualWithAccuracy(NSWidth(dropdown.window.frame), 200.0, 0.5);
+    XCTAssertEqualWithAccuracy(NSHeight(content.frame), 120.0, 0.5, @"the content keeps its height");
+    [dropdown close];
+    [window orderOut:nil];
+}
+
+- (void)testEscapeRunsTheCloseHandler {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STKeyRequestRecordingWindow *window = [self anchorWindow];
+    STFloatingPopover *popover = [self popoverShownFromWindow:window];
+    __block NSUInteger closes = 0;
+    popover.didCloseHandler = ^{
+        closes += 1;
+    };
+    [popover.window cancelOperation:nil];
+    XCTAssertEqual(closes, 1u, @"closing with Escape runs the handler");
+    [window orderOut:nil];
+}
+
 - (void)testClosingLeavesAHiddenWindowAlone {
     XCTSkipIf(_shouldSkip, @"No window server");
     STKeyRequestRecordingWindow *window = [self anchorWindow];
@@ -140,6 +174,22 @@ static const BOOL STBackendRequestsKeyOnClose = NO;
     [window orderOut:nil];
 }
 #endif
+
+- (void)testClosingRunsTheCloseHandlerOnce {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STKeyRequestRecordingWindow *window = [self anchorWindow];
+    STFloatingPopover *popover = [self popoverShownFromWindow:window];
+    __block NSUInteger closes = 0;
+    popover.didCloseHandler = ^{
+        closes += 1;
+    };
+    [popover close];
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+    XCTAssertEqual(closes, 1u, @"the handler runs once when the popover closes");
+    [popover close];
+    XCTAssertEqual(closes, 1u, @"closing a closed popover doesn't run it again");
+    [window orderOut:nil];
+}
 
 - (void)testCanvasTakesTheKeyboardWhenTheWindowBecomesKey {
     XCTSkipIf(_shouldSkip, @"No window server");
