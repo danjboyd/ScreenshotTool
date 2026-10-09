@@ -114,6 +114,13 @@
     }
 }
 
+- (void)popoverDidClose:(NSNotification *)notification {
+    (void)notification;
+    if (self.didCloseHandler) {
+        self.didCloseHandler();
+    }
+}
+
 - (BOOL)isShown {
     return self.popover.isShown;
 }
@@ -176,9 +183,15 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
         _hostedView = contentView;
         _contentSize = contentView.bounds.size;
         _currentArrowEdge = NSMaxYEdge;
+        _showsArrow = YES;
         _effectiveScaleFactor = [[self class] currentScaleFactorForView:contentView];
     }
     return self;
+}
+
+/// The arrow's height, or none for a popover without one.
+- (CGFloat)arrowHeight {
+    return self.showsArrow ? kSTPopoverArrowHeight : 0.0f;
 }
 
 + (CGFloat)currentScaleFactorForView:(NSView *)view {
@@ -205,7 +218,7 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
 
     STFloatingPopoverWindow *window = [[STFloatingPopoverWindow alloc] initWithContentSize:self.contentSize];
     STFloatingPopoverBackgroundView *background = [[STFloatingPopoverBackgroundView alloc] initWithFrame:NSMakeRect(0, 0, self.contentSize.width, self.contentSize.height)];
-    background.arrowHeight = kSTPopoverArrowHeight;
+    background.arrowHeight = [self arrowHeight];
     background.arrowBase = kSTPopoverArrowBase;
     background.cornerRadius = kSTPopoverCornerRadius;
 
@@ -254,9 +267,9 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
     NSSize windowSize = contentRect.size;
     NSSize contentSize = windowSize;
     if (self.currentArrowEdge == NSMinYEdge || self.currentArrowEdge == NSMaxYEdge) {
-        contentSize.height = MAX(windowSize.height - kSTPopoverArrowHeight * self.effectiveScaleFactor, 40.0f);
+        contentSize.height = MAX(windowSize.height - [self arrowHeight] * self.effectiveScaleFactor, 40.0f);
     } else {
-        contentSize.width = MAX(windowSize.width - kSTPopoverArrowHeight * self.effectiveScaleFactor, 80.0f);
+        contentSize.width = MAX(windowSize.width - [self arrowHeight] * self.effectiveScaleFactor, 80.0f);
     }
     _contentSize = contentSize;
 
@@ -280,7 +293,7 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
     self.backgroundView.arrowEdge = self.currentArrowEdge;
     self.backgroundView.arrowOffset = arrowOffset;
     self.backgroundView.arrowBase = kSTPopoverArrowBase * self.effectiveScaleFactor;
-    self.backgroundView.arrowHeight = kSTPopoverArrowHeight * self.effectiveScaleFactor;
+    self.backgroundView.arrowHeight = [self arrowHeight] * self.effectiveScaleFactor;
     self.backgroundView.cornerRadius = kSTPopoverCornerRadius * self.effectiveScaleFactor;
 
     [self applyContentFramesForEdge:self.currentArrowEdge];
@@ -292,18 +305,18 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
 
     switch (edge) {
         case NSMinYEdge: // arrow on bottom
-            holderFrame.origin.y += kSTPopoverArrowHeight * self.effectiveScaleFactor;
-            holderFrame.size.height -= kSTPopoverArrowHeight * self.effectiveScaleFactor;
+            holderFrame.origin.y += [self arrowHeight] * self.effectiveScaleFactor;
+            holderFrame.size.height -= [self arrowHeight] * self.effectiveScaleFactor;
             break;
         case NSMaxYEdge: // arrow on top
-            holderFrame.size.height -= kSTPopoverArrowHeight * self.effectiveScaleFactor;
+            holderFrame.size.height -= [self arrowHeight] * self.effectiveScaleFactor;
             break;
         case NSMinXEdge: // arrow on left
-            holderFrame.origin.x += kSTPopoverArrowHeight * self.effectiveScaleFactor;
-            holderFrame.size.width -= kSTPopoverArrowHeight * self.effectiveScaleFactor;
+            holderFrame.origin.x += [self arrowHeight] * self.effectiveScaleFactor;
+            holderFrame.size.width -= [self arrowHeight] * self.effectiveScaleFactor;
             break;
         case NSMaxXEdge: // arrow on right
-            holderFrame.size.width -= kSTPopoverArrowHeight * self.effectiveScaleFactor;
+            holderFrame.size.width -= [self arrowHeight] * self.effectiveScaleFactor;
             break;
         default:
             break;
@@ -321,9 +334,9 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
 
     NSSize windowSize = self.contentSize;
     if (self.currentArrowEdge == NSMinYEdge || self.currentArrowEdge == NSMaxYEdge) {
-        windowSize.height += kSTPopoverArrowHeight * self.effectiveScaleFactor;
+        windowSize.height += [self arrowHeight] * self.effectiveScaleFactor;
     } else if (self.currentArrowEdge == NSMinXEdge || self.currentArrowEdge == NSMaxXEdge) {
-        windowSize.width += kSTPopoverArrowHeight * self.effectiveScaleFactor;
+        windowSize.width += [self arrowHeight] * self.effectiveScaleFactor;
     }
 
     [self.window setContentSize:windowSize];
@@ -347,7 +360,7 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
     self.backgroundView.arrowEdge = self.currentArrowEdge;
     self.backgroundView.arrowOffset = arrowOffset;
     self.backgroundView.arrowBase = kSTPopoverArrowBase * self.effectiveScaleFactor;
-    self.backgroundView.arrowHeight = kSTPopoverArrowHeight * self.effectiveScaleFactor;
+    self.backgroundView.arrowHeight = [self arrowHeight] * self.effectiveScaleFactor;
     self.backgroundView.cornerRadius = kSTPopoverCornerRadius * self.effectiveScaleFactor;
     [self applyContentFramesForEdge:self.currentArrowEdge];
 }
@@ -401,9 +414,9 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
 
     NSSize windowSize = contentSize;
     if (arrowEdge == NSMinYEdge || arrowEdge == NSMaxYEdge) {
-        windowSize.height += kSTPopoverArrowHeight * self.effectiveScaleFactor;
+        windowSize.height += [self arrowHeight] * self.effectiveScaleFactor;
     } else if (arrowEdge == NSMinXEdge || arrowEdge == NSMaxXEdge) {
-        windowSize.width += kSTPopoverArrowHeight * self.effectiveScaleFactor;
+        windowSize.width += [self arrowHeight] * self.effectiveScaleFactor;
     }
 
     NSRect windowRect = [view convertRect:rect toView:nil];
@@ -464,7 +477,7 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
     self.backgroundView.arrowEdge = arrowEdge;
     self.backgroundView.arrowOffset = arrowOffset;
     self.backgroundView.arrowBase = kSTPopoverArrowBase * self.effectiveScaleFactor;
-    self.backgroundView.arrowHeight = kSTPopoverArrowHeight * self.effectiveScaleFactor;
+    self.backgroundView.arrowHeight = [self arrowHeight] * self.effectiveScaleFactor;
     self.backgroundView.cornerRadius = kSTPopoverCornerRadius * self.effectiveScaleFactor;
 
     if (self.hostedView.superview != self.contentHolder) {
@@ -527,11 +540,15 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
     // Give the keyboard back if the popover had it (or nothing has it); not when the user has
     // moved on to another window, which closes the popover too.
     NSWindow *keyWindow = [NSApp keyWindow];
-    BOOL hadKeyboard = self.window.isVisible && (keyWindow == nil || keyWindow == self.window);
+    BOOL wasShown = self.window.isVisible;
+    BOOL hadKeyboard = wasShown && (keyWindow == nil || keyWindow == self.window);
     [self.window orderOut:nil];
     NSWindow *parent = self.anchorWindow;
     if (hadKeyboard && parent.isVisible) {
         [parent makeKeyWindow];
+    }
+    if (wasShown && self.didCloseHandler) {
+        self.didCloseHandler();
     }
 }
 
