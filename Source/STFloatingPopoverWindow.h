@@ -2,7 +2,13 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-@interface STFloatingPopoverWindow : NSPanel
+/// Marks a panel as a popover, for themes that draw popovers themselves (a WinUI flyout, say). It
+/// has no methods: a theme checks conformance by name, NSProtocolFromString(@"GSThemePopoverPanel"),
+/// so neither links against the other, and GNUstep's NSPopover could adopt it too (#67).
+@protocol GSThemePopoverPanel
+@end
+
+@interface STFloatingPopoverWindow : NSPanel <GSThemePopoverPanel>
 
 - (instancetype)initWithContentSize:(NSSize)size;
 

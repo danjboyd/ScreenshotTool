@@ -1,5 +1,8 @@
 #import "STThemeUtilities.h"
 #import "ScreenshotToolSettings.h"
+#if defined(GNUSTEP)
+#import <GNUstepGUI/GSTheme.h>
+#endif
 
 // Every colour below is a system colour the active theme defines, so each theme gives the app
 // its own look (#57). No blends, fixed palettes or accent of the app's own.
@@ -122,4 +125,13 @@ CGFloat STThemeToolbarIconFraction(BOOL active) {
 
 NSColor *STThemeToolbarLabelColor(void) {
     return STThemeSecondaryTextColor();
+}
+
+BOOL STThemeDrawsPopoverPanels(void) {
+#if defined(GNUSTEP)
+    id value = [[[GSTheme theme] infoDictionary] objectForKey:@"GSThemeDrawsPopoverPanels"];
+    return [value respondsToSelector:@selector(boolValue)] && [value boolValue];
+#else
+    return NO;
+#endif
 }

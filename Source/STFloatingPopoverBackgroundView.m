@@ -15,6 +15,7 @@ static inline CGFloat STFPClamp(CGFloat value, CGFloat minValue, CGFloat maxValu
         _arrowBase = 20.0;
         _arrowHeight = 12.0;
         _cornerRadius = 8.0;
+        _drawsPanel = YES;
     }
     return self;
 }
@@ -55,6 +56,13 @@ static inline CGFloat STFPClamp(CGFloat value, CGFloat minValue, CGFloat maxValu
     }
 }
 
+- (void)setDrawsPanel:(BOOL)drawsPanel {
+    if (_drawsPanel != drawsPanel) {
+        _drawsPanel = drawsPanel;
+        [self setNeedsDisplay:YES];
+    }
+}
+
 - (void)setCornerRadius:(CGFloat)cornerRadius {
     if (fabs(_cornerRadius - cornerRadius) > 0.1) {
         _cornerRadius = cornerRadius;
@@ -65,9 +73,13 @@ static inline CGFloat STFPClamp(CGFloat value, CGFloat minValue, CGFloat maxValu
 // An exception to #51/#67: GNUstep's NSPopover can't stand in yet (a fixed dark grey bevelled
 // panel the theme doesn't draw, rough positioning, and its panel can't become key, which the
 // popovers' sliders and text fields need). So the app draws the panel and arrow, in system colours
-// only (#57). Replace it once GNUstep has a themeable popover.
+// only (#57), unless the theme draws popover panels itself (drawsPanel NO). Replace it once GNUstep
+// has a themeable popover.
 - (void)drawRect:(NSRect)dirtyRect {
     (void)dirtyRect;
+    if (!self.drawsPanel) {
+        return;
+    }
     NSRect bounds = self.bounds;
     if (bounds.size.width <= 1.0f || bounds.size.height <= 1.0f) {
         return;
