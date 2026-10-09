@@ -348,7 +348,10 @@ static const NSUInteger STFontPickerSearchLimit = 300;
 
 - (void)controlTextDidChange:(NSNotification *)notification {
     if (notification.object == self.searchField) {
-        [self setSearchString:[self.searchField stringValue]];
+        // The field editor's text: under GNUstep's Adwaita theme the field's -stringValue is
+        // still the text from before the key just typed.
+        NSText *editor = notification.userInfo[@"NSFieldEditor"];
+        [self setSearchString:editor ? editor.string : [self.searchField stringValue]];
     }
 }
 

@@ -29,6 +29,10 @@
 @end
 
 /// Records what the font picker reports.
+@interface STFontPicker (TextFontFieldTesting)
+@property (nonatomic, strong) NSSearchField *searchField;
+@end
+
 @interface TextFontPickerRecorder : NSObject <STFontPickerDelegate>
 @property (nonatomic, copy) NSString *chosenFamily;
 @property (nonatomic, assign) NSInteger closes;
@@ -204,6 +208,31 @@
     XCTAssertEqualObjects([picker shownRowTitles], (@[@"Noto Sans Bengali"]));
     [picker setSearchString:@"zzz"];
     XCTAssertEqualObjects([picker shownRowTitles], (@[]));
+}
+
+- (void)testTypingInTheSearchFieldListsWhatHasBeenTyped {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(100, 100, 400, 300)
+                                                   styleMask:NSWindowStyleMaskTitled
+                                                     backing:NSBackingStoreBuffered
+                                                       defer:NO];
+    [window setReleasedWhenClosed:NO];
+    [window orderFront:nil];
+    NSView *anchor = [[NSView alloc] initWithFrame:NSMakeRect(20, 200, 120, 30)];
+    [window.contentView addSubview:anchor];
+    STFontPicker *picker = [[STFontPicker alloc] initWithFamilies:[self sampleList]];
+    [picker showBelowView:anchor];
+    NSText *editor = [picker.searchField currentEditor];
+    XCTAssertNotNil(editor, @"the search field has the keyboard");
+    // One key at a time, as typed: each change lists the matches for the whole text so far.
+    for (NSString *key in @[@"n", @"o", @"t", @"o", @" ", @"s", @"a", @"n", @"s", @" ", @"b"]) {
+        [(NSTextView *)editor insertText:key];
+    }
+    XCTAssertEqualObjects([picker shownRowTitles], (@[@"Noto Sans Bengali"]));
+    [(NSTextView *)editor deleteBackward:nil];
+    XCTAssertEqualObjects([picker shownRowTitles], (@[@"Noto Sans", @"Noto Sans Bengali"]));
+    [picker close];
+    [window orderOut:nil];
 }
 
 - (void)testUpDownSkipHeadingsAndReturnChooses {
