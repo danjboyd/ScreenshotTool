@@ -107,6 +107,37 @@
     XCTAssertTrue([visible containsObject:@"com.screenshottool.toolbar.tools"], @"visible: %@", visible);
     XCTAssertTrue([visible containsObject:@"com.screenshottool.toolbar.color"], @"visible: %@", visible);
 }
+
+/// Undo, Redo and Copy were drawn in a fixed dark grey, nearly invisible on a dark toolbar. As
+/// template images, AppKit tints them for light and dark mode.
+- (void)testUndoRedoAndCopyIconsFollowTheAppearance {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:40 pixelsHigh:30
+                                                                 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+                                                                colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                      [NSString stringWithFormat:@"toolbar-template-%@.png", [[NSUUID UUID] UUIDString]]];
+    [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
+    XCTAssertTrue([_appDelegate openImageAtURL:[NSURL fileURLWithPath:path]]);
+    [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
+
+    NSSet<NSString *> *identifiers = [NSSet setWithObjects:@"com.screenshottool.toolbar.undo",
+                                      @"com.screenshottool.toolbar.redo", @"com.screenshottool.toolbar.copy", nil];
+    NSUInteger checked = 0;
+    for (NSToolbarItem *item in _appDelegate.window.toolbar.items) {
+        if (![identifiers containsObject:item.itemIdentifier]) {
+            continue;
+        }
+        NSImage *image = item.image;
+        if ([item.view isKindOfClass:[NSButton class]]) {
+            image = ((NSButton *)item.view).image;
+        }
+        XCTAssertNotNil(image, @"%@", item.itemIdentifier);
+        XCTAssertTrue(image.isTemplate, @"%@ is a template image", item.itemIdentifier);
+        checked += 1;
+    }
+    XCTAssertEqual(checked, identifiers.count);
+}
 #endif
 
 @end

@@ -6536,6 +6536,7 @@ static id STInfoValueForKey(NSString *key) {
                 } else {
                     icon = STRenderToolbarIcon(base);
                 }
+                STMarkSymbolicIcon(icon, candidate);
 #endif
                 toolbarCache[candidate] = icon;
                 ScreenshotToolAppendLog([NSString stringWithFormat:@"ScreenshotTool: loaded toolbar icon %@", candidate]);
