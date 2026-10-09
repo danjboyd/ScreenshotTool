@@ -86,9 +86,13 @@ static void STTextOptionsBarSizeSegments(NSSegmentedControl *control, CGFloat mi
 
 #if defined(GNUSTEP)
 @class STFontPopUpButton;
+
+/// The font picker is GNUstep's only (macOS keeps the combo box).
+@interface STTextOptionsBar () <STFontPickerDelegate>
+@end
 #endif
 
-@interface STTextOptionsBar () <NSComboBoxDataSource, NSComboBoxDelegate, STFontPickerDelegate>
+@interface STTextOptionsBar () <NSComboBoxDataSource, NSComboBoxDelegate>
 @property (nonatomic, strong) NSArray<STTextOptionsSwatch *> *swatches;
 @property (nonatomic, strong) NSSegmentedControl *sizePresets;
 @property (nonatomic, strong) NSButton *smallerButton;
