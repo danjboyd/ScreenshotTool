@@ -270,11 +270,29 @@ static const NSUInteger STFontPickerSearchLimit = 300;
     // STFloatingPopover names the edge its arrow is on: NSMaxYEdge opens below the view.
     [self.popover showRelativeToRect:view.bounds ofView:view preferredEdge:NSMaxYEdge];
     [[self.searchField window] makeFirstResponder:self.searchField];
-    // The current family in view, checked (not selected: Return picks a match or the first row).
-    NSInteger current = self.currentFamily ? [self rowOfFamily:self.currentFamily] : -1;
-    if (current >= 0) {
-        [self.tableView scrollRowToVisible:current];
+    [self scrollToCurrentFamily];
+}
+
+/// The current family in view (checked, not selected: Return picks a match or the first row), with
+/// the rows around it, as GTK's dropdown and WinUI's combo box show it: at the top when it's in the
+/// first screenful, so the headings show, and otherwise in the middle of the list.
+- (void)scrollToCurrentFamily {
+    NSClipView *clipView = self.tableView.enclosingScrollView.contentView;
+    if (!clipView) {
+        return;
     }
+    NSInteger current = self.currentFamily ? [self rowOfFamily:self.currentFamily] : -1;
+    CGFloat visibleHeight = NSHeight(clipView.bounds);
+    CGFloat y = 0.0;
+    if (current >= 0) {
+        NSRect row = [self.tableView rectOfRow:current];
+        if (NSMaxY(row) > visibleHeight) {
+            CGFloat bottom = MAX(NSHeight(self.tableView.frame) - visibleHeight, 0.0);
+            y = MIN(MAX(NSMidY(row) - visibleHeight / 2.0, 0.0), bottom);
+        }
+    }
+    [clipView scrollToPoint:NSMakePoint(NSMinX(clipView.bounds), y)];
+    [self.tableView.enclosingScrollView reflectScrolledClipView:clipView];
 }
 
 - (void)close {
