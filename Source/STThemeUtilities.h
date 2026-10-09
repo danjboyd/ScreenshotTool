@@ -34,5 +34,9 @@ NSColor *STThemeToolbarLabelColor(void);
 /// Whether the theme draws the panels of popovers marked GSThemePopoverPanel itself, which it
 /// declares with GSThemeDrawsPopoverPanels = YES in its Info-gnustep.plist. Always NO on macOS.
 BOOL STThemeDrawsPopoverPanels(void);
+/// Whether a theme that draws popover panels also draws their arrows, which it declares with
+/// GSThemeDrawsPopoverArrows = YES. The popover then keeps room for its arrow, and its panel
+/// tells the theme where the arrow goes (GSThemePopoverPanel's methods). Always NO on macOS.
+BOOL STThemeDrawsPopoverArrows(void);
 
 NS_ASSUME_NONNULL_END

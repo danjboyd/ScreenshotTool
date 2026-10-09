@@ -29,6 +29,7 @@
 @property (nonatomic, strong) STFloatingPopoverWindow *window;
 @property (nonatomic, strong) STFloatingPopoverBackgroundView *backgroundView;
 @property (nonatomic, assign) BOOL themeDrawsPanel;
+@property (nonatomic, assign) BOOL themeDrawsArrow;
 @end
 
 /// Counts requests to become key.
@@ -155,6 +156,38 @@ static const BOOL STBackendRequestsKeyOnClose = NO;
     XCTAssertTrue([popover.window conformsToProtocol:mark]);
     XCTAssertEqual(popover.backgroundView.drawsPanel, !STThemeDrawsPopoverPanels(), @"the app draws the panel unless the theme says it does");
     [popover close];
+    [window orderOut:nil];
+}
+
+- (void)testAThemeThatDrawsArrowsIsToldWhereTheArrowGoes {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STKeyRequestRecordingWindow *window = [self anchorWindow];
+    NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 200, 120)];
+    STFloatingPopover *popover = [[STFloatingPopover alloc] initWithContentView:content];
+    popover.themeDrawsPanel = YES;
+    popover.themeDrawsArrow = YES;
+    [popover showRelativeToRect:NSMakeRect(20, 20, 10, 10) ofView:window.contentView preferredEdge:NSMaxYEdge];
+    XCTAssertFalse(popover.backgroundView.drawsPanel, @"the app draws no panel of its own");
+    STFloatingPopoverWindow *panel = popover.window;
+    XCTAssertGreaterThan(panel.popoverArrowHeight, 0.0, @"the popover points");
+    XCTAssertGreaterThan(panel.popoverArrowWidth, 0.0);
+    XCTAssertEqualWithAccuracy(NSHeight(panel.frame), 120.0 + panel.popoverArrowHeight, 0.5, @"room is kept for the arrow");
+    XCTAssertEqual(panel.popoverArrowEdge, popover.backgroundView.arrowEdge);
+    BOOL horizontal = panel.popoverArrowEdge == NSMinYEdge || panel.popoverArrowEdge == NSMaxYEdge;
+    XCTAssertTrue(horizontal, @"shown above or below the rect");
+    // The tip is over the middle of the rect it points at (window coordinates, x along the edge).
+    NSRect pointedAt = [window convertRectToScreen:[window.contentView convertRect:NSMakeRect(20, 20, 10, 10) toView:nil]];
+    XCTAssertEqualWithAccuracy(NSMinX(panel.frame) + panel.popoverArrowPosition, NSMidX(pointedAt), 1.0);
+    [popover close];
+
+    STFloatingPopover *dropdown = [[STFloatingPopover alloc] initWithContentView:content];
+    dropdown.themeDrawsPanel = YES;
+    dropdown.themeDrawsArrow = YES;
+    dropdown.showsArrow = NO;
+    [dropdown showRelativeToRect:NSMakeRect(20, 20, 10, 10) ofView:window.contentView preferredEdge:NSMaxYEdge];
+    XCTAssertEqual(dropdown.window.popoverArrowHeight, 0.0, @"a dropdown's list tells the theme it has no arrow");
+    XCTAssertEqualWithAccuracy(NSHeight(dropdown.window.frame), 120.0, 0.5);
+    [dropdown close];
     [window orderOut:nil];
 }
 

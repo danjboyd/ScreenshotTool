@@ -173,8 +173,10 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
 @property (nonatomic, assign) NSInteger transientInteractionCount;
 /// The window the popover was shown from, which gets the keyboard back when it closes (#80).
 @property (nonatomic, weak) NSWindow *anchorWindow;
-/// The theme draws the panel, with no arrow (#67). Read when the popover is made.
+/// The theme draws the panel (#67), and its arrow too if themeDrawsArrow. Read when the popover
+/// is made.
 @property (nonatomic, assign) BOOL themeDrawsPanel;
+@property (nonatomic, assign) BOOL themeDrawsArrow;
 @end
 
 @implementation STFloatingPopover
@@ -188,15 +190,17 @@ static CGFloat STUserSpaceScaleFactorForWindow(NSWindow *window) {
         _currentArrowEdge = NSMaxYEdge;
         _showsArrow = YES;
         _themeDrawsPanel = STThemeDrawsPopoverPanels();
+        _themeDrawsArrow = STThemeDrawsPopoverArrows();
         _effectiveScaleFactor = [[self class] currentScaleFactorForView:contentView];
     }
     return self;
 }
 
 /// The arrow's height, or none for a popover without one. A theme that draws the panel draws no
-/// arrow: WinUI's flyouts have none.
+/// arrow (WinUI's flyouts have none) unless it says it draws arrows too (libadwaita's popovers).
 - (CGFloat)arrowHeight {
-    return (self.showsArrow && !self.themeDrawsPanel) ? kSTPopoverArrowHeight : 0.0f;
+    BOOL arrow = self.showsArrow && (!self.themeDrawsPanel || self.themeDrawsArrow);
+    return arrow ? kSTPopoverArrowHeight : 0.0f;
 }
 
 + (CGFloat)currentScaleFactorForView:(NSView *)view {

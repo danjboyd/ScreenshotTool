@@ -1,4 +1,5 @@
 #import "STFloatingPopoverWindow.h"
+#import "STFloatingPopoverBackgroundView.h"
 
 @implementation STFloatingPopoverWindow
 
@@ -18,6 +19,31 @@
         [self setCollectionBehavior:NSWindowCollectionBehaviorTransient];
     }
     return self;
+}
+
+#pragma mark - GSThemePopoverPanel
+
+/// The arrow as the app lays it out: its background view, the content view, holds it.
+- (nullable STFloatingPopoverBackgroundView *)arrowView {
+    id view = self.contentView;
+    return [view isKindOfClass:[STFloatingPopoverBackgroundView class]] ? view : nil;
+}
+
+- (NSRectEdge)popoverArrowEdge {
+    STFloatingPopoverBackgroundView *view = [self arrowView];
+    return view ? view.arrowEdge : NSMaxYEdge;
+}
+
+- (CGFloat)popoverArrowPosition {
+    return [self arrowView].arrowOffset;
+}
+
+- (CGFloat)popoverArrowHeight {
+    return MAX([self arrowView].arrowHeight, 0.0);
+}
+
+- (CGFloat)popoverArrowWidth {
+    return MAX([self arrowView].arrowBase, 0.0);
 }
 
 - (BOOL)canBecomeKeyWindow {
