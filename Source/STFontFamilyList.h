@@ -34,6 +34,15 @@ extern const NSUInteger STRecentFontFamiliesLimit;
 /// How many of the listed families are recent ones (they come first).
 @property (nonatomic, readonly) NSUInteger recentCount;
 
+/// Every installed family, sorted ignoring case.
+@property (nonatomic, readonly) NSArray<NSString *> *allFamilies;
+/// The recently used families, most recent first.
+@property (nonatomic, readonly) NSArray<NSString *> *recentFamilies;
+
+/// Installed families whose names contain `query` (ignoring case): those starting with it first,
+/// then the others, each in order, at most `limit` of them. All of them for an empty query.
+- (NSArray<NSString *> *)familiesMatching:(NSString *)query limit:(NSUInteger)limit;
+
 /// The installed family named `name`, ignoring case, or nil.
 - (nullable NSString *)familyNamed:(NSString *)name;
 /// The first family starting with `prefix` (ignoring case): listed families first, then all.

@@ -105,7 +105,8 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STThemeUtilities.m \
 	../Source/STSegmentToolTips.m \
 	../Source/STSplitButton.m \
-	../Source/STScreenshotCapture.m
+	../Source/STScreenshotCapture.m \
+	../Source/STFontPicker.m
 
 
 # We need to tell the compiler where to find the source headers

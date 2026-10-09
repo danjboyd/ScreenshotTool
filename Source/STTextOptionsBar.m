@@ -10,6 +10,7 @@
 
 #import "STTextOptionsBar.h"
 #import "STFontFamilyList.h"
+#import "STFontPicker.h"
 #import "STThemeUtilities.h"
 #import "STSegmentToolTips.h"
 #import <objc/runtime.h>
@@ -83,7 +84,11 @@ static void STTextOptionsBarSizeSegments(NSSegmentedControl *control, CGFloat mi
 
 @end
 
-@interface STTextOptionsBar () <NSComboBoxDataSource, NSComboBoxDelegate>
+#if defined(GNUSTEP)
+@class STFontPopUpButton;
+#endif
+
+@interface STTextOptionsBar () <NSComboBoxDataSource, NSComboBoxDelegate, STFontPickerDelegate>
 @property (nonatomic, strong) NSArray<STTextOptionsSwatch *> *swatches;
 @property (nonatomic, strong) NSSegmentedControl *sizePresets;
 @property (nonatomic, strong) NSButton *smallerButton;
@@ -91,6 +96,13 @@ static void STTextOptionsBarSizeSegments(NSSegmentedControl *control, CGFloat mi
 @property (nonatomic, strong) NSSegmentedControl *styleControl;
 @property (nonatomic, strong) NSButton *pointerButton;
 @property (nonatomic, strong) NSComboBox *fontField;
+#if defined(GNUSTEP)
+/// On GNUstep the font is a button opening a searchable list, as GTK 4's dropdown; on macOS the
+/// combo box above.
+@property (nonatomic, strong) STFontPopUpButton *fontButton;
+@property (nonatomic, strong, nullable) STFontPicker *fontPicker;
+@property (nonatomic, assign) BOOL fontPickerChose;
+#endif
 @property (nonatomic, strong) STFontFamilyList *fontFamilies;
 @property (nonatomic, copy) NSString *shownFontFamily;
 @property (nonatomic, assign) BOOL takingTextFocus;
@@ -213,6 +225,30 @@ static NSImage *STTextAlignmentImage(NSInteger index) {
 }
 @end
 
+#if defined(GNUSTEP)
+/// The font button: a pop-up button the theme draws as a dropdown, showing the family, which
+/// opens the font picker instead of its menu.
+@interface STFontPopUpButton : NSPopUpButton
+@property (nonatomic, copy, nullable) void (^onPress)(void);
+@end
+
+@implementation STFontPopUpButton
+- (void)mouseDown:(NSEvent *)event {
+    (void)event;
+    if ([self isEnabled] && self.onPress) {
+        self.onPress();
+    }
+}
+
+- (void)performClick:(id)sender {
+    (void)sender;
+    if ([self isEnabled] && self.onPress) {
+        self.onPress();
+    }
+}
+@end
+#endif
+
 @implementation STTextOptionsBar
 
 + (CGFloat)preferredHeight {
@@ -321,6 +357,21 @@ static NSImage *STTextAlignmentImage(NSInteger index) {
     // from a scrolling list of recent fonts and those for the user's language (#103). The list is
     // its data source, so thousands of families cost nothing until it opens.
     self.fontFamilies = [[STFontFamilyList alloc] init];
+    __weak STTextOptionsBar *weakSelf = self;
+#if defined(GNUSTEP)
+    // A dropdown button and a popover with search, as GTK 4's (the theme draws both). As wide as
+    // the combo box was, so the bar still fits a typical window.
+    STFontPopUpButton *fontButton = [[STFontPopUpButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 120.0, controlHeight)
+                                                                   pullsDown:NO];
+    // A long family name ends in an ellipsis before the chevron.
+    [[fontButton cell] setLineBreakMode:NSLineBreakByTruncatingTail];
+    [fontButton addItemWithTitle:@""];
+    fontButton.onPress = ^{
+        [weakSelf showFontPicker];
+    };
+    self.fontButton = fontButton;
+    [self prepareControl:self.fontButton toolTip:@"Font: pick or search recent fonts, fonts for your language, or any installed font"];
+#else
     STFontComboBox *fontField = [[STFontComboBox alloc] initWithFrame:NSMakeRect(0.0, 0.0, 120.0, controlHeight)];
     [fontField setUsesDataSource:YES];
     [fontField setDataSource:self];
@@ -328,13 +379,13 @@ static NSImage *STTextAlignmentImage(NSInteger index) {
     [fontField setCompletes:YES];
     [fontField setNumberOfVisibleItems:12];
     [fontField setAction:@selector(fontEntered:)];
-    __weak STTextOptionsBar *weakSelf = self;
     fontField.willTakeFocus = ^{
         [weakSelf noteTakingTextFocus];
     };
     self.fontField = fontField;
     [self prepareControl:self.fontField toolTip:@"Font: type a name, or pick from recent fonts and fonts for your language"];
     [self.fontField setRefusesFirstResponder:NO];
+#endif
 
     self.boldButton = [self smallButtonWithTitle:@"B" action:@selector(boldPressed:) toolTip:STShortcutToolTip(@"Bold", @"Ctrl+B", @"⌘B")];
     // An explicit size: macOS draws a button's boldSystemFontOfSize:0 in regular weight.
@@ -383,7 +434,7 @@ static NSImage *STTextAlignmentImage(NSInteger index) {
         self.swatches,
         @[self.sizePresets, self.smallerButton, self.biggerButton],
         @[self.styleControl, self.pointerButton],
-        @[self.fontField],
+        @[[self fontControl]],
         @[self.boldButton, self.italicButton],
         @[self.alignmentControl],
     ];
@@ -481,7 +532,7 @@ static BOOL STTextOptionsColorsMatch(NSColor *a, NSColor *b) {
         self.shownFontFamily = family;
         // Not while a name is being typed there.
         if (![self.fontField currentEditor]) {
-            [self.fontField setStringValue:[STFontFamilyList displayNameForFamily:family]];
+            [self showFontFamilyName];
         }
     }
 
@@ -555,6 +606,9 @@ static BOOL STTextOptionsColorsMatch(NSColor *a, NSColor *b) {
         [self.fontFamilies noteUsedFamily:installed];
         [self.fontField reloadData];
         self.shownFontFamily = installed;
+#if defined(GNUSTEP)
+        self.fontPickerChose = YES;
+#endif
         [self.delegate textOptionsBar:self didPickFontFamily:installed];
     }
     [self finishFontEntry];
@@ -569,8 +623,62 @@ static BOOL STTextOptionsColorsMatch(NSColor *a, NSColor *b) {
     if ([self.fontField currentEditor]) {
         [[self.fontField window] endEditingFor:self.fontField];
     }
-    [self.fontField setStringValue:[STFontFamilyList displayNameForFamily:self.shownFontFamily ?: @""]];
+    [self showFontFamilyName];
 }
+
+/// The control the font is picked with: the dropdown button on GNUstep, the combo box on macOS.
+- (NSControl *)fontControl {
+#if defined(GNUSTEP)
+    return self.fontButton;
+#else
+    return self.fontField;
+#endif
+}
+
+/// Shows the text's family in the font control.
+- (void)showFontFamilyName {
+    NSString *name = [STFontFamilyList displayNameForFamily:self.shownFontFamily ?: @""];
+#if defined(GNUSTEP)
+    [[self.fontButton itemAtIndex:0] setTitle:name];
+    [self.fontButton synchronizeTitleAndSelectedItem];
+    [self.fontButton setNeedsDisplay:YES];
+#else
+    [self.fontField setStringValue:name];
+#endif
+}
+
+#if defined(GNUSTEP)
+/// Opens the font list below the button; the text box keeps its label meanwhile (#103).
+- (void)showFontPicker {
+    if (self.fontPicker.isShown) {
+        [self.fontPicker close];
+        return;
+    }
+    [self noteTakingTextFocus];
+    if (!self.fontPicker) {
+        self.fontPicker = [[STFontPicker alloc] initWithFamilies:self.fontFamilies];
+        self.fontPicker.delegate = self;
+    }
+    self.fontPicker.families = self.fontFamilies;
+    self.fontPicker.currentFamily = self.shownFontFamily;
+    self.fontPickerChose = NO;
+    [self.fontPicker showBelowView:self.fontButton];
+}
+
+- (void)fontPicker:(STFontPicker *)picker didChooseFamily:(NSString *)family {
+    (void)picker;
+    [self chooseFontFamily:family];
+}
+
+/// Closed without a choice (Escape, or a click elsewhere): the keyboard goes back to the text.
+- (void)fontPickerDidClose:(STFontPicker *)picker {
+    (void)picker;
+    if (!self.fontPickerChose) {
+        [self finishFontEntry];
+    }
+    self.fontPickerChose = NO;
+}
+#endif
 
 /// Return in the field: the typed name, or the family it completes to.
 - (void)fontEntered:(id)sender {

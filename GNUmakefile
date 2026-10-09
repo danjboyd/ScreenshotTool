@@ -188,7 +188,8 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/STThemeUtilities.m \
 	Source/STSegmentToolTips.m \
 	Source/STSplitButton.m \
-	Source/STScreenshotCapture.m
+	Source/STScreenshotCapture.m \
+	Source/STFontPicker.m
 
 CLANG_WRAPPER := $(shell pwd)/Tools/clang-wrapper.sh
 CC = $(CLANG_WRAPPER)
