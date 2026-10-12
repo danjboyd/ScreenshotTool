@@ -197,6 +197,7 @@ static const BOOL STBackendRequestsKeyOnClose = NO;
     NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 200, 120)];
     STFloatingPopover *popover = [[STFloatingPopover alloc] initWithContentView:content];
     popover.themeDrawsPanel = YES;
+    popover.themeDrawsArrow = NO; // a theme like WinUI's, whatever the theme the tests run under
     [popover showRelativeToRect:NSMakeRect(20, 20, 10, 10) ofView:window.contentView preferredEdge:NSMaxYEdge];
     XCTAssertFalse(popover.backgroundView.drawsPanel, @"the app draws no panel of its own");
     XCTAssertEqualWithAccuracy(NSHeight(popover.window.frame), 120.0, 0.5, @"and no arrow: the window is the content's height");
