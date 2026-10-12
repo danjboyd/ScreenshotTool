@@ -597,10 +597,37 @@ static NSString *STPathForToolbarResource(NSString *filename, NSString *extensio
 /// switcher's segments, Adwaita's toolbar items, and other themes' toolbar items.
 static const NSInteger STToolbarIconPointSizes[] = {16, 22, 24, 32};
 
+#if defined(GNUSTEP)
+/// The pixel size of the shipped icon file to draw at `points` points on GNUstep: the size itself
+/// at a scale of 1, else the smallest file (the point sizes and their doubles) that covers the
+/// scaled size, so a scaled-up UI (GSScaleFactor, a DPI-aware Windows display above 100%) draws
+/// a larger rendering shrunk a little rather than a smaller one blown up. GNUstep picks an image's
+/// representation by its size in points, not its pixels, so each point size gets just this one.
+static NSInteger STToolbarIconPixelSize(NSInteger points) {
+    CGFloat scale = [[NSScreen mainScreen] userSpaceScaleFactor];
+    if (scale <= 1.0) {
+        return points;
+    }
+    CGFloat needed = points * scale;
+    NSInteger best = 0;
+    NSInteger largest = points;
+    const size_t count = sizeof(STToolbarIconPointSizes) / sizeof(STToolbarIconPointSizes[0]);
+    for (size_t i = 0; i < count * 2; i++) {
+        NSInteger pixels = STToolbarIconPointSizes[i % count] * (i < count ? 1 : 2);
+        largest = MAX(largest, pixels);
+        if (pixels >= needed - 0.01 && (best == 0 || pixels < best)) {
+            best = pixels;
+        }
+    }
+    return best > 0 ? best : largest;
+}
+#endif
+
 /// The toolbar icon `name` (`stem-symbolic`) with a representation for each size the toolbar draws
 /// it at, each rendered from its SVG at that size (scripts/render_toolbar_icons.py), so none is
 /// resampled on screen: drawn at one, an NSImage picks that one. Doubled-up ones are added for
-/// Retina displays on macOS. Nil when the sized files aren't there.
+/// Retina displays on macOS; on GNUstep a scaled-up UI gets larger files instead
+/// (STToolbarIconPixelSize). Nil when the sized files aren't there.
 static NSImage *STSizedToolbarIcon(NSString *name, NSSize size) {
     NSString *suffix = @"-symbolic";
     if (![name hasSuffix:suffix]) {
@@ -616,7 +643,12 @@ static NSImage *STSizedToolbarIcon(NSString *name, NSSize size) {
     for (size_t i = 0; i < sizeof(STToolbarIconPointSizes) / sizeof(STToolbarIconPointSizes[0]); i++) {
         NSInteger points = STToolbarIconPointSizes[i];
         for (size_t j = 0; j < sizeof(scales) / sizeof(scales[0]); j++) {
-            NSString *file = [NSString stringWithFormat:@"%@-%ld%@", stem, (long)(points * scales[j]), suffix];
+#if defined(GNUSTEP)
+            NSInteger pixels = STToolbarIconPixelSize(points);
+#else
+            NSInteger pixels = points * scales[j];
+#endif
+            NSString *file = [NSString stringWithFormat:@"%@-%ld%@", stem, (long)pixels, suffix];
             NSString *path = STPathForToolbarResource(file, @"png");
             NSData *data = path ? [NSData dataWithContentsOfFile:path] : nil;
             NSBitmapImageRep *rep = data ? [NSBitmapImageRep imageRepWithData:data] : nil;

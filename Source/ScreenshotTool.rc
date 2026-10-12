@@ -1,0 +1,4 @@
+// Windows resources for ScreenshotTool.exe.
+#include <winuser.h>
+
+CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "ScreenshotTool.exe.manifest"
