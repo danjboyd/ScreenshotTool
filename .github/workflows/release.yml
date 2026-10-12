@@ -18,10 +18,15 @@ jobs:
       package-version: ${{ steps.version.outputs.package_version }}
       release-tag: ${{ steps.version.outputs.release_tag }}
       prerelease: ${{ steps.version.outputs.prerelease }}
+      windows-sign: ${{ steps.version.outputs.windows_sign }}
     steps:
       - name: Resolve package version
         id: version
         shell: bash
+        env:
+          # A reusable workflow's inputs can't read secrets, so whether the signing certificate
+          # is there passes through this job's outputs.
+          HAS_WINDOWS_SIGN_CERT: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 != '' }}
         run: |
           set -euo pipefail
           tag_name="${GITHUB_REF_NAME}"
@@ -34,6 +39,14 @@ jobs:
             echo "prerelease=true" >> "${GITHUB_OUTPUT}"
           else
             echo "prerelease=false" >> "${GITHUB_OUTPUT}"
+          fi
+          # A stable release signs the MSI when the repository has a certificate
+          # (WINDOWS_SIGN_PFX_BASE64); without one it ships unsigned, as the rcs do.
+          if [[ "${package_version}" != *-* && "${HAS_WINDOWS_SIGN_CERT}" == "true" ]]; then
+            echo "windows_sign=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "windows_sign=false" >> "${GITHUB_OUTPUT}"
+            echo "The Windows MSI won't be signed." >&2
           fi
 
   package-windows:
@@ -54,7 +67,7 @@ jobs:
       run-validation: true
       run-smoke: true
       artifact-name: screenshottool-windows
-      sign-artifacts: ${{ needs.resolve-version.outputs.prerelease != 'true' }}
+      sign-artifacts: ${{ needs.resolve-version.outputs.windows-sign == 'true' }}
       sign-timestamp-url: http://timestamp.digicert.com
       # A prerelease build checks the prerelease feed, which says it's the prerelease channel
       # (#111). Stable tags run no preflight.
