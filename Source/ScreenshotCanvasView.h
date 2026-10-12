@@ -79,7 +79,13 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 - (NSFont *)effectiveTextFont;
 /// The undo history for typing in the open text box, or nil when no box is being edited.
 - (nullable NSUndoManager *)activeTextUndoManager;
+/// View points per image pixel.
 @property (nonatomic, assign) CGFloat zoomScale;
+/// The zoom the user sees: screen pixels per image pixel, so 1.0 is a screenshot's actual size.
+/// It's zoomScale on macOS and at a Windows display scale of 100%.
+@property (nonatomic, assign) CGFloat displayZoomScale;
+/// Screen pixels per view point: the Windows display scale, 1.0 elsewhere.
+@property (nonatomic, readonly) CGFloat screenPixelsPerPoint;
 @property (nonatomic, assign, getter=isFitToWindow) BOOL fitToWindow;
 @property (nonatomic, weak, nullable) NSScrollView *hostScrollView;
 

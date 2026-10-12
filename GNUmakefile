@@ -14,6 +14,8 @@ FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
 # Take Screenshot opens the Snipping Tool (ShellExecuteW) and watches the clipboard;
 # STWindowsIntegration copies and pastes images through it, converting bitmaps with GDI.
 CAPTURE_LDFLAGS := -lshell32 -luser32 -lgdi32
+# The application manifest: declares the app DPI-aware (Source/ScreenshotTool.exe.manifest).
+WINDOWS_RESOURCE_FILES := Source/ScreenshotTool.rc
 else
 FONTCONFIG_CFLAGS := -I/usr/include/freetype2
 FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
@@ -193,6 +195,8 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/STScreenshotCapture.m \
 	Source/STWindowsIntegration.m \
 	Source/STFontPicker.m
+
+ScreenshotTool_WINDRES_FILES = $(WINDOWS_RESOURCE_FILES)
 
 CLANG_WRAPPER := $(shell pwd)/Tools/clang-wrapper.sh
 CC = $(CLANG_WRAPPER)
