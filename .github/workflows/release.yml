@@ -52,6 +52,10 @@ jobs:
       artifact-name: screenshottool-windows
       sign-artifacts: ${{ needs.resolve-version.outputs.prerelease != 'true' }}
       sign-timestamp-url: http://timestamp.digicert.com
+      # A prerelease build checks the prerelease feed, which says it's the prerelease channel
+      # (#111). Stable tags run no preflight.
+      preflight-shell: pwsh
+      preflight-command: ${{ needs.resolve-version.outputs.prerelease == 'true' && './scripts/use_prerelease_update_channel.ps1' || '' }}
     secrets:
       sign_pfx_base64: ${{ secrets.WINDOWS_SIGN_PFX_BASE64 }}
       sign_pfx_password: ${{ secrets.WINDOWS_SIGN_PFX_PASSWORD }}
@@ -79,10 +83,12 @@ jobs:
       # stages their files only on Windows.
       # The packager's AppImage smoke test launches the app, which needs an X server: start
       # Xvfb here and give the later steps its DISPLAY.
+      # A prerelease build checks the prerelease feed (#111), as on Windows.
       preflight-command: >-
         bash ./scripts/bootstrap_gnustep_linux_ci.sh &&
         jq 'del(.packagedDefaults) | .themeInputs |= map(del(.default)) | ([.themeInputs[].name]) as $themes | .compliance.runtimeNotices |= map(select(.name as $n | $themes | index($n) | not))' packaging/package.manifest.json > "${RUNNER_TEMP}/manifest.json" &&
         mv "${RUNNER_TEMP}/manifest.json" packaging/package.manifest.json &&
+        if [ "${{ needs.resolve-version.outputs.prerelease }}" = "true" ]; then pwsh -NoProfile -File ./scripts/use_prerelease_update_channel.ps1; fi &&
         { setsid nohup Xvfb :99 -screen 0 1280x800x24 -nolisten tcp > "${RUNNER_TEMP}/xvfb.log" 2>&1 & } &&
         echo "DISPLAY=:99" >> "${GITHUB_ENV}"
       run-validation: true
