@@ -25,6 +25,14 @@ endif
 
 APP_NAME = ScreenshotTool
 ScreenshotTool_APPLICATION_ICON =
+# A build from the tree takes CFBundleIdentifier com.danboyd.screenshottool.dev, which GNUstep
+# names the defaults domain after, so running it doesn't change the installed app's settings.
+# The release build (scripts/build_release.ps1) passes ST_DEV_BUILD=no.
+ST_DEV_BUILD ?= yes
+ST_BUNDLE_IDENTIFIER := com.danboyd.screenshottool
+ifneq ($(ST_DEV_BUILD),no)
+ST_BUNDLE_IDENTIFIER := $(ST_BUNDLE_IDENTIFIER).dev
+endif
 UPDATER_ROOT := $(CURDIR)/third_party/gnustep-packager-updater/objc
 UPDATER_CORE_DIR := $(UPDATER_ROOT)/GPUpdaterCore
 UPDATER_UI_DIR := $(UPDATER_ROOT)/GPUpdaterUI
@@ -269,10 +277,15 @@ tests-only:
 
 
 after-all:: Resources/Info-gnustep.plist
-	@if [ -d ScreenshotTool.app/Resources ]; then \
-		cp Resources/Info-gnustep.plist ScreenshotTool.app/Resources/Info-gnustep.plist; \
+	@plist=""; \
+	if [ -d ScreenshotTool.app/Resources ]; then \
+		plist=ScreenshotTool.app/Resources/Info-gnustep.plist; \
 	elif [ -d ScreenshotTool.app/Contents/Resources ]; then \
-		cp Resources/Info-gnustep.plist ScreenshotTool.app/Contents/Resources/Info-gnustep.plist; \
+		plist=ScreenshotTool.app/Contents/Resources/Info-gnustep.plist; \
+	fi; \
+	if [ -n "$$plist" ]; then \
+		sed 's/^\([[:space:]]*CFBundleIdentifier = \)"[^"]*";/\1"$(ST_BUNDLE_IDENTIFIER)";/' \
+			Resources/Info-gnustep.plist > "$$plist"; \
 	else \
 		echo "Warning: could not locate bundle Resources directory to copy Info-gnustep.plist"; \
 	fi

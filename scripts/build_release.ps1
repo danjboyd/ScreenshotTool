@@ -94,7 +94,7 @@ function Invoke-BashBuild {
 
   $repoPath = ConvertTo-BashPathExpression -Path $RepoRoot
   $gnustepPath = ConvertTo-BashPathExpression -Path $GNUstepSh
-  $command = "set -eo pipefail; export ZSH_VERSION=`"${ZSH_VERSION:-}`"; cd $repoPath; set +u; source $gnustepPath; set -u; make -j`$(nproc)"
+  $command = "set -eo pipefail; export ZSH_VERSION=`"${ZSH_VERSION:-}`"; cd $repoPath; set +u; source $gnustepPath; set -u; make -j`$(nproc) ST_DEV_BUILD=no"
   Invoke-LoggedCommand -FilePath $BashExe -ArgumentList @("-lc", $command)
 }
 

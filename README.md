@@ -87,6 +87,20 @@ Notes:
 - Open and save dialogs come from the GNUstep theme: under the
   [Adwaita theme](https://github.com/danjboyd/plugins-themes-Adwaita) they're
   GNOME's own file chooser.
+- A build from the tree uses the identifier `com.danboyd.screenshottool.dev`, so its settings
+  (`~/GNUstep/Defaults/com.danboyd.screenshottool.dev.plist`) are apart from an installed
+  release's. The release build passes `make ST_DEV_BUILD=no`.
+
+### Installing the release AppImage
+
+```bash
+scripts/install_appimage.sh                       # newest stable release
+scripts/install_appimage.sh --channel prerelease  # newest release candidate
+```
+
+It installs `~/Applications/ScreenshotTool.AppImage` with a desktop entry and icon. The app
+checks for updates of the channel it was released on (Check for Updates…), and replaces the
+AppImage in place. `--uninstall` removes it.
 
 ### macOS (Cocoa-native)
 

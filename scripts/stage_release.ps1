@@ -307,6 +307,36 @@ function Update-StagedBundleVersion {
   }
 }
 
+# A release bundle must name the package's identifier, not the .dev one a plain `make` gives
+# it (GNUmakefile's ST_DEV_BUILD): GNUstep names the defaults domain after it.
+function Assert-StagedBundleIdentifier {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$BundleRoot,
+    [Parameter(Mandatory = $true)]
+    [string]$Identifier
+  )
+
+  $found = $false
+  foreach ($plistPath in @(
+    (Join-Path $BundleRoot "Resources\Info-gnustep.plist"),
+    (Join-Path $BundleRoot "Contents\Resources\Info-gnustep.plist")
+  )) {
+    if (-not (Test-Path $plistPath)) {
+      continue
+    }
+    $found = $true
+    $content = Get-Content -Raw -Path $plistPath
+    $pattern = "(?m)^\s*CFBundleIdentifier\s*=\s*""$([regex]::Escape($Identifier))"";"
+    if ($content -notmatch $pattern) {
+      throw "$plistPath doesn't set CFBundleIdentifier to $Identifier. Build with ST_DEV_BUILD=no."
+    }
+  }
+  if (-not $found) {
+    throw "No Info-gnustep.plist in $BundleRoot"
+  }
+}
+
 function Get-LinuxDependencyEntries {
   param(
     [Parameter(Mandatory = $true)]
@@ -904,6 +934,7 @@ if (-not (Copy-DirectoryTree -Source $appSourceRoot -Destination $appStageRoot))
 $normalizedEntryPath = Normalize-StagedAppEntry -BundleRoot $appStageRoot
 Stage-UpdaterHelper -RepoRoot $repoRoot -BundleRoot $appStageRoot
 Update-StagedBundleVersion -BundleRoot $appStageRoot -Version $version
+Assert-StagedBundleIdentifier -BundleRoot $appStageRoot -Identifier ([string]$manifest["package"]["id"])
 Write-StageLog "Staged app bundle entry: $normalizedEntryPath"
 
 [void](Copy-FileIfPresent -Source (Join-Path $repoRoot "Resources\ScreenshotToolIcon.png") -Destination (Join-Path $metadataIconRoot "ScreenshotToolIcon.png"))
