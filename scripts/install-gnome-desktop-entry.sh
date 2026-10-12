@@ -21,7 +21,8 @@
 
 set -euo pipefail
 
-# Install a GNOME desktop entry for ScreenshotTool that works with startup
+# Install a GNOME desktop entry, "ScreenshotTool (Dev)", for the build in this tree (the
+# released AppImage has its own, from scripts/install_appimage.sh) that works with startup
 # notifications so the first window receives focus.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -46,7 +47,7 @@ mkdir -p "$DESKTOP_DIR"
 cat >"$DESKTOP_FILE" <<EOF
 [Desktop Entry]
 Type=Application
-Name=ScreenshotTool
+Name=ScreenshotTool (Dev)
 Comment=Annotate screenshots with pen, highlighter, and text overlays
 Exec=$LAUNCHER_SCRIPT %U
 Icon=$ICON_FILE
