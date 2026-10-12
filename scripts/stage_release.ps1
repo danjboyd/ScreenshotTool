@@ -190,9 +190,19 @@ function Normalize-StagedAppEntry {
 
   $withoutExtension = Join-Path $BundleRoot "ScreenshotTool"
   $withExe = Join-Path $BundleRoot "ScreenshotTool.exe"
-  if ($IsWindows -and (Test-Path $withExe)) {
-    Copy-Item -Path $withExe -Destination $withoutExtension -Force
-  } elseif (-not (Test-Path $withoutExtension) -and (Test-Path $withExe)) {
+  if ($IsWindows) {
+    # The MSI launches ScreenshotTool.exe (the manifest's Windows launch entry), so the
+    # bundle carries no extensionless copy of it.
+    if (-not (Test-Path $withExe)) {
+      throw "Expected staged app entry is missing: $withExe"
+    }
+    if (Test-Path $withoutExtension) {
+      Remove-Item -Path $withoutExtension -Force
+    }
+    return $withExe
+  }
+
+  if (-not (Test-Path $withoutExtension) -and (Test-Path $withExe)) {
     Copy-Item -Path $withExe -Destination $withoutExtension -Force
   }
 

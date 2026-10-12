@@ -56,6 +56,13 @@
       "LD_LIBRARY_PATH": "{@runtimeRoot}/lib:{@runtimeRoot}/System/Library/Libraries"
     }
   },
+  "platformOverrides": {
+    "windows": {
+      "launch": {
+        "entryRelativePath": "app/ScreenshotTool.app/ScreenshotTool.exe"
+      }
+    }
+  },
   "themeInputs": [
     {
       "name": "WinUITheme",
