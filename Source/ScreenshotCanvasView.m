@@ -2146,6 +2146,25 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [self updateActiveTextViewFrame];
 }
 
+- (CGFloat)screenPixelsPerPoint {
+#if defined(_WIN32)
+    // macOS draws a Retina screenshot at its point size, so only Windows needs this.
+    NSScreen *screen = self.window.screen ?: [NSScreen mainScreen];
+    CGFloat scale = screen ? [screen userSpaceScaleFactor] : 1.0;
+    return scale > 0.0 ? scale : 1.0;
+#else
+    return 1.0;
+#endif
+}
+
+- (CGFloat)displayZoomScale {
+    return self.zoomScale * self.screenPixelsPerPoint;
+}
+
+- (void)setDisplayZoomScale:(CGFloat)displayZoomScale {
+    self.zoomScale = displayZoomScale / self.screenPixelsPerPoint;
+}
+
 - (void)setFitToWindow:(BOOL)fitToWindow {
     if (_fitToWindow == fitToWindow) {
         return;
@@ -3166,9 +3185,9 @@ static NSError *STProjectError(NSString *message) {
         return;
     }
 
-    // Fit only ever shrinks: upscaling a screenshot just blurs it.
+    // Fit only ever shrinks, to at most actual size: upscaling a screenshot just blurs it.
     CGFloat newScale = MIN(available.width / imageSize.width, available.height / imageSize.height);
-    newScale = MAX(0.05, MIN(newScale, 1.0));
+    newScale = MAX(0.05, MIN(newScale, 1.0 / self.screenPixelsPerPoint));
     _zoomScale = newScale;
     [self updateFrameSize];
     [self setNeedsDisplay:YES];
@@ -3184,6 +3203,24 @@ static NSError *STProjectError(NSString *message) {
     }
 
     [NSGraphicsContext saveGraphicsState];
+#if defined(GNUSTEP)
+    // At a fractional display scale a whole point isn't a whole pixel, so the image can start
+    // between screen pixels and every pixel blends with its neighbour, even at actual size.
+    // Nudge it (by under a pixel) onto the pixel grid.
+    NSAffineTransform *ctm = [[NSGraphicsContext currentContext] GSCurrentCTM];
+    if (ctm) {
+        NSPoint device = [ctm transformPoint:NSZeroPoint];
+        NSSize nudge = NSMakeSize(round(device.x) - device.x, round(device.y) - device.y);
+        if (fabs(nudge.width) > 0.001 || fabs(nudge.height) > 0.001) {
+            NSAffineTransform *toUser = [ctm copy];
+            [toUser invert];
+            nudge = [toUser transformSize:nudge];
+            NSAffineTransform *snap = [NSAffineTransform transform];
+            [snap translateXBy:nudge.width yBy:nudge.height];
+            [snap concat];
+        }
+    }
+#endif
     NSAffineTransform *transform = [NSAffineTransform transform];
     [transform scaleBy:self.zoomScale];
     [transform concat];

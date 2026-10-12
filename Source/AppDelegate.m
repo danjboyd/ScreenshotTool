@@ -1475,7 +1475,7 @@ static AppDelegate *STFrontDocument(void) {
         if (![self.canvasView hasImage]) {
             return @"Zoom unavailable until an image is loaded";
         }
-        NSString *value = self.canvasView.isFitToWindow ? @"Fit to Window" : [self displayStringForScale:self.canvasView.zoomScale];
+        NSString *value = self.canvasView.isFitToWindow ? @"Fit to Window" : [self displayStringForScale:self.canvasView.displayZoomScale];
         return [NSString stringWithFormat:@"Zoom: %@ — click to adjust", value];
     }
     return nil;
@@ -3715,7 +3715,7 @@ static id STInfoValueForKey(NSString *key) {
     BOOL hasImage = [self.canvasView hasImage];
     NSString *title = @"100%";
     if (hasImage) {
-        title = self.canvasView.isFitToWindow ? @"Fit" : [self displayStringForScale:self.canvasView.zoomScale];
+        title = self.canvasView.isFitToWindow ? @"Fit" : [self displayStringForScale:self.canvasView.displayZoomScale];
     }
 
     self.zoomToolbarButtonView.title = title;
@@ -4761,7 +4761,7 @@ static id STInfoValueForKey(NSString *key) {
 
 - (CGFloat)zoomPopoverCurrentScale:(ZoomPopoverController *)controller {
     (void)controller;
-    return self.canvasView.zoomScale;
+    return self.canvasView.displayZoomScale;
 }
 
 - (void)zoomPopover:(ZoomPopoverController *)controller didChangeScale:(CGFloat)scale {
@@ -5666,6 +5666,9 @@ static id STInfoValueForKey(NSString *key) {
     if (imageSize.width <= 0.0f || imageSize.height <= 0.0f || !self.window) {
         return;
     }
+    // Sized for the image at actual size, which on a scaled Windows display is fewer points.
+    CGFloat pixelsPerPoint = self.canvasView ? self.canvasView.screenPixelsPerPoint : 1.0f;
+    imageSize = NSMakeSize(imageSize.width / pixelsPerPoint, imageSize.height / pixelsPerPoint);
 
     NSScreen *screen = self.window.screen ?: [NSScreen mainScreen];
     NSRect visibleFrame = screen ? screen.visibleFrame : NSMakeRect(0.0f, 0.0f, 1600.0f, 1000.0f);
@@ -6363,7 +6366,7 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
 
-    CGFloat current = self.canvasView.zoomScale;
+    CGFloat current = self.canvasView.displayZoomScale;
     CGFloat next = [self nextZoomScaleAbove:current];
     [self setZoomScale:next];
 }
@@ -6377,7 +6380,7 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
 
-    CGFloat current = self.canvasView.zoomScale;
+    CGFloat current = self.canvasView.displayZoomScale;
     CGFloat next = [self nextZoomScaleBelow:current];
     [self setZoomScale:next];
 }
@@ -6716,7 +6719,7 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)setZoomScale:(CGFloat)scale {
     self.canvasView.fitToWindow = NO;
-    self.canvasView.zoomScale = scale;
+    self.canvasView.displayZoomScale = scale;
     [self.canvasView setNeedsDisplay:YES];
     [self reflectZoomSelection];
 }
