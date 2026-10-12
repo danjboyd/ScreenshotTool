@@ -2105,6 +2105,29 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [self updateForEnclosingBoundsChange];
 }
 
+- (void)setImage:(NSImage *)image {
+#if defined(GNUSTEP)
+    // GNUstep caches a scaled image in an offscreen window as big as the image. Windows won't
+    // make a window much bigger than the screen, so a larger screenshot drew with misplaced
+    // patches. Draw from the bitmap itself. (An image drawn with lockFocus has no bitmap: its
+    // pixels live only in the cache, so it keeps it.)
+    BOOL hasBitmap = NO;
+    for (NSImageRep *rep in image.representations) {
+        if ([rep isKindOfClass:[NSBitmapImageRep class]] && rep.pixelsWide > 0 && rep.pixelsHigh > 0) {
+            // Drawn uncached, a bitmap whose file gives a dpi (a 96-dpi PNG is 360 points for
+            // 480 pixels) is resampled to the image's size. Size it in pixels, as the canvas
+            // is, so it copies 1:1.
+            [rep setSize:NSMakeSize(rep.pixelsWide, rep.pixelsHigh)];
+            hasBitmap = YES;
+        }
+    }
+    if (hasBitmap) {
+        [image setCacheMode:NSImageCacheNever];
+    }
+#endif
+    _image = image;
+}
+
 - (void)loadImage:(NSImage *)image {
     [[self undoManager] removeAllActions];
     [self cancelActiveTextEntry];
