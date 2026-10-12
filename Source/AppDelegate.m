@@ -12,6 +12,7 @@
 #import "STSegmentToolTips.h"
 #import "STSplitButton.h"
 #import "STScreenshotCapture.h"
+#import "STWindowsIntegration.h"
 #import "STHudView.h"
 #import "STTextOptionsBar.h"
 #import <Foundation/NSTask.h>
@@ -5883,14 +5884,22 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
 
-    NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
-    [pasteboard declareTypes:types owner:nil];
     BOOL wrotePasteboard = NO;
-    if (pngData) {
-        wrotePasteboard = [pasteboard setData:pngData forType:NSPasteboardTypePNG] || wrotePasteboard;
-    }
-    if (tiffData) {
-        wrotePasteboard = [pasteboard setData:tiffData forType:NSPasteboardTypeTIFF] || wrotePasteboard;
+    if ([self usesWindowsClipboard]) {
+        // Not the pasteboard as well: GNUstep's pasteboard server would then take the Windows
+        // clipboard back and offer only text.
+        wrotePasteboard = STWindowsClipboardWritePNGData(pngData ?: [self pngDataForImage:flattened]);
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"copy action wrote Windows clipboard=%@",
+                                 wrotePasteboard ? @"YES" : @"NO"]);
+    } else {
+        NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
+        [pasteboard declareTypes:types owner:nil];
+        if (pngData) {
+            wrotePasteboard = [pasteboard setData:pngData forType:NSPasteboardTypePNG] || wrotePasteboard;
+        }
+        if (tiffData) {
+            wrotePasteboard = [pasteboard setData:tiffData forType:NSPasteboardTypeTIFF] || wrotePasteboard;
+        }
     }
     BOOL mirroredWayland = STMirrorPNGDataToWaylandClipboard(pngData);
 
@@ -5919,10 +5928,22 @@ static id STInfoValueForKey(NSString *key) {
     return [NSPasteboard generalPasteboard];
 }
 
+/// On Windows images go to and from the Windows clipboard itself, which GNUstep bridges only text
+/// to; not when a test has substituted its own pasteboard.
+- (BOOL)usesWindowsClipboard {
+    return STWindowsClipboardIsNative() && [self clipboardPasteboard] == [NSPasteboard generalPasteboard];
+}
+
 - (NSData *)clipboardPNGDataForPasteAsNewImage {
     NSPasteboard *pasteboard = [self clipboardPasteboard];
     NSArray<NSString *> *imageTypes = @[ NSPasteboardTypePNG, NSPasteboardTypeTIFF, NSTIFFPboardType ];
-    NSString *availableType = [pasteboard availableTypeFromArray:imageTypes];
+    NSData *windowsPNG = [self usesWindowsClipboard] ? STWindowsClipboardPNGData() : nil;
+    if (windowsPNG.length > 0) {
+        ScreenshotToolAppendLog(@"pasteAsNewImage: using image data from the Windows clipboard");
+        return windowsPNG;
+    }
+    // On Windows the pasteboard can still hold an image from before the Windows clipboard changed.
+    NSString *availableType = [self usesWindowsClipboard] ? nil : [pasteboard availableTypeFromArray:imageTypes];
     if (availableType.length > 0) {
         NSData *data = [pasteboard dataForType:availableType];
         if ([availableType isEqualToString:NSPasteboardTypePNG] && data.length > 0) {
@@ -5974,10 +5995,12 @@ static id STInfoValueForKey(NSString *key) {
 /// The first image file among the files on the clipboard (as a file manager copies them), or nil.
 - (NSString *)clipboardImageFilePath {
     NSPasteboard *pasteboard = [self clipboardPasteboard];
-    if (![pasteboard availableTypeFromArray:@[ NSFilenamesPboardType ]]) {
-        return nil;
+    id paths = nil;
+    if ([self usesWindowsClipboard]) {
+        paths = STWindowsClipboardFilePaths();
+    } else if ([pasteboard availableTypeFromArray:@[ NSFilenamesPboardType ]]) {
+        paths = [pasteboard propertyListForType:NSFilenamesPboardType];
     }
-    id paths = [pasteboard propertyListForType:NSFilenamesPboardType];
     if (![paths isKindOfClass:[NSArray class]]) {
         return nil;
     }
@@ -6008,7 +6031,9 @@ static id STInfoValueForKey(NSString *key) {
     // No wl-paste here: on GNOME it takes keyboard focus to read the clipboard, so the window
     // stopped being key, became key again and re-checked, and its title bar flickered. XWayland
     // mirrors the Wayland clipboard, so the pasteboard already sees an image copied there.
-    BOOL hasImage = [pasteboard availableTypeFromArray:imageTypes] != nil || [self clipboardImageFilePath] != nil;
+    BOOL hasImage = ([self usesWindowsClipboard] ? STWindowsClipboardHasImage()
+                                                  : [pasteboard availableTypeFromArray:imageTypes] != nil)
+        || [self clipboardImageFilePath] != nil;
     self.clipboardHadImage = hasImage;
     self.clipboardCheckedAt = now;
     return hasImage;
@@ -6083,6 +6108,17 @@ static id STInfoValueForKey(NSString *key) {
 #if !defined(GNUSTEP)
     // A window in this process; GNUstep starts another (one window per process there).
     return [[self applicationController] openURLInDocumentWindow:url preferring:self];
+#endif
+    // As on macOS, an empty window takes the image rather than being left beside a new one.
+    if (![self.canvasView hasImage]) {
+        return [self openImageAtURL:url];
+    }
+#if defined(_WIN32)
+    // NSTask starts a process hidden on Windows, so its window would never show.
+    BOOL launched = STWindowsLaunchProcess([[NSBundle mainBundle] executablePath], @[ url.path ]);
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: %@ new instance for %@",
+                             launched ? @"launched" : @"couldn't launch", url.path]);
+    return launched;
 #endif
 
     @try {

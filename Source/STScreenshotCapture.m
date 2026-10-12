@@ -1,4 +1,5 @@
 #import "STScreenshotCapture.h"
+#import "STWindowsIntegration.h"
 
 #if defined(GNUSTEP) && !defined(_WIN32)
 #define ST_CAPTURE_PORTAL 1
@@ -243,21 +244,12 @@ static const NSTimeInterval STSnippingToolWait = 120.0;
     return YES;
 }
 
-static BOOL STClipboardHasImage(void) {
-    static UINT png = 0;
-    if (png == 0) {
-        png = RegisterClipboardFormatW(L"PNG");
-    }
-    return IsClipboardFormatAvailable(CF_DIB) || IsClipboardFormatAvailable(CF_DIBV5)
-        || IsClipboardFormatAvailable(CF_BITMAP) || (png != 0 && IsClipboardFormatAvailable(png));
-}
-
 - (void)poll:(NSTimer *)timer {
     (void)timer;
     STScreenshotCaptureResult result = STScreenshotCaptureResultNone;
     if (GetClipboardSequenceNumber() != self.sequence) {
         // Something new on the clipboard: the snip, unless something else was copied meanwhile.
-        if (STClipboardHasImage()) {
+        if (STWindowsClipboardHasImage()) {
             result = STScreenshotCaptureResultClipboard;
         }
     } else if ([self.deadline timeIntervalSinceNow] > 0) {

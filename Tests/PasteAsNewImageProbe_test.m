@@ -141,6 +141,28 @@
     XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:temporaryURL.path], @"Temp file should be removed once loaded");
 }
 
+- (void)testAnEmptyWindowTakesThePastedImageItself {
+    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                                                 [NSString stringWithFormat:@"paste-%@.png", [NSUUID UUID].UUIDString]];
+    XCTAssertTrue([[self onePixelPNGData] writeToFile:path atomically:YES]);
+    NSURL *url = [NSURL fileURLWithPath:path];
+
+    AppDelegate *emptyWindow = [[AppDelegate alloc] init];
+    @try {
+        [emptyWindow setupWindowAndContent];
+    } @catch (NSException *exception) {
+        NSLog(@"Skipping test: failed to connect to window server (%@)", [exception reason]);
+        [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
+        return;
+    }
+    // Not another instance (another process on GNUstep) beside an empty window, as Take Screenshot
+    // already did.
+    XCTAssertTrue([emptyWindow launchNewWindowForImageAtURL:url]);
+    XCTAssertEqualObjects(emptyWindow.currentImageURL.path.stringByStandardizingPath, path.stringByStandardizingPath,
+                          @"The empty window should show the image");
+    [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
+}
+
 - (void)testPasteAsNewImageShortcutUsesCommandModifier {
     [_appDelegate setupMenus];
     NSMenuItem *pasteItem = nil;
