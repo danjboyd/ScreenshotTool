@@ -5,6 +5,7 @@ $(error gnustep-config not found. Install GNUstep Base development tools before 
 endif
 
 OBJCFLAGS := $(shell $(GNUSTEP_CONFIG) --objc-flags)
+OBJCFLAGS += -DHAVE_MODE_T
 BASE_LIBS := $(shell $(GNUSTEP_CONFIG) --base-libs)
 # Downloads go through WinHTTP on Windows (GPUpdaterDownload.m).
 UNAME_S := $(shell uname -s 2>/dev/null)
