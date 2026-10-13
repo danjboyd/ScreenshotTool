@@ -126,6 +126,13 @@ jobs:
         run: xvfb-run -a scripts/smoke_appimage.sh "${{ steps.naming.outputs.appimage_path }}"
       - name: Smoke test AppImage on a host without GNUstep
         # The runner's /usr/GNUstep would hide an AppImage that loads the host's GNUstep.
+        # linuxdeploy's excludelist leaves fontconfig, freetype, harfbuzz, GL, X11 and cups to the
+        # host, so the container gets what a desktop install has (the release AppImage, from
+        # gnustep-packager, bundles them and is checked without these).
+        env:
+          GP_CLEAN_SMOKE_PACKAGES: >-
+            fontconfig libfreetype6 libharfbuzz0b libfribidi0 libcups2t64 libgmp10 libgl1
+            libx11-xcb1 libxcb-dri3-0 libdrm2 libsm6 libice6
         run: scripts/smoke_appimage_clean.sh "${{ steps.naming.outputs.appimage_path }}" ubuntu:24.04
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
