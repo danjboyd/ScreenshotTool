@@ -67,7 +67,7 @@
     {
       "name": "WinUITheme",
       "repo": "https://github.com/danjboyd/plugins-themes-winuitheme.git",
-      "ref": "c9dbf919fcf4975a9451c67dcce384887f654baf",
+      "ref": "f2aaa603eafe536958f14f976aadd6698a53ac2b",
       "platforms": [
         "msi"
       ],
@@ -198,7 +198,7 @@
       },
       {
         "name": "WinUITheme",
-        "version": "c9dbf91",
+        "version": "0.1.0-alpha3",
         "license": "LGPL-2.1-or-later",
         "source": "Default Windows theme, from danjboyd/plugins-themes-winuitheme",
         "homepage": "https://github.com/danjboyd/plugins-themes-winuitheme",
@@ -223,6 +223,7 @@
       "shortcutName": "ScreenshotTool",
       "installDirectoryName": "ScreenshotTool",
       "launcherFileName": "ScreenshotTool.exe",
+      "iconRelativePath": "metadata/icons/ScreenshotTool.ico",
       "ignoredRuntimeDependencies": [
         "dbghelp.dll",
         "DNSAPI.dll",
