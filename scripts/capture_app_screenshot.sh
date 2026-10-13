@@ -2,7 +2,7 @@
 set -euo pipefail
 
 APP_PATH="${APP_PATH:-./ScreenshotTool.app/ScreenshotTool}"
-OUTPUT_PATH="${1:-Screenshots/app-screenshot.png}"
+OUTPUT_PATH="${1:-build/app-screenshot.png}"
 
 if ! command -v wmctrl >/dev/null 2>&1; then
   echo "capture_app_screenshot: wmctrl is required but not found in PATH." >&2

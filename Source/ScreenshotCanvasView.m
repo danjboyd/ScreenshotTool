@@ -830,7 +830,7 @@ static void STRasterizeStrokeOntoBitmap(MarkupStroke *stroke,
     }
 }
 
-// GNUstep draws no glyphs into an NSBitmapImageRep graphics context (GNUSTEP_BUG_REPORT.md), but
+// GNUstep draws no glyphs into an NSBitmapImageRep graphics context (docs/history/GNUSTEP_BUG_REPORT.md), but
 // it does into a locked NSImage. Annotations whose look depends on AppKit drawing (text, arrows)
 // are drawn there with the canvas's own code, read back, and composited, so export matches the
 // screen. `draw` receives the unflipped height to map canvas coordinates into that image.

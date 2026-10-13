@@ -200,7 +200,7 @@ as the `screenshots` artifact.
 ## Project Docs
 - Contributing and development notes: `CONTRIBUTING.md`
 - Workflow and testing handoff: `WORKFLOW.md`
-- Packaging and releases: `docs/Packaging.md`, `docs/Handoff.md`
+- Packaging and releases: `docs/Packaging.md`
 - Bugs, feature requests and planned work: [GitHub Issues](https://github.com/danjboyd/ScreenshotTool/issues)
 
 ## License
