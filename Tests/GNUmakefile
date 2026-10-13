@@ -131,7 +131,7 @@ ifneq ($(filter CLANG64,$(MSYSTEM)),)
 # gnustep-make links a Windows bundle's LDFLAGS inside -Wl,--whole-archive, which pulls in every
 # member of these import libraries (and their duplicate __NULL_IMPORT_DESCRIPTORs); as bundle
 # libraries they come after -Wl,--no-whole-archive.
-ScreenshotToolTests_BUNDLE_LIBS += -lstdc++ -lobjc -lfontconfig -lfreetype -ldispatch -lshell32 -luser32 -lgdi32
+ScreenshotToolTests_BUNDLE_LIBS += -lstdc++ -lobjc -lfontconfig -lfreetype -ldispatch -lshell32 -luser32 -lgdi32 -lwinhttp
 ADDITIONAL_LDFLAGS += -nostartfiles /clang64/lib/dllcrt2.o -Wl,--entry,DllMainCRTStartup
 else
 ADDITIONAL_LDFLAGS += -lstdc++

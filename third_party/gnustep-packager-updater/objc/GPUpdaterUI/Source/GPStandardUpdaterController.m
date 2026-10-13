@@ -23,12 +23,18 @@ static NSString * const GPUpdaterHelperStatusFailed = @"failed";
 - (NSString *)_resolvedHelperPath;
 - (NSString *)_helperStateRoot;
 - (NSString *)_writeHelperPlanForResult:(GPUpdateCheckResult *)result statePath:(NSString *)statePath;
+- (void)_presentAlertDeferred:(SEL)selector withObject:(id)object;
 - (void)_presentUpdateAvailableForResult:(GPUpdateCheckResult *)result automaticCheck:(BOOL)automaticCheck;
+- (void)_runUpdateAvailableAlert:(NSDictionary *)info;
 - (void)_presentUpToDateDialog;
+- (void)_runUpToDateAlert:(id)unused;
 - (void)_presentError:(NSError *)error;
+- (void)_runErrorAlert:(NSError *)error;
+- (void)_runRestartToFinishAlert:(id)unused;
+- (void)_runManualUpdateAlert:(NSDictionary *)info;
 - (void)_openReleaseNotesURL:(NSURL *)releaseNotesURL;
 - (void)_beginPrepareForResult:(GPUpdateCheckResult *)result;
-- (void)_launchHelperMode:(NSString *)mode;
+- (BOOL)_launchHelperMode:(NSString *)mode;
 - (void)_beginPollingHelperState;
 - (void)_pollHelperState:(NSTimer *)timer;
 - (void)_stopPollingHelperState;
@@ -230,6 +236,9 @@ static NSDictionary *GPUpdaterUILoadJSONObject(NSString *path) {
   [package setObject:[configuration currentVersion] forKey:@"currentVersion"];
   [package setObject:[configuration backend] forKey:@"backend"];
   [package setObject:[configuration channel] forKey:@"channel"];
+  if ([configuration publicEDKey] != nil) {
+    [package setObject:[configuration publicEDKey] forKey:@"publicEDKey"];
+  }
 
   NSMutableDictionary *release = [NSMutableDictionary dictionary];
   [release setObject:[result latestVersion] forKey:@"version"];
@@ -262,6 +271,9 @@ static NSDictionary *GPUpdaterUILoadJSONObject(NSString *path) {
   if ([asset updateInformation] != nil) {
     [assetDictionary setObject:[asset updateInformation] forKey:@"updateInformation"];
   }
+  if ([asset edSignature] != nil) {
+    [assetDictionary setObject:[asset edSignature] forKey:@"edSignature"];
+  }
   if ([asset zsyncURL] != nil) {
     NSDictionary *zsync = [NSDictionary dictionaryWithObject:[[asset zsyncURL] absoluteString] forKey:@"url"];
     [assetDictionary setObject:zsync forKey:@"zsync"];
@@ -273,21 +285,28 @@ static NSDictionary *GPUpdaterUILoadJSONObject(NSString *path) {
     executablePath = [arguments count] > 0 ? [arguments objectAtIndex:0] : nil;
   }
 
+  // Relaunched after the update: the package's launcher when it has one
+  // (it sets up the environment the app runs in), else this executable.
+  NSString *relaunchPath = [configuration relaunchExecutablePath];
+  if ([relaunchPath length] == 0) {
+    relaunchPath = executablePath;
+  }
+
   NSMutableDictionary *execution = [NSMutableDictionary dictionary];
   [execution setObject:statePath forKey:@"stateFile"];
   [execution setObject:stateRoot forKey:@"workingRoot"];
-  if ([executablePath length] > 0) {
-    [execution setObject:executablePath forKey:@"relaunchExecutablePath"];
+  if ([relaunchPath length] > 0) {
+    [execution setObject:relaunchPath forKey:@"relaunchExecutablePath"];
   }
 
-  NSMutableDictionary *linuxExecution = [NSMutableDictionary dictionary];
+  NSMutableDictionary *linuxInfo = [NSMutableDictionary dictionary];
   NSDictionary *environment = [[NSProcessInfo processInfo] environment];
   NSString *appImagePath = GPUpdaterUIStringValue([environment objectForKey:@"APPIMAGE"]);
   if ([appImagePath length] > 0) {
-    [linuxExecution setObject:appImagePath forKey:@"currentAppImagePath"];
+    [linuxInfo setObject:appImagePath forKey:@"currentAppImagePath"];
   }
-  if ([linuxExecution count] > 0) {
-    [execution setObject:linuxExecution forKey:@"linux"];
+  if ([linuxInfo count] > 0) {
+    [execution setObject:linuxInfo forKey:@"linux"];
   }
 
   NSMutableDictionary *plan = [NSMutableDictionary dictionary];
@@ -308,7 +327,26 @@ static NSDictionary *GPUpdaterUILoadJSONObject(NSString *path) {
   return planPath;
 }
 
+// Every alert is run from a fresh run-loop pass, not from the callback that
+// decided to show it. On the GNUstep win32 backend, runModal entered from
+// a performSelectorOnMainThread: callback (how GPUpdater delivers check
+// results) never paints: the alert shows its caption but no text and no
+// buttons. The helper-poll timer callback had the same problem.
+- (void)_presentAlertDeferred:(SEL)selector withObject:(id)object {
+  [self performSelector:selector withObject:object afterDelay:0.0];
+}
+
 - (void)_presentUpdateAvailableForResult:(GPUpdateCheckResult *)result automaticCheck:(BOOL)automaticCheck {
+  NSDictionary *info = [NSDictionary dictionaryWithObjectsAndKeys:
+    result, @"result",
+    [NSNumber numberWithBool:automaticCheck], @"automaticCheck",
+    nil];
+  [self _presentAlertDeferred:@selector(_runUpdateAvailableAlert:) withObject:info];
+}
+
+- (void)_runUpdateAvailableAlert:(NSDictionary *)info {
+  GPUpdateCheckResult *result = [info objectForKey:@"result"];
+  BOOL automaticCheck = [[info objectForKey:@"automaticCheck"] boolValue];
   NSString *title = nil;
   NSString *message = nil;
 
@@ -359,6 +397,11 @@ static NSDictionary *GPUpdaterUILoadJSONObject(NSString *path) {
 }
 
 - (void)_presentUpToDateDialog {
+  [self _presentAlertDeferred:@selector(_runUpToDateAlert:) withObject:nil];
+}
+
+- (void)_runUpToDateAlert:(id)unused {
+  (void)unused;
   NSAlert *alert = [[[NSAlert alloc] init] autorelease];
   [alert setMessageText:[NSString stringWithFormat:@"%@ is up to date", [[[self updater] configuration] displayName]]];
   [alert setInformativeText:[NSString stringWithFormat:@"You are already running %@.", [[[self updater] configuration] currentVersion]]];
@@ -367,6 +410,10 @@ static NSDictionary *GPUpdaterUILoadJSONObject(NSString *path) {
 }
 
 - (void)_presentError:(NSError *)error {
+  [self _presentAlertDeferred:@selector(_runErrorAlert:) withObject:error];
+}
+
+- (void)_runErrorAlert:(NSError *)error {
   NSString *message = error != nil ? [error localizedDescription] : @"The update check failed.";
   NSAlert *alert = [[[NSAlert alloc] init] autorelease];
   [alert setMessageText:@"Update Check Failed"];
@@ -421,31 +468,51 @@ static NSDictionary *GPUpdaterUILoadJSONObject(NSString *path) {
 
   _prepareInProgress = YES;
   [self _showProgressPanelWithMessage:@"Preparing update..."];
-  [self _launchHelperMode:GPUpdaterHelperModePrepare];
+  if (![self _launchHelperMode:GPUpdaterHelperModePrepare]) {
+    [self _dismissProgressPanel];
+    _prepareInProgress = NO;
+    return;
+  }
   [self _beginPollingHelperState];
 }
 
-- (void)_launchHelperMode:(NSString *)mode {
+- (BOOL)_launchHelperMode:(NSString *)mode {
   NSString *helperPath = [self _resolvedHelperPath];
   if ([helperPath length] == 0) {
-    return;
+    return NO;
   }
 
   NSMutableArray *arguments = [NSMutableArray arrayWithObjects:@"--mode", mode, @"--plan", _activePlanPath, @"--state-file", _activeStatePath, nil];
+  NSString *pidString = [NSString stringWithFormat:@"%d", [[NSProcessInfo processInfo] processIdentifier]];
+  NSString *launchPath = helperPath;
   if ([mode isEqualToString:GPUpdaterHelperModeApply]) {
     [arguments addObject:@"--wait-pid"];
-    [arguments addObject:[NSString stringWithFormat:@"%d", [[NSProcessInfo processInfo] processIdentifier]]];
+    [arguments addObject:pidString];
+
+    // An AppImage update is applied by the script the helper prepared,
+    // with the system's shell: the helper is inside the AppImage, whose
+    // mount goes when the app quits.
+    NSDictionary *apply = GPUpdaterUIDictionaryValue([[self _loadHelperState] objectForKey:@"apply"]);
+    NSString *scriptPath = GPUpdaterUIStringValue([apply objectForKey:@"script"]);
+    if ([scriptPath length] > 0 && [[NSFileManager defaultManager] fileExistsAtPath:scriptPath] &&
+        [[NSFileManager defaultManager] isExecutableFileAtPath:@"/bin/sh"]) {
+      launchPath = @"/bin/sh";
+      arguments = [NSMutableArray arrayWithObjects:scriptPath, pidString, nil];
+    }
   }
 
   @try {
-    [NSTask launchedTaskWithLaunchPath:helperPath arguments:arguments];
+    [NSTask launchedTaskWithLaunchPath:launchPath arguments:arguments];
   } @catch (NSException *exception) {
     NSDictionary *userInfo = [NSDictionary dictionaryWithObject:[exception reason] forKey:NSLocalizedDescriptionKey];
     NSError *error = [NSError errorWithDomain:@"GPUpdaterUIErrorDomain" code:3 userInfo:userInfo];
     [self _stopPollingHelperState];
     [self _dismissProgressPanel];
     [self _presentError:error];
+    return NO;
   }
+
+  return YES;
 }
 
 - (void)_beginPollingHelperState {
@@ -490,33 +557,20 @@ static NSDictionary *GPUpdaterUILoadJSONObject(NSString *path) {
   _prepareInProgress = NO;
 
   if ([status isEqualToString:GPUpdaterHelperStatusReadyToApply]) {
-    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
-    [alert setMessageText:@"Restart to Finish Updating"];
-    [alert setInformativeText:@"The update is ready to install. Restart the app now to apply it."];
-    [alert addButtonWithTitle:@"Restart and Install"];
-    [alert addButtonWithTitle:@"Later"];
-    if ([alert runModal] == NSAlertFirstButtonReturn) {
-      [self _launchHelperMode:GPUpdaterHelperModeApply];
-      [[NSApplication sharedApplication] terminate:nil];
-    }
+    [self _presentAlertDeferred:@selector(_runRestartToFinishAlert:) withObject:nil];
     return;
   }
 
   if ([status isEqualToString:GPUpdaterHelperStatusManualActionRequired]) {
+    NSMutableDictionary *info = [NSMutableDictionary dictionary];
     NSString *downloadedPath = GPUpdaterUIStringValue([state objectForKey:@"downloadedPath"]);
-    NSAlert *alert = [[[NSAlert alloc] init] autorelease];
-    [alert setMessageText:@"Manual Update Required"];
-    if ([message length] == 0) {
-      message = @"The update was downloaded, but the current AppImage location is not writable.";
+    if ([message length] > 0) {
+      [info setObject:message forKey:@"message"];
     }
-    [alert setInformativeText:message];
     if ([downloadedPath length] > 0) {
-      [alert addButtonWithTitle:@"Open Download"];
+      [info setObject:downloadedPath forKey:@"downloadedPath"];
     }
-    [alert addButtonWithTitle:@"OK"];
-    if ([alert runModal] == NSAlertFirstButtonReturn && [downloadedPath length] > 0) {
-      [[NSWorkspace sharedWorkspace] openFile:downloadedPath];
-    }
+    [self _presentAlertDeferred:@selector(_runManualUpdateAlert:) withObject:info];
     return;
   }
 
@@ -533,6 +587,39 @@ static NSDictionary *GPUpdaterUILoadJSONObject(NSString *path) {
                                        code:4
                                    userInfo:[NSDictionary dictionaryWithObject:errorMessage forKey:NSLocalizedDescriptionKey]];
   [self _presentError:error];
+}
+
+- (void)_runRestartToFinishAlert:(id)unused {
+  (void)unused;
+  NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+  [alert setMessageText:@"Restart to Finish Updating"];
+  [alert setInformativeText:@"The update is ready to install. Restart the app now to apply it."];
+  [alert addButtonWithTitle:@"Restart and Install"];
+  [alert addButtonWithTitle:@"Later"];
+  if ([alert runModal] == NSAlertFirstButtonReturn) {
+    // If the helper could not start, stay open so its error alert shows.
+    if ([self _launchHelperMode:GPUpdaterHelperModeApply]) {
+      [[NSApplication sharedApplication] terminate:nil];
+    }
+  }
+}
+
+- (void)_runManualUpdateAlert:(NSDictionary *)info {
+  NSString *message = [info objectForKey:@"message"];
+  NSString *downloadedPath = [info objectForKey:@"downloadedPath"];
+  NSAlert *alert = [[[NSAlert alloc] init] autorelease];
+  [alert setMessageText:@"Manual Update Required"];
+  if ([message length] == 0) {
+    message = @"The update was downloaded, but the current AppImage location is not writable.";
+  }
+  [alert setInformativeText:message];
+  if ([downloadedPath length] > 0) {
+    [alert addButtonWithTitle:@"Open Download"];
+  }
+  [alert addButtonWithTitle:@"OK"];
+  if ([alert runModal] == NSAlertFirstButtonReturn && [downloadedPath length] > 0) {
+    [[NSWorkspace sharedWorkspace] openFile:downloadedPath];
+  }
 }
 
 - (void)_stopPollingHelperState {
