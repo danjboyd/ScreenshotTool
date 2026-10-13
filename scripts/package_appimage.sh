@@ -163,16 +163,24 @@ GNUSTEP_USER_DIR_DOC_MAN=GNUstep/Library/Documentation/man
 GNUSTEP_USER_DIR_DOC_INFO=GNUstep/Library/Documentation/info
 EOF_CONFIG
 chmod 0644 "${GNUSTEP_CONFIG_FILE}"
-# On GNOME, default to the bundled Adwaita theme. GlobalDefaults.plist next to GNUstep.conf ranks
-# below the user's own defaults, so a theme the user has chosen still wins.
+# GlobalDefaults.plist next to GNUstep.conf ranks below the user's own defaults, so a user's
+# settings still win. Ctrl is the Command key and menus sit in the window, as Linux users expect
+# (packaging/package.manifest.json gives the release AppImage the same); on GNOME, the bundled
+# Adwaita theme is the default.
 GLOBAL_DEFAULTS="${CONFIG_DIR}/GlobalDefaults.plist"
-if [[ ":${XDG_CURRENT_DESKTOP:-}:" == *":GNOME:"* && -d "${GNUSTEP_SYSTEM_ROOT}/Library/Themes/Adwaita.theme" ]]; then
-  echo '{ GSTheme = Adwaita; }' > "${GLOBAL_DEFAULTS}"
-  # GNUstep ignores the file if anyone but its owner can write to it.
-  chmod 0644 "${GLOBAL_DEFAULTS}"
-else
-  rm -f "${GLOBAL_DEFAULTS}"
-fi
+{
+  echo '{'
+  echo '  GSFirstCommandKey = Control_L; GSSecondCommandKey = Control_R;'
+  echo '  GSFirstControlKey = Alt_L; GSSecondControlKey = Alt_R;'
+  echo '  GSFirstAlternateKey = Super_L; GSSecondAlternateKey = Super_R;'
+  echo '  NSMenuInterfaceStyle = NSWindows95InterfaceStyle; GnomeThemeMenuStyle = primary;'
+  if [[ ":${XDG_CURRENT_DESKTOP:-}:" == *":GNOME:"* && -d "${GNUSTEP_SYSTEM_ROOT}/Library/Themes/Adwaita.theme" ]]; then
+    echo '  GSTheme = Adwaita;'
+  fi
+  echo '}'
+} > "${GLOBAL_DEFAULTS}"
+# GNUstep ignores the file if anyone but its owner can write to it.
+chmod 0644 "${GLOBAL_DEFAULTS}"
 export GNUSTEP_SYSTEM_ROOT GNUSTEP_LOCAL_ROOT GNUSTEP_NETWORK_ROOT
 export GNUSTEP_CONFIG_FILE GNUSTEP_MAKEFILES GNUSTEP_USER_CONFIG_FILE
 if [[ -f "${GNUSTEP_MAKEFILES}/GNUstep.sh" ]]; then

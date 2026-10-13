@@ -247,6 +247,25 @@
       "enabled": true,
       "desktopEntryName": "io.github.danjboyd.ScreenshotTool.desktop",
       "iconRelativePath": "metadata/icons/ScreenshotToolIcon.png",
+      "gnustepConfig": {
+        "systemRoot": "runtime/System",
+        "globalDefaults": {
+          "GSFirstCommandKey": "Control_L",
+          "GSSecondCommandKey": "Control_R",
+          "GSFirstControlKey": "Alt_L",
+          "GSSecondControlKey": "Alt_R",
+          "GSFirstAlternateKey": "Super_L",
+          "GSSecondAlternateKey": "Super_R",
+          "NSMenuInterfaceStyle": "NSWindows95InterfaceStyle",
+          "GnomeThemeMenuStyle": "primary"
+        },
+        "defaultTheme": {
+          "name": "Adwaita",
+          "desktops": [
+            "GNOME"
+          ]
+        }
+      },
       "updates": {
         "feedUrl": "https://danjboyd.github.io/ScreenshotTool/updates/linux/stable.json",
         "embedUpdateInformation": true,

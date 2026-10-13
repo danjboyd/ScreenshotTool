@@ -124,6 +124,9 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: "1"
         # The app needs an X server; the runner has none, so give it a virtual one.
         run: xvfb-run -a scripts/smoke_appimage.sh "${{ steps.naming.outputs.appimage_path }}"
+      - name: Smoke test AppImage on a host without GNUstep
+        # The runner's /usr/GNUstep would hide an AppImage that loads the host's GNUstep.
+        run: scripts/smoke_appimage_clean.sh "${{ steps.naming.outputs.appimage_path }}" ubuntu:24.04
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:

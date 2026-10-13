@@ -59,12 +59,52 @@ if [[ "${UNINSTALL}" == 1 ]]; then
   exit 0
 fi
 
-for tool in curl jq sha256sum; do
+for tool in curl sha256sum; do
   if ! command -v "${tool}" >/dev/null 2>&1; then
     echo "${tool} is required." >&2
     exit 1
   fi
 done
+# The feed is JSON: read it with jq, or python3, which desktop distributions ship.
+if command -v jq >/dev/null 2>&1; then
+  JSON_TOOL=jq
+elif command -v python3 >/dev/null 2>&1; then
+  JSON_TOOL=python3
+else
+  echo "jq or python3 is required." >&2
+  exit 1
+fi
+
+# feed_latest_appimage FEED: "VERSION URL SHA256" of the feed's newest release's AppImage.
+feed_latest_appimage() {
+  if [[ "${JSON_TOOL}" == jq ]]; then
+    jq -r '
+      .releases[0] as $r
+      | ($r.assets[] | select(.kind == "appimage")) as $a
+      | "\($r.version) \($a.url) \($a.sha256)"' "$1"
+  else
+    python3 -I -c '
+import json, sys
+release = json.load(open(sys.argv[1]))["releases"][0]
+for asset in release["assets"]:
+    if asset.get("kind") == "appimage":
+        print(release["version"], asset["url"], asset["sha256"])
+        break
+' "$1"
+  fi
+}
+
+# update_feed_url CONFIG: the feed URL in the AppImage's updater config, if any.
+update_feed_url() {
+  if [[ "${JSON_TOOL}" == jq ]]; then
+    jq -r '.updates.feedUrl // empty' "$1"
+  else
+    python3 -I -c '
+import json, sys
+print(json.load(open(sys.argv[1])).get("updates", {}).get("feedUrl") or "")
+' "$1"
+  fi
+}
 
 WORK_DIR="$(mktemp -d)"
 trap 'rm -rf -- "${WORK_DIR}"' EXIT
@@ -79,10 +119,7 @@ if ! curl -fsSL "${FEED_URL}" -o "${WORK_DIR}/feed.json"; then
 fi
 
 # The feed's newest release, and its AppImage.
-read -r VERSION ASSET_URL ASSET_SHA256 < <(jq -r '
-  .releases[0] as $r
-  | ($r.assets[] | select(.kind == "appimage")) as $a
-  | "\($r.version) \($a.url) \($a.sha256)"' "${WORK_DIR}/feed.json")
+read -r VERSION ASSET_URL ASSET_SHA256 < <(feed_latest_appimage "${WORK_DIR}/feed.json")
 if [[ -z "${ASSET_URL:-}" || "${ASSET_URL}" == null ]]; then
   echo "The ${CHANNEL} feed lists no AppImage." >&2
   exit 1
@@ -140,5 +177,5 @@ refresh_desktop_caches
 echo "Installed ScreenshotTool ${VERSION} at ${APPIMAGE}."
 # What the app checks is what its release packaged, not the feed it was installed from: an rc
 # built before the prerelease feed existed (#111) checks the stable one.
-CHECKED_FEED="$(jq -r '.updates.feedUrl // empty' "${WORK_DIR}/squashfs-root/${UPDATE_CONFIG}" 2>/dev/null || true)"
+CHECKED_FEED="$(update_feed_url "${WORK_DIR}/squashfs-root/${UPDATE_CONFIG}" 2>/dev/null || true)"
 echo "It checks ${CHECKED_FEED:-an unknown feed} for updates."
