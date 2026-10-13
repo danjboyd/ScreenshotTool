@@ -223,6 +223,7 @@
       "shortcutName": "ScreenshotTool",
       "installDirectoryName": "ScreenshotTool",
       "launcherFileName": "ScreenshotTool.exe",
+      "iconRelativePath": "metadata/icons/ScreenshotTool.ico",
       "ignoredRuntimeDependencies": [
         "dbghelp.dll",
         "DNSAPI.dll",
