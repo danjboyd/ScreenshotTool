@@ -50,6 +50,10 @@ unsigned installer. To check the download, compare `Get-FileHash .\ScreenshotToo
 with `SHA256SUMS` (it prints the hash in capitals). Uninstall it from Settings → Apps →
 Installed apps; your settings stay in `%USERPROFILE%\GNUstep\Defaults`.
 
+If you installed v0.1.0 or a v0.1.1 release candidate, download and run the new MSI by hand
+once: those versions' Check for Updates can't install updates on Windows. The MSI upgrades
+the existing installation in place, and later updates install from inside the app.
+
 Take Screenshot uses Windows' screen-snip overlay (the Snipping Tool, or Snip & Sketch on
 Windows 10).
 
