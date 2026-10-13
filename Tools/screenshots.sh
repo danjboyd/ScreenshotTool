@@ -216,13 +216,31 @@ for theme in ${THEMES}; do
     [[ -n "${SCREENSHOT_LIBRARY_DIR:-}" ]] && echo "GNUSTEP_USER_DIR_LIBRARY=${SCREENSHOT_LIBRARY_DIR}"
   } >"${CONFIG}"
   chmod 600 "${CONFIG}"
-  if [[ "${label}" != "default" ]]; then
-    # The theme, with its header bar (GNUstep draws the title bar), as GNOME users run it. Under
-    # Adwaita the menus go in the header bar's primary menu, with no menu bar row.
-    menu_style=""
-    [[ "${label}" == "adwaita" ]] && menu_style='  GnomeThemeMenuStyle = primary;\n'
-    printf "{\n  GSTheme = \"%s\";\n  GSX11HandlesWindowDecorations = NO;\n${menu_style}}\n" "${theme}" >"${DEFAULTS}/NSGlobalDomain.plist"
-  fi
+  # The defaults the release AppImage ships (packaging/package.manifest.json), so the shots show
+  # what users get: its global defaults, and for its default theme (Adwaita on GNOME) that theme's
+  # own, such as its header bar. Another theme gets the header bar too, as before.
+  python3 -I - "${ROOT_DIR}/packaging/package.manifest.json" "${theme}" >"${DEFAULTS}/NSGlobalDomain.plist" <<'EOF_DEFAULTS'
+import json, sys
+config = json.load(open(sys.argv[1]))["backends"]["appimage"].get("gnustepConfig", {})
+theme = sys.argv[2]
+values = dict(config.get("globalDefaults", {}))
+default_theme = config.get("defaultTheme", {})
+if theme == default_theme.get("name"):
+    values.update(default_theme.get("defaults", {}))
+    values["GSTheme"] = theme
+elif theme != "default":
+    values.update({"GSTheme": theme, "GSX11HandlesWindowDecorations": False})
+def literal(value):
+    if isinstance(value, bool):
+        return "YES" if value else "NO"
+    if isinstance(value, (int, float)):
+        return str(value)
+    return '"%s"' % str(value).replace("\\", "\\\\").replace('"', '\\"')
+print("{")
+for key in sorted(values):
+    print('  "%s" = %s;' % (key, literal(values[key])))
+print("}")
+EOF_DEFAULTS
   LOG="${WORK}/app-${label}.log"
 
   # 1. No image: the empty state.

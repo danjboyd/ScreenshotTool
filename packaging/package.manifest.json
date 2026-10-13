@@ -258,13 +258,17 @@
           "GSFirstAlternateKey": "Super_L",
           "GSSecondAlternateKey": "Super_R",
           "NSMenuInterfaceStyle": "NSWindows95InterfaceStyle",
-          "GnomeThemeMenuStyle": "primary"
+          "GnomeThemeMenuStyle": "primary",
+          "GSSuppressAppIcon": true
         },
         "defaultTheme": {
           "name": "Adwaita",
           "desktops": [
             "GNOME"
-          ]
+          ],
+          "defaults": {
+            "GSX11HandlesWindowDecorations": false
+          }
         }
       },
       "updates": {
