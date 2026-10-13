@@ -8,8 +8,7 @@
 #   macos-text.png            the text tool, typing a label, with the text bar
 #   macos-dark-popover.png    dark mode, the highlighter's settings popover
 # A small library (Tools/macos-screenshots/Scenes.m), loaded into the app, sets each scene up.
-# The README's macOS images are these, copied to docs/images/. (Not screenshots/ by default: on
-# macOS's case-insensitive disks that's the tracked Screenshots/ folder.)
+# The README's macOS images are these, copied to docs/images/.
 #
 # Build the app first (scripts/build_cocoa.sh). The terminal needs the Screen Recording
 # permission (System Settings > Privacy & Security), and the app comes to the front for each shot.

@@ -22,7 +22,7 @@ Please follow `WORKFLOW.md` for the expected build/test handoff. Additional cont
 
 ## Issue & Status Tracking
 - Bugs, features and planned work: [GitHub Issues](https://github.com/danjboyd/ScreenshotTool/issues).
-- Older notes from before the move to GitHub Issues: `OpenIssues.md`, `ClosedIssues.md` and `STATUS.md` (archived).
+- Older notes from before the move to GitHub Issues: `docs/history/` (archived).
 - Tooltip specifics: `docs/GNUstepToolbarTooltips.md`.
 
 ## Daily Wrap-Up (internal)
