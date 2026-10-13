@@ -164,9 +164,9 @@ GNUSTEP_USER_DIR_DOC_INFO=GNUstep/Library/Documentation/info
 EOF_CONFIG
 chmod 0644 "${GNUSTEP_CONFIG_FILE}"
 # GlobalDefaults.plist next to GNUstep.conf ranks below the user's own defaults, so a user's
-# settings still win. Ctrl is the Command key and menus sit in the window, as Linux users expect
-# (packaging/package.manifest.json gives the release AppImage the same); on GNOME, the bundled
-# Adwaita theme is the default.
+# settings still win. Ctrl is the Command key, menus sit in the window and there is no app icon
+# window, as Linux users expect (packaging/package.manifest.json gives the release AppImage the
+# same); on GNOME, the bundled Adwaita theme is the default, with its header bar.
 GLOBAL_DEFAULTS="${CONFIG_DIR}/GlobalDefaults.plist"
 {
   echo '{'
@@ -174,8 +174,10 @@ GLOBAL_DEFAULTS="${CONFIG_DIR}/GlobalDefaults.plist"
   echo '  GSFirstControlKey = Alt_L; GSSecondControlKey = Alt_R;'
   echo '  GSFirstAlternateKey = Super_L; GSSecondAlternateKey = Super_R;'
   echo '  NSMenuInterfaceStyle = NSWindows95InterfaceStyle; GnomeThemeMenuStyle = primary;'
+  echo '  GSSuppressAppIcon = YES;'
   if [[ ":${XDG_CURRENT_DESKTOP:-}:" == *":GNOME:"* && -d "${GNUSTEP_SYSTEM_ROOT}/Library/Themes/Adwaita.theme" ]]; then
-    echo '  GSTheme = Adwaita;'
+    # Adwaita draws its own header bar, with the toolbar in it.
+    echo '  GSTheme = Adwaita; GSX11HandlesWindowDecorations = NO;'
   fi
   echo '}'
 } > "${GLOBAL_DEFAULTS}"
