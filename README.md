@@ -1,14 +1,73 @@
 # ScreenshotTool
 
-ScreenshotTool is a desktop screenshot annotation app. Open an image or paste
-one from the clipboard, mark it up with pens, highlighters, arrows, text and
-callouts, then copy the result, save it as an image, or save it as a project
-you can keep editing.
+ScreenshotTool is a desktop screenshot annotation app for macOS, Windows and Linux. Open an
+image or paste one from the clipboard, mark it up with pens, highlighters, arrows, text and
+callouts, then copy the result, save it as an image, or save it as a project you can keep
+editing.
 
-Current build targets:
-- GNUstep on Linux and BSD desktops
-- Windows, as an MSI built with GNUstep under MSYS2 CLANG64 (see `docs/Packaging.md`)
-- macOS, as a universal (Apple silicon and Intel) app built natively with AppKit, in a DMG
+![ScreenshotTool on macOS, adding a text annotation](docs/images/macos-text.png)
+
+It's free software (GPL v2 or later). On macOS it's a native AppKit app; on Windows, Linux and
+the BSDs it's built with [GNUstep](https://gnustep.github.io/), and the GNUstep theme decides
+how it looks.
+
+## Download
+
+Get the latest version from the
+[Releases page](https://github.com/danjboyd/ScreenshotTool/releases/latest):
+
+| Platform | Download | Requires |
+|---|---|---|
+| macOS | `ScreenshotTool-<version>-macOS.dmg` (Apple silicon and Intel) | macOS 12 or later |
+| Windows | `ScreenshotTool-<version>-win64.msi` | 64-bit Windows 11 |
+| Linux | `ScreenshotTool-<version>-x86_64.AppImage` | x86_64, glibc 2.38 or later (Ubuntu 24.04, Debian 13, Fedora 39 or later) |
+
+`SHA256SUMS` on each release lists the files' checksums. Once installed, the app checks for
+updates itself (**Check for Updates…**).
+
+The release builds aren't signed with a paid developer certificate yet, so macOS and Windows
+warn you the first time. The steps to get past that are below.
+
+### macOS
+
+Open the DMG and drag ScreenshotTool to Applications. The first time you open it, macOS says it
+can't verify the app: click **Done**, then **Open Anyway** in System Settings → Privacy &
+Security. Or, in Terminal:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/ScreenshotTool.app
+```
+
+The DMG includes these steps as "Opening an unsigned app.txt".
+
+### Windows
+
+Run the MSI. It installs for your user only, without asking for an administrator, and shows
+just a progress box; then ScreenshotTool is in the Start menu. Your browser may warn that the
+file isn't commonly downloaded, and on a new Windows 11 PC, Smart App Control may block an
+unsigned installer. To check the download, compare `Get-FileHash .\ScreenshotTool-<version>-win64.msi`
+with `SHA256SUMS`. Uninstall it from Settings → Apps → Installed apps.
+
+Take Screenshot uses Windows' Snipping Tool.
+
+### Linux
+
+Install the AppImage with a desktop entry and icon, and keep it updating:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/danjboyd/ScreenshotTool/main/scripts/install_appimage.sh | bash
+```
+
+That puts it in `~/Applications/ScreenshotTool.AppImage`. To remove it, run the same command
+with `bash -s -- --uninstall` in place of `bash`; `--channel prerelease` installs release
+candidates instead. The script needs `curl` and `jq`
+(`sudo apt install jq` on Ubuntu).
+
+You can also download the AppImage, `chmod +x` it and run it directly. AppImages need FUSE's
+`fusermount3` (the `fuse3` package, standard on desktop installs; `libfuse2` isn't needed), or
+run it with `--appimage-extract-and-run`. Under GNOME it uses the bundled
+[Adwaita theme](https://github.com/danjboyd/plugins-themes-Adwaita); elsewhere it uses
+GNUstep's default theme.
 
 ## Features
 - Pen, highlighter, arrow, text, select and eraser tools. Pen, highlighter and
@@ -71,7 +130,7 @@ private display under both themes, and saves each screen whole and cropped to it
 (`*-window.png`; under Adwaita without the theme's shadow, with transparent rounded corners). The images here are `adwaita-text-toolbar-window.png`,
 `default-text-toolbar-window.png` and `adwaita-popover-window.png`.
 
-## Build
+## Building from source
 
 ### Linux / BSD (GNUstep)
 
@@ -91,17 +150,6 @@ Notes:
   (`~/GNUstep/Defaults/com.danboyd.screenshottool.dev.plist`) are apart from an installed
   release's. The release build passes `make ST_DEV_BUILD=no`.
 
-### Installing the release AppImage
-
-```bash
-scripts/install_appimage.sh                       # newest stable release
-scripts/install_appimage.sh --channel prerelease  # newest release candidate
-```
-
-It installs `~/Applications/ScreenshotTool.AppImage` with a desktop entry and icon. The app
-checks for updates of the channel it was released on (Check for Updates…), and replaces the
-AppImage in place. `--uninstall` removes it.
-
 ### macOS (Cocoa-native)
 
 ```bash
@@ -114,12 +162,11 @@ Requires Xcode 26 or its Command Line Tools; GNUstep isn't needed. The build com
 sources and copies the resources `GNUmakefile` lists, and produces a universal app signed ad
 hoc. Set `VERSION` to stamp a version, or `ARCHS=arm64` for a quicker one-architecture build.
 
-Release DMGs aren't signed with a Developer ID yet, so macOS won't open the app the first
-time: after the warning, click **Open Anyway** in System Settings → Privacy & Security, or
-run `xattr -dr com.apple.quarantine /Applications/ScreenshotTool.app`. The DMG includes
-these steps. Once installed, the app updates itself (Check for Updates…, with Sparkle).
-Developer ID signing and notarization are planned (`macos.md`). The macOS app needs macOS 12
-or later.
+Developer ID signing and notarization of the release DMG are planned (`macos.md`).
+
+### Windows
+
+The MSI is built with GNUstep under MSYS2 CLANG64; see `docs/Packaging.md`.
 
 ## Run
 
