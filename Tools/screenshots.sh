@@ -87,15 +87,36 @@ if [[ "${WM}" == "gnome-shell" ]]; then
     XDG_DATA_HOME="${WORK}/data" XDG_CACHE_HOME="${WORK}/cache" XDG_STATE_HOME="${WORK}/state" \
     XDG_RUNTIME_DIR="${WORK}/run" GSETTINGS_BACKEND=keyfile LIBGL_ALWAYS_SOFTWARE=1 \
     GIO_USE_VFS=local GVFS_DISABLE_FUSE=1 GIO_USE_VOLUME_MONITOR=unix \
-    dbus-run-session -- gnome-shell --x11 >"${WORK}/wm.log" 2>&1 &
+    dbus-run-session -- sh -c 'echo "${DBUS_SESSION_BUS_ADDRESS}" >"${XDG_RUNTIME_DIR}/bus-address"; exec gnome-shell --x11' \
+    >"${WORK}/wm.log" 2>&1 &
   PIDS+=($!)
   for _ in $(seq 1 60); do
     xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q "window id" && break
     sleep 0.5
   done
-  sleep 4
-  # GNOME Shell starts in the overview: leave it.
-  xdotool key Escape; sleep 1; xdotool key Escape; sleep 1
+  # GNOME Shell starts in the overview: leave it. Escape works only once the shell has finished
+  # starting, which takes much longer on a loaded machine, so ask the shell (its OverviewActive
+  # property, on its session bus) rather than wait a fixed time.
+  # Succeeds while the overview is up, or while the shell can't answer yet.
+  overview_active() {
+    local address reply
+    address="$(cat "${WORK}/run/bus-address" 2>/dev/null)"
+    [[ -n "${address}" ]] || return 0
+    reply="$(DBUS_SESSION_BUS_ADDRESS="${address}" gdbus call --session --dest org.gnome.Shell \
+      --object-path /org/gnome/Shell --method org.freedesktop.DBus.Properties.Get \
+      org.gnome.Shell OverviewActive 2>/dev/null)"
+    [[ "${reply}" != *false* ]]
+  }
+  if command -v gdbus >/dev/null; then
+    for _ in $(seq 1 60); do
+      overview_active || break
+      xdotool key Escape; sleep 1
+    done
+    overview_active && echo "screenshots: GNOME Shell stayed in the overview" >&2
+  else
+    sleep 4
+    xdotool key Escape; sleep 1; xdotool key Escape; sleep 1
+  fi
   echo "screenshots: window manager GNOME Shell"
 elif command -v openbox >/dev/null; then
   openbox >"${WORK}/wm.log" 2>&1 &
