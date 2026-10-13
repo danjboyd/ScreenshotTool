@@ -261,6 +261,9 @@ for theme in ${THEMES}; do
   # The text bar can take a few seconds to lay out.
   sleep 3
   xdotool type --delay 80 "Annotation"; sleep 1
+  # The text row scrolls the canvas so the image stays put on screen, covering its top: scroll
+  # back to the top (wheel up, over the canvas) so the shot shows the whole image.
+  xdotool mousemove $((X + W / 2)) $((Y + H * 3 / 4)) click --repeat 5 --delay 100 4; sleep 1
   shoot "${label}-text-toolbar" "sample.png"
 
   # 5. The tool settings popover, from the colour control, in a fresh window. The control is found
