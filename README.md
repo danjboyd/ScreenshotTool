@@ -97,17 +97,25 @@ GNUstep's default theme, with the menus in the window. Shortcuts use Ctrl on eve
 
 ### macOS
 
-The native macOS app, adding a text annotation:
-
-![Adding text on macOS](docs/images/macos-text.png)
-
-In dark mode, a tool's width and colour, from its toolbar button:
+The native macOS app (adding text is shown at the top of this page). In dark mode, a tool's
+width and colour, from its toolbar button:
 
 ![The highlighter's settings popover on macOS in dark mode](docs/images/macos-dark-popover.png)
 
 To regenerate these, run `Tools/screenshots_macos.sh` after `scripts/build_cocoa.sh`; it saves
 `macos-text.png` and `macos-dark-popover.png` in `build/screenshots-macos/`. The terminal needs
 the Screen Recording permission.
+
+### Windows
+
+Under the [WinUI theme](https://github.com/danjboyd/plugins-themes-winuitheme), adding a text
+annotation:
+
+![Adding text on Windows](docs/images/windows-text.png)
+
+A tool's width and colour, from its toolbar button:
+
+![The highlighter's settings popover on Windows](docs/images/windows-popover.png)
 
 ### Linux and BSD (GNUstep)
 
