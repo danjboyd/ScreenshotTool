@@ -51,6 +51,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	CropUndoProbe_test.m \
 	CropUndoWindowProbe_test.m \
 	FitToWindowProbe_test.m \
+	LargeImageDrawingProbe_test.m \
 	CursorRectProbe_test.m \
 	HudCopyFeedbackProbe_test.m \
 	OpenImageToolbarRefreshProbe_test.m \
