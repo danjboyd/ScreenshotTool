@@ -19,7 +19,7 @@ Get the latest version from the
 | Platform | Download | Requires |
 |---|---|---|
 | macOS | `ScreenshotTool-<version>-macOS.dmg` (Apple silicon and Intel) | macOS 12 or later |
-| Windows | `ScreenshotTool-<version>-win64.msi` | 64-bit Windows 11 |
+| Windows | `ScreenshotTool-<version>-win64.msi` | 64-bit Windows 11 (Windows 10 1809 or later should work, but is untested) |
 | Linux | `ScreenshotTool-<version>-x86_64.AppImage` | x86_64, glibc 2.38 or later (Ubuntu 24.04, Debian 13, Fedora 39 or later) |
 
 `SHA256SUMS` on each release lists the files' checksums. Once installed, the app checks for
@@ -42,13 +42,16 @@ The DMG includes these steps as "Opening an unsigned app.txt".
 
 ### Windows
 
-Run the MSI. It installs for your user only, without asking for an administrator, and shows
-just a progress box; then ScreenshotTool is in the Start menu. Your browser may warn that the
+Run the MSI. It installs for your user only, in `%LOCALAPPDATA%\ScreenshotTool` (about 720 MB),
+without asking for an administrator. There's no wizard, just a progress box; then
+ScreenshotTool is in the Start menu (there's no desktop shortcut). Your browser may warn that the
 file isn't commonly downloaded, and on a new Windows 11 PC, Smart App Control may block an
 unsigned installer. To check the download, compare `Get-FileHash .\ScreenshotTool-<version>-win64.msi`
-with `SHA256SUMS`. Uninstall it from Settings → Apps → Installed apps.
+with `SHA256SUMS` (it prints the hash in capitals). Uninstall it from Settings → Apps →
+Installed apps; your settings stay in `%USERPROFILE%\GNUstep\Defaults`.
 
-Take Screenshot uses Windows' Snipping Tool.
+Take Screenshot uses Windows' screen-snip overlay (the Snipping Tool, or Snip & Sketch on
+Windows 10).
 
 ### Linux
 
@@ -60,14 +63,14 @@ curl -fsSL https://raw.githubusercontent.com/danjboyd/ScreenshotTool/main/script
 
 That puts it in `~/Applications/ScreenshotTool.AppImage`. To remove it, run the same command
 with `bash -s -- --uninstall` in place of `bash`; `--channel prerelease` installs release
-candidates instead. The script needs `curl` and `jq`
-(`sudo apt install jq` on Ubuntu).
+candidates instead. The script needs `curl`, and `jq` or
+`python3`.
 
 You can also download the AppImage, `chmod +x` it and run it directly. AppImages need FUSE's
 `fusermount3` (the `fuse3` package, standard on desktop installs; `libfuse2` isn't needed), or
 run it with `--appimage-extract-and-run`. Under GNOME it uses the bundled
 [Adwaita theme](https://github.com/danjboyd/plugins-themes-Adwaita); elsewhere it uses
-GNUstep's default theme.
+GNUstep's default theme, with the menus in the window. Shortcuts use Ctrl on every desktop.
 
 ## Features
 - Pen, highlighter, arrow, text, select and eraser tools. Pen, highlighter and
