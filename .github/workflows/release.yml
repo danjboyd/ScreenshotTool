@@ -110,6 +110,9 @@ jobs:
         echo "DISPLAY=:99" >> "${GITHUB_ENV}"
       run-validation: true
       run-smoke: true
+      # The runner has GNUstep in /usr/GNUstep, which hid v0.1.0's AppImage loading the host's
+      # GNUstep: launch it again on a host without one.
+      appimage-clean-smoke-image: ubuntu:24.04
       artifact-name: screenshottool-linux
 
   package-macos:
