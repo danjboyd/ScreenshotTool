@@ -52,7 +52,6 @@
       "GNUSTEP_SYSTEM_ROOT": "{@runtimeRoot}/System",
       "GNUSTEP_LOCAL_ROOT": "{@runtimeRoot}/System",
       "GNUSTEP_NETWORK_ROOT": "{@runtimeRoot}/System",
-      "GNUSTEP_MAKEFILES": "{@runtimeRoot}/System/Library/Makefiles",
       "LD_LIBRARY_PATH": "{@runtimeRoot}/lib:{@runtimeRoot}/System/Library/Libraries"
     }
   },
