@@ -48,4 +48,7 @@ runs:
           sleep 10
         done
         echo "::error::Pages still doesn't serve these files as built:${pending}"
+        # A release run stops here with its release still a draft.
+        echo "To recover: land a commit on main, dispatch redeploy-update-feeds there with run_id=${GITHUB_RUN_ID}," >&2
+        echo "then publish the release: gh release edit <tag> --draft=false" >&2
         exit 1
