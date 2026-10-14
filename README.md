@@ -42,7 +42,7 @@ The DMG includes these steps as "Opening an unsigned app.txt".
 
 ### Windows
 
-Run the MSI. It installs for your user only, in `%LOCALAPPDATA%\ScreenshotTool` (about 720 MB),
+Run the MSI. It installs for your user only, in `%LOCALAPPDATA%\ScreenshotTool` (about 105 MB),
 without asking for an administrator. There's no wizard, just a progress box; then
 ScreenshotTool is in the Start menu (there's no desktop shortcut). Your browser may warn that the
 file isn't commonly downloaded, and on a new Windows 11 PC, Smart App Control may block an
@@ -50,7 +50,7 @@ unsigned installer. To check the download, compare `Get-FileHash .\ScreenshotToo
 with `SHA256SUMS` (it prints the hash in capitals). Uninstall it from Settings → Apps →
 Installed apps; your settings stay in `%USERPROFILE%\GNUstep\Defaults`.
 
-If you installed v0.1.0 or a v0.1.1 release candidate, download and run the new MSI by hand
+If you installed v0.1.0 or a v0.1.1 release candidate before rc4, download and run the new MSI by hand
 once: those versions' Check for Updates can't install updates on Windows. The MSI upgrades
 the existing installation in place, and later updates install from inside the app.
 
@@ -68,7 +68,7 @@ curl -fsSL https://raw.githubusercontent.com/danjboyd/ScreenshotTool/main/script
 That puts it in `~/Applications/ScreenshotTool.AppImage`. To remove it, run the same command
 with `bash -s -- --uninstall` in place of `bash`; `--channel prerelease` installs release
 candidates instead. The script needs `curl`, and `jq` or
-`python3`. If you installed v0.1.0 or a v0.1.1 release candidate, run it again once: those
+`python3`. If you installed v0.1.0 or a v0.1.1 release candidate before rc4, run it again once: those
 versions can't download updates themselves.
 
 You can also download the AppImage, `chmod +x` it and run it directly. AppImages need FUSE's
