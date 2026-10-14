@@ -172,7 +172,7 @@ jobs:
     environment:
       name: github-pages
     steps:
-      # Only for the deploy action in .github/actions.
+      # Only for the live check in .github/actions.
       - name: Check out the workflow actions
         uses: actions/checkout@v4
         with:
@@ -252,12 +252,15 @@ jobs:
           # Kept so redeploy-update-feeds can deploy this site again.
           retention-days: 30
 
-      # Not actions/deploy-pages: it names the deployment after the commit, so a
-      # release tagged on its last rc's commit left the rc's site up (v0.1.1).
+      # Pages names a deployment after the commit, so a release tagged on a commit
+      # that already deployed (v0.1.1 on rc4's) leaves the old site up. Tag a final
+      # release on a commit of its own; the live check fails the run if not.
       - name: Deploy Pages
-        uses: ./.github/actions/deploy-pages
+        uses: actions/deploy-pages@v4
+
+      - name: Check the update feeds are live
+        uses: ./.github/actions/check-pages-live
         with:
-          artifact-id: ${{ steps.pages-artifact.outputs.artifact_id }}
           site: site
           pages-url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
 

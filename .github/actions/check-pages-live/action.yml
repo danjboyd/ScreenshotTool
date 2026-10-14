@@ -1,0 +1,51 @@
+name: Check the Pages site is live
+description: >-
+  Waits until every file of a deployed Pages site is served as built, and fails
+  if it never is.
+
+  actions/deploy-pages names a deployment after the commit. A release tagged on
+  a commit that already deployed (v0.1.1, on v0.1.1-rc4's commit) "deploys"
+  without replacing the site; this check makes that fail instead of shipping
+  stale update feeds. (A build version of our own isn't an option: the Pages API
+  answers 404 to one that isn't a commit SHA.)
+
+inputs:
+  site:
+    description: The directory that was uploaded, to compare with what Pages serves.
+    required: true
+  pages-url:
+    description: The site's base URL, without a trailing slash.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Check the site is live
+      shell: bash
+      env:
+        SITE: ${{ inputs.site }}
+        PAGES_URL: ${{ inputs.pages-url }}
+        BUILD_VERSION: ${{ github.run_id }}-${{ github.run_attempt }}
+      run: |
+        set -euo pipefail
+        # Pages takes a little while to serve a new deployment; the query string
+        # gets past its CDN cache.
+        cd "${SITE}"
+        pending=$(find . -type f | sed 's|^\./||' | sort)
+        for attempt in $(seq 1 30); do
+          still=""
+          for file in ${pending}; do
+            want=$(sha256sum < "${file}" | cut -d' ' -f1)
+            got=$(curl -fsSL "${PAGES_URL}/${file}?build=${BUILD_VERSION}" | sha256sum | cut -d' ' -f1) || got=""
+            [ "${got}" = "${want}" ] || still="${still} ${file}"
+          done
+          if [ -z "${still}" ]; then
+            echo "Pages serves every file as built:"
+            echo "${pending}" | sed 's/^/  /'
+            exit 0
+          fi
+          pending=${still}
+          sleep 10
+        done
+        echo "::error::Pages still doesn't serve these files as built:${pending}"
+        exit 1

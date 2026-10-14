@@ -1,9 +1,9 @@
 name: redeploy-update-feeds
 
 # Deploys the update feeds a release run staged, again, for when that run's deploy didn't
-# take (v0.1.1's, tagged on v0.1.1-rc4's commit, left the stable feeds at 0.1.0). The deploy
-# action uses a build version unique to this run, so it can be dispatched from any commit,
-# more than once, and it checks the feeds are live before it passes.
+# take (v0.1.1's, tagged on v0.1.1-rc4's commit, left the stable feeds at 0.1.0). Pages
+# names a deployment after the commit, so run it from a commit that hasn't deployed yet
+# (main after a new commit); it checks the feeds are live before it passes.
 
 on:
   workflow_dispatch:
@@ -25,7 +25,7 @@ jobs:
     environment:
       name: github-pages
     steps:
-      # Only for the deploy action in .github/actions.
+      # Only for the live check in .github/actions.
       - name: Check out the workflow actions
         uses: actions/checkout@v4
         with:
@@ -55,8 +55,10 @@ jobs:
           path: site
 
       - name: Deploy Pages
-        uses: ./.github/actions/deploy-pages
+        uses: actions/deploy-pages@v4
+
+      - name: Check the update feeds are live
+        uses: ./.github/actions/check-pages-live
         with:
-          artifact-id: ${{ steps.pages-artifact.outputs.artifact_id }}
           site: site
           pages-url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
