@@ -80,6 +80,10 @@ clone_or_refresh() {
   fi
 }
 
+# The Adwaita theme, so the unit tests also run under it (#74) and the AppImage bundles it (#83).
+# Pinned past 0.1.0-alpha3 for its open and save panels (GNOME's file chooser through the portal).
+THEME_ADWAITA_REF="${THEME_ADWAITA_REF:-121c5cd30a9d59defb40f56eed866b530d4bee39}"
+
 # GNUSTEP_TOOLCHAIN=lock (the default): the toolchain is built from scripts/gnustep-toolchain.lock.json
 # by gnustep-cli-new's custom toolchain builder, in its Ubuntu 24.04 image, into TOOLCHAIN_PREFIX
 # (outside /usr: the builder mounts the prefix's parent into its container). CI restores the
@@ -127,9 +131,6 @@ fi
 LIBS_BASE_REF="${LIBS_BASE_REF:-base-1_31_1}"
 LIBS_GUI_REF="${LIBS_GUI_REF:-gui-0_32_0}"
 LIBS_BACK_REF="${LIBS_BACK_REF:-back-0_32_0}"
-# The Adwaita theme, so the unit tests also run under it (#74) and the AppImage bundles it (#83).
-# Pinned past 0.1.0-alpha3 for its open and save panels (GNOME's file chooser through the portal).
-THEME_ADWAITA_REF="${THEME_ADWAITA_REF:-121c5cd30a9d59defb40f56eed866b530d4bee39}"
 
 clone_or_refresh https://github.com/gnustep/libobjc2.git libobjc2
 pushd libobjc2 >/dev/null
@@ -227,6 +228,8 @@ popd >/dev/null
 
 fi
 
+# Sombre installs in the LOCAL domain: the unit tests switch to it, and no AppImage bundles it.
+# Adwaita installs in SYSTEM, which the AppImage staging copies.
 clone_or_refresh https://github.com/gnustep/plugins-themes-sombre.git plugins-themes-sombre
 pushd plugins-themes-sombre >/dev/null
 source_gnustep_env
