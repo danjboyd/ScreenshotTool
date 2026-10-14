@@ -25,6 +25,13 @@ NSData * _Nullable STWindowsClipboardPNGData(void);
 /// The files on the clipboard, as Explorer copies them.
 NSArray<NSString *> * _Nullable STWindowsClipboardFilePaths(void);
 
+/// Posted on the main thread whenever the clipboard changes, once monitoring has started.
+extern NSString *const STWindowsClipboardDidChangeNotification;
+
+/// Starts watching the clipboard, so a change shows even while the app keeps focus: a snip or
+/// PrtScn with the app in front didn't enable Paste until it was activated again (#202).
+void STWindowsStartClipboardMonitoring(void);
+
 /// Starts `executablePath` with `arguments`, its windows shown. NSTask starts a process hidden
 /// there, so another instance of the app never showed its window.
 BOOL STWindowsLaunchProcess(NSString *executablePath, NSArray<NSString *> *arguments);

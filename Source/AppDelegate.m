@@ -2097,6 +2097,7 @@ static AppDelegate *STFrontDocument(void) {
                                                  name:GSThemeDidActivateNotification
                                                object:nil];
 #endif
+    STWindowsStartClipboardMonitoring();
     [self setupWindowAndContent];
     [self setupToolbar];
     self.lastWidthTool = ScreenshotCanvasToolHighlighter;
@@ -2615,6 +2616,11 @@ static id STInfoValueForKey(NSString *key) {
                                                      name:name
                                                    object:nil];
     }
+    // Paste follows the clipboard while the window keeps focus too (#202; Windows only).
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(clipboardDidChange:)
+                                                 name:STWindowsClipboardDidChangeNotification
+                                               object:nil];
 
     NSRect contentBounds = [[self.window contentView] bounds];
     NSView *container = [[NSView alloc] initWithFrame:contentBounds];
@@ -6087,6 +6093,11 @@ static id STInfoValueForKey(NSString *key) {
     NSButton *paste = [self.emptyStateView viewWithTag:5];
     [paste setEnabled:hasImage];
     [paste setToolTip:hasImage ? nil : @"The clipboard has no image"];
+}
+
+- (void)clipboardDidChange:(NSNotification *)notification {
+    (void)notification;
+    [self refreshPasteAvailability];
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
