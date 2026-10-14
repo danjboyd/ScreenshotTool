@@ -43,8 +43,7 @@ UPDATER_UI_DIR := $(UPDATER_ROOT)/GPUpdaterUI
 UPDATER_HELPER_DIR := $(UPDATER_ROOT)/gp-update-helper
 
 ScreenshotTool_RESOURCE_DIRS =
-ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
-	Resources/CopyImage-symbolic.png \
+ScreenshotTool_RESOURCE_FILES = Resources/CopyImage-symbolic.png \
 	Resources/Highligher-symbolic.png \
 	Resources/PenTool-symbolic.png \
 	Resources/Arrow-symbolic.png \
@@ -54,23 +53,8 @@ ScreenshotTool_RESOURCE_FILES = Resources/CopyImage.png \
 	Resources/Preferences-symbolic.png \
 	Resources/Undo-symbolic.png \
 	Resources/Redo-symbolic.png \
-	Resources/Highligher.png \
-	Resources/HighligherChangeColor.png \
-	Resources/PenTool.png \
-	Resources/Arrow.png \
-	Resources/PenChangeColor.png \
-	Resources/Eraser.png \
-	Resources/AddText.png \
-	Resources/MarqueeTool.png \
-	Resources/CopyImage.tiff \
 	Resources/ScreenshotToolIcon.png \
-	Resources/ScreenshotToolIcon.tiff \
-	Resources/Highligher.tiff \
-	Resources/HighligherChangeColor.tiff \
-	Resources/PenTool.tiff \
-	Resources/PenChangeColor.tiff \
-	Resources/Eraser.tiff \
-	Resources/Preferences.png
+	Resources/ScreenshotToolIcon.tiff
 
 # Toolbar icons at each size they're drawn at, from Resources/Icons (scripts/render_toolbar_icons.py).
 ScreenshotTool_RESOURCE_FILES += \
