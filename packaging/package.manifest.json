@@ -271,6 +271,22 @@
           }
         }
       },
+      "fonts": {
+        "bundle": [
+          {
+            "name": "DejaVu Sans",
+            "files": [
+              "fonts/dejavu/DejaVuSans.ttf",
+              "fonts/dejavu/DejaVuSans-Bold.ttf",
+              "fonts/dejavu/DejaVuSansMono.ttf",
+              "fonts/dejavu/DejaVuSansMono-Bold.ttf"
+            ],
+            "licenseFile": "fonts/dejavu/LICENSE",
+            "license": "Bitstream-Vera AND LicenseRef-Arev-Fonts",
+            "homepage": "https://dejavu-fonts.github.io/"
+          }
+        ]
+      },
       "updates": {
         "feedUrl": "https://danjboyd.github.io/ScreenshotTool/updates/linux/stable.json",
         "embedUpdateInformation": true,

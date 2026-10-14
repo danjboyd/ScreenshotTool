@@ -112,7 +112,9 @@ jobs:
       run-smoke: true
       # The runner has GNUstep in /usr/GNUstep, which hid v0.1.0's AppImage loading the host's
       # GNUstep: launch it again on a host without one.
-      appimage-clean-smoke-image: ubuntu:24.04
+      # Fedora installs no DejaVu, which gnustep-back falls back to: rc3 showed no window there
+      # outside GNOME (the manifest now bundles it).
+      appimage-clean-smoke-image: ubuntu:24.04 fedora:42
       artifact-name: screenshottool-linux
 
   package-macos:
