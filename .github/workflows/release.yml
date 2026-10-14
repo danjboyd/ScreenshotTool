@@ -63,7 +63,7 @@ jobs:
       # danjboyd/libs-back's carry branch: GNUstep's backend with the fixes the
       # Windows build ships ahead of GNUstep (its packaging/README.md lists them).
       msys2-package-urls: >-
-        https://github.com/danjboyd/libs-back/releases/download/carry-0.32.0.1/mingw-w64-clang-x86_64-gnustep-back-0.32.0.1-1-any.pkg.tar.zst
+        https://github.com/danjboyd/libs-back/releases/download/carry-0.32.0.4/mingw-w64-clang-x86_64-gnustep-back-0.32.0.4-1-any.pkg.tar.zst
       run-validation: true
       run-smoke: true
       artifact-name: screenshottool-windows
