@@ -22,10 +22,10 @@
       "environment": {}
     },
     "build": {
-      "command": "./scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json -PackageVersion $env:GP_PACKAGE_VERSION_OVERRIDE"
+      "command": "./scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json -PackageVersion $env:GP_PACKAGE_VERSION"
     },
     "stage": {
-      "command": "./scripts/stage_release.ps1 -ManifestPath packaging/package.manifest.json -StageRoot dist/stage -PackageVersion $env:GP_PACKAGE_VERSION_OVERRIDE",
+      "command": "./scripts/stage_release.ps1 -ManifestPath packaging/package.manifest.json -StageRoot dist/stage -PackageVersion $env:GP_PACKAGE_VERSION",
       "outputRoot": "../dist/stage"
     }
   },

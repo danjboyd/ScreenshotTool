@@ -83,6 +83,11 @@ function Get-ReleaseVersion {
   if (-not [string]::IsNullOrWhiteSpace($RequestedVersion)) {
     return [string]$RequestedVersion
   }
+  # gnustep-packager gives the build and stage commands the effective version (#194): the
+  # override when there is one, else package.version.
+  if (-not [string]::IsNullOrWhiteSpace($env:GP_PACKAGE_VERSION)) {
+    return [string]$env:GP_PACKAGE_VERSION
+  }
   if (-not [string]::IsNullOrWhiteSpace($env:GP_PACKAGE_VERSION_OVERRIDE)) {
     return [string]$env:GP_PACKAGE_VERSION_OVERRIDE
   }
