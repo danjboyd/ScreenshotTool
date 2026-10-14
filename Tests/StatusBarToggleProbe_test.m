@@ -30,6 +30,10 @@ static const CGFloat kStatusBarHeight = 24.0f;
 - (ScreenshotCanvasView *)canvasView;
 @end
 
+@interface PreferencesWindowController (StatusBarToggleTesting)
+- (NSSwitch *)statusBarSwitch;
+@end
+
 #pragma mark - Test Class
 
 @interface StatusBarToggleProbeTests : XCTestCase {
@@ -119,6 +123,24 @@ static const CGFloat kStatusBarHeight = 24.0f;
     [_appDelegate preferencesControllerRestoreDefaults:nil];
     XCTAssertFalse([_appDelegate statusBarVisiblePreference]);
     XCTAssertNil([defaults objectForKey:@"ScreenshotToolShowStatusBar"]);
+}
+
+- (void)testPreferencesSwitchTogglesTheStatusBar {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_appDelegate preferencesController:nil didToggleStatusBar:NO];
+    PreferencesWindowController *preferences = [[PreferencesWindowController alloc] initWithDelegate:_appDelegate];
+    [preferences refresh];
+    NSSwitch *control = [preferences statusBarSwitch];
+    XCTAssertNotNil(control);
+    // GNUstep 0.32's NSSwitch starts disabled, and a disabled switch ignores clicks.
+    XCTAssertTrue([control isEnabled], @"the switch takes clicks");
+    XCTAssertEqual([control state], NSControlStateValueOff);
+#if defined(GNUSTEP)
+    // GNUstep's NSSwitch toggles on mouseDown: without tracking the event.
+    [control mouseDown:nil];
+    XCTAssertEqual([control state], NSControlStateValueOn);
+    XCTAssertTrue([_appDelegate statusBarVisiblePreference], @"a click on the switch shows the status bar");
+#endif
 }
 
 - (void)testColorControlIsTheStyleControl {

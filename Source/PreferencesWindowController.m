@@ -268,6 +268,8 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     self.statusBarLabel = [self fieldLabelWithString:@"Show status bar" frame:NSZeroRect];
     [content addSubview:self.statusBarLabel];
     self.statusBarSwitch = [[NSSwitch alloc] initWithFrame:NSZeroRect];
+    /* GNUstep 0.32's NSSwitch starts disabled and then ignores clicks (later versions enable it). */
+    [self.statusBarSwitch setEnabled:YES];
     [self.statusBarSwitch setTarget:self];
     [self.statusBarSwitch setAction:@selector(statusBarToggled:)];
     [content addSubview:self.statusBarSwitch];
