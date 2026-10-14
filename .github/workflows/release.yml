@@ -233,6 +233,18 @@ jobs:
           for appcast in dist/macos/*.appcast.xml; do
             [ -f "${appcast}" ] && cp "${appcast}" "site/updates/macos/${channel}.xml"
           done
+          # rc builds check the prerelease feeds, so a stable release goes there too, or their
+          # testers are never offered it (#195). GPUpdater skips a feed whose channel isn't its
+          # own; Sparkle's appcast has no channel and compares build numbers.
+          if [ "${channel}" = "stable" ]; then
+            for platform in windows linux; do
+              jq '.channel = "prerelease" | .feedUrl |= sub("/stable[.]json$"; "/prerelease.json")' \
+                "site/updates/${platform}/stable.json" > "site/updates/${platform}/prerelease.json"
+            done
+            if [ -f site/updates/macos/stable.xml ]; then
+              cp site/updates/macos/stable.xml site/updates/macos/prerelease.xml
+            fi
+          fi
           find site -type f | sort
 
       - name: Publish draft GitHub release assets
