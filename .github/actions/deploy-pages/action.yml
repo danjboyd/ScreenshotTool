@@ -49,6 +49,17 @@ runs:
           core.info(`Created Pages deployment ${deploymentId} for build ${buildVersion}`);
           core.setOutput('build-version', buildVersion);
 
+          // As actions/deploy-pages does: a deployment left pending can block the next one.
+          const cancel = async () => {
+            try {
+              await github.request('POST /repos/{owner}/{repo}/pages/deployments/{pages_deployment_id}/cancel',
+                { owner, repo, pages_deployment_id: deploymentId });
+              core.info(`Cancelled Pages deployment ${deploymentId}.`);
+            } catch (error) {
+              core.warning(`Couldn't cancel Pages deployment ${deploymentId}: ${error.message}`);
+            }
+          };
+
           const failed = ['deployment_failed', 'deployment_perms_error', 'deployment_content_failed',
             'deployment_cancelled', 'deployment_lost'];
           const deadline = Date.now() + 10 * 60 * 1000;
@@ -71,12 +82,14 @@ runs:
               errors = 0;
             } catch (error) {
               if (++errors >= 10) {
+                await cancel();
                 core.setFailed(`Pages deployment ${deploymentId}: status checks keep failing: ${error.message}`);
                 return;
               }
               core.warning(`Pages deployment status check failed: ${error.message}`);
             }
           }
+          await cancel();
           core.setFailed(`Pages deployment ${deploymentId} did not finish within 10 minutes.`);
 
     - name: Check the site is live
