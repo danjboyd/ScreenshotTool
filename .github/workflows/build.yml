@@ -12,18 +12,20 @@ jobs:
     # The GNUstep toolchain for the AppImage, built from scripts/gnustep-toolchain.lock.json by
     # gnustep-cli-new's custom toolchain builder in its Ubuntu 24.04 image (glibc 2.39, as the
     # AppImage has today). Everything it builds is pinned, so the cache key is the lock, its
-    # patches and the builder's commit. Nothing uses this toolchain yet.
+    # patches and the builder's commit. linux-appimage restores it from the cache.
     runs-on: ubuntu-24.04
     env:
-      GNUSTEP_CLI_NEW_COMMIT: 8700a5e133eada23aeb083cfee06fc012acbeb58
       TOOLCHAIN_PREFIX: /opt/screenshottool-gnustep/GNUstep
     steps:
       - uses: actions/checkout@v4
+      - name: Read the toolchain builder's commit
+        id: builder
+        run: echo "commit=$(tr -d '[:space:]' < scripts/gnustep-cli-new.commit)" >> "${GITHUB_OUTPUT}"
       - name: Check out the toolchain builder (gnustep-cli-new)
         uses: actions/checkout@v4
         with:
           repository: danjboyd/gnustep-cli-new
-          ref: ${{ env.GNUSTEP_CLI_NEW_COMMIT }}
+          ref: ${{ steps.builder.outputs.commit }}
           path: .ci/gnustep-cli-new
       - name: Prepare the toolchain prefix
         # Outside /usr: the builder mounts the prefix's parent into its container at the same path.
@@ -35,7 +37,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.TOOLCHAIN_PREFIX }}
-          key: gnustep-toolchain-${{ runner.os }}-${{ hashFiles('scripts/gnustep-toolchain.lock.json', 'scripts/patches/**') }}-cli-${{ env.GNUSTEP_CLI_NEW_COMMIT }}
+          key: gnustep-toolchain-${{ runner.os }}-${{ hashFiles('scripts/gnustep-toolchain.lock.json', 'scripts/patches/**', 'scripts/gnustep-cli-new.commit') }}
       - name: Build the toolchain
         if: steps.toolchain-cache.outputs.cache-hit != 'true'
         run: sh .ci/gnustep-cli-new/scripts/dev/build-custom-toolchain-in-container.sh scripts/gnustep-toolchain.lock.json "${TOOLCHAIN_PREFIX}" "$(nproc)"
@@ -49,11 +51,13 @@ jobs:
           jq -e '.official == false' "${provenance}" >/dev/null
           test "$(jq -r '.lock.sha256' "${provenance}")" = "$(sha256sum scripts/gnustep-toolchain.lock.json | cut -d' ' -f1)"
           jq -r '.components[] | "\(.name) \(.resolved_commit)"' "${provenance}"
-          # The builder installs the GNUstep libraries in the LOCAL domain.
-          for lib in "${TOOLCHAIN_PREFIX}"/Local/Library/Libraries/libgnustep-{base,gui}.so \
-                     "${TOOLCHAIN_PREFIX}"/Local/Library/Bundles/libgnustep-back-*.bundle/libgnustep-back-*; do
+          # The lock's install_domain puts the GNUstep libraries in the SYSTEM domain, where the
+          # AppImage staging reads them.
+          test ! -e "${TOOLCHAIN_PREFIX}/Local/Library/Libraries/libgnustep-base.so"
+          for lib in "${TOOLCHAIN_PREFIX}"/System/Library/Libraries/libgnustep-{base,gui}.so \
+                     "${TOOLCHAIN_PREFIX}"/System/Library/Bundles/libgnustep-back-*.bundle/libgnustep-back-*; do
             echo "${lib}"
-            if LD_LIBRARY_PATH="${TOOLCHAIN_PREFIX}/lib:${TOOLCHAIN_PREFIX}/Local/Library/Libraries" ldd "${lib}" | grep 'not found'; then
+            if LD_LIBRARY_PATH="${TOOLCHAIN_PREFIX}/lib:${TOOLCHAIN_PREFIX}/System/Library/Libraries" ldd "${lib}" | grep 'not found'; then
               exit 1
             fi
           done
@@ -75,6 +79,7 @@ jobs:
           if-no-files-found: ignore
 
   linux-appimage:
+    needs: linux-toolchain
     runs-on: ubuntu-24.04
     outputs:
       appimage_name: ${{ steps.naming.outputs.appimage_name }}
@@ -98,27 +103,21 @@ jobs:
           echo "appimage_path=Staging/${APPIMAGE_NAME}" >> "${GITHUB_OUTPUT}"
           echo "appimage_sha_name=${APPIMAGE_NAME}.sha256" >> "${GITHUB_OUTPUT}"
           echo "artifact_name=${APPIMAGE_NAME}" >> "${GITHUB_OUTPUT}"
-      - name: Prepare the GNUstep prefix
-        # The cache restores /usr/GNUstep as this user. A new key each week also picks up the
-        # libraries that aren't pinned (libobjc2, libdispatch, tools-make, Sombre).
-        id: gnustep-prefix
+      - name: Prepare the toolchain prefix
         run: |
-          sudo mkdir -p /usr/GNUstep
-          sudo chown "$(id -u):$(id -g)" /usr/GNUstep
-          echo "week=$(date -u +%G-W%V)" >> "${GITHUB_OUTPUT}"
-      - name: Restore the GNUstep build
-        id: gnustep-cache
-        uses: actions/cache@v4
+          sudo mkdir -p /opt/screenshottool-gnustep
+          sudo chown "$(id -u):$(id -g)" /opt/screenshottool-gnustep
+      - name: Restore the GNUstep toolchain
+        # Built and cached by linux-toolchain; the bootstrap builds it itself on a miss.
+        uses: actions/cache/restore@v4
         with:
-          path: /usr/GNUstep
-          key: gnustep-${{ runner.os }}-${{ hashFiles('scripts/bootstrap_gnustep_linux_ci.sh', 'scripts/patches/**') }}-${{ steps.gnustep-prefix.outputs.week }}
+          path: /opt/screenshottool-gnustep/GNUstep
+          key: gnustep-toolchain-${{ runner.os }}-${{ hashFiles('scripts/gnustep-toolchain.lock.json', 'scripts/patches/**', 'scripts/gnustep-cli-new.commit') }}
       - name: Bootstrap GNUstep Linux toolchain
+        # Links /usr/GNUstep to the toolchain and builds the Sombre and Adwaita themes into it.
         env:
           PREFIX: /usr/GNUstep
-          GNUSTEP_PREBUILT: ${{ steps.gnustep-cache.outputs.cache-hit }}
-        run: |
-          chmod +x ./scripts/bootstrap_gnustep_linux_ci.sh
-          ./scripts/bootstrap_gnustep_linux_ci.sh
+        run: ./scripts/bootstrap_gnustep_linux_ci.sh
       - name: Build ScreenshotTool (GNUstep)
         run: pwsh -NoProfile -File scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json
       - name: Keep core dumps of crashed tests

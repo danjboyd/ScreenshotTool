@@ -2,6 +2,7 @@
   "schema_version": 1,
   "kind": "custom-toolchain-lock",
   "name": "screenshottool",
+  "install_domain": "SYSTEM",
   "container": {
     "recipe": "linux-ubuntu2404-amd64-clang",
     "apt_packages": [
