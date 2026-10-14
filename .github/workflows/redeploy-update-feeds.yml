@@ -1,0 +1,50 @@
+name: redeploy-update-feeds
+
+# Deploys the update feeds a release run staged, again. GitHub Pages names a deployment after
+# its commit, so a release tagged on the commit an rc already deployed (v0.1.1 on v0.1.1-rc4's)
+# "succeeds" without replacing the site, and the stable feeds keep the old version. Run this
+# from main, a different commit, with the release run's ID.
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: ID of the package-release run whose github-pages artifact to deploy
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  pages: write
+  id-token: write
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - name: Download the release run's Pages artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          path: pages-artifact
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Unpack the site
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir site
+          tar -xf pages-artifact/artifact.tar -C site
+          find site -type f | sort
+          grep -h '"version"' site/updates/*/*.json || true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy Pages
+        uses: actions/deploy-pages@v4
