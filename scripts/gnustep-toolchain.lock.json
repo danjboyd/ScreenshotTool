@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "kind": "custom-toolchain-lock",
+  "name": "screenshottool",
+  "container": {
+    "recipe": "linux-ubuntu2404-amd64-clang",
+    "apt_packages": [
+      "libfontconfig1-dev",
+      "libxrandr-dev",
+      "libxmu-dev",
+      "libxrender-dev",
+      "libxtst-dev",
+      "libxcomposite-dev",
+      "libxcursor-dev",
+      "libcups2-dev",
+      "libsndfile1-dev",
+      "libdbus-1-dev",
+      "libglib2.0-dev",
+      "libgmp-dev",
+      "libudev-dev"
+    ]
+  },
+  "components": [
+    {"name": "libobjc2", "url": "https://github.com/gnustep/libobjc2.git", "revision": "b67709ad7851973fde127022d8ac6a710c82b1d5", "configure_args": [], "patches": []},
+    {"name": "libdispatch", "url": "https://github.com/swiftlang/swift-corelibs-libdispatch.git", "revision": "4ce40128f607a6eb7b58077a06b7464c1518a30d", "configure_args": [], "patches": []},
+    {"name": "tools-make", "url": "https://github.com/gnustep/tools-make.git", "revision": "50cf9619e672fb2ff6825f239b5a172c5dc55630", "configure_args": [], "patches": []},
+    {"name": "libs-base", "url": "https://github.com/gnustep/libs-base.git", "ref": "base-1_31_1", "revision": "6307e474dd39e36eb2c5f6ee15ade8b51e337970", "configure_args": ["--disable-newkvo"], "patches": []},
+    {"name": "libs-gui", "url": "https://github.com/gnustep/libs-gui.git", "ref": "gui-0_32_0", "revision": "4c1687d2b404f271ce7806dcb80a5b24b5284432", "configure_args": ["--enable-imagemagick"], "patches": []},
+    {"name": "libs-back", "url": "https://github.com/gnustep/libs-back.git", "ref": "back-0_32_0", "revision": "e59d923e90ac354ca3157d706358619d3c61ab6b", "configure_args": [], "patches": [{"path": "patches/libs-back-0.32-frame-extents.patch", "sha256": "3a84804de6234375c74d5819e4a75562d9a4d7fd2663cf2c50d3aee62f38dba2"}]}
+  ]
+}

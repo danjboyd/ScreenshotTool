@@ -8,6 +8,72 @@ on:
   workflow_dispatch:
 
 jobs:
+  linux-toolchain:
+    # The GNUstep toolchain for the AppImage, built from scripts/gnustep-toolchain.lock.json by
+    # gnustep-cli-new's custom toolchain builder in its Ubuntu 24.04 image (glibc 2.39, as the
+    # AppImage has today). Everything it builds is pinned, so the cache key is the lock, its
+    # patches and the builder's commit. Nothing uses this toolchain yet.
+    runs-on: ubuntu-24.04
+    env:
+      GNUSTEP_CLI_NEW_COMMIT: 8700a5e133eada23aeb083cfee06fc012acbeb58
+      TOOLCHAIN_PREFIX: /opt/screenshottool-gnustep/GNUstep
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check out the toolchain builder (gnustep-cli-new)
+        uses: actions/checkout@v4
+        with:
+          repository: danjboyd/gnustep-cli-new
+          ref: ${{ env.GNUSTEP_CLI_NEW_COMMIT }}
+          path: .ci/gnustep-cli-new
+      - name: Prepare the toolchain prefix
+        # Outside /usr: the builder mounts the prefix's parent into its container at the same path.
+        run: |
+          sudo mkdir -p "$(dirname "${TOOLCHAIN_PREFIX}")"
+          sudo chown "$(id -u):$(id -g)" "$(dirname "${TOOLCHAIN_PREFIX}")"
+      - name: Restore the toolchain
+        id: toolchain-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TOOLCHAIN_PREFIX }}
+          key: gnustep-toolchain-${{ runner.os }}-${{ hashFiles('scripts/gnustep-toolchain.lock.json', 'scripts/patches/**') }}-cli-${{ env.GNUSTEP_CLI_NEW_COMMIT }}
+      - name: Build the toolchain
+        if: steps.toolchain-cache.outputs.cache-hit != 'true'
+        run: sh .ci/gnustep-cli-new/scripts/dev/build-custom-toolchain-in-container.sh scripts/gnustep-toolchain.lock.json "${TOOLCHAIN_PREFIX}" "$(nproc)"
+      - name: Check the toolchain
+        run: |
+          set -euo pipefail
+          # The runtime libraries for the lock's optional features, so ldd can resolve them.
+          sudo apt-get install -y --no-install-recommends libcups2t64 libsndfile1 libxmu6 libxcursor1 \
+            libxtst6 libxrandr2 libxcomposite1 >/dev/null
+          provenance="${TOOLCHAIN_PREFIX}/gnustep-toolchain-provenance.json"
+          jq -e '.official == false' "${provenance}" >/dev/null
+          test "$(jq -r '.lock.sha256' "${provenance}")" = "$(sha256sum scripts/gnustep-toolchain.lock.json | cut -d' ' -f1)"
+          jq -r '.components[] | "\(.name) \(.resolved_commit)"' "${provenance}"
+          # The builder installs the GNUstep libraries in the LOCAL domain.
+          for lib in "${TOOLCHAIN_PREFIX}"/Local/Library/Libraries/libgnustep-{base,gui}.so \
+                     "${TOOLCHAIN_PREFIX}"/Local/Library/Bundles/libgnustep-back-*.bundle/libgnustep-back-*; do
+            echo "${lib}"
+            if LD_LIBRARY_PATH="${TOOLCHAIN_PREFIX}/lib:${TOOLCHAIN_PREFIX}/Local/Library/Libraries" ldd "${lib}" | grep 'not found'; then
+              exit 1
+            fi
+          done
+          # The README promises glibc 2.38: nothing in the toolchain may need a newer symbol.
+          # objdump fails on the scripts among the tools; only the symbols matter.
+          newest=$({ find "${TOOLCHAIN_PREFIX}" -type f \( -name '*.so*' -o -perm -u+x \) -exec objdump -T {} + 2>/dev/null || true; } \
+            | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -n 1)
+          echo "Newest glibc symbol: ${newest}"
+          [ "$(printf '%s\n' "${newest#GLIBC_}" 2.38 | sort -V | tail -n 1)" = 2.38 ]
+          du -sh "${TOOLCHAIN_PREFIX}"
+      - name: Upload the toolchain build logs and provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gnustep-toolchain-logs
+          path: |
+            /opt/screenshottool-gnustep/.GNUstep-build/logs/*.log
+            /opt/screenshottool-gnustep/GNUstep/gnustep-toolchain-provenance.json
+          if-no-files-found: ignore
+
   linux-appimage:
     runs-on: ubuntu-24.04
     outputs:
