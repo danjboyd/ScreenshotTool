@@ -172,6 +172,12 @@ jobs:
     environment:
       name: github-pages
     steps:
+      # Only for the deploy action in .github/actions.
+      - name: Check out the workflow actions
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+
       - name: Download Windows package artifacts
         uses: actions/download-artifact@v4
         with:
@@ -239,13 +245,21 @@ jobs:
           files: release-assets/*
 
       - name: Upload Pages artifact
+        id: pages-artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
+          # Kept so republish-pages can deploy this site again.
+          retention-days: 30
 
+      # Not actions/deploy-pages: it names the deployment after the commit, so a
+      # release tagged on its last rc's commit left the rc's site up (v0.1.1).
       - name: Deploy Pages
-        id: deploy-pages
-        uses: actions/deploy-pages@v4
+        uses: ./.github/actions/deploy-pages
+        with:
+          artifact-id: ${{ steps.pages-artifact.outputs.artifact_id }}
+          site: site
+          pages-url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
 
       - name: Publish final GitHub release
         env:

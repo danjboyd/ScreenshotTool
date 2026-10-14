@@ -1,0 +1,61 @@
+name: republish-pages
+
+# Deploys the Pages site (the update feeds) a package-release run built, again:
+# for when that run's deploy didn't take, as v0.1.1's didn't.
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: ID of the package-release run whose site to deploy
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  republish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - name: Check out the workflow actions
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+
+      - name: Download the run's Pages artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: github-pages
+          run-id: ${{ inputs.run_id }}
+          github-token: ${{ github.token }}
+          path: pages-artifact
+
+      - name: Unpack the site
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir site
+          tar -xf pages-artifact/artifact.tar -C site
+          find site -type f | sort
+          # The Windows and Linux feeds' versions, for the log.
+          for feed in site/updates/*/*.json; do
+            echo "${feed}: $(jq -r '.channel + " " + .package.version' "${feed}")"
+          done
+
+      - name: Upload Pages artifact
+        id: pages-artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy Pages
+        uses: ./.github/actions/deploy-pages
+        with:
+          artifact-id: ${{ steps.pages-artifact.outputs.artifact_id }}
+          site: site
+          pages-url: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
