@@ -1,5 +1,7 @@
 #import "STWindowsIntegration.h"
 
+NSString *const STWindowsClipboardDidChangeNotification = @"STWindowsClipboardDidChangeNotification";
+
 #if defined(_WIN32)
 
 #import <AppKit/AppKit.h>
@@ -27,6 +29,34 @@ static HWND STClipboardOwnerWindow(void) {
                                  HWND_MESSAGE, NULL, GetModuleHandleW(NULL), NULL);
     }
     return window;
+}
+
+static LRESULT CALLBACK STClipboardListenerProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    if (message == WM_CLIPBOARDUPDATE) {
+        // The window belongs to the main thread, whose event loop dispatches this.
+        [[NSNotificationCenter defaultCenter] postNotificationName:STWindowsClipboardDidChangeNotification object:nil];
+        return 0;
+    }
+    return DefWindowProcW(window, message, wParam, lParam);
+}
+
+void STWindowsStartClipboardMonitoring(void) {
+    static HWND listener = NULL;
+    if (listener != NULL) {
+        return;
+    }
+    WNDCLASSW windowClass = {0};
+    windowClass.lpfnWndProc = STClipboardListenerProc;
+    windowClass.hInstance = GetModuleHandleW(NULL);
+    windowClass.lpszClassName = L"ScreenshotToolClipboardListener";
+    RegisterClassW(&windowClass);
+    // A message-only window: never shown, and still sent WM_CLIPBOARDUPDATE.
+    listener = CreateWindowExW(0, windowClass.lpszClassName, L"ScreenshotToolClipboardListener", 0, 0, 0, 0, 0,
+                               HWND_MESSAGE, NULL, windowClass.hInstance, NULL);
+    if (listener != NULL && !AddClipboardFormatListener(listener)) {
+        DestroyWindow(listener);
+        listener = NULL;
+    }
 }
 
 /// Opens the clipboard, retrying briefly: another app may have it open for a moment.
@@ -403,6 +433,9 @@ NSData *STWindowsClipboardPNGData(void) {
 
 NSArray<NSString *> *STWindowsClipboardFilePaths(void) {
     return nil;
+}
+
+void STWindowsStartClipboardMonitoring(void) {
 }
 
 BOOL STWindowsLaunchProcess(NSString *executablePath, NSArray<NSString *> *arguments) {
