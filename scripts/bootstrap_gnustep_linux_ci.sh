@@ -80,6 +80,39 @@ clone_or_refresh() {
   fi
 }
 
+# The Adwaita theme, so the unit tests also run under it (#74) and the AppImage bundles it (#83).
+# Pinned past 0.1.0-alpha3 for its open and save panels (GNOME's file chooser through the portal).
+THEME_ADWAITA_REF="${THEME_ADWAITA_REF:-121c5cd30a9d59defb40f56eed866b530d4bee39}"
+
+# GNUSTEP_TOOLCHAIN=lock (the default): the toolchain is built from scripts/gnustep-toolchain.lock.json
+# by gnustep-cli-new's custom toolchain builder, in its Ubuntu 24.04 image, into TOOLCHAIN_PREFIX
+# (outside /usr: the builder mounts the prefix's parent into its container). CI restores the
+# prefix from the linux-toolchain job's cache; without one, it is built here. ${PREFIX} links to
+# it, so the build, test and packaging scripts find it where they always have. The themes below
+# are then built into it. GNUSTEP_TOOLCHAIN=bootstrap builds the libraries from source here, as
+# before.
+TOOLCHAIN_LOCK="${SCRIPT_DIR}/gnustep-toolchain.lock.json"
+TOOLCHAIN_PREFIX="${TOOLCHAIN_PREFIX:-/opt/screenshottool-gnustep/GNUstep}"
+GNUSTEP_CLI_NEW_COMMIT="$(tr -d '[:space:]' < "${SCRIPT_DIR}/gnustep-cli-new.commit")"
+if [[ "${GNUSTEP_TOOLCHAIN:-lock}" == "lock" ]]; then
+  lock_sha="$(sha256sum "${TOOLCHAIN_LOCK}" | cut -d' ' -f1)"
+  provenance="${TOOLCHAIN_PREFIX}/gnustep-toolchain-provenance.json"
+  if [[ -f "${provenance}" && "$(jq -r '.lock.sha256' "${provenance}")" == "${lock_sha}" ]]; then
+    echo "GNUstep toolchain for lock ${lock_sha} is at ${TOOLCHAIN_PREFIX}."
+  else
+    sudo mkdir -p "$(dirname "${TOOLCHAIN_PREFIX}")"
+    sudo chown "$(id -u):$(id -g)" "$(dirname "${TOOLCHAIN_PREFIX}")"
+    rm -rf "${TOOLCHAIN_PREFIX}"
+    clone_or_refresh https://github.com/danjboyd/gnustep-cli-new.git gnustep-cli-new "${GNUSTEP_CLI_NEW_COMMIT}"
+    sh gnustep-cli-new/scripts/dev/build-custom-toolchain-in-container.sh "${TOOLCHAIN_LOCK}" "${TOOLCHAIN_PREFIX}" "$(nproc)"
+  fi
+  if [[ -e "${PREFIX}" && ! -L "${PREFIX}" ]]; then
+    sudo rmdir "${PREFIX}"
+  fi
+  sudo ln -sfn "${TOOLCHAIN_PREFIX}" "${PREFIX}"
+  register_gnustep_libraries
+  source_gnustep_env
+else
 # CI restores ${PREFIX} from its cache when nothing that's built has changed (GNUSTEP_PREBUILT=true).
 # The stamp is written only after a complete build, so a partial prefix is never reused.
 # tools-make's GNUstep.conf lives in /etc, outside the prefix: a copy is kept in the prefix.
@@ -98,9 +131,6 @@ fi
 LIBS_BASE_REF="${LIBS_BASE_REF:-base-1_31_1}"
 LIBS_GUI_REF="${LIBS_GUI_REF:-gui-0_32_0}"
 LIBS_BACK_REF="${LIBS_BACK_REF:-back-0_32_0}"
-# The Adwaita theme, so the unit tests also run under it (#74) and the AppImage bundles it (#83).
-# Pinned past 0.1.0-alpha3 for its open and save panels (GNOME's file chooser through the portal).
-THEME_ADWAITA_REF="${THEME_ADWAITA_REF:-121c5cd30a9d59defb40f56eed866b530d4bee39}"
 
 clone_or_refresh https://github.com/gnustep/libobjc2.git libobjc2
 pushd libobjc2 >/dev/null
@@ -196,6 +226,10 @@ sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
 register_gnustep_libraries
 popd >/dev/null
 
+fi
+
+# Sombre installs in the LOCAL domain: the unit tests switch to it, and no AppImage bundles it.
+# Adwaita installs in SYSTEM, which the AppImage staging copies.
 clone_or_refresh https://github.com/gnustep/plugins-themes-sombre.git plugins-themes-sombre
 pushd plugins-themes-sombre >/dev/null
 source_gnustep_env
@@ -220,5 +254,7 @@ sudo PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \
 popd >/dev/null
 register_gnustep_libraries
 
-sudo install -D -m 0644 /etc/GNUstep/GNUstep.conf "${BOOTSTRAP_ETC}/GNUstep.conf"
-date -u +"built %Y-%m-%dT%H:%M:%SZ" | sudo tee "${BOOTSTRAP_STAMP}" >/dev/null
+if [[ "${GNUSTEP_TOOLCHAIN:-lock}" != "lock" ]]; then
+  sudo install -D -m 0644 /etc/GNUstep/GNUstep.conf "${BOOTSTRAP_ETC}/GNUstep.conf"
+  date -u +"built %Y-%m-%dT%H:%M:%SZ" | sudo tee "${BOOTSTRAP_STAMP}" >/dev/null
+fi
