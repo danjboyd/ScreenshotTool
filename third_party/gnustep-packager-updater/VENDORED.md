@@ -7,7 +7,7 @@
   build's Windows toolchain (gnustep-cli-new) otherwise defines `mode_t` twice, in libdispatch's
   `os/generic_win_base.h` and in the CRT. Re-apply it after a sync until the packager has it.
 
-- Source commit: `f358b6085f55f134759c304585ce63e6593226f2` (gnustep-packager main, 2026-10-13)
+- Source commit: `7aaf72d1da5e26ae79fca7e0f8bdac06b7fb37f9` (gnustep-packager main, 2026-10-13)
 - Synced in: ScreenshotTool's `vendor-updater-sync` branch
 
 ScreenshotTool builds GPUpdaterCore, GPUpdaterUI and gp-update-helper from this copy (the top-level
