@@ -249,7 +249,7 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: site
-          # Kept so republish-pages can deploy this site again.
+          # Kept so redeploy-update-feeds can deploy this site again.
           retention-days: 30
 
       # Not actions/deploy-pages: it names the deployment after the commit, so a
