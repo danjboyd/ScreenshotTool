@@ -622,8 +622,7 @@ function Write-WindowsGNUstepConfig {
     "GNUSTEP_LOCAL_HEADERS=$systemRootRelative/Library/Headers",
     "GNUSTEP_LOCAL_DOC=$systemRootRelative/Library/Documentation",
     "GNUSTEP_LOCAL_DOC_MAN=$systemRootRelative/Library/Documentation/man",
-    "GNUSTEP_LOCAL_DOC_INFO=$systemRootRelative/Library/Documentation/info",
-    "GNUSTEP_MAKEFILES=$systemRootRelative/Library/Makefiles"
+    "GNUSTEP_LOCAL_DOC_INFO=$systemRootRelative/Library/Documentation/info"
   )
 
   Set-Content -Path $configPath -Value $configLines -Encoding ascii
@@ -635,7 +634,9 @@ function Stage-WindowsRuntime {
     [Parameter(Mandatory = $true)]
     [string]$RepoRoot,
     [Parameter(Mandatory = $true)]
-    [string]$RuntimeRootPath
+    [string]$RuntimeRootPath,
+    [Parameter(Mandatory = $true)]
+    [string]$AppBundleRoot
   )
 
   $msysRoot = Resolve-MsysRoot
@@ -649,10 +650,8 @@ function Stage-WindowsRuntime {
 
   $runtimeBin = Ensure-Directory -Path (Join-Path $RuntimeRootPath "bin")
   $runtimeEtcFonts = Ensure-Directory -Path (Join-Path $RuntimeRootPath "etc\fonts")
-  $runtimeSystemLib = Ensure-Directory -Path (Join-Path $RuntimeRootPath "System\Library\Libraries")
   $runtimeSystemBundles = Ensure-Directory -Path (Join-Path $RuntimeRootPath "System\Library\Bundles")
   $runtimeSystemThemes = Ensure-Directory -Path (Join-Path $RuntimeRootPath "System\Library\Themes")
-  $runtimeSystemMakefiles = Ensure-Directory -Path (Join-Path $RuntimeRootPath "System\Library\Makefiles")
 
   foreach ($fontsDir in @(
     (Join-Path $clang64Root "etc\fonts")
@@ -668,18 +667,6 @@ function Stage-WindowsRuntime {
     [void](Copy-FileIfPresent -Source $defaultsSource -Destination (Join-Path $runtimeBin "defaults.exe"))
   }
 
-  foreach ($libraryDir in @(
-    (Join-Path $clang64Root "bin"),
-    (Join-Path $clang64Root "lib"),
-    (Join-Path $clang64Root "lib\GNUstep\Libraries"),
-    (Find-FirstDirectoryByName -Root $clang64Root -Name "Libraries")
-  )) {
-    if (-not [string]::IsNullOrWhiteSpace($libraryDir) -and (Test-Path $libraryDir)) {
-      [void](Copy-MatchingFiles -SourceDirectory $libraryDir -Patterns @("*.dll") -DestinationDirectory $runtimeSystemLib)
-    }
-  }
-  [void](Copy-MatchingFiles -SourceDirectory $runtimeSystemLib -Patterns @("*.dll") -DestinationDirectory $runtimeBin)
-
   foreach ($bundleDir in @(
     (Join-Path $clang64Root "lib\GNUstep\Bundles"),
     (Find-FirstDirectoryByName -Root $clang64Root -Name "Bundles")
@@ -689,6 +676,9 @@ function Stage-WindowsRuntime {
       break
     }
   }
+  # SystemPreferences' panes, when the build host has it: the app never loads them.
+  Get-ChildItem -Path $runtimeSystemBundles -Directory -Filter "*.prefPane" -ErrorAction SilentlyContinue |
+    Remove-Item -Recurse -Force
 
   foreach ($themeDir in @(
     (Join-Path $clang64Root "share\GNUstep\Themes"),
@@ -696,16 +686,6 @@ function Stage-WindowsRuntime {
   )) {
     if (-not [string]::IsNullOrWhiteSpace($themeDir)) {
       [void](Copy-DirectoryTree -Source $themeDir -Destination $runtimeSystemThemes)
-      break
-    }
-  }
-
-  foreach ($makefilesDir in @(
-    (Join-Path $clang64Root "share\GNUstep\Makefiles"),
-    (Find-FirstDirectoryByName -Root $clang64Root -Name "Makefiles")
-  )) {
-    if (-not [string]::IsNullOrWhiteSpace($makefilesDir)) {
-      [void](Copy-DirectoryTree -Source $makefilesDir -Destination $runtimeSystemMakefiles)
       break
     }
   }
@@ -733,7 +713,111 @@ function Stage-WindowsRuntime {
     }
   }
 
+  Copy-WindowsDllClosure -Clang64Root $clang64Root -RuntimeBin $runtimeBin -Seeds @(
+    (Join-Path $AppBundleRoot "ScreenshotTool.exe"),
+    (Join-Path $AppBundleRoot "gp-update-helper.exe")
+  ) -RuntimeRootPath $RuntimeRootPath
+
   Write-WindowsGNUstepConfig -RuntimeRootPath $RuntimeRootPath
+}
+
+# The DLLs the staged programs import, and the DLLs those import, copied once
+# into runtime/bin (the launcher puts it on PATH). The seeds are the app, the
+# updater helper and every .exe and .dll already under the runtime: the tools,
+# and the bundles GNUstep loads with LoadLibrary (the back end, the text
+# converters, GSspell), which no import names. A DLL not in CLANG64 is taken as
+# Windows' own; gnustep-packager's closure check fails the build on any other.
+function Copy-WindowsDllClosure {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$Clang64Root,
+    [Parameter(Mandatory = $true)]
+    [string]$RuntimeBin,
+    [Parameter(Mandatory = $true)]
+    [string[]]$Seeds,
+    [Parameter(Mandatory = $true)]
+    [string]$RuntimeRootPath
+  )
+
+  $objdump = Get-FirstMatch -Candidates @(
+    (Join-Path $Clang64Root "bin\llvm-objdump.exe"),
+    (Join-Path $Clang64Root "bin\objdump.exe")
+  )
+  if ($null -eq $objdump) {
+    throw "objdump not found under $Clang64Root\bin."
+  }
+
+  $available = @{}
+  foreach ($directory in @((Join-Path $Clang64Root "bin"), (Join-Path $Clang64Root "lib"))) {
+    foreach ($file in Get-ChildItem -Path $directory -Filter "*.dll" -File -ErrorAction SilentlyContinue) {
+      if (-not $available.ContainsKey($file.Name)) {
+        $available[$file.Name] = $file.FullName
+      }
+    }
+  }
+
+  $queue = [System.Collections.Generic.Queue[string]]::new()
+  foreach ($seed in $Seeds) {
+    if (Test-Path $seed) {
+      $queue.Enqueue($seed)
+    }
+  }
+  foreach ($file in Get-ChildItem -Path $RuntimeRootPath -Recurse -File -Include *.dll, *.exe) {
+    $queue.Enqueue($file.FullName)
+  }
+
+  $seen = @{}
+  $copied = [System.Collections.Generic.List[string]]::new()
+  while ($queue.Count -gt 0) {
+    $target = $queue.Dequeue()
+    if ($seen.ContainsKey($target)) {
+      continue
+    }
+    $seen[$target] = $true
+
+    foreach ($line in & $objdump -p $target 2>$null) {
+      if ($line -notmatch 'DLL Name:\s+(\S+)') {
+        continue
+      }
+      $name = $Matches[1]
+      if (-not $available.ContainsKey($name)) {
+        continue
+      }
+      $destination = Join-Path $RuntimeBin $name
+      if (-not (Test-Path $destination)) {
+        Copy-Item -Path $available[$name] -Destination $destination -Force
+        $copied.Add($name) | Out-Null
+      }
+      $queue.Enqueue($destination)
+    }
+  }
+  $global:LASTEXITCODE = 0
+
+  Write-StageLog ("Staged {0} runtime DLLs by import closure: {1}" -f $copied.Count, (($copied | Sort-Object) -join ", "))
+}
+
+# The toolchain's own DLLs (LLVM, clang, Python, Tcl/Tk) once rode along with a
+# bulk copy of CLANG64 and made the MSI 245 MB. Stop the stage if any come back,
+# or if the runtime outgrows its budget.
+function Assert-WindowsRuntimeBudget {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$RuntimeRootPath,
+    [Parameter(Mandatory = $true)]
+    [long]$MaxBytes
+  )
+
+  $files = @(Get-ChildItem -Path $RuntimeRootPath -Recurse -File)
+  $forbidden = @($files | Where-Object { $_.Name -match '^(libLLVM|libclang|libLTO|libRemarks|libpython|tcl\d|tk\d)' })
+  if ($forbidden.Count -gt 0) {
+    throw ("Toolchain DLLs staged into the runtime: {0}" -f (($forbidden | ForEach-Object Name) -join ", "))
+  }
+
+  $total = ($files | Measure-Object -Property Length -Sum).Sum
+  Write-StageLog ("Staged Windows runtime: {0:N1} MB in {1} files (budget {2:N0} MB)" -f ($total / 1MB), $files.Count, ($MaxBytes / 1MB))
+  if ($total -gt $MaxBytes) {
+    throw ("The staged Windows runtime is {0:N1} MB, over its {1:N0} MB budget." -f ($total / 1MB), ($MaxBytes / 1MB))
+  }
 }
 
 # The MSI's icon (the launcher, Start menu shortcut and file associations): a .ico holding the
@@ -1021,7 +1105,8 @@ if ($IsWindows) {
 if ($IsLinux) {
   Stage-LinuxRuntime -RepoRoot $repoRoot -RuntimeRootPath $runtimeRoot -StageRoot $resolvedStageRoot
 } elseif ($IsWindows) {
-  Stage-WindowsRuntime -RepoRoot $repoRoot -RuntimeRootPath $runtimeRoot
+  Stage-WindowsRuntime -RepoRoot $repoRoot -RuntimeRootPath $runtimeRoot -AppBundleRoot $appStageRoot
+  Assert-WindowsRuntimeBudget -RuntimeRootPath $runtimeRoot -MaxBytes 100MB
 } else {
   throw "Packaging stage is only implemented for Linux and Windows hosts."
 }
