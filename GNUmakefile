@@ -53,6 +53,9 @@ ScreenshotTool_RESOURCE_FILES = Resources/CopyImage-symbolic.png \
 	Resources/Preferences-symbolic.png \
 	Resources/Undo-symbolic.png \
 	Resources/Redo-symbolic.png \
+	Resources/Rectangle-symbolic.png \
+	Resources/NumberedStep-symbolic.png \
+	Resources/Redact-symbolic.png \
 	Resources/ScreenshotToolIcon.png \
 	Resources/ScreenshotToolIcon.tiff
 
@@ -100,6 +103,13 @@ ScreenshotTool_RESOURCE_FILES += \
 	Resources/MarqueeTool-44-symbolic.png \
 	Resources/MarqueeTool-48-symbolic.png \
 	Resources/MarqueeTool-64-symbolic.png \
+	Resources/NumberedStep-16-symbolic.png \
+	Resources/NumberedStep-22-symbolic.png \
+	Resources/NumberedStep-24-symbolic.png \
+	Resources/NumberedStep-32-symbolic.png \
+	Resources/NumberedStep-44-symbolic.png \
+	Resources/NumberedStep-48-symbolic.png \
+	Resources/NumberedStep-64-symbolic.png \
 	Resources/PenTool-16-symbolic.png \
 	Resources/PenTool-22-symbolic.png \
 	Resources/PenTool-24-symbolic.png \
@@ -114,6 +124,20 @@ ScreenshotTool_RESOURCE_FILES += \
 	Resources/Preferences-44-symbolic.png \
 	Resources/Preferences-48-symbolic.png \
 	Resources/Preferences-64-symbolic.png \
+	Resources/Rectangle-16-symbolic.png \
+	Resources/Rectangle-22-symbolic.png \
+	Resources/Rectangle-24-symbolic.png \
+	Resources/Rectangle-32-symbolic.png \
+	Resources/Rectangle-44-symbolic.png \
+	Resources/Rectangle-48-symbolic.png \
+	Resources/Rectangle-64-symbolic.png \
+	Resources/Redact-16-symbolic.png \
+	Resources/Redact-22-symbolic.png \
+	Resources/Redact-24-symbolic.png \
+	Resources/Redact-32-symbolic.png \
+	Resources/Redact-44-symbolic.png \
+	Resources/Redact-48-symbolic.png \
+	Resources/Redact-64-symbolic.png \
 	Resources/Redo-16-symbolic.png \
 	Resources/Redo-22-symbolic.png \
 	Resources/Redo-24-symbolic.png \
