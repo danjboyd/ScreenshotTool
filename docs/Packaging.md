@@ -48,7 +48,8 @@ means existing installs can't verify new updates.
 The app icon is drawn in `Resources/AppIcon/`: `ScreenshotToolIcon.svg` (GNUstep, the AppImage and
 desktop entries) and `ScreenshotToolIcon-macOS.svg` (the same art on Apple's icon grid).
 `scripts/render_app_icon.py` renders them to `Resources/ScreenshotToolIcon.png`, `.tiff` and
-`-macOS.png`; commit those. The `.icns` and the Windows `.ico` are both made from `-macOS.png`.
+`-macOS.png`; commit those. The `.icns` is made from `-macOS.png`, the Windows `.ico` from
+`ScreenshotToolIcon.png`.
 
 ## Local Build And Stage
 

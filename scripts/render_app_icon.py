@@ -11,9 +11,9 @@
 """Render the app icon from Resources/AppIcon/*.svg to the files the builds use.
 
 - ScreenshotToolIcon.png (1024 px) and ScreenshotToolIcon.tiff (256 px), from ScreenshotToolIcon.svg:
-  the GNUstep app icon, the AppImage and desktop icon, and the source of nothing else.
+  the GNUstep app icon, the AppImage and desktop icon, and (stage_release.ps1) the Windows .ico.
 - ScreenshotToolIcon-macOS.png (1024 px), from ScreenshotToolIcon-macOS.svg: the art on Apple's icon
-  grid. build_cocoa.sh makes the .icns from it, and stage_release.ps1 the Windows .ico.
+  grid. build_cocoa.sh makes the .icns from it.
 
 Needs librsvg's GObject bindings (gir1.2-rsvg-2.0), pycairo and ImageMagick's `magick` (for the
 TIFF). Run it after editing an SVG and commit the outputs: the build doesn't render them.
