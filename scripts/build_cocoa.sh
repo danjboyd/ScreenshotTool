@@ -118,7 +118,7 @@ echo "Linking app executable..."
 clang "${OBJ_DIR}"/*.o "${LDFLAGS[@]}" -o "${APP_MACOS}/ScreenshotTool"
 
 echo "Generating app icon..."
-# The macOS icon is the shape on a transparent canvas (scripts/make_macos_icon.swift).
+# The macOS icon is the shape on a transparent canvas (Resources/AppIcon, scripts/render_app_icon.py).
 ICON_SOURCE="${ROOT_DIR}/Resources/ScreenshotToolIcon-macOS.png"
 ICONSET_DIR="${BUILD_DIR}/ScreenshotTool.iconset"
 rm -rf "${ICONSET_DIR}"

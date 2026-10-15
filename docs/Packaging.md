@@ -45,8 +45,10 @@ in the maintainer's login keychain, under the account `ScreenshotTool` (Sparkle'
 `generate_keys --account ScreenshotTool -x <file>` exports it): keep a backup, since a lost key
 means existing installs can't verify new updates.
 
-`Resources/ScreenshotToolIcon-macOS.png`, the source of the app's `.icns`, is made from
-`Resources/ScreenshotToolIcon.png` by `scripts/make_macos_icon.swift`.
+The app icon is drawn in `Resources/AppIcon/`: `ScreenshotToolIcon.svg` (GNUstep, the AppImage and
+desktop entries) and `ScreenshotToolIcon-macOS.svg` (the same art on Apple's icon grid).
+`scripts/render_app_icon.py` renders them to `Resources/ScreenshotToolIcon.png`, `.tiff` and
+`-macOS.png`; commit those. The `.icns` and the Windows `.ico` are both made from `-macOS.png`.
 
 ## Local Build And Stage
 
