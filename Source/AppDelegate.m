@@ -595,6 +595,29 @@ static NSString *STPathForToolbarResource(NSString *filename, NSString *extensio
     return nil;
 }
 
+/// Whether the app ships a toolbar icon named `stem`, in any of its forms. Ask this rather than
+/// whether the toolbar's loader returned an image: for a name it can't find, it returns an empty
+/// image, which macOS draws as a filled square (#221's Save before its icon landed).
+static BOOL STToolbarIconExists(NSString *stem) {
+    return STPathForToolbarResource(STSymbolicIconName(stem), @"png") != nil ||
+           STPathForToolbarResource(stem, @"png") != nil ||
+           STPathForToolbarResource(stem, @"tiff") != nil;
+}
+
+/// A file size in decimal units, as Finder and Explorer show it: "980 bytes", "214 KB", "1.2 MB".
+static NSString *STFileSizeString(unsigned long long bytes) {
+    if (bytes < 1000ULL) {
+        return [NSString stringWithFormat:@"%llu bytes", bytes];
+    }
+    if (bytes < 1000000ULL) {
+        return [NSString stringWithFormat:@"%.0f KB", bytes / 1000.0];
+    }
+    if (bytes < 1000000000ULL) {
+        return [NSString stringWithFormat:@"%.1f MB", bytes / 1000000.0];
+    }
+    return [NSString stringWithFormat:@"%.1f GB", bytes / 1000000000.0];
+}
+
 /// The sizes, in points, the toolbar draws its icons at: GNOME's small toolbar, the tool
 /// switcher's segments, Adwaita's toolbar items, and other themes' toolbar items.
 static const NSInteger STToolbarIconPointSizes[] = {16, 22, 24, 32};
@@ -1287,6 +1310,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSButton *statusZoomInButton;
 @property (nonatomic, strong) NSTextField *statusZoomLabel;
 @property (nonatomic, strong) NSButton *statusZoomFitButton;
+/// The file the status bar's size was read from, and its size as shown (#221).
+@property (nonatomic, strong, nullable) NSURL *statusFileSizeURL;
+@property (nonatomic, copy, nullable) NSString *statusFileSizeText;
 @property (nonatomic, assign) CGFloat penDefaultWidth;
 @property (nonatomic, assign) CGFloat highlighterDefaultWidth;
 @property (nonatomic, strong) NSColor *penDefaultColor;
@@ -2825,8 +2851,9 @@ static id STInfoValueForKey(NSString *key) {
         return @"CopyImage";
     }
     if ([identifier isEqualToString:ToolbarItemSave]) {
-        // Drawn with the v0.2.0 icon set (#221); until it lands, Save shows its label alone.
-        return @"Save";
+        // Drawn with the v0.2.0 icon set (#221). Until it's in the app, no stem: an icon that
+        // isn't there would load as an empty placeholder.
+        return STToolbarIconExists(@"Save") ? @"Save" : nil;
     }
     if ([identifier isEqualToString:ToolbarItemPreferences]) {
         return @"Preferences";
@@ -2895,7 +2922,7 @@ static id STInfoValueForKey(NSString *key) {
             [(NSControl *)item.view setEnabled:isEnabled];
             [self adjustToolbarCustomViewVerticalOffset:item.view];
         }
-#if defined(GNUSTEP)
+#if defined(GNUSTEP) && defined(_WIN32)
         if ([identifier isEqualToString:ToolbarItemCopy] || [identifier isEqualToString:ToolbarItemSave]) {
             continue;
         }
@@ -2943,32 +2970,42 @@ static id STInfoValueForKey(NSString *key) {
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
     (void)toolbar;
-    return @[ToolbarItemUndo,
-             ToolbarItemRedo,
-             ToolbarItemTools,
-             ToolbarItemColor,
-             ToolbarItemSave,
-             ToolbarItemCopy,
+    NSMutableArray<NSToolbarItemIdentifier> *allowed = [@[ToolbarItemUndo,
+                                                          ToolbarItemRedo,
+                                                          ToolbarItemTools,
+                                                          ToolbarItemColor,
+                                                          ToolbarItemSave,
+                                                          ToolbarItemCopy,
 #if !defined(GNUSTEP)
-             ToolbarItemShare,
+                                                          ToolbarItemShare,
 #endif
-             ToolbarItemPreferences,
-             ToolbarItemZoom,
-             NSToolbarSpaceItemIdentifier,
-             NSToolbarFlexibleSpaceItemIdentifier];
+                                                          ToolbarItemPreferences,
+                                                          ToolbarItemZoom,
+                                                          NSToolbarSpaceItemIdentifier,
+                                                          NSToolbarFlexibleSpaceItemIdentifier] mutableCopy];
+#if defined(GNUSTEP) && !defined(_WIN32)
+    // Under GNOME Save is an icon button, so it's offered only once the app has its icon (#221).
+    if (!STToolbarIconExists(@"Save")) {
+        [allowed removeObject:ToolbarItemSave];
+    }
+#endif
+    return allowed;
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
     (void)toolbar;
     // Zoom and Preferences live in the View and app menus (with shortcuts) and can be added back
     // by customising the toolbar (#53). Undo and Redo lead, where GNOME apps keep them (#101).
-    // The commands that finish the job close the row, Copy last as the main one (#221).
+    // The commands that finish the job close the row, Copy last as the main one (#221). Under
+    // GNOME's header bar Save is left out, so the title keeps its room (#224).
     return @[ToolbarItemUndo,
              ToolbarItemRedo,
              ToolbarItemTools,
              ToolbarItemColor,
              NSToolbarFlexibleSpaceItemIdentifier,
+#if !defined(GNUSTEP) || defined(_WIN32)
              ToolbarItemSave,
+#endif
 #if !defined(GNUSTEP)
              ToolbarItemShare,
 #endif
@@ -3060,11 +3097,12 @@ static id STInfoValueForKey(NSString *key) {
         return item;
     }
     if ([identifier isEqualToString:ToolbarItemSave]) {
+        BOOL hasIcon = STToolbarIconExists(@"Save");
         NSToolbarItem *item = [self baselineToolbarItemWithIdentifier:ToolbarItemSave
                                                                 label:@"Save"
                                                                action:@selector(saveDocumentAs:)
-                                                            imageName:@"Save"];
-        if (!item.image) {
+                                                            imageName:(hasIcon ? @"Save" : nil)];
+        if (!hasIcon) {
             if (@available(macOS 11.0, *)) {
                 item.image = [NSImage imageWithSystemSymbolName:@"square.and.arrow.down"
                                        accessibilityDescription:@"Save"];
@@ -3073,9 +3111,11 @@ static id STInfoValueForKey(NSString *key) {
         item.toolTip = @"Save the annotated image";
         return item;
     }
-#else
+#elif defined(_WIN32)
     // Copy and Save finish the job, so they're buttons with their names rather than bare icons,
-    // and Copy is the accent one, as a WinUI command bar's main command is (#221).
+    // and Copy is the accent one, as a WinUI command bar's main command is (#221). Not under
+    // GNOME: labelled buttons took the header bar's room for the title, which Adwaita then
+    // dropped (#224); there Copy stays an icon and Save is offered once it has one.
     if ([identifier isEqualToString:ToolbarItemSave]) {
         return [self labelledToolbarItemWithIdentifier:ToolbarItemSave
                                                  label:@"Save"
@@ -3089,6 +3129,13 @@ static id STInfoValueForKey(NSString *key) {
                                                toolTip:@"Copy the annotated image"
                                                 action:@selector(copy:)
                                                 accent:YES];
+    }
+#else
+    if ([identifier isEqualToString:ToolbarItemSave]) {
+        return [self baselineToolbarItemWithIdentifier:ToolbarItemSave
+                                                 label:@"Save"
+                                                action:@selector(saveDocumentAs:)
+                                             imageName:@"Save"];
     }
 #endif
     if ([identifier isEqualToString:ToolbarItemCopy]) {
@@ -3136,7 +3183,7 @@ static id STInfoValueForKey(NSString *key) {
     return item;
 }
 
-#if defined(GNUSTEP)
+#if defined(GNUSTEP) && defined(_WIN32)
 /// A toolbar item that's a push button with its name (#221). It has no icon: the toolbar's icons
 /// are monochrome ones the theme tints for its own toolbar buttons, and a button's image isn't
 /// tinted, so it would stay black on an accent fill or a dark toolbar.
@@ -3956,7 +4003,7 @@ static id STInfoValueForKey(NSString *key) {
     }
 }
 
-/// "1600 × 1000 px · PNG": the image's pixel size and its file's format.
+/// "1600 × 1000 px · PNG · 214 KB": the image's pixel size and, with a file, its format and size.
 - (NSString *)idleStatusText {
     NSImage *image = self.canvasView.image;
     if (!image) {
@@ -3974,7 +4021,27 @@ static id STInfoValueForKey(NSString *key) {
     if (extension.length > 0) {
         text = [text stringByAppendingFormat:@"  ·  %@", extension.uppercaseString];
     }
+    NSString *fileSize = [self statusFileSizeForURL:self.currentImageURL];
+    if (fileSize.length > 0) {
+        text = [text stringByAppendingFormat:@"  ·  %@", fileSize];
+    }
     return text;
+}
+
+/// The size of the image's file, as Finder and Explorer give it ("214 KB", "1.2 MB"), or nil
+/// when the image has no file. Read once per file, not on every refresh.
+- (nullable NSString *)statusFileSizeForURL:(nullable NSURL *)url {
+    if (!url.isFileURL) {
+        return nil;
+    }
+    if ([url isEqual:self.statusFileSizeURL]) {
+        return self.statusFileSizeText;
+    }
+    NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:url.path error:NULL];
+    NSNumber *size = attributes[NSFileSize];
+    self.statusFileSizeURL = url;
+    self.statusFileSizeText = size ? STFileSizeString(size.unsignedLongLongValue) : nil;
+    return self.statusFileSizeText;
 }
 
 - (void)layoutStatusControls {
@@ -6771,6 +6838,7 @@ static id STInfoValueForKey(NSString *key) {
                              size.width,
                              size.height]);
     [self.canvasView loadImage:image];
+    self.statusFileSizeURL = nil; // Read the size again, in case the file changed.
     if ([self isTemporaryClipboardImageURL:url]) {
         // Paste as New Image hands us a temp file; present it as an untitled document instead.
         self.currentImageURL = nil;
