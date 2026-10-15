@@ -24,8 +24,9 @@ typedef NS_ENUM(NSInteger, STCustomActionOutput) {
 /// whose output lines are the choices. `output` is "clipboard" (the default) or "none".
 /// `toolbar` adds a button for it, and `icon`, an image file (relative to the actions folder or
 /// absolute), makes the button that image, as GNOME's header bar needs to keep room for the
-/// window's title. `timeout` (seconds, 120 by default) stops a command that hangs. Actions are
-/// personal: the app ships none.
+/// window's title. `timeout` (seconds, 120 by default) stops a command that hangs. The PNG and
+/// its folder are removed once the command exits, so a command that hands the file to a
+/// process it leaves running must copy it first. Actions are personal: the app ships none.
 @interface STCustomAction : NSObject
 
 @property (nonatomic, copy, readonly) NSString *identifier;
