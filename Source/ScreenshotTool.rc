@@ -1,4 +1,9 @@
 // Windows resources for ScreenshotTool.exe.
 #include <winuser.h>
 
+// The app icon, the exe's first icon resource: Windows shows it for the running app in the
+// taskbar and Alt+Tab, since the window sets none of its own. scripts/make_windows_icon.ps1
+// writes it from Resources/ScreenshotToolIcon.png.
+1 ICON "../Resources/ScreenshotTool.ico"
+
 CREATEPROCESS_MANIFEST_RESOURCE_ID RT_MANIFEST "ScreenshotTool.exe.manifest"
