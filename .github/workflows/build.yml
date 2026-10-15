@@ -103,6 +103,14 @@ jobs:
           echo "appimage_path=Staging/${APPIMAGE_NAME}" >> "${GITHUB_OUTPUT}"
           echo "appimage_sha_name=${APPIMAGE_NAME}.sha256" >> "${GITHUB_OUTPUT}"
           echo "artifact_name=${APPIMAGE_NAME}" >> "${GITHUB_OUTPUT}"
+      # The AppImage bundles no themes, so platformOverrides.linux lists the runtime
+      # notices without the theme ones. Keep that copy in step with the main list.
+      - name: Check the Linux runtime notices
+        run: |
+          jq -e '([.themeInputs[].name]) as $themes
+            | .platformOverrides.linux.compliance.runtimeNotices
+              == (.compliance.runtimeNotices | map(select(.name as $n | $themes | index($n) | not)))' \
+            packaging/package.manifest.json
       - name: Prepare the toolchain prefix
         run: |
           sudo mkdir -p /opt/screenshottool-gnustep
