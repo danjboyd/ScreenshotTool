@@ -5675,9 +5675,12 @@ static id STInfoValueForKey(NSString *key) {
     // Sized for the image at actual size, which on a scaled Windows display is fewer points.
     CGFloat pixelsPerPoint = self.canvasView ? self.canvasView.screenPixelsPerPoint : 1.0f;
     imageSize = NSMakeSize(imageSize.width / pixelsPerPoint, imageSize.height / pixelsPerPoint);
-    // With room for the stage's margin round it, so the image opens at 100%.
-    imageSize.width += 2.0f * STCanvasStageMargin;
-    imageSize.height += 2.0f * STCanvasStageMargin;
+    // With room for the stage's margin round it, and for a border the theme draws round the
+    // clip view (CI's Adwaita draws 1pt), so the image opens at 100%.
+    CGFloat themeBorder = NSMinX(self.scrollView.contentView.frame);
+    themeBorder = (themeBorder > 0.0f && themeBorder < 8.0f) ? themeBorder : 0.0f;
+    imageSize.width += 2.0f * (STCanvasStageMargin + themeBorder);
+    imageSize.height += 2.0f * (STCanvasStageMargin + themeBorder);
 
     NSScreen *screen = self.window.screen ?: [NSScreen mainScreen];
     NSRect visibleFrame = screen ? screen.visibleFrame : NSMakeRect(0.0f, 0.0f, 1600.0f, 1000.0f);
