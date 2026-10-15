@@ -17,6 +17,7 @@
 - (void)setupWindowAndContent;
 - (NSWindow *)window;
 - (ScreenshotCanvasView *)canvasView;
+- (void)textOptionsBarDidTogglePointer:(id)bar;
 @end
 
 @interface ScreenshotCanvasView (ArrowCalloutTesting)
@@ -158,6 +159,35 @@
     XCTAssertTrue(headColumn > shaftColumn + 4, @"The arrowhead is exported (%ld vs %ld)", (long)headColumn, (long)shaftColumn);
 }
 
+/// A white outline round the arrow, so it reads on a dark image too (v0.2.0, #221).
+- (void)testArrowHasAWhiteOutline {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolArrow];
+    NSImage *black = [[NSImage alloc] initWithSize:NSMakeSize(600.0, 300.0)];
+    [black lockFocus];
+    [[NSColor blackColor] setFill];
+    NSRectFill(NSMakeRect(0.0, 0.0, 600.0, 300.0));
+    [black unlockFocus];
+    [canvas loadImage:black];
+    canvas.fitToWindow = NO;
+    canvas.zoomScale = 1.0;
+    [self drag:canvas from:NSMakePoint(100.0, 150.0) to:NSMakePoint(400.0, 150.0) flags:0];
+    NSBitmapImageRep *rep = [self exportOf:canvas];
+    BOOL (^white)(NSColor *) = ^BOOL(NSColor *p) {
+        return p.redComponent > 0.8 && p.greenComponent > 0.8 && p.blueComponent > 0.8;
+    };
+    BOOL (^blue)(NSColor *) = ^BOOL(NSColor *p) { return p.blueComponent > 0.7 && p.redComponent < 0.4; };
+
+    NSInteger shaft = [self countIn:rep rect:NSMakeRect(200.0, 140.0, 1.0, 20.0) matching:blue];
+    NSInteger whiteAbove = [self countIn:rep rect:NSMakeRect(200.0, 140.0, 1.0, 8.0) matching:white];
+    NSInteger whiteBelow = [self countIn:rep rect:NSMakeRect(200.0, 152.0, 1.0, 8.0) matching:white];
+    XCTAssertTrue(shaft >= 3, @"The shaft is still the arrow's colour (%ld)", (long)shaft);
+    XCTAssertTrue(whiteAbove >= 1 && whiteBelow >= 1, @"White on both sides of the shaft (%ld above, %ld below)",
+                  (long)whiteAbove, (long)whiteBelow);
+    NSRect bounds = [canvas.strokes.firstObject bounds];
+    XCTAssertLessThanOrEqual(NSMinY(bounds), 150.0 - (4.0 * 4.0 * 0.5) - 2.0, @"Its bounds take in the outline");
+}
+
 - (void)testArrowShortcut {
     XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolSelect];
@@ -257,6 +287,34 @@
                   @"next to it, not at the image's corner: %@ for %@", NSStringFromPoint(entry.pointerTarget), NSStringFromRect(label));
     [canvas commitActiveTextIfNeeded];
     [window orderOut:nil];
+}
+
+/// Callout on: the label becomes a filled box with bold text, unless it already has a look of
+/// its own; the defaults don't change (v0.2.0, #221).
+- (void)testCalloutStartsAsABoldFilledBox {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSInteger savedStyle = [[NSUserDefaults standardUserDefaults] integerForKey:@"ScreenshotToolTextStyle"];
+    ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolText];
+    [canvas beginTextEntryWithImageRect:NSMakeRect(300.0, 60.0, 1.0, 1.0) existingText:nil];
+    [canvas.activeTextView insertText:@"Callout"];
+
+    [_appDelegate textOptionsBarDidTogglePointer:nil];
+    MarkupText *entry = [canvas activeTextEntry];
+    XCTAssertTrue(entry.hasPointer);
+    XCTAssertEqual(entry.style, MarkupTextStyleBackground, @"A callout is a filled box");
+    NSFontTraitMask traits = [[NSFontManager sharedFontManager] traitsOfFont:entry.font];
+    XCTAssertTrue((traits & NSBoldFontMask) != 0, @"...with bold text (%@)", entry.font.fontName);
+    XCTAssertEqual([[NSUserDefaults standardUserDefaults] integerForKey:@"ScreenshotToolTextStyle"], savedStyle,
+                   @"The saved default style is unchanged");
+
+    // Off and on again keeps the look the label has now.
+    [_appDelegate textOptionsBarDidTogglePointer:nil];
+    XCTAssertFalse(entry.hasPointer);
+    canvas.textStyle = MarkupTextStyleOutline;
+    [_appDelegate textOptionsBarDidTogglePointer:nil];
+    XCTAssertTrue(entry.hasPointer);
+    XCTAssertEqual(entry.style, MarkupTextStyleOutline, @"A label with a look of its own keeps it");
+    [canvas commitActiveTextIfNeeded];
 }
 
 - (void)testPointerToggleAndDragWhileEditing {

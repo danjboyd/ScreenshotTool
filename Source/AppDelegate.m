@@ -3315,8 +3315,20 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)textOptionsBarDidTogglePointer:(STTextOptionsBar *)bar {
     (void)bar;
+    MarkupText *entry = [self.canvasView activeTextEntry];
+    BOOL wasCallout = entry.hasPointer;
     [self.canvasView toggleActiveTextPointer];
-    [self refreshTextOptionsBar];
+    // A label made a callout becomes a filled box with bold text (v0.2.0, #221), unless it
+    // already has a look of its own. This label only: the defaults stay as they are.
+    if (entry && !wasCallout && entry.hasPointer && self.canvasView.textStyle == MarkupTextStylePlain) {
+        [self applyTextStyle:MarkupTextStyleBackground persist:NO];
+        NSFont *font = [self currentTextFont];
+        NSFont *bold = [[NSFontManager sharedFontManager] convertFont:font toHaveTrait:NSBoldFontMask];
+        if (bold && ![bold.fontName isEqualToString:font.fontName]) {
+            [self applyTextFont:bold persist:NO];
+        }
+    }
+    [self textSettingsChangedFromBar];
 }
 
 - (void)textOptionsBar:(STTextOptionsBar *)bar didPickFontFamily:(NSString *)family {
