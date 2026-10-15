@@ -26,7 +26,9 @@ typedef NS_ENUM(NSInteger, MarkupStrokeType) {
     /// A straight arrow from the first point to the last, with a filled head (#33).
     MarkupStrokeTypeArrow = 2,
     /// A rectangle's outline, its corners the first point and the last (v0.2.0, #221).
-    MarkupStrokeTypeRectangle = 3
+    MarkupStrokeTypeRectangle = 3,
+    /// A numbered step: a disc at its one point with its number in it (v0.2.0, #221).
+    MarkupStrokeTypeStep = 4
 };
 
 NS_ASSUME_NONNULL_BEGIN
@@ -36,6 +38,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, assign) MarkupStrokeType type;
 @property (nonatomic, strong) NSColor *color;
 @property (nonatomic, assign) CGFloat lineWidth;
+/// A step's number.
+@property (nonatomic, assign) NSInteger number;
 
 - (instancetype)initWithType:(MarkupStrokeType)type
                        color:(NSColor *)color
@@ -46,8 +50,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setEndPoint:(NSPoint)point;
 /// For rectangles: corners at these two points.
 - (void)setStartPoint:(NSPoint)start endPoint:(NSPoint)end;
-/// Arrows and rectangles: drawn from two points, with a white outline.
+/// Arrows, rectangles and steps: drawn as shapes, with a white outline, not as a path of points.
 - (BOOL)isShape;
+/// A step's disc, across.
+- (CGFloat)stepDiameter;
 /// A rectangle's rect, from its two corners.
 - (NSRect)shapeRect;
 /// Length of an arrow's head, from its tip back to its base.

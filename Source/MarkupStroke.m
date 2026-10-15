@@ -105,7 +105,46 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
 }
 
 - (BOOL)isShape {
-    return self.type == MarkupStrokeTypeArrow || self.type == MarkupStrokeTypeRectangle;
+    return self.type == MarkupStrokeTypeArrow || self.type == MarkupStrokeTypeRectangle || self.type == MarkupStrokeTypeStep;
+}
+
+- (CGFloat)stepDiameter {
+    return MAX(22.0, 14.0 + (self.lineWidth * 4.0));
+}
+
+/// A step: a soft shadow, a white ring, the disc in the colour, and its number in bold, white or
+/// black to stand out from the disc.
+- (void)drawStepWithUnflippedHeight:(CGFloat)unflippedHeight {
+    if (self.mutablePoints.count == 0) {
+        return;
+    }
+    NSPoint centre = [self.mutablePoints.firstObject pointValue];
+    if (unflippedHeight > 0.0) {
+        centre.y = unflippedHeight - centre.y;
+    }
+    CGFloat radius = [self stepDiameter] * 0.5;
+    CGFloat ring = 2.0;
+    CGFloat drop = unflippedHeight > 0.0 ? -2.0 : 2.0; // below, in either coordinate system
+    for (NSInteger step = 4; step >= 1; step--) {
+        [[NSColor colorWithDeviceWhite:0.0 alpha:0.06] setFill];
+        CGFloat r = radius + ring + step;
+        [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(centre.x - r, centre.y + drop - r, r * 2.0, r * 2.0)] fill];
+    }
+    [[NSColor whiteColor] setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(centre.x - radius - ring, centre.y - radius - ring,
+                                                        (radius + ring) * 2.0, (radius + ring) * 2.0)] fill];
+    NSColor *fill = self.color ?: [NSColor redColor];
+    [fill setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:NSMakeRect(centre.x - radius, centre.y - radius, radius * 2.0, radius * 2.0)] fill];
+
+    NSColor *rgb = [fill colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: fill;
+    CGFloat luminance = (0.2126 * rgb.redComponent) + (0.7152 * rgb.greenComponent) + (0.0722 * rgb.blueComponent);
+    NSColor *ink = luminance > 0.6 ? [NSColor blackColor] : [NSColor whiteColor];
+    NSFont *font = [NSFont boldSystemFontOfSize:MAX(9.0, radius * 1.0)];
+    NSString *label = [NSString stringWithFormat:@"%ld", (long)MAX(1, self.number)];
+    NSDictionary *attributes = @{ NSFontAttributeName: font, NSForegroundColorAttributeName: ink };
+    NSSize size = [label sizeWithAttributes:attributes];
+    [label drawAtPoint:NSMakePoint(centre.x - size.width * 0.5, centre.y - size.height * 0.5) withAttributes:attributes];
 }
 
 - (NSRect)shapeRect {
@@ -203,6 +242,8 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
 - (void)drawShapeWithUnflippedHeight:(CGFloat)unflippedHeight {
     if (self.type == MarkupStrokeTypeRectangle) {
         [self drawRectangleWithUnflippedHeight:unflippedHeight];
+    } else if (self.type == MarkupStrokeTypeStep) {
+        [self drawStepWithUnflippedHeight:unflippedHeight];
     } else {
         [self drawArrowWithUnflippedHeight:unflippedHeight];
     }
@@ -237,6 +278,12 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     }
 
     CGFloat tol2 = sqr(MAX(tolerance, self.lineWidth * 0.5));
+
+    if (self.type == MarkupStrokeTypeStep) {
+        NSPoint centre = [self.mutablePoints.firstObject pointValue];
+        CGFloat reach = [self stepDiameter] * 0.5 + 2.0 + tolerance;
+        return sqr(point.x - centre.x) + sqr(point.y - centre.y) <= sqr(reach);
+    }
 
     if (self.type == MarkupStrokeTypeRectangle) {
         // Its outline: any of the four sides, white outline included.
@@ -341,6 +388,7 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
                                                                lineWidth:self.lineWidth];
     copy.mutablePoints = [[NSMutableArray alloc] initWithArray:self.mutablePoints];
     copy.mutablePath = [self.mutablePath copy];
+    copy.number = self.number;
     return copy;
 }
 
@@ -363,6 +411,8 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
         inset += [self arrowOutlineWidth];
     } else if (self.type == MarkupStrokeTypeRectangle) {
         inset += [self arrowOutlineWidth];
+    } else if (self.type == MarkupStrokeTypeStep) {
+        inset = [self stepDiameter] * 0.5 + 2.0 + 6.0; // the ring and the shadow
     }
     return NSMakeRect(minX - inset, minY - inset, (maxX - minX) + inset * 2.0f, (maxY - minY) + inset * 2.0f);
 }
@@ -403,10 +453,14 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
         NSPoint p = value.pointValue;
         [points addObject:@[@(p.x), @(p.y)]];
     }
-    return @{ @"type": @(self.type),
-              @"color": STEncodeColor(self.color ?: [NSColor blackColor]),
-              @"lineWidth": @(self.lineWidth),
-              @"points": points };
+    NSMutableDictionary *representation = [@{ @"type": @(self.type),
+                                               @"color": STEncodeColor(self.color ?: [NSColor blackColor]),
+                                               @"lineWidth": @(self.lineWidth),
+                                               @"points": points } mutableCopy];
+    if (self.type == MarkupStrokeTypeStep) {
+        representation[@"number"] = @(self.number);
+    }
+    return representation;
 }
 
 + (instancetype)strokeWithProjectRepresentation:(NSDictionary *)dictionary {
@@ -415,7 +469,7 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     }
     NSInteger type = [dictionary[@"type"] integerValue];
     NSArray *points = dictionary[@"points"];
-    if (type < MarkupStrokeTypePen || type > MarkupStrokeTypeRectangle || ![points isKindOfClass:[NSArray class]] || points.count == 0) {
+    if (type < MarkupStrokeTypePen || type > MarkupStrokeTypeStep || ![points isKindOfClass:[NSArray class]] || points.count == 0) {
         return nil;
     }
     MarkupStroke *stroke = [[self alloc] initWithType:(MarkupStrokeType)type
@@ -426,11 +480,17 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
             return nil;
         }
         NSPoint p = NSMakePoint([pair[0] doubleValue], [pair[1] doubleValue]);
+        if (type == MarkupStrokeTypeStep && [stroke points].count >= 1) {
+            break; // one point
+        }
         if ((type == MarkupStrokeTypeArrow || type == MarkupStrokeTypeRectangle) && [stroke points].count >= 1) {
             [stroke setEndPoint:p];
         } else {
             [stroke addPoint:p];
         }
+    }
+    if (type == MarkupStrokeTypeStep) {
+        stroke.number = MAX(1, [dictionary[@"number"] integerValue]);
     }
     return stroke;
 }

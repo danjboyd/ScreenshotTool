@@ -78,8 +78,8 @@ run it with `--appimage-extract-and-run`. Under GNOME it uses the bundled
 GNUstep's default theme, with the menus in the window. Shortcuts use Ctrl on every desktop.
 
 ## Features
-- Pen, highlighter, arrow, rectangle, text, select and eraser tools; a selected rectangle
-  resizes by its corner handles. Pen, highlighter and
+- Pen, highlighter, arrow, rectangle, text, numbered step, select and eraser tools; a selected
+  rectangle resizes by its corner handles, and steps number themselves 1, 2, 3…. Pen, highlighter and
   text colours and widths are set from each tool's popover (double-click its
   toolbar button) and remembered as defaults.
 - Text labels with a text bar for font, size, style and alignment; turn on
