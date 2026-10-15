@@ -2,9 +2,9 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-/// The view behind the window's empty state (#55, #221). It draws a dashed outline inset from its
-/// edges, the place an image can be dropped, in the theme's accent while a drop is over it. Its
-/// controls are ordinary subviews.
+/// The view behind the window's empty state (#55, #221). Once it takes drops (`dragOperation` and
+/// `performDrop` set), it draws a dashed outline inset from its edges, the place an image can be
+/// dropped, in the theme's accent while a drop is over it. Its controls are ordinary subviews.
 @interface STEmptyStateView : NSView
 
 /// The outline's distance from the view's edges.

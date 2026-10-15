@@ -39,16 +39,22 @@
 - (void)setDragOperation:(NSDragOperation (^)(id<NSDraggingInfo>))dragOperation {
     _dragOperation = [dragOperation copy];
     [self updateDraggedTypes];
+    [self setNeedsDisplay:YES];
 }
 
 - (void)setPerformDrop:(BOOL (^)(id<NSDraggingInfo>))performDrop {
     _performDrop = [performDrop copy];
     [self updateDraggedTypes];
+    [self setNeedsDisplay:YES];
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
     (void)dirtyRect;
-    // The theme draws the window's background; only the outline is the view's own.
+    // The outline says "drop an image here", so only a view that takes drops draws it (GNUstep
+    // doesn't yet). The theme draws the window's background.
+    if (!self.dragOperation || !self.performDrop) {
+        return;
+    }
     CGFloat inset = [[self class] outlineInset];
     NSRect outline = NSInsetRect(self.bounds, inset, inset);
     if (NSWidth(outline) < 24.0 || NSHeight(outline) < 24.0) {
