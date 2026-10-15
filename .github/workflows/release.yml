@@ -206,6 +206,9 @@ jobs:
           mkdir -p release-assets site/updates/windows site/updates/linux site/updates/macos
           cp dist/windows/* release-assets/
           cp dist/linux/* release-assets/
+          # The packager's build records stay with the run's artifacts: they hold the runner's
+          # paths and are no use to someone downloading the app.
+          rm -f release-assets/*.metadata.json release-assets/*.diagnostics.txt release-assets/*.wixpdb
           # The appcast goes to Pages only.
           cp dist/macos/*.dmg release-assets/
           # Bare file names, so `sha256sum -c SHA256SUMS` works next to the downloads.
