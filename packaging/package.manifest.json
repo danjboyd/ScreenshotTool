@@ -60,6 +60,24 @@
       "launch": {
         "entryRelativePath": "app/ScreenshotTool.app/ScreenshotTool.exe"
       }
+    },
+    "linux": {
+      "validation": {
+        "packageContract": {
+          "forbiddenFiles": [
+            "libcups.so*",
+            "GSCUPS",
+            "libavahi-*",
+            "libdbus-1.so*",
+            "libsystemd.so*",
+            "libgcrypt.so*",
+            "libsndfile.so*",
+            "libaspell.so*",
+            "libMagick*"
+          ],
+          "maxPayloadBytes": 150000000
+        }
+      }
     }
   },
   "themeInputs": [
@@ -293,6 +311,9 @@
       },
       "smoke": {
         "mode": "launch-only"
+      },
+      "validation": {
+        "maxArtifactBytes": 44000000
       }
     }
   }
