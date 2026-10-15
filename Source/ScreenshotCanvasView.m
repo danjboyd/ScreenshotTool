@@ -2103,6 +2103,12 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 
 - (void)clipViewBoundsDidChange:(NSNotification *)notification {
     [self updateForEnclosingBoundsChange];
+    [[self enclosingStageView] layoutCanvas];
+}
+
+/// The stage the canvas sits on in the app's window; nil where it's the document view itself.
+- (nullable STCanvasStageView *)enclosingStageView {
+    return [self.superview isKindOfClass:[STCanvasStageView class]] ? (STCanvasStageView *)self.superview : nil;
 }
 
 - (void)setImage:(NSImage *)image {
@@ -3167,6 +3173,7 @@ static NSError *STProjectError(NSString *message) {
     }
     NSSize targetSize = NSMakeSize(MAX(width, 1.0f), MAX(height, 1.0f));
     [self setFrameSize:targetSize];
+    [[self enclosingStageView] layoutCanvas];
     [self updateActiveTextViewFrame];
 }
 
@@ -3177,10 +3184,16 @@ static NSError *STProjectError(NSString *message) {
     if (!self.hostScrollView) {
         return NSZeroSize;
     }
-    return [NSScrollView contentSizeForFrameSize:self.hostScrollView.frame.size
-                           hasHorizontalScroller:NO
-                             hasVerticalScroller:NO
-                                      borderType:self.hostScrollView.borderType];
+    NSSize size = [NSScrollView contentSizeForFrameSize:self.hostScrollView.frame.size
+                                  hasHorizontalScroller:NO
+                                    hasVerticalScroller:NO
+                                             borderType:self.hostScrollView.borderType];
+    // On the stage, Fit leaves the image its margin.
+    if ([self enclosingStageView]) {
+        size.width = MAX(0.0, size.width - (2.0 * STCanvasStageMargin));
+        size.height = MAX(0.0, size.height - (2.0 * STCanvasStageMargin));
+    }
+    return size;
 }
 
 - (void)updateForEnclosingBoundsChange {
@@ -4251,6 +4264,118 @@ static NSError *STProjectError(NSString *message) {
     }
     [STThemeCanvasImageBorderColor() setFill];
     NSFrameRectWithWidth(NSInsetRect(documentView.frame, -1.0, -1.0), 1.0);
+}
+
+@end
+
+const CGFloat STCanvasStageMargin = 24.0;
+/// The dot grid's pitch and dot size, in points.
+static const CGFloat STCanvasStageDotPitch = 16.0;
+static const CGFloat STCanvasStageDotSize = 2.0;
+/// How far the image's shadow spreads, and how far it falls below the image, in points.
+static const CGFloat STCanvasStageShadowSpread = 14.0;
+static const CGFloat STCanvasStageShadowDrop = 5.0;
+
+@implementation STCanvasStageView
+
+- (instancetype)initWithCanvasView:(ScreenshotCanvasView *)canvasView {
+    self = [super initWithFrame:NSMakeRect(0.0, 0.0, 1.0, 1.0)];
+    if (self) {
+        _canvasView = canvasView;
+        canvasView.autoresizingMask = NSViewNotSizable;
+        [self addSubview:canvasView];
+        [self layoutCanvas];
+    }
+    return self;
+}
+
+- (BOOL)isFlipped {
+    return YES;
+}
+
+- (BOOL)isOpaque {
+    return YES;
+}
+
+- (void)viewDidMoveToSuperview {
+    [super viewDidMoveToSuperview];
+    [self layoutCanvas];
+}
+
+- (NSRect)imageFrame {
+    return self.canvasView.frame;
+}
+
+- (void)layoutCanvas {
+    NSSize canvasSize = self.canvasView.frame.size;
+    NSSize viewport = [self.superview isKindOfClass:[NSClipView class]] ? self.superview.bounds.size : NSZeroSize;
+    NSSize size = NSMakeSize(ceil(MAX(canvasSize.width + (2.0 * STCanvasStageMargin), viewport.width)),
+                             ceil(MAX(canvasSize.height + (2.0 * STCanvasStageMargin), viewport.height)));
+    if (!NSEqualSizes(self.frame.size, size)) {
+        [self setFrameSize:size];
+        [self setNeedsDisplay:YES];
+    }
+    NSPoint origin = NSMakePoint(floor((size.width - canvasSize.width) * 0.5),
+                                 floor((size.height - canvasSize.height) * 0.5));
+    if (!NSEqualPoints(self.canvasView.frame.origin, origin)) {
+        [self.canvasView setFrameOrigin:origin];
+        [self setNeedsDisplay:YES];
+    }
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    [STThemeCanvasBackdropColor() setFill];
+    NSRectFill(dirtyRect);
+
+    NSRect imageFrame = self.imageFrame;
+    BOOL hasImage = [self.canvasView hasImage] && !self.canvasView.isHidden;
+
+    // The dot grid, on the stage's own points, so it scrolls with the image.
+    NSInteger firstColumn = (NSInteger)floor(NSMinX(dirtyRect) / STCanvasStageDotPitch);
+    NSInteger lastColumn = (NSInteger)ceil(NSMaxX(dirtyRect) / STCanvasStageDotPitch);
+    NSInteger firstRow = (NSInteger)floor(NSMinY(dirtyRect) / STCanvasStageDotPitch);
+    NSInteger lastRow = (NSInteger)ceil(NSMaxY(dirtyRect) / STCanvasStageDotPitch);
+    NSInteger columns = MAX(0, lastColumn - firstColumn + 1);
+    NSInteger rows = MAX(0, lastRow - firstRow + 1);
+    if (columns > 0 && rows > 0 && columns * rows < 1000000) {
+        NSRect *dots = malloc(sizeof(NSRect) * (size_t)(columns * rows));
+        NSInteger count = 0;
+        CGFloat offset = STCanvasStageDotSize * 0.5;
+        for (NSInteger row = firstRow; row <= lastRow; row++) {
+            for (NSInteger column = firstColumn; column <= lastColumn; column++) {
+                NSRect dot = NSMakeRect((column * STCanvasStageDotPitch) - offset, (row * STCanvasStageDotPitch) - offset,
+                                        STCanvasStageDotSize, STCanvasStageDotSize);
+                if (hasImage && NSContainsRect(imageFrame, dot)) {
+                    continue; // Under the image, which is opaque.
+                }
+                dots[count++] = dot;
+            }
+        }
+        if (dots && count > 0) {
+            [STThemeCanvasBackdropDotColor() setFill];
+            NSRectFillListUsingOperation(dots, count, NSCompositeSourceOver);
+        }
+        free(dots);
+    }
+
+    if (!hasImage) {
+        return;
+    }
+
+    // A soft shadow below the image: rings that fade as they spread, a little lower than the
+    // image. Drawn by hand, the same on every platform.
+    NSRect shadowFrame = NSOffsetRect(imageFrame, 0.0, STCanvasStageShadowDrop);
+    if (NSIntersectsRect(NSInsetRect(shadowFrame, -STCanvasStageShadowSpread, -STCanvasStageShadowSpread), dirtyRect)) {
+        NSColor *shadow = STThemeCanvasImageShadowColor();
+        for (NSInteger ring = 1; ring <= (NSInteger)STCanvasStageShadowSpread; ring++) {
+            CGFloat falloff = 1.0 - ((CGFloat)ring / (STCanvasStageShadowSpread + 1.0));
+            [[shadow colorWithAlphaComponent:0.075 * falloff * falloff] setFill];
+            NSFrameRectWithWidthUsingOperation(NSInsetRect(shadowFrame, -ring, -ring), 1.0, NSCompositeSourceOver);
+        }
+    }
+
+    [STThemeCanvasImageBorderColor() setFill];
+    NSFrameRectWithWidthUsingOperation(NSInsetRect(imageFrame, -1.0, -1.0), 1.0, NSCompositeSourceOver);
 }
 
 @end

@@ -89,7 +89,10 @@
     canvas.fitToWindow = YES;
     [canvas updateForEnclosingBoundsChange];
 
+    // The whole viewport, less the stage's margin round the image.
     NSSize viewport = _appDelegate.scrollView.frame.size;
+    viewport.width -= 2.0 * STCanvasStageMargin;
+    viewport.height -= 2.0 * STCanvasStageMargin;
     CGFloat expected = MIN(1.0, MIN(viewport.width / 800.0, viewport.height / 400.0));
     XCTAssertEqualWithAccuracy(canvas.zoomScale, expected, 0.0001,
                                @"Fit should use the whole viewport, not the clip view shrunk by scrollers");

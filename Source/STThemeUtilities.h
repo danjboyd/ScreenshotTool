@@ -8,6 +8,8 @@ NS_ASSUME_NONNULL_BEGIN
 NSColor *STThemeCanvasBackgroundColor(void);
 NSColor *STThemeCanvasBackdropColor(void);
 NSColor *STThemeCanvasImageBorderColor(void);
+NSColor *STThemeCanvasBackdropDotColor(void);
+NSColor *STThemeCanvasImageShadowColor(void);
 NSColor *STThemeWindowBackgroundColor(void);
 NSColor *STThemeCardBackgroundColor(void);
 NSColor *STThemeInsetBackgroundColor(void);

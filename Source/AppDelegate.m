@@ -2671,7 +2671,7 @@ static id STInfoValueForKey(NSString *key) {
                                                  name:ScreenshotCanvasViewDidChangeZoomNotification
                                                object:self.canvasView];
 
-    [self.scrollView setDocumentView:self.canvasView];
+    [self.scrollView setDocumentView:[[STCanvasStageView alloc] initWithCanvasView:self.canvasView]];
     [container addSubview:self.scrollView];
     self.emptyStateView = [self newEmptyStateView];
     [container addSubview:self.emptyStateView];

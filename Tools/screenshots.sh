@@ -83,6 +83,9 @@ fi
 if [[ "${WM}" == "gnome-shell" ]]; then
   mkdir -p "${WORK}"/{config,data,cache,state,run}
   chmod 700 "${WORK}/run"
+  # A fresh session is a first login: GNOME Shell 48 would open its welcome dialog over the app.
+  mkdir -p "${WORK}/config/glib-2.0/settings"
+  printf '[org/gnome/shell]\nwelcome-dialog-last-shown-version=%s\n' "'999'" >"${WORK}/config/glib-2.0/settings/keyfile"
   env -i HOME="${HOME}" PATH="${PATH}" DISPLAY="${DISPLAY}" XDG_CONFIG_HOME="${WORK}/config" \
     XDG_DATA_HOME="${WORK}/data" XDG_CACHE_HOME="${WORK}/cache" XDG_STATE_HOME="${WORK}/state" \
     XDG_RUNTIME_DIR="${WORK}/run" GSETTINGS_BACKEND=keyfile LIBGL_ALWAYS_SOFTWARE=1 \
@@ -108,9 +111,18 @@ if [[ "${WM}" == "gnome-shell" ]]; then
     [[ "${reply}" != *false* ]]
   }
   if command -v gdbus >/dev/null; then
-    for _ in $(seq 1 60); do
-      overview_active || break
-      xdotool key Escape; sleep 1
+    # The shell opens the overview a moment after it says it isn't in it: wait until the
+    # overview has stayed closed for three seconds.
+    closed=0
+    for _ in $(seq 1 90); do
+      if overview_active; then
+        closed=0
+        xdotool key Escape
+      else
+        closed=$((closed + 1))
+        [[ "${closed}" -ge 3 ]] && break
+      fi
+      sleep 1
     done
     overview_active && echo "screenshots: GNOME Shell stayed in the overview" >&2
   else

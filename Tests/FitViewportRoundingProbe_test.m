@@ -85,6 +85,9 @@
                                                   hasHorizontalScroller:NO
                                                     hasVerticalScroller:NO
                                                              borderType:scrollView.borderType];
+                // Fit leaves the image the stage's margin.
+                viewport.width -= 2.0 * STCanvasStageMargin;
+                viewport.height -= 2.0 * STCanvasStageMargin;
                 NSSize canvasSize = canvas.frame.size;
                 XCTAssertLessThanOrEqual(canvasSize.width, floor(viewport.width),
                                          @"%@ in %.2fx%.2f: canvas %@", NSStringFromSize(image.size), width, height, NSStringFromSize(canvasSize));
