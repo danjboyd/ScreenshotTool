@@ -11,6 +11,7 @@
 #import "ScreenshotCanvasView.h"
 #import "MarkupStroke.h"
 #import "MarkupText.h"
+#import "STThemeUtilities.h"
 #import "TestEnvironmentHelpers.h"
 
 @interface AppDelegate (ArrowCalloutTesting)
@@ -18,6 +19,7 @@
 - (NSWindow *)window;
 - (ScreenshotCanvasView *)canvasView;
 - (void)textOptionsBarDidTogglePointer:(id)bar;
+- (void)copy:(id)sender;
 @end
 
 @interface ScreenshotCanvasView (ArrowCalloutTesting)
@@ -29,6 +31,8 @@
 - (NSRect)activePointerHandleRectInView;
 - (BOOL)toggleActiveTextPointer;
 - (MarkupText *)activeTextEntry;
+- (void)selectAnnotation:(id)annotation extending:(BOOL)extending;
+- (NSArray *)selectedAnnotationObjects;
 @end
 
 @interface ArrowCalloutProbeTests : XCTestCase {
@@ -186,6 +190,35 @@
                   (long)whiteAbove, (long)whiteBelow);
     NSRect bounds = [canvas.strokes.firstObject bounds];
     XCTAssertLessThanOrEqual(NSMinY(bounds), 150.0 - (4.0 * 4.0 * 0.5) - 2.0, @"Its bounds take in the outline");
+}
+
+/// The selection draws in the theme's accent: a colour, never black or grey (#230: WinUI's focus
+/// colour is black).
+- (void)testSelectionAccentHasAHue {
+    NSColor *accent = [STThemeAccentColor() colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
+    XCTAssertNotNil(accent);
+    CGFloat high = MAX(accent.redComponent, MAX(accent.greenComponent, accent.blueComponent));
+    CGFloat low = MIN(accent.redComponent, MIN(accent.greenComponent, accent.blueComponent));
+    XCTAssertGreaterThan(high - low, 0.15, @"The accent is a colour: %@", accent);
+}
+
+/// Copy with an annotation selected copies the whole image, with nothing of the selection.
+- (void)testCopyWithAnAnnotationSelected {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolArrow];
+    [self drag:canvas from:NSMakePoint(100.0, 150.0) to:NSMakePoint(400.0, 150.0) flags:0];
+    canvas.activeTool = ScreenshotCanvasToolSelect;
+    [canvas selectAnnotation:canvas.strokes.firstObject extending:NO];
+    XCTAssertEqual([canvas selectedAnnotationObjects].count, (NSUInteger)1);
+
+    [[NSPasteboard generalPasteboard] declareTypes:@[NSPasteboardTypeTIFF] owner:nil];
+    [[NSPasteboard generalPasteboard] setData:[NSData data] forType:NSPasteboardTypeTIFF];
+    [_appDelegate copy:nil];
+    NSData *png = [[NSPasteboard generalPasteboard] dataForType:NSPasteboardTypePNG];
+    NSBitmapImageRep *rep = png ? [NSBitmapImageRep imageRepWithData:png] : nil;
+    XCTAssertNotNil(rep, @"The first Copy puts the image on the clipboard");
+    XCTAssertEqual(rep.pixelsWide, (NSInteger)600);
+    XCTAssertEqual(rep.pixelsHigh, (NSInteger)300, @"The whole image, not a selection of it");
 }
 
 - (void)testArrowShortcut {
