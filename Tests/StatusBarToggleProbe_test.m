@@ -10,7 +10,7 @@
 #import "PreferencesWindowController.h"
 #import "TestEnvironmentHelpers.h"
 
-static const CGFloat kStatusBarHeight = 24.0f;
+static const CGFloat kStatusBarHeight = 32.0f; // Room for the 24pt zoom slider (#221).
 
 #pragma mark - Testing Category
 

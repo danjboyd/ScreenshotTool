@@ -98,8 +98,9 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     XCTAssertNotNil(toolbar);
     id<NSToolbarDelegate> delegate = (id<NSToolbarDelegate>)_appDelegate;
 #if defined(GNUSTEP)
-    NSArray<NSString *> *plainItems = @[@"copy", @"preferences"];
-    NSArray<NSString *> *controlItems = @[@"tools", @"color", @"zoom"];
+    // Copy and Save are push buttons with their names, Copy the accent one (#221).
+    NSArray<NSString *> *plainItems = @[@"preferences"];
+    NSArray<NSString *> *controlItems = @[@"tools", @"color", @"zoom", @"copy", @"save"];
 #else
     // On macOS Copy is a button you can also drag the image out of.
     NSArray<NSString *> *plainItems = @[@"preferences"];
@@ -131,13 +132,14 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
 #if defined(GNUSTEP)
     XCTAssertEqualObjects(defaults, (@[@"com.screenshottool.toolbar.undo", @"com.screenshottool.toolbar.redo",
                                        @"com.screenshottool.toolbar.tools", @"com.screenshottool.toolbar.color",
-                                       NSToolbarFlexibleSpaceItemIdentifier, @"com.screenshottool.toolbar.copy"]));
+                                       NSToolbarFlexibleSpaceItemIdentifier, @"com.screenshottool.toolbar.save",
+                                       @"com.screenshottool.toolbar.copy"]));
 #else
     // macOS adds Share before Copy.
     XCTAssertEqualObjects(defaults, (@[@"com.screenshottool.toolbar.undo", @"com.screenshottool.toolbar.redo",
                                        @"com.screenshottool.toolbar.tools", @"com.screenshottool.toolbar.color",
-                                       NSToolbarFlexibleSpaceItemIdentifier, @"com.screenshottool.toolbar.share",
-                                       @"com.screenshottool.toolbar.copy"]));
+                                       NSToolbarFlexibleSpaceItemIdentifier, @"com.screenshottool.toolbar.save",
+                                       @"com.screenshottool.toolbar.share", @"com.screenshottool.toolbar.copy"]));
 #endif
     NSArray *allowed = [delegate toolbarAllowedItemIdentifiers:toolbar];
     XCTAssertTrue([allowed containsObject:@"com.screenshottool.toolbar.zoom"], @"zoom can be added back");

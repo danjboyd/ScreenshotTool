@@ -695,9 +695,11 @@ static BOOL STIsSizedToolbarIcon(NSImage *image) {
     [fill setFill];
     NSRectFill(dirtyRect);
     if (self.topBorderColor) {
-        NSRect border = NSMakeRect(dirtyRect.origin.x,
-                                   dirtyRect.size.height - 1.0f,
-                                   dirtyRect.size.width,
+        // Along the top of the bounds, whatever part is being redrawn: placed from the dirty
+        // rect, it went missing wherever only part of the bar redrew (#221).
+        NSRect border = NSMakeRect(NSMinX(self.bounds),
+                                   NSMaxY(self.bounds) - 1.0f,
+                                   NSWidth(self.bounds),
                                    1.0f);
         [self.topBorderColor setFill];
         NSRectFill(border);
@@ -1270,7 +1272,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSView *statusBarView;
 @property (nonatomic, strong) NSTextField *statusTextField;
 @property (nonatomic, strong) NSTimer *statusClearTimer;
-@property (nonatomic, strong) NSView *statusControlsContainer;
 @property (nonatomic, strong) NSWindow *hudWindow;
 @property (nonatomic, strong) STHudView *hudView;
 @property (nonatomic, strong) NSTimer *hudDismissTimer;
@@ -1280,10 +1281,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) NSTimeInterval hudFadeDuration;
 @property (nonatomic, assign) CGFloat hudFadeStartAlpha;
 @property (nonatomic, assign) CGFloat hudFadeTargetAlpha;
-@property (nonatomic, strong) NSTextField *toolWidthTitleLabel;
-@property (nonatomic, strong) NSSlider *toolWidthSlider;
-@property (nonatomic, strong) NSTextField *toolWidthValueLabel;
-@property (nonatomic, strong) NSButton *toolWidthOptionsButton;
 @property (nonatomic, strong) NSView *statusZoomContainer;
 @property (nonatomic, strong) NSButton *statusZoomOutButton;
 @property (nonatomic, strong) NSSlider *statusZoomSlider;
@@ -1326,7 +1323,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) id documentRouter;
 #endif
 @property (nonatomic, strong) NSUndoManager *undoManager;
-@property (nonatomic, assign) BOOL toolWidthMenuCanReset;
 #if defined(GNUSTEP)
 @property (nonatomic, strong) GPStandardUpdaterController *updaterController;
 #elif ST_USES_SPARKLE
@@ -2277,6 +2273,9 @@ static AppDelegate *STFrontDocument(void) {
     if ([identifier isEqualToString:ToolbarItemCopy] || [identifier isEqualToString:ToolbarItemSave]) {
         return [self.canvasView hasImage];
     }
+    if ([identifier isEqualToString:ToolbarItemColor]) {
+        return STToolUsesColor(self.canvasView.activeTool) && [self.canvasView hasImage];
+    }
     if ([identifier isEqualToString:ToolbarItemZoom]) {
         return [self.canvasView hasImage];
     }
@@ -3167,7 +3166,12 @@ static id STInfoValueForKey(NSString *key) {
     item.label = @"";
     item.paletteLabel = label;
     item.toolTip = toolTip;
+    // The item's action too, so the toolbar's validation (-validateToolbarItem:) enables it,
+    // and only with an image open.
+    item.target = self;
+    item.action = selector;
     item.view = button;
+    button.enabled = [self.canvasView hasImage];
     item.minSize = size;
     item.maxSize = size;
     return item;
@@ -3669,14 +3673,16 @@ static id STInfoValueForKey(NSString *key) {
     }
     STToolbarColorWellView *colorWellView = (STToolbarColorWellView *)item.view;
     ScreenshotCanvasTool activeTool = self.canvasView.activeTool;
-    BOOL enabled = STToolUsesColor(activeTool);
-    NSColor *color = enabled ? [self currentColorForTool:activeTool] : nil;
+    BOOL usesColor = STToolUsesColor(activeTool);
+    // Dimmed with no image, as the tools are (#221), but still showing the tool's colour.
+    BOOL enabled = usesColor && [self.canvasView hasImage];
+    NSColor *color = usesColor ? [self currentColorForTool:activeTool] : nil;
     [colorWellView setEnabled:enabled];
     [colorWellView setColor:color];
     item.enabled = enabled;
     [self applyToolTipToToolbarItem:item source:@"refresh-color"];
     [self adjustToolbarCustomViewVerticalOffset:colorWellView];
-    if (enabled) {
+    if (usesColor) {
         STApplyAccessibilityLabel(colorWellView, [NSString stringWithFormat:@"%@ color", STDebugToolName(activeTool)]);
     } else {
         STApplyAccessibilityLabel(colorWellView, @"Color settings unavailable for current tool");
@@ -3857,80 +3863,6 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
 
-    NSView *container = [[NSView alloc] initWithFrame:NSZeroRect];
-    container.autoresizingMask = (NSViewMinXMargin | NSViewHeightSizable);
-    self.statusControlsContainer = container;
-    [self.statusBarView addSubview:container];
-
-    NSTextField *titleLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
-    [titleLabel setEditable:NO];
-    [titleLabel setBezeled:NO];
-    [titleLabel setBordered:NO];
-    [titleLabel setDrawsBackground:NO];
-    [titleLabel setAlignment:NSTextAlignmentRight];
-    [titleLabel setFont:[NSFont boldSystemFontOfSize:[NSFont smallSystemFontSize]]];
-    [titleLabel setTextColor:STThemeStatusValueTextColor()];
-    self.toolWidthTitleLabel = titleLabel;
-    [container addSubview:titleLabel];
-
-    NSSlider *slider = [[NSSlider alloc] initWithFrame:NSZeroRect];
-    [slider setMinValue:STToolWidthMin];
-    [slider setMaxValue:STToolWidthMax];
-    [slider setDoubleValue:STHighlighterWidthDefault];
-    [slider setContinuous:YES];
-    [slider setNumberOfTickMarks:0];
-    [slider setAltIncrementValue:1.0];
-    slider.target = self;
-    slider.action = @selector(toolWidthSliderChanged:);
-    self.toolWidthSlider = slider;
-    STApplyAccessibilityLabel(slider, @"Adjust tool width");
-    [container addSubview:slider];
-
-    NSTextField *valueLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
-    [valueLabel setEditable:NO];
-    [valueLabel setBezeled:NO];
-    [valueLabel setBordered:NO];
-    [valueLabel setDrawsBackground:YES];
-    [valueLabel setBackgroundColor:STThemeStatusValueBackgroundColor()];
-    [valueLabel setAlignment:NSTextAlignmentRight];
-    [valueLabel setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
-    [valueLabel setTextColor:STThemeStatusValueTextColor()];
-    [valueLabel setStringValue:@"0 px"];
-    self.toolWidthValueLabel = valueLabel;
-    STApplyAccessibilityLabel(valueLabel, @"Current tool width");
-    [container addSubview:valueLabel];
-
-    NSButton *optionsButton = [[NSButton alloc] initWithFrame:NSZeroRect];
-#if defined(GNUSTEP)
-    // Three middle dots, which every UI font has and which sit centred: Segoe UI has no "⋯"
-    // (it drew as "?" on Windows), and "…" sits on the baseline.
-    optionsButton.title = @"···";
-#else
-    optionsButton.title = @"⋯";
-#endif
-#ifdef NSRoundedBezelStyle
-    [optionsButton setBezelStyle:NSRoundedBezelStyle];
-#else
-    [optionsButton setBezelStyle:NSRecessedBezelStyle];
-#endif
-#ifdef NSFontWeightSemibold
-    optionsButton.font = [NSFont systemFontOfSize:[NSFont systemFontSize] weight:NSFontWeightSemibold];
-#else
-    optionsButton.font = [NSFont boldSystemFontOfSize:[NSFont systemFontSize]];
-#endif
-    optionsButton.target = self;
-    optionsButton.action = @selector(toolWidthOptionsButtonClicked:);
-    optionsButton.toolTip = @"More width options";
-    self.toolWidthOptionsButton = optionsButton;
-    STApplyAccessibilityLabel(optionsButton, @"Tool width options");
-    [container addSubview:optionsButton];
-
-    // Hidden with the status bar (the default), so launch doesn't lay it out (with "⋯", whose
-    // glyph needed a font fallback, sizing it took a quarter of a second).
-    // updateStatusBarVisibility shows it and lays it out.
-    container.hidden = !self.statusBarVisiblePreference;
-    [self updateToolWidthControls];
-
     // Zoom at the bar's end, as Paint and Photos have it: out, a slider, in, the scale and Fit
     // (#221). The slider is logarithmic, as the zoom popover's is.
     NSView *zoomContainer = [[NSView alloc] initWithFrame:NSZeroRect];
@@ -3979,7 +3911,9 @@ static id STInfoValueForKey(NSString *key) {
     self.statusZoomFitButton = fitButton;
     [zoomContainer addSubview:fitButton];
 
-    zoomContainer.hidden = !self.statusBarVisiblePreference;
+    // Hidden with the status bar (the default), so launch doesn't size these controls.
+    // refreshStatusZoomControls shows them, with an image, and lays them out.
+    zoomContainer.hidden = YES;
     [self refreshStatusZoomControls];
 }
 
@@ -4053,7 +3987,7 @@ static id STInfoValueForKey(NSString *key) {
     CGFloat verticalInset = 4.0f;
     CGFloat availableHeight = MAX(0.0f, bounds.size.height - (verticalInset * 2.0f));
 
-    // The zoom controls take the bar's end (#221); the width controls sit to their left.
+    // The image's size and format on the left, the zoom controls at the end (#221).
     CGFloat rightEdge = bounds.size.width - padding;
     if (self.statusZoomContainer && !self.statusZoomContainer.isHidden) {
         CGFloat zoomWidth = [self layoutStatusZoomControlsWithRightEdge:rightEdge
@@ -4062,80 +3996,7 @@ static id STInfoValueForKey(NSString *key) {
         rightEdge -= zoomWidth + (padding * 2.0f);
     }
 
-    CGFloat controlsWidth = 0.0f;
-    if (self.statusControlsContainer && !self.statusControlsContainer.isHidden) {
-        NSSize titleSize = self.toolWidthTitleLabel ? [[self.toolWidthTitleLabel cell] cellSize] : NSZeroSize;
-        NSSize valueSize = self.toolWidthValueLabel ? [[self.toolWidthValueLabel cell] cellSize] : NSZeroSize;
-        if (self.toolWidthOptionsButton) {
-            [self.toolWidthOptionsButton sizeToFit];
-        }
-
-        CGFloat labelWidth = MAX(120.0f, titleSize.width + 10.0f);
-        CGFloat valueWidth = MAX(60.0f, valueSize.width + 14.0f);
-        CGFloat sliderWidth = MIN(320.0f, MAX(220.0f, bounds.size.width * 0.32f));
-        CGFloat optionsWidth = self.toolWidthOptionsButton ? MAX(28.0f, self.toolWidthOptionsButton.frame.size.width) : 0.0f;
-        CGFloat spacing = 6.0f;
-        controlsWidth = labelWidth + sliderWidth + valueWidth + optionsWidth + (spacing * 3.0f);
-
-        CGFloat maxControlsWidth = rightEdge - padding;
-        if (controlsWidth > maxControlsWidth) {
-            sliderWidth = MAX(160.0f, maxControlsWidth - (labelWidth + valueWidth + optionsWidth + (spacing * 3.0f)));
-            controlsWidth = labelWidth + sliderWidth + valueWidth + optionsWidth + (spacing * 3.0f);
-        }
-
-        CGFloat containerX = rightEdge - controlsWidth;
-        if (containerX < padding) {
-            containerX = padding;
-        }
-
-        NSRect containerFrame = NSMakeRect(containerX,
-                                           verticalInset,
-                                           controlsWidth,
-                                           availableHeight);
-        [self.statusControlsContainer setFrame:containerFrame];
-
-        CGFloat controlHeight = MIN(availableHeight, 18.0f);
-        CGFloat centerY = (containerFrame.size.height - controlHeight) / 2.0f;
-        CGFloat x = 0.0f;
-
-        if (self.toolWidthTitleLabel) {
-            self.toolWidthTitleLabel.frame = NSMakeRect(x, centerY, labelWidth, controlHeight);
-        }
-        x += labelWidth + spacing;
-
-        if (self.toolWidthSlider) {
-            CGFloat sliderHeight = MIN(16.0f, availableHeight);
-            self.toolWidthSlider.frame = NSMakeRect(x,
-                                                    (containerFrame.size.height - sliderHeight) / 2.0f,
-                                                    sliderWidth,
-                                                    sliderHeight);
-        }
-        x += sliderWidth + spacing;
-
-        if (self.toolWidthValueLabel) {
-            self.toolWidthValueLabel.frame = NSMakeRect(x, centerY, valueWidth, controlHeight);
-        }
-        x += valueWidth + spacing;
-
-        if (self.toolWidthOptionsButton) {
-            CGFloat buttonHeight = MIN(controlHeight + 2.0f, self.toolWidthOptionsButton.frame.size.height);
-            self.toolWidthOptionsButton.frame = NSMakeRect(x,
-                                                           (containerFrame.size.height - buttonHeight) / 2.0f,
-                                                           optionsWidth,
-                                                           buttonHeight);
-        }
-    } else if (self.statusControlsContainer) {
-        self.statusControlsContainer.frame = NSMakeRect(rightEdge,
-                                                        verticalInset,
-                                                        0.0f,
-                                                        availableHeight);
-    }
-
     CGFloat textWidth = MAX(0.0f, rightEdge - padding);
-    if (self.statusControlsContainer && !self.statusControlsContainer.isHidden) {
-        CGFloat limit = self.statusControlsContainer.frame.origin.x - padding;
-        textWidth = MAX(0.0f, limit - padding);
-    }
     self.statusTextField.frame = NSMakeRect(padding,
                                             verticalInset,
                                             textWidth,
@@ -4181,9 +4042,6 @@ static id STInfoValueForKey(NSString *key) {
     CGFloat targetHeight = show ? StatusBarHeight : 0.0f;
     if (self.statusBarView) {
         [self.statusBarView setHidden:!show];
-    }
-    if (self.statusControlsContainer) {
-        [self.statusControlsContainer setHidden:!show];
     }
     if (self.statusTextField) {
         [self.statusTextField setHidden:!show];
@@ -4235,20 +4093,12 @@ static id STInfoValueForKey(NSString *key) {
     if (self.statusTextField) {
         [self.statusTextField setTextColor:STThemeStatusPrimaryTextColor()];
     }
-    if (self.toolWidthTitleLabel) {
-        [self.toolWidthTitleLabel setTextColor:STThemeStatusValueTextColor()];
-    }
-    if (self.toolWidthValueLabel) {
-        [self.toolWidthValueLabel setBackgroundColor:STThemeStatusValueBackgroundColor()];
-        [self.toolWidthValueLabel setTextColor:STThemeStatusValueTextColor()];
-    }
     if (self.zoomToolbarLabel) {
         [self.zoomToolbarLabel setTextColor:STThemeToolbarLabelColor()];
     }
     if (self.statusZoomLabel) {
         [self.statusZoomLabel setTextColor:STThemeStatusValueTextColor()];
     }
-    [self updateToolWidthControls];
     if (self.statusBarView) {
         [self.statusBarView setNeedsDisplay:YES];
     }
@@ -4328,7 +4178,6 @@ static id STInfoValueForKey(NSString *key) {
     self.canvasView.textAlignment = STStoredTextAlignment(STDefaultsTextAlignmentKey, self.textDefaultAlignment);
     [self.canvasView refreshCursor];
     [self refreshToolButtonIcons];
-    [self updateToolWidthControls];
 
     NSString *savedDirectory = [defaults stringForKey:STDefaultsSaveDirectoryKey];
     if (savedDirectory.length == 0) {
@@ -4377,75 +4226,6 @@ static id STInfoValueForKey(NSString *key) {
     return [self clampedWidth:(CGFloat)number];
 }
 
-- (void)updateToolWidthControls {
-    if (!self.toolWidthSlider || !self.toolWidthTitleLabel) {
-        return;
-    }
-    ScreenshotCanvasTool tool = [self widthTargetTool];
-    CGFloat currentWidth = [self currentWidthForTool:tool];
-    CGFloat defaultWidth = [self defaultWidthForTool:tool];
-    NSString *title = [self titleForToolWidth:tool];
-    [self.toolWidthTitleLabel setStringValue:title];
-    [self.toolWidthSlider setMinValue:STToolWidthMin];
-    [self.toolWidthSlider setMaxValue:STToolWidthMax];
-    [self.toolWidthSlider setDoubleValue:currentWidth];
-    [self updateToolWidthValueLabelWithWidth:currentWidth];
-    BOOL canReset = fabs(currentWidth - defaultWidth) > 0.01f;
-    self.toolWidthMenuCanReset = canReset;
-    if (self.toolWidthOptionsButton) {
-        [self.toolWidthOptionsButton setEnabled:YES];
-    }
-    if (self.toolWidthValueLabel) {
-        [self.toolWidthValueLabel setBackgroundColor:STThemeStatusValueBackgroundColor()];
-        [self.toolWidthValueLabel setTextColor:STThemeStatusValueTextColor()];
-    }
-    [self layoutStatusControls];
-}
-
-- (void)toolWidthOptionsButtonClicked:(id)sender {
-    NSMenu *menu = [self toolWidthOptionsMenu];
-    if (!menu) {
-        return;
-    }
-    NSButton *button = self.toolWidthOptionsButton;
-    if (!button) {
-        return;
-    }
-    NSPoint location = NSMakePoint(0.0f, NSHeight(button.bounds));
-    [menu popUpMenuPositioningItem:nil atLocation:location inView:button];
-}
-
-- (NSMenu *)toolWidthOptionsMenu {
-    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Width Options"];
-    NSMenuItem *resetItem = [[NSMenuItem alloc] initWithTitle:@"Reset Width"
-                                                       action:@selector(resetActiveToolWidth:)
-                                                keyEquivalent:@""];
-    [resetItem setTarget:self];
-    [resetItem setEnabled:self.toolWidthMenuCanReset];
-    [menu addItem:resetItem];
-
-    NSMenuItem *defaultItem = [[NSMenuItem alloc] initWithTitle:@"Set as Default"
-                                                         action:@selector(setActiveToolWidthAsDefault:)
-                                                  keyEquivalent:@""];
-    [defaultItem setTarget:self];
-    [defaultItem setEnabled:self.toolWidthMenuCanReset];
-    [menu addItem:defaultItem];
-    return menu;
-}
-
-- (ScreenshotCanvasTool)widthTargetTool {
-    ScreenshotCanvasTool tool = self.canvasView.activeTool;
-    if (tool == ScreenshotCanvasToolPen || tool == ScreenshotCanvasToolHighlighter) {
-        self.lastWidthTool = tool;
-        return tool;
-    }
-    if (self.lastWidthTool == ScreenshotCanvasToolPen || self.lastWidthTool == ScreenshotCanvasToolHighlighter) {
-        return self.lastWidthTool;
-    }
-    self.lastWidthTool = ScreenshotCanvasToolHighlighter;
-    return self.lastWidthTool;
-}
-
 - (NSString *)titleForToolWidth:(ScreenshotCanvasTool)tool {
     switch (tool) {
         case ScreenshotCanvasToolPen:
@@ -4484,14 +4264,6 @@ static id STInfoValueForKey(NSString *key) {
     }
 }
 
-- (void)updateToolWidthValueLabelWithWidth:(CGFloat)width {
-    if (!self.toolWidthValueLabel) {
-        return;
-    }
-    NSString *value = [NSString stringWithFormat:@"%.0f px", roundf(width)];
-    [self.toolWidthValueLabel setStringValue:value];
-}
-
 - (CGFloat)clampedWidth:(CGFloat)value {
     if (value < STToolWidthMin) {
         return STToolWidthMin;
@@ -4500,38 +4272,6 @@ static id STInfoValueForKey(NSString *key) {
         return STToolWidthMax;
     }
     return value;
-}
-
-- (void)toolWidthSliderChanged:(NSSlider *)slider {
-    ScreenshotCanvasTool tool = [self widthTargetTool];
-    CGFloat rawValue = slider.doubleValue;
-    CGFloat rounded = roundf(rawValue);
-    CGFloat clamped = [self clampedWidth:rounded];
-    if (fabs(clamped - rawValue) > 0.01f) {
-        [slider setDoubleValue:clamped];
-    }
-    [self applyWidth:clamped toTool:tool persist:YES];
-}
-
-- (void)resetActiveToolWidth:(id)sender {
-    ScreenshotCanvasTool tool = [self widthTargetTool];
-    CGFloat defaultWidth = [self defaultWidthForTool:tool];
-    [self applyWidth:defaultWidth toTool:tool persist:YES];
-    NSString *message = [NSString stringWithFormat:@"%@ reset to %.0f px",
-                         [self titleForToolWidth:tool],
-                         roundf(defaultWidth)];
-    [self showStatusMessage:message duration:2.0];
-}
-
-- (void)setActiveToolWidthAsDefault:(id)sender {
-    ScreenshotCanvasTool tool = [self widthTargetTool];
-    CGFloat width = [self currentWidthForTool:tool];
-    [self setDefaultWidth:width forTool:tool];
-    NSString *message = [NSString stringWithFormat:@"%@ default set to %.0f px",
-                         [self titleForToolWidth:tool],
-                         roundf(width)];
-    [self showStatusMessage:message duration:2.0];
-    [self updateToolWidthControls];
 }
 
 - (void)setDefaultWidth:(CGFloat)width forTool:(ScreenshotCanvasTool)tool {
@@ -4573,13 +4313,7 @@ static id STInfoValueForKey(NSString *key) {
         default:
             break;
     }
-    ScreenshotCanvasTool displayedTool = [self widthTargetTool];
-    if (displayedTool == tool) {
-        [self.toolWidthSlider setDoubleValue:clamped];
-        [self updateToolWidthValueLabelWithWidth:clamped];
-    }
     [self.canvasView setNeedsDisplay:YES];
-    [self updateToolWidthControls];
     if (self.preferencesWindowController) {
         [self.preferencesWindowController refresh];
     }
@@ -5080,7 +4814,6 @@ static id STInfoValueForKey(NSString *key) {
     [self setDefaultColor:color forTool:tool];
     NSString *message = [NSString stringWithFormat:@"%@ defaults updated", [self titleForToolWidth:tool]];
     [self showStatusMessage:message duration:2.0];
-    [self updateToolWidthControls];
 }
 
 #pragma mark - TextToolPopoverControllerDelegate
@@ -5326,7 +5059,6 @@ static id STInfoValueForKey(NSString *key) {
     [self updateStatusBarVisibility];
 
     [[NSUserDefaults standardUserDefaults] synchronize];
-    [self updateToolWidthControls];
     [self showStatusMessage:@"Preferences restored" duration:2.0];
 }
 
@@ -6971,7 +6703,6 @@ static id STInfoValueForKey(NSString *key) {
     if (tool == ScreenshotCanvasToolPen || tool == ScreenshotCanvasToolHighlighter || tool == ScreenshotCanvasToolArrow) {
         self.lastWidthTool = STSettingsToolForTool(tool);
     }
-    [self updateToolWidthControls];
 
     if (self.toolbar) {
         [self.toolbar setSelectedItemIdentifier:selectedIdentifier];
