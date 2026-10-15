@@ -56,6 +56,14 @@ static CGFloat STZoomScaleForSliderValue(CGFloat sliderValue) {
     return exp(minLog + ((maxLog - minLog) * t));
 }
 
+CGFloat STZoomSliderFractionForScale(CGFloat scale) {
+    return STZoomSliderValueForScale(scale) / STZoomPopoverSliderMaxValue;
+}
+
+CGFloat STZoomScaleForSliderFraction(CGFloat fraction) {
+    return STZoomScaleForSliderValue(fraction * STZoomPopoverSliderMaxValue);
+}
+
 @interface ZoomPopoverController ()
 @property (nonatomic, strong) STFloatingPopover *popover;
 @property (nonatomic, strong) NSView *contentView;

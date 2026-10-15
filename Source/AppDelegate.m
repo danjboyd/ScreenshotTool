@@ -61,10 +61,12 @@ static NSString * const ToolbarItemPreferences = @"com.screenshottool.toolbar.pr
 static NSString * const ToolbarItemUndo = @"com.screenshottool.toolbar.undo";
 static NSString * const ToolbarItemRedo = @"com.screenshottool.toolbar.redo";
 static NSString * const ToolbarItemColor = @"com.screenshottool.toolbar.color";
+static NSString * const ToolbarItemSave = @"com.screenshottool.toolbar.save";
 #if !defined(GNUSTEP)
 static NSString * const ToolbarItemShare = @"com.screenshottool.toolbar.share";
 #endif
-static const CGFloat StatusBarHeight = 24.0f;
+// Tall enough for a 24pt slider (the zoom slider, #221): WinUITheme draws its slider from 24pt.
+static const CGFloat StatusBarHeight = 32.0f;
 // Smallest canvas area a window gets, so tiny images still leave room for the title and the
 // whole icon-only toolbar: under Adwaita the colour well and Copy overflow below about 640pt
 // (WinUI needs about 550). macOS measures its own, wider minimum (-resizeWindowToImageSize:).
@@ -1282,6 +1284,12 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSSlider *toolWidthSlider;
 @property (nonatomic, strong) NSTextField *toolWidthValueLabel;
 @property (nonatomic, strong) NSButton *toolWidthOptionsButton;
+@property (nonatomic, strong) NSView *statusZoomContainer;
+@property (nonatomic, strong) NSButton *statusZoomOutButton;
+@property (nonatomic, strong) NSSlider *statusZoomSlider;
+@property (nonatomic, strong) NSButton *statusZoomInButton;
+@property (nonatomic, strong) NSTextField *statusZoomLabel;
+@property (nonatomic, strong) NSButton *statusZoomFitButton;
 @property (nonatomic, assign) CGFloat penDefaultWidth;
 @property (nonatomic, assign) CGFloat highlighterDefaultWidth;
 @property (nonatomic, strong) NSColor *penDefaultColor;
@@ -1446,6 +1454,9 @@ static AppDelegate *STFrontDocument(void) {
 #else
         return @"Copy Image — or drag it into another app";
 #endif
+    }
+    if ([identifier isEqualToString:ToolbarItemSave]) {
+        return @"Save Image As…";
     }
     if ([identifier isEqualToString:ToolbarItemUndo]) {
         return @"Undo";
@@ -2263,7 +2274,7 @@ static AppDelegate *STFrontDocument(void) {
     if ([identifier isEqualToString:ToolbarItemRedo]) {
         return [[self activeUndoManager] canRedo];
     }
-    if ([identifier isEqualToString:ToolbarItemCopy]) {
+    if ([identifier isEqualToString:ToolbarItemCopy] || [identifier isEqualToString:ToolbarItemSave]) {
         return [self.canvasView hasImage];
     }
     if ([identifier isEqualToString:ToolbarItemZoom]) {
@@ -2814,6 +2825,10 @@ static id STInfoValueForKey(NSString *key) {
     if ([identifier isEqualToString:ToolbarItemCopy]) {
         return @"CopyImage";
     }
+    if ([identifier isEqualToString:ToolbarItemSave]) {
+        // Drawn with the v0.2.0 icon set (#221); until it lands, Save shows its label alone.
+        return @"Save";
+    }
     if ([identifier isEqualToString:ToolbarItemPreferences]) {
         return @"Preferences";
     }
@@ -2860,7 +2875,7 @@ static id STInfoValueForKey(NSString *key) {
     ScreenshotToolAppendLog([NSString stringWithFormat:@"refreshToolButtonIcons: active=%@", activeIdentifier]);
 
     [self refreshToolbarToolsControl];
-    NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[ToolbarItemUndo, ToolbarItemRedo, ToolbarItemCopy, ToolbarItemPreferences];
+    NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[ToolbarItemUndo, ToolbarItemRedo, ToolbarItemSave, ToolbarItemCopy, ToolbarItemPreferences];
     for (NSToolbarItemIdentifier identifier in toolIdentifiers) {
         NSToolbarItem *item = [self toolbarItemForIdentifier:identifier];
         if (!item) {
@@ -2870,12 +2885,22 @@ static id STInfoValueForKey(NSString *key) {
 
         [self applyToolTipToToolbarItem:item source:@"refresh-icons"];
         BOOL isEnabled = YES;
-        if ([identifier isEqualToString:ToolbarItemCopy]) {
+        if ([identifier isEqualToString:ToolbarItemCopy] || [identifier isEqualToString:ToolbarItemSave]) {
             isEnabled = [self.canvasView hasImage];
         } else if ([identifier isEqualToString:ToolbarItemUndo] || [identifier isEqualToString:ToolbarItemRedo]) {
             isEnabled = [self validateToolbarItem:item];
         }
         item.enabled = isEnabled;
+        // A labelled button (Copy and Save on GNUstep, #221) is enabled even without an icon.
+        if (item.view && [item.view respondsToSelector:@selector(setEnabled:)]) {
+            [(NSControl *)item.view setEnabled:isEnabled];
+            [self adjustToolbarCustomViewVerticalOffset:item.view];
+        }
+#if defined(GNUSTEP)
+        if ([identifier isEqualToString:ToolbarItemCopy] || [identifier isEqualToString:ToolbarItemSave]) {
+            continue;
+        }
+#endif
 
         BOOL isActive = (activeIdentifier && [identifier isEqualToString:activeIdentifier]);
         NSImage *icon = [self toolbarImageForIdentifier:identifier active:isActive];
@@ -2902,6 +2927,7 @@ static id STInfoValueForKey(NSString *key) {
     }
     [self refreshToolbarColorControl];
     [self refreshZoomToolbarControl];
+    [self refreshStatusZoomControls];
 }
 
 - (void)rebuildToolbarBadges {
@@ -2922,6 +2948,7 @@ static id STInfoValueForKey(NSString *key) {
              ToolbarItemRedo,
              ToolbarItemTools,
              ToolbarItemColor,
+             ToolbarItemSave,
              ToolbarItemCopy,
 #if !defined(GNUSTEP)
              ToolbarItemShare,
@@ -2936,11 +2963,13 @@ static id STInfoValueForKey(NSString *key) {
     (void)toolbar;
     // Zoom and Preferences live in the View and app menus (with shortcuts) and can be added back
     // by customising the toolbar (#53). Undo and Redo lead, where GNOME apps keep them (#101).
+    // The commands that finish the job close the row, Copy last as the main one (#221).
     return @[ToolbarItemUndo,
              ToolbarItemRedo,
              ToolbarItemTools,
              ToolbarItemColor,
              NSToolbarFlexibleSpaceItemIdentifier,
+             ToolbarItemSave,
 #if !defined(GNUSTEP)
              ToolbarItemShare,
 #endif
@@ -3031,6 +3060,37 @@ static id STInfoValueForKey(NSString *key) {
         item.delegate = self;
         return item;
     }
+    if ([identifier isEqualToString:ToolbarItemSave]) {
+        NSToolbarItem *item = [self baselineToolbarItemWithIdentifier:ToolbarItemSave
+                                                                label:@"Save"
+                                                               action:@selector(saveDocumentAs:)
+                                                            imageName:@"Save"];
+        if (!item.image) {
+            if (@available(macOS 11.0, *)) {
+                item.image = [NSImage imageWithSystemSymbolName:@"square.and.arrow.down"
+                                       accessibilityDescription:@"Save"];
+            }
+        }
+        item.toolTip = @"Save the annotated image";
+        return item;
+    }
+#else
+    // Copy and Save finish the job, so they're buttons with their names rather than bare icons,
+    // and Copy is the accent one, as a WinUI command bar's main command is (#221).
+    if ([identifier isEqualToString:ToolbarItemSave]) {
+        return [self labelledToolbarItemWithIdentifier:ToolbarItemSave
+                                                 label:@"Save"
+                                               toolTip:@"Save the annotated image"
+                                                action:@selector(saveDocumentAs:)
+                                                accent:NO];
+    }
+    if ([identifier isEqualToString:ToolbarItemCopy]) {
+        return [self labelledToolbarItemWithIdentifier:ToolbarItemCopy
+                                                 label:@"Copy"
+                                               toolTip:@"Copy the annotated image"
+                                                action:@selector(copy:)
+                                                accent:YES];
+    }
 #endif
     if ([identifier isEqualToString:ToolbarItemCopy]) {
         return [self baselineToolbarItemWithIdentifier:ToolbarItemCopy
@@ -3076,6 +3136,43 @@ static id STInfoValueForKey(NSString *key) {
     }
     return item;
 }
+
+#if defined(GNUSTEP)
+/// A toolbar item that's a push button with its name (#221). It has no icon: the toolbar's icons
+/// are monochrome ones the theme tints for its own toolbar buttons, and a button's image isn't
+/// tinted, so it would stay black on an accent fill or a dark toolbar.
+- (NSToolbarItem *)labelledToolbarItemWithIdentifier:(NSToolbarItemIdentifier)identifier
+                                               label:(NSString *)label
+                                             toolTip:(NSString *)toolTip
+                                              action:(SEL)selector
+                                              accent:(BOOL)accent {
+    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 64.0f, STToolbarZoomControlHeight)];
+    button.title = label;
+    [button setBezelStyle:NSRoundedBezelStyle];
+    button.target = self;
+    button.action = selector;
+    button.toolTip = toolTip;
+    STApplyAccessibilityLabel(button, label);
+    // A theme-neutral way to ask for the theme's accent button. Not a Return key equivalent or
+    // the window's default button: Return must not copy, least of all while typing a text
+    // annotation (#103).
+    if (accent && [button respondsToSelector:@selector(setGSThemeStyle:)]) {
+        [button performSelector:@selector(setGSThemeStyle:) withObject:@"accent"];
+    }
+    [button sizeToFit];
+    NSSize size = NSMakeSize(MAX(64.0f, ceil(NSWidth(button.frame)) + 20.0f), STToolbarZoomControlHeight);
+    [button setFrameSize:size];
+
+    NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:identifier];
+    item.label = @"";
+    item.paletteLabel = label;
+    item.toolTip = toolTip;
+    item.view = button;
+    item.minSize = size;
+    item.maxSize = size;
+    return item;
+}
+#endif
 
 - (NSInteger)toolbarSegmentIndexForTool:(ScreenshotCanvasTool)tool {
     switch (tool) {
@@ -3833,6 +3930,117 @@ static id STInfoValueForKey(NSString *key) {
     // updateStatusBarVisibility shows it and lays it out.
     container.hidden = !self.statusBarVisiblePreference;
     [self updateToolWidthControls];
+
+    // Zoom at the bar's end, as Paint and Photos have it: out, a slider, in, the scale and Fit
+    // (#221). The slider is logarithmic, as the zoom popover's is.
+    NSView *zoomContainer = [[NSView alloc] initWithFrame:NSZeroRect];
+    zoomContainer.autoresizingMask = (NSViewMinXMargin | NSViewHeightSizable);
+    self.statusZoomContainer = zoomContainer;
+    [self.statusBarView addSubview:zoomContainer];
+
+    self.statusZoomOutButton = [self statusZoomButtonWithTitle:@"−" action:@selector(zoomOut:) label:@"Zoom out"];
+    [zoomContainer addSubview:self.statusZoomOutButton];
+
+    NSSlider *zoomSlider = [[NSSlider alloc] initWithFrame:NSZeroRect];
+    [zoomSlider setMinValue:0.0];
+    [zoomSlider setMaxValue:1.0];
+    [zoomSlider setContinuous:YES];
+    [zoomSlider setNumberOfTickMarks:0];
+    zoomSlider.target = self;
+    zoomSlider.action = @selector(statusZoomSliderChanged:);
+    self.statusZoomSlider = zoomSlider;
+    STApplyAccessibilityLabel(zoomSlider, @"Zoom");
+    [zoomContainer addSubview:zoomSlider];
+
+    self.statusZoomInButton = [self statusZoomButtonWithTitle:@"+" action:@selector(zoomIn:) label:@"Zoom in"];
+    [zoomContainer addSubview:self.statusZoomInButton];
+
+    NSTextField *zoomLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    [zoomLabel setEditable:NO];
+    [zoomLabel setBezeled:NO];
+    [zoomLabel setBordered:NO];
+    [zoomLabel setDrawsBackground:NO];
+    [zoomLabel setAlignment:NSTextAlignmentRight];
+    [zoomLabel setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
+    [zoomLabel setTextColor:STThemeStatusValueTextColor()];
+    self.statusZoomLabel = zoomLabel;
+    [zoomContainer addSubview:zoomLabel];
+
+    NSButton *fitButton = [[NSButton alloc] initWithFrame:NSZeroRect];
+    fitButton.title = @"Fit";
+#ifdef NSRoundedBezelStyle
+    [fitButton setBezelStyle:NSRoundedBezelStyle];
+#endif
+    [fitButton setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
+    fitButton.target = self;
+    fitButton.action = @selector(zoomFitToWindow:);
+    fitButton.toolTip = @"Fit to Window";
+    STApplyAccessibilityLabel(fitButton, @"Fit to window");
+    self.statusZoomFitButton = fitButton;
+    [zoomContainer addSubview:fitButton];
+
+    zoomContainer.hidden = !self.statusBarVisiblePreference;
+    [self refreshStatusZoomControls];
+}
+
+- (NSButton *)statusZoomButtonWithTitle:(NSString *)title action:(SEL)action label:(NSString *)label {
+    NSButton *button = [[NSButton alloc] initWithFrame:NSZeroRect];
+    button.title = title;
+    [button setBordered:NO];
+    [button setFont:[NSFont systemFontOfSize:[NSFont systemFontSize]]];
+    button.target = self;
+    button.action = action;
+    button.toolTip = label;
+    STApplyAccessibilityLabel(button, label);
+    return button;
+}
+
+- (void)statusZoomSliderChanged:(NSSlider *)sender {
+    if (![self.canvasView hasImage]) {
+        return;
+    }
+    [self setZoomScale:STZoomScaleForSliderFraction(sender.doubleValue)];
+}
+
+/// The zoom controls and, while no message shows, the image's size and format (#221).
+- (void)refreshStatusZoomControls {
+    BOOL hasImage = [self.canvasView hasImage];
+    if (self.statusZoomContainer) {
+        BOOL hidden = !self.statusBarVisiblePreference || !hasImage;
+        if (self.statusZoomContainer.isHidden != hidden) {
+            self.statusZoomContainer.hidden = hidden;
+            [self layoutStatusControls];
+        }
+    }
+    if (hasImage) {
+        CGFloat scale = self.canvasView.displayZoomScale;
+        self.statusZoomSlider.doubleValue = STZoomSliderFractionForScale(scale);
+        self.statusZoomLabel.stringValue = [self displayStringForScale:scale];
+    }
+    if (self.statusTextField && !self.statusClearTimer) {
+        [self.statusTextField setStringValue:[self idleStatusText]];
+    }
+}
+
+/// "1600 × 1000 px · PNG": the image's pixel size and its file's format.
+- (NSString *)idleStatusText {
+    NSImage *image = self.canvasView.image;
+    if (!image) {
+        return @"";
+    }
+    NSSize pixels = image.size;
+    for (NSImageRep *rep in image.representations) {
+        if (rep.pixelsWide > 0 && rep.pixelsHigh > 0) {
+            pixels = NSMakeSize(rep.pixelsWide, rep.pixelsHigh);
+            break;
+        }
+    }
+    NSString *text = [NSString stringWithFormat:@"%.0f × %.0f px", pixels.width, pixels.height];
+    NSString *extension = self.currentImageURL.pathExtension;
+    if (extension.length > 0) {
+        text = [text stringByAppendingFormat:@"  ·  %@", extension.uppercaseString];
+    }
+    return text;
 }
 
 - (void)layoutStatusControls {
@@ -3844,6 +4052,15 @@ static id STInfoValueForKey(NSString *key) {
     CGFloat padding = 8.0f;
     CGFloat verticalInset = 4.0f;
     CGFloat availableHeight = MAX(0.0f, bounds.size.height - (verticalInset * 2.0f));
+
+    // The zoom controls take the bar's end (#221); the width controls sit to their left.
+    CGFloat rightEdge = bounds.size.width - padding;
+    if (self.statusZoomContainer && !self.statusZoomContainer.isHidden) {
+        CGFloat zoomWidth = [self layoutStatusZoomControlsWithRightEdge:rightEdge
+                                                          verticalInset:verticalInset
+                                                                 height:availableHeight];
+        rightEdge -= zoomWidth + (padding * 2.0f);
+    }
 
     CGFloat controlsWidth = 0.0f;
     if (self.statusControlsContainer && !self.statusControlsContainer.isHidden) {
@@ -3860,13 +4077,13 @@ static id STInfoValueForKey(NSString *key) {
         CGFloat spacing = 6.0f;
         controlsWidth = labelWidth + sliderWidth + valueWidth + optionsWidth + (spacing * 3.0f);
 
-        CGFloat maxControlsWidth = bounds.size.width - (padding * 2.0f);
+        CGFloat maxControlsWidth = rightEdge - padding;
         if (controlsWidth > maxControlsWidth) {
             sliderWidth = MAX(160.0f, maxControlsWidth - (labelWidth + valueWidth + optionsWidth + (spacing * 3.0f)));
             controlsWidth = labelWidth + sliderWidth + valueWidth + optionsWidth + (spacing * 3.0f);
         }
 
-        CGFloat containerX = bounds.size.width - padding - controlsWidth;
+        CGFloat containerX = rightEdge - controlsWidth;
         if (containerX < padding) {
             containerX = padding;
         }
@@ -3908,13 +4125,13 @@ static id STInfoValueForKey(NSString *key) {
                                                            buttonHeight);
         }
     } else if (self.statusControlsContainer) {
-        self.statusControlsContainer.frame = NSMakeRect(bounds.size.width - padding,
+        self.statusControlsContainer.frame = NSMakeRect(rightEdge,
                                                         verticalInset,
                                                         0.0f,
                                                         availableHeight);
     }
 
-    CGFloat textWidth = MAX(0.0f, bounds.size.width - (padding * 2.0f));
+    CGFloat textWidth = MAX(0.0f, rightEdge - padding);
     if (self.statusControlsContainer && !self.statusControlsContainer.isHidden) {
         CGFloat limit = self.statusControlsContainer.frame.origin.x - padding;
         textWidth = MAX(0.0f, limit - padding);
@@ -3923,6 +4140,35 @@ static id STInfoValueForKey(NSString *key) {
                                             verticalInset,
                                             textWidth,
                                             availableHeight);
+}
+
+/// Lays the zoom controls out to end at rightEdge and returns their width.
+- (CGFloat)layoutStatusZoomControlsWithRightEdge:(CGFloat)rightEdge
+                                   verticalInset:(CGFloat)verticalInset
+                                          height:(CGFloat)height {
+    CGFloat buttonWidth = 24.0f;
+    CGFloat sliderWidth = 120.0f;
+    CGFloat labelWidth = 44.0f;
+    [self.statusZoomFitButton sizeToFit];
+    CGFloat fitWidth = MAX(40.0f, NSWidth(self.statusZoomFitButton.frame));
+    CGFloat spacing = 6.0f;
+    CGFloat width = buttonWidth + sliderWidth + buttonWidth + labelWidth + fitWidth + (spacing * 4.0f);
+    self.statusZoomContainer.frame = NSMakeRect(rightEdge - width, verticalInset, width, height);
+
+    CGFloat controlHeight = MIN(height, 24.0f);
+    CGFloat controlY = floor((height - controlHeight) / 2.0f);
+    CGFloat labelHeight = MIN(height, 18.0f);
+    CGFloat x = 0.0f;
+    self.statusZoomOutButton.frame = NSMakeRect(x, controlY, buttonWidth, controlHeight);
+    x += buttonWidth + spacing;
+    self.statusZoomSlider.frame = NSMakeRect(x, controlY, sliderWidth, controlHeight);
+    x += sliderWidth + spacing;
+    self.statusZoomInButton.frame = NSMakeRect(x, controlY, buttonWidth, controlHeight);
+    x += buttonWidth + spacing;
+    self.statusZoomLabel.frame = NSMakeRect(x, floor((height - labelHeight) / 2.0f), labelWidth, labelHeight);
+    x += labelWidth + spacing;
+    self.statusZoomFitButton.frame = NSMakeRect(x, controlY, fitWidth, controlHeight);
+    return width;
 }
 
 - (CGFloat)statusBarHeight {
@@ -3942,6 +4188,7 @@ static id STInfoValueForKey(NSString *key) {
     if (self.statusTextField) {
         [self.statusTextField setHidden:!show];
     }
+    [self refreshStatusZoomControls];
     if (!show) {
         [self.statusClearTimer invalidate];
         self.statusClearTimer = nil;
@@ -3997,6 +4244,9 @@ static id STInfoValueForKey(NSString *key) {
     }
     if (self.zoomToolbarLabel) {
         [self.zoomToolbarLabel setTextColor:STThemeToolbarLabelColor()];
+    }
+    if (self.statusZoomLabel) {
+        [self.statusZoomLabel setTextColor:STThemeStatusValueTextColor()];
     }
     [self updateToolWidthControls];
     if (self.statusBarView) {
@@ -5139,7 +5389,8 @@ static id STInfoValueForKey(NSString *key) {
             [undo disableUndoRegistration];
         }
 
-        [self.statusTextField setStringValue:@""];
+        // Back to the image's size and format (#221).
+        [self.statusTextField setStringValue:[self idleStatusText]];
 
         if (undoWasEnabled) {
             [undo enableUndoRegistration];
@@ -6738,6 +6989,7 @@ static id STInfoValueForKey(NSString *key) {
 - (void)reflectZoomSelection {
     [self refreshZoomToolbarControl];
     [self.zoomPopoverController refresh];
+    [self refreshStatusZoomControls];
 }
 
 - (BOOL)openImageAtURL:(NSURL *)url {
