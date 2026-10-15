@@ -24,11 +24,16 @@
 }
 
 - (void)updateDraggedTypes {
+#if defined(GNUSTEP)
+    // GNUstep has no NSPasteboardTypeFileURL, and the app takes drops only on macOS so far.
+    [self unregisterDraggedTypes];
+#else
     if (self.dragOperation && self.performDrop) {
         [self registerForDraggedTypes:@[NSPasteboardTypeFileURL, NSPasteboardTypePNG, NSPasteboardTypeTIFF]];
     } else {
         [self unregisterDraggedTypes];
     }
+#endif
 }
 
 - (void)setDragOperation:(NSDragOperation (^)(id<NSDraggingInfo>))dragOperation {
