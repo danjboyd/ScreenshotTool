@@ -79,6 +79,10 @@ static const NSTimeInterval STHudFadeInDuration = 0.12;
 static const NSTimeInterval STHudFadeOutDuration = 0.20;
 static const CGFloat ToolbarIconDimension = 32.0f;
 static const NSUInteger STRecentDocumentLimit = 10;
+/// The empty state's Recent row (#221): its label's tag, its cards' first tag and their number.
+static const NSInteger STEmptyStateRecentLabelTag = 7;
+static const NSInteger STEmptyStateRecentFirstCardTag = 20;
+static const NSInteger STEmptyStateRecentCount = 3;
 static NSString * const STRecentDocumentsEmptyTitle = @"No Recent Documents";
 static NSString * const STRecentDocumentsClearTitle = @"Clear Menu";
 static const CGFloat STToolbarToolSegmentWidth = 46.0f;
@@ -1257,6 +1261,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSScrollView *scrollView;
 /// Shown instead of the canvas while no image is open (#55).
 @property (nonatomic, strong) NSView *emptyStateView;
+/// Whether the empty state's Recent cards have been filled since the window was made (#221).
+@property (nonatomic, assign) BOOL emptyStateRecentsLoaded;
 @property (nonatomic, strong) ScreenshotCanvasView *canvasView;
 @property (nonatomic, strong) NSToolbar *toolbar;
 @property (nonatomic, strong) NSMutableDictionary<NSToolbarItemIdentifier, NSToolbarItem *> *toolbarItemsByIdentifier;
@@ -1547,7 +1553,10 @@ static AppDelegate *STFrontDocument(void) {
         if (recent) {
             [self fillRecentDocumentsMenu:recent];
         }
+        [document refreshEmptyStateRecents];
     }
+#else
+    [self refreshEmptyStateRecents];
 #endif
     if (!self.openRecentMenu) {
         return;
@@ -5461,8 +5470,9 @@ static id STInfoValueForKey(NSString *key) {
     [self.emptyStateView setHidden:hasImage];
     [self updateDrawingToolsForImage:hasImage];
     if (emptyStateWasHidden && !hasImage) {
-        // The last image closed: Paste's state may be out of date.
+        // The last image closed: Paste's state and the Recent cards may be out of date.
         [self performSelector:@selector(refreshPasteAvailability) withObject:nil afterDelay:0.0];
+        [self performSelector:@selector(refreshEmptyStateRecents) withObject:nil afterDelay:0.0];
     }
     // Return opens a file only from the empty state: GNUstep offers key equivalents to hidden
     // buttons too, so with an image open the Open button took every Return no control consumed,
@@ -5580,7 +5590,196 @@ static id STInfoValueForKey(NSString *key) {
     [capture setTag:6];
     [capture setHidden:![STScreenshotCapture isAvailable]];
     [view addSubview:capture];
+
+    // Recent: the last files opened, as cards with thumbnails (#221). Filled by
+    // -refreshEmptyStateRecents; hidden while there are none or the window is too short.
+    NSTextField *recentLabel = [self emptyStateLabel:@"Recent" font:[NSFont boldSystemFontOfSize:[NSFont systemFontSize]]];
+    [recentLabel setAlignment:NSTextAlignmentLeft];
+    [recentLabel setTag:STEmptyStateRecentLabelTag];
+    [recentLabel setHidden:YES];
+    [view addSubview:recentLabel];
+    for (NSInteger index = 0; index < STEmptyStateRecentCount; index++) {
+        STRecentCard *card = [[STRecentCard alloc] initWithFrame:NSMakeRect(0.0, 0.0, 200.0, [STRecentCard heightForWidth:200.0])];
+        [card setTarget:self];
+        [card setAction:@selector(openRecentDocument:)];
+        [card setTag:STEmptyStateRecentFirstCardTag + index];
+        [card setHidden:YES];
+        [view addSubview:card];
+    }
     return view;
+}
+
+/// Up to three recent files that still exist, newest first.
+- (NSArray<NSString *> *)emptyStateRecentPaths {
+#if defined(GNUSTEP)
+    AppDelegate *application = self;
+#else
+    AppDelegate *application = [self applicationController];
+#endif
+    [application ensureRecentDocumentPathsLoaded];
+    NSMutableArray<NSString *> *paths = [NSMutableArray array];
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    for (NSString *path in application.recentDocumentPaths) {
+        BOOL isDirectory = NO;
+        if ([fileManager fileExistsAtPath:path isDirectory:&isDirectory] && !isDirectory) {
+            [paths addObject:path];
+        }
+        if (paths.count == STEmptyStateRecentCount) {
+            break;
+        }
+    }
+    return paths;
+}
+
+/// When the file last changed, as "Today at 3:14 PM" (macOS) or a date and time.
+- (NSString *)emptyStateRecentDetailForDate:(NSDate *)date {
+    if (!date) {
+        return @"";
+    }
+    static NSDateFormatter *formatter = nil;
+    if (!formatter) {
+        formatter = [[NSDateFormatter alloc] init];
+        formatter.dateStyle = NSDateFormatterMediumStyle;
+        formatter.timeStyle = NSDateFormatterShortStyle;
+#if !defined(GNUSTEP)
+        formatter.doesRelativeDateFormatting = YES;
+#endif
+    }
+    return [formatter stringFromDate:date] ?: @"";
+}
+
+/// Thumbnails already made, by path and modification date, so a refresh doesn't decode again.
+static NSCache<NSString *, NSImage *> *STEmptyStateThumbnails(void) {
+    static NSCache *cache = nil;
+    if (!cache) {
+        cache = [[NSCache alloc] init];
+        cache.countLimit = 12;
+    }
+    return cache;
+}
+
+/// The image at `path` scaled to fit `maximum` pixels on its long side, or nil if it isn't one.
+static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
+#if defined(GNUSTEP)
+    NSImage *image = [[NSImage alloc] initWithContentsOfFile:path];
+    NSSize size = image.size;
+    if (!image || size.width < 1.0 || size.height < 1.0) {
+        return nil;
+    }
+    CGFloat scale = MIN(1.0, maximum / MAX(size.width, size.height));
+    NSSize scaled = NSMakeSize(MAX(1.0, floor(size.width * scale)), MAX(1.0, floor(size.height * scale)));
+    NSImage *thumbnail = [[NSImage alloc] initWithSize:scaled];
+    [thumbnail lockFocus];
+    [image drawInRect:NSMakeRect(0.0, 0.0, scaled.width, scaled.height) fromRect:NSZeroRect
+            operation:NSCompositeSourceOver fraction:1.0];
+    [thumbnail unlockFocus];
+    return thumbnail;
+#else
+    // Off the main thread: decode with the image rep, scale with Core Graphics.
+    NSData *data = [NSData dataWithContentsOfFile:path options:NSDataReadingMappedIfSafe error:NULL];
+    NSBitmapImageRep *rep = data ? [NSBitmapImageRep imageRepWithData:data] : nil;
+    CGImageRef source = rep.CGImage;
+    if (!source) {
+        return nil;
+    }
+    size_t width = CGImageGetWidth(source), height = CGImageGetHeight(source);
+    CGFloat scale = MIN(1.0, maximum / (CGFloat)MAX(width, height));
+    size_t scaledWidth = MAX((size_t)1, (size_t)floor(width * scale));
+    size_t scaledHeight = MAX((size_t)1, (size_t)floor(height * scale));
+    CGColorSpaceRef space = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef context = CGBitmapContextCreate(NULL, scaledWidth, scaledHeight, 8, 0, space,
+                                                 (CGBitmapInfo)kCGImageAlphaPremultipliedLast);
+    CGColorSpaceRelease(space);
+    if (!context) {
+        return nil;
+    }
+    CGContextSetInterpolationQuality(context, kCGInterpolationHigh);
+    CGContextDrawImage(context, CGRectMake(0, 0, scaledWidth, scaledHeight), source);
+    CGImageRef scaledImage = CGBitmapContextCreateImage(context);
+    CGContextRelease(context);
+    if (!scaledImage) {
+        return nil;
+    }
+    // Points at half the pixels: drawn on a 2x screen at full sharpness.
+    NSImage *thumbnail = [[NSImage alloc] initWithCGImage:scaledImage
+                                                     size:NSMakeSize(scaledWidth / 2.0, scaledHeight / 2.0)];
+    CGImageRelease(scaledImage);
+    return thumbnail;
+#endif
+}
+
+/// Fills the Recent cards from Open Recent's list, and starts any thumbnails not yet made.
+- (void)refreshEmptyStateRecents {
+    NSView *view = self.emptyStateView;
+    if (!view) {
+        return;
+    }
+    self.emptyStateRecentsLoaded = YES;
+    NSArray<NSString *> *paths = [self emptyStateRecentPaths];
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    for (NSInteger index = 0; index < STEmptyStateRecentCount; index++) {
+        STRecentCard *card = [view viewWithTag:STEmptyStateRecentFirstCardTag + index];
+        if (![card isKindOfClass:[STRecentCard class]]) {
+            continue;
+        }
+        if (index >= (NSInteger)paths.count) {
+            card.representedObject = nil;
+            card.thumbnail = nil;
+            [card setHidden:YES];
+            continue;
+        }
+        NSString *path = paths[index];
+        NSDate *modified = [[fileManager attributesOfItemAtPath:path error:NULL] fileModificationDate];
+        NSString *name = [fileManager displayNameAtPath:path] ?: path.lastPathComponent;
+        [card setTitle:name];
+        [card setToolTip:[path stringByAbbreviatingWithTildeInPath]];
+        STApplyAccessibilityLabel(card, [NSString stringWithFormat:@"Open %@", name]);
+        card.detail = [self emptyStateRecentDetailForDate:modified];
+        card.placeholder = [[NSWorkspace sharedWorkspace] iconForFile:path];
+        NSString *key = [NSString stringWithFormat:@"%@|%f", path, modified.timeIntervalSinceReferenceDate];
+        BOOL samePath = [card.representedObject isEqual:path];
+        card.representedObject = path;
+        NSImage *cached = [STEmptyStateThumbnails() objectForKey:key];
+        if (cached) {
+            card.thumbnail = cached;
+        } else {
+            if (!samePath) {
+                card.thumbnail = nil;
+            }
+            [self loadEmptyStateThumbnailForCard:card path:path key:key];
+        }
+    }
+    [self layoutContentSubviews];
+}
+
+- (void)loadEmptyStateThumbnailForCard:(STRecentCard *)card path:(NSString *)path key:(NSString *)key {
+    __weak STRecentCard *weakCard = card;
+    void (^apply)(NSImage *) = ^(NSImage *thumbnail) {
+        if (!thumbnail) {
+            return;
+        }
+        [STEmptyStateThumbnails() setObject:thumbnail forKey:key];
+        STRecentCard *strongCard = weakCard;
+        // Unless the card has moved on to another file meanwhile.
+        if ([strongCard.representedObject isEqual:path]) {
+            strongCard.thumbnail = thumbnail;
+        }
+    };
+    // Twice the 2x card's width, so the crop stays sharp.
+    CGFloat maximum = 640.0;
+#if defined(GNUSTEP)
+    // GNUstep's image classes are main-thread only: one per turn of the run loop, after launch.
+    [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+        apply(STEmptyStateThumbnailForFile(path, maximum));
+    }];
+#else
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        NSImage *thumbnail = STEmptyStateThumbnailForFile(path, maximum);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            apply(thumbnail);
+        });
+    });
+#endif
 }
 
 /// The line under the heading: what the window can take, by the shortcuts this platform shows.
@@ -5705,6 +5904,36 @@ static id STInfoValueForKey(NSString *key) {
         rowHeight = MAX(rowHeight, NSHeight(button.frame));
     }
     CGFloat total = NSHeight(icon.frame) + gap + NSHeight(title.frame) + 6.0 + NSHeight(detail.frame) + 18.0 + rowHeight;
+
+    // Recent, under the buttons: a row of up to three cards, if the window has room for it.
+    if (!self.emptyStateRecentsLoaded) {
+        [self refreshEmptyStateRecents];
+    }
+    NSTextField *recentLabel = [view viewWithTag:STEmptyStateRecentLabelTag];
+    NSMutableArray<STRecentCard *> *cards = [NSMutableArray array];
+    for (NSInteger index = 0; index < STEmptyStateRecentCount; index++) {
+        STRecentCard *card = [view viewWithTag:STEmptyStateRecentFirstCardTag + index];
+        if ([card isKindOfClass:[STRecentCard class]] && card.representedObject) {
+            [cards addObject:card];
+        }
+    }
+    CGFloat inset = [STEmptyStateView outlineInset];
+    CGFloat recentWidth = MIN(672.0, NSWidth(frame) - 4.0 * inset);
+    CGFloat cardGap = 16.0;
+    CGFloat cardWidth = floor((recentWidth - cardGap * (CGFloat)(STEmptyStateRecentCount - 1)) / (CGFloat)STEmptyStateRecentCount);
+    CGFloat cardHeight = [STRecentCard heightForWidth:cardWidth];
+    [recentLabel sizeToFit];
+    CGFloat recentHeight = 34.0 + NSHeight(recentLabel.frame) + 8.0 + cardHeight;
+    BOOL showRecents = cards.count > 0 && cardWidth >= 140.0 &&
+        total + recentHeight <= NSHeight(frame) - 2.0 * inset - 24.0;
+    if (showRecents) {
+        total += recentHeight;
+    }
+    [recentLabel setHidden:!showRecents];
+    for (NSInteger index = 0; index < STEmptyStateRecentCount; index++) {
+        NSView *card = [view viewWithTag:STEmptyStateRecentFirstCardTag + index];
+        [card setHidden:!(showRecents && [cards containsObject:(STRecentCard *)card])];
+    }
     CGFloat midX = floor(NSWidth(frame) / 2.0);
     CGFloat y = floor((NSHeight(frame) + total) / 2.0);
     y -= NSHeight(icon.frame);
@@ -5719,6 +5948,17 @@ static id STInfoValueForKey(NSString *key) {
         // Centred on the row: NSComboButton is shorter than the 32pt push buttons.
         [button setFrameOrigin:NSMakePoint(x, y + floor((rowHeight - NSHeight(button.frame)) / 2.0))];
         x += NSWidth(button.frame) + buttonGap;
+    }
+    if (showRecents) {
+        CGFloat left = midX - floor(recentWidth / 2.0);
+        y -= 34.0 + NSHeight(recentLabel.frame);
+        [recentLabel setFrameOrigin:NSMakePoint(left, y)];
+        y -= 8.0 + cardHeight;
+        CGFloat cardX = left;
+        for (STRecentCard *card in cards) {
+            [card setFrame:NSMakeRect(cardX, y, cardWidth, cardHeight)];
+            cardX += cardWidth + cardGap;
+        }
     }
     [view setNeedsDisplay:YES];
 }
@@ -5873,8 +6113,9 @@ static id STInfoValueForKey(NSString *key) {
 
 - (void)openRecentDocument:(id)sender {
     NSString *path = nil;
-    if ([sender isKindOfClass:[NSMenuItem class]]) {
-        id representedObject = [(NSMenuItem *)sender representedObject];
+    // A menu item, or the empty state's Recent card (#221).
+    if ([sender isKindOfClass:[NSMenuItem class]] || [sender isKindOfClass:[STRecentCard class]]) {
+        id representedObject = [sender representedObject];
         if ([representedObject isKindOfClass:[NSString class]]) {
             path = [(NSString *)representedObject stringByStandardizingPath];
         }

@@ -20,4 +20,21 @@ NS_ASSUME_NONNULL_BEGIN
 
 @end
 
+/// One of the empty state's Recent cards (#221): a file's thumbnail with its name and when it
+/// changed, on a card in the theme's colours. A button, so it's clicked, focused and read out as
+/// one; its title is the name. Its action gets the card as sender, the file's path its
+/// representedObject, as an Open Recent menu item's.
+@interface STRecentCard : NSButton
+
+/// The card's size for a given width: the thumbnail is 112pt tall.
++ (CGFloat)heightForWidth:(CGFloat)width;
+
+@property (nonatomic, copy, nullable) id representedObject;
+@property (nonatomic, copy) NSString *detail;
+/// Drawn to fill the thumbnail's frame, cropped. Without one, `placeholder` is drawn small.
+@property (nonatomic, strong, nullable) NSImage *thumbnail;
+@property (nonatomic, strong, nullable) NSImage *placeholder;
+
+@end
+
 NS_ASSUME_NONNULL_END
