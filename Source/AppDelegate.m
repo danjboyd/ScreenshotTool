@@ -5645,7 +5645,14 @@ static id STInfoValueForKey(NSString *key) {
         formatter.doesRelativeDateFormatting = YES;
 #endif
     }
-    return [formatter stringFromDate:date] ?: @"";
+    NSString *text = [formatter stringFromDate:date] ?: @"";
+#if defined(GNUSTEP)
+    // ICU puts a narrow no-break space before AM/PM, which GNUstep's text drawing has no glyph
+    // for (it showed as "?"); plain spaces read the same.
+    text = [text stringByReplacingOccurrencesOfString:@"\u202F" withString:@" "];
+    text = [text stringByReplacingOccurrencesOfString:@"\u00A0" withString:@" "];
+#endif
+    return text;
 }
 
 /// Thumbnails already made, by path and modification date, so a refresh doesn't decode again.
