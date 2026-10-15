@@ -202,7 +202,7 @@ jobs:
         # WM_DELETE_WINDOW on them, Mutter kills the app on Alt+F4. The script runs its own Xvfb
         # and Mutter (GNOME Shell's window manager).
         run: |
-          sudo apt-get install -y --no-install-recommends mutter dbus-daemon >/dev/null
+          sudo apt-get install -y --no-install-recommends mutter dbus-daemon wmctrl >/dev/null
           CHECK_WM=mutter Tools/check_wm_close.sh "${{ steps.naming.outputs.appimage_path }}"
       - name: Smoke test AppImage on a host without GNUstep
         # The runner's /usr/GNUstep would hide an AppImage that loads the host's GNUstep.

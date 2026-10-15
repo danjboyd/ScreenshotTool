@@ -246,9 +246,10 @@ as the `screenshots` artifact.
 
 `Tools/check_wm_close.sh ScreenshotTool-x86_64.AppImage` runs the AppImage as GNOME would, with
 the Adwaita theme, under GNOME Shell or Mutter on a private virtual display. It checks that
-the windows list `WM_DELETE_WINDOW` and that Alt+F4 closes Preferences and then the main
-window without the window manager killing the app. It needs Xvfb, xdotool, x11-utils and
-`dbus-run-session`. Your GNUstep defaults are left untouched. CI runs it on each AppImage.
+the windows list `WM_DELETE_WINDOW`, and that asking the window manager to close Preferences,
+then the main window (as Alt+F4 or the Overview does), closes them without the app being
+killed. It needs Xvfb, xdotool, x11-utils, wmctrl and `dbus-run-session`. Your GNUstep
+defaults are left untouched. CI runs it on each AppImage.
 
 ## Usage Tips
 - Double-click a tool's toolbar button to open its popover.

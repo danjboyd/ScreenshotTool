@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Checks that the AppImage's windows close, rather than the app being killed, when a GNOME window
-# manager is asked to close them (Alt+F4, the Overview's close button, Close in the dock).
+# manager is asked to close them (Alt+F4, the Overview's close button, Close in the dock). It asks
+# with an EWMH close request, which they all send and which needs no keyboard focus.
 #
 # Under GNOME the AppImage uses the Adwaita theme, which draws its own window decorations. Its
 # windows must list WM_DELETE_WINDOW in WM_PROTOCOLS: without it, Mutter has no way to ask the app
@@ -14,7 +15,7 @@
 # GNUstep defaults, so it doesn't touch the desktop or your settings.
 #   CHECK_WM   gnome-shell or mutter (default: gnome-shell if installed, else mutter)
 #   KEEP_WORK  set to keep the work directory (logs, the extracted AppImage)
-# Needs Xvfb, xdotool, xprop (x11-utils), dbus-run-session, and GNOME Shell or Mutter.
+# Needs Xvfb, xdotool, xprop (x11-utils), wmctrl, dbus-run-session, and GNOME Shell or Mutter.
 
 set -uo pipefail
 
@@ -24,7 +25,7 @@ PIDS=()
 APP_PID=""
 FAILURES=0
 
-for tool in Xvfb xdotool xprop dbus-run-session; do
+for tool in Xvfb xdotool xprop wmctrl dbus-run-session; do
   command -v "${tool}" >/dev/null || { echo "check_wm_close: ${tool} is needed" >&2; exit 2; }
 done
 WM="${CHECK_WM:-}"
@@ -49,18 +50,21 @@ trap cleanup EXIT
 fail() { echo "FAIL: $*"; FAILURES=$((FAILURES + 1)); }
 pass() { echo "ok: $*"; }
 
-# The AppImage, extracted so its GNOME configuration can be pointed at private defaults. AppRun
-# sets GNUSTEP_CONFIG_FILE itself, and GNUstep finds the user's home without $HOME, so this is the
-# way to keep the run off ~/GNUstep/Defaults.
+# The AppImage, extracted so its GNUstep configuration can be pointed at private defaults. Its
+# launcher sets GNUSTEP_CONFIG_FILE itself (the release AppImage ships the file; the CI build
+# writes it from a template in the launcher), and GNUstep finds the user's home without $HOME, so
+# this is the way to keep the run off ~/GNUstep/Defaults.
 (cd "${WORK}" && "${APPIMAGE}" --appimage-extract >/dev/null) || { echo "check_wm_close: can't extract ${APPIMAGE}" >&2; exit 2; }
 ROOT="${WORK}/squashfs-root"
-CONF="${ROOT}/usr/runtime/etc/GNUstep-default-theme/GNUstep.conf"
-[[ -f "${CONF}" ]] || { echo "check_wm_close: no GNOME configuration in the AppImage (${CONF})" >&2; exit 2; }
 mkdir -p "${WORK}"/{config,data,cache,state,run,defaults,library}
 chmod 700 "${WORK}/run"
-sed -i -e "s#^GNUSTEP_USER_DEFAULTS_DIR=.*#GNUSTEP_USER_DEFAULTS_DIR=${WORK}/defaults#" \
-       -e "s#^GNUSTEP_USER_DIR_LIBRARY=.*#GNUSTEP_USER_DIR_LIBRARY=${WORK}/library#" "${CONF}"
-chmod 600 "${CONF}"
+patched=0
+while IFS= read -r -d '' file; do
+  sed -i -e "s#^GNUSTEP_USER_DEFAULTS_DIR=.*#GNUSTEP_USER_DEFAULTS_DIR=${WORK}/defaults#" \
+         -e "s#^GNUSTEP_USER_DIR_LIBRARY=.*#GNUSTEP_USER_DIR_LIBRARY=${WORK}/library#" "${file}"
+  patched=$((patched + 1))
+done < <(grep -rlZI --exclude-dir=lib --exclude-dir=Libraries '^GNUSTEP_USER_DEFAULTS_DIR=' "${ROOT}" 2>/dev/null)
+[[ "${patched}" -gt 0 ]] || { echo "check_wm_close: found no GNUSTEP_USER_DEFAULTS_DIR in the AppImage to make private" >&2; exit 2; }
 
 for n in $(seq 140 170); do
   [[ ! -e "/tmp/.X11-unix/X${n}" && ! -e "/tmp/.X${n}-lock" ]] && break
@@ -120,7 +124,28 @@ wait_for() {  # wait_for SECONDS COMMAND...: until COMMAND succeeds
 has_window() { app_windows | grep -qx "$1"; }
 lacks_window() { ! has_window "$1"; }
 has_second_window() { [[ -n "$(app_windows | grep -vx "${MAIN}")" ]]; }
-focus() { xdotool windowactivate --sync "$1" >/dev/null 2>&1 || xdotool windowfocus --sync "$1"; sleep 0.5; }
+# Makes $1 the active window, or gives up: keys sent otherwise go to the shell or nowhere. The
+# first input after launch is often lost, and GNOME Shell may still be leaving the overview.
+focus() {
+  local i active
+  for i in $(seq 1 10); do
+    active="$(xdotool getactivewindow 2>/dev/null)"
+    [[ "${active}" == "$1" ]] && { sleep 0.5; return 0; }
+    # No active window: GNOME Shell is still in (or animating out of) the overview.
+    [[ -z "${active}" ]] && xdotool key Escape
+    xdotool windowactivate "$1" >/dev/null 2>&1 || xdotool windowfocus "$1" >/dev/null 2>&1
+    sleep 1
+  done
+  echo "check_wm_close: couldn't make window $1 active (active: $(xdotool getactivewindow 2>/dev/null))" >&2
+  return 1
+}
+# close_window WINDOW: asks the window manager to close it, as Alt+F4, the Overview's close button
+# and Close in the dock do (an EWMH _NET_CLOSE_WINDOW request), and waits for the window to go or
+# the app to die.
+close_window() {
+  wmctrl -i -c "$1"
+  wait_for 10 eval 'lacks_window "$1" || ! alive'
+}
 
 check_protocols() {
   local w protocols
@@ -147,28 +172,31 @@ check_not_killed() {
   fi
 }
 
-# The AppImage's AppRun, as the desktop launches it under GNOME.
+# The AppImage's AppRun, as the desktop launches it under GNOME (which picks the Adwaita theme).
 env -i "${SESSION_ENV[@]}" DBUS_SESSION_BUS_ADDRESS="${BUS}" \
   SCREENSHOT_TOOL_LOG_PATH="${WORK}/app.log" "${ROOT}/AppRun" >"${WORK}/app.out" 2>&1 &
 APP_PID=$!
 if ! wait_for 30 eval '[[ -n "$(app_windows)" ]]'; then
   echo "check_wm_close: the app showed no window"; tail -20 "${WORK}/app.out"; exit 1
 fi
-sleep 2
+# The first input after launch is often lost: let the app settle.
+sleep 5
 MAIN="$(app_windows | head -1)"
+echo "check_wm_close: app windows: $(for w in $(app_windows); do printf '%s %s; ' "${w}" "$(window_name "${w}")"; done)"
 check_protocols "${MAIN}" "the main window ($(window_name "${MAIN}"))"
 
-# Preferences: Alt+F4 closes it, and only it.
-focus "${MAIN}"
-xdotool key --clearmodifiers ctrl+comma
-if wait_for 10 has_second_window; then
+# Preferences: closing it closes only it.
+for _ in 1 2 3; do
+  focus "${MAIN}" || exit 2
+  xdotool key --clearmodifiers ctrl+comma
+  wait_for 5 has_second_window && break
+done
+if has_second_window; then
   PREFS="$(app_windows | grep -vx "${MAIN}" | head -1)"
   check_protocols "${PREFS}" "the Preferences window ($(window_name "${PREFS}"))"
-  focus "${PREFS}"
-  xdotool key --clearmodifiers alt+F4
-  wait_for 10 lacks_window "${PREFS}" || fail "Alt+F4 left Preferences open"
+  close_window "${PREFS}" || { alive && fail "closing Preferences left it open"; }
   sleep 1
-  check_not_killed "Alt+F4 on Preferences"
+  check_not_killed "closing Preferences"
   if alive && has_window "${MAIN}"; then pass "the main window is still open"
   elif alive; then fail "the main window closed with Preferences"
   fi
@@ -176,13 +204,11 @@ else
   fail "Ctrl+, opened no Preferences window"
 fi
 
-# The main window: Alt+F4 closes it (the app has no unsaved changes, so it doesn't ask).
+# The main window: it closes (the app has no unsaved changes, so it doesn't ask).
 if alive; then
-  focus "${MAIN}"
-  xdotool key --clearmodifiers alt+F4
-  wait_for 10 eval 'lacks_window "${MAIN}" || ! alive' || fail "Alt+F4 left the main window open"
+  close_window "${MAIN}" || { alive && fail "closing the main window left it open"; }
   sleep 1
-  check_not_killed "Alt+F4 on the main window"
+  check_not_killed "closing the main window"
 fi
 
 if [[ "${FAILURES}" -gt 0 ]]; then
