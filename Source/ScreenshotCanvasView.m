@@ -4302,8 +4302,36 @@ static const CGFloat STCanvasStageShadowDrop = 5.0;
     return YES;
 }
 
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)viewWillMoveToSuperview:(NSView *)newSuperview {
+    [super viewWillMoveToSuperview:newSuperview];
+    if (self.superview) {
+        [[NSNotificationCenter defaultCenter] removeObserver:self name:NSViewFrameDidChangeNotification object:self.superview];
+        [[NSNotificationCenter defaultCenter] removeObserver:self name:NSViewBoundsDidChangeNotification object:self.superview];
+    }
+}
+
 - (void)viewDidMoveToSuperview {
     [super viewDidMoveToSuperview];
+    // The stage is at least the viewport, so it follows the clip view's size: a theme's border or
+    // a scroller can change it without the canvas changing.
+    NSView *clip = self.superview;
+    if ([clip isKindOfClass:[NSClipView class]]) {
+        [clip setPostsFrameChangedNotifications:YES];
+        [clip setPostsBoundsChangedNotifications:YES];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(viewportDidChange:)
+                                                     name:NSViewFrameDidChangeNotification object:clip];
+        [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(viewportDidChange:)
+                                                     name:NSViewBoundsDidChangeNotification object:clip];
+    }
+    [self layoutCanvas];
+}
+
+- (void)viewportDidChange:(NSNotification *)notification {
+    (void)notification;
     [self layoutCanvas];
 }
 

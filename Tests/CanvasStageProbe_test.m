@@ -110,8 +110,10 @@
     NSSize viewport = _appDelegate.scrollView.contentView.bounds.size;
     NSRect image = stage.imageFrame;
     XCTAssertTrue(canvas.isFitToWindow);
-    XCTAssertEqualWithAccuracy(stage.frame.size.width, viewport.width, 1.0, @"Fit: the stage should fill the viewport, no more");
-    XCTAssertEqualWithAccuracy(stage.frame.size.height, viewport.height, 1.0, @"Fit: the stage should fill the viewport, no more");
+    XCTAssertEqualWithAccuracy(stage.frame.size.width, viewport.width, 1.0, @"Fit: the stage should fill the viewport, no more (stage %@, clip %@, scroll view %@)",
+                               NSStringFromRect(stage.frame), NSStringFromRect(_appDelegate.scrollView.contentView.frame), NSStringFromRect(_appDelegate.scrollView.frame));
+    XCTAssertEqualWithAccuracy(stage.frame.size.height, viewport.height, 1.0, @"Fit: the stage should fill the viewport, no more (stage %@, clip %@)",
+                               NSStringFromRect(stage.frame), NSStringFromRect(_appDelegate.scrollView.contentView.frame));
     XCTAssertGreaterThanOrEqual(NSMinX(image), STCanvasStageMargin);
     XCTAssertGreaterThanOrEqual(NSMinY(image), STCanvasStageMargin);
     XCTAssertGreaterThanOrEqual(NSWidth(stage.frame) - NSMaxX(image), STCanvasStageMargin);
