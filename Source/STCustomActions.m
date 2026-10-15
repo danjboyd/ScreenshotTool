@@ -220,16 +220,6 @@ static NSArray<NSString *> *STCommandFromJSON(id value) {
 
 @implementation STCustomActionRunner
 
-+ (NSOperationQueue *)queue {
-    static NSOperationQueue *queue = nil;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        queue = [[NSOperationQueue alloc] init];
-        queue.maxConcurrentOperationCount = 4;
-    });
-    return queue;
-}
-
 + (NSDictionary<NSString *, NSString *> *)childEnvironmentFrom:(NSDictionary<NSString *, NSString *> *)environment {
     NSString *appDir = environment[@"APPDIR"];
     if (appDir.length == 0 && environment[@"APPIMAGE"].length == 0) {
@@ -295,89 +285,93 @@ static NSArray<NSString *> *STCommandFromJSON(id value) {
 + (void)runArguments:(NSArray<NSString *> *)arguments
              timeout:(NSTimeInterval)timeout
           completion:(void (^)(STCustomActionResult *))completion {
-    STCustomActionResult *result = [[STCustomActionResult alloc] init];
     NSDictionary<NSString *, NSString *> *environment = [self childEnvironmentFrom:[[NSProcessInfo processInfo] environment]];
     NSString *program = arguments.count > 0 ? [self resolvedExecutable:arguments[0] searchPath:environment[@"PATH"]] : nil;
-    if (!program) {
-        result.standardError = arguments.count > 0
-            ? [NSString stringWithFormat:@"%@ isn't a program that can be run.", arguments[0]]
-            : @"There's no command.";
-        dispatch_async(dispatch_get_main_queue(), ^{
-            completion(result);
-        });
-        return;
-    }
-
-    // Output goes to files, not pipes: a helper the command leaves running (an SSH connection
-    // kept open, say) would hold a pipe open, and reading it would never end.
-    NSString *stem = [NSTemporaryDirectory() stringByAppendingPathComponent:
-                      [NSString stringWithFormat:@"screenshottool-action-%@", [[NSProcessInfo processInfo] globallyUniqueString]]];
-    NSString *outPath = [stem stringByAppendingString:@".out"];
-    NSString *errPath = [stem stringByAppendingString:@".err"];
-    [[NSFileManager defaultManager] createFileAtPath:outPath contents:nil attributes:nil];
-    [[NSFileManager defaultManager] createFileAtPath:errPath contents:nil attributes:nil];
-    NSFileHandle *outHandle = [NSFileHandle fileHandleForWritingAtPath:outPath];
-    NSFileHandle *errHandle = [NSFileHandle fileHandleForWritingAtPath:errPath];
-
-    NSTask *task = [[NSTask alloc] init];
-    task.launchPath = program;
-    task.arguments = [arguments subarrayWithRange:NSMakeRange(1, arguments.count - 1)];
-    task.environment = environment;
-    task.standardInput = [NSFileHandle fileHandleWithNullDevice];
-    task.standardOutput = outHandle;
-    task.standardError = errHandle;
-
-    @try {
-        [task launch];
-        result.launched = YES;
-    } @catch (NSException *exception) {
-        result.standardError = [NSString stringWithFormat:@"%@ couldn't be started: %@", program, exception.reason ?: exception.name];
-    }
-    [outHandle closeFile];
-    [errHandle closeFile];
-    if (!result.launched) {
-        [[NSFileManager defaultManager] removeItemAtPath:outPath error:NULL];
-        [[NSFileManager defaultManager] removeItemAtPath:errPath error:NULL];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            completion(result);
-        });
-        return;
-    }
-
-    NSTimer *timer = nil;
-    if (timeout > 0.0) {
-        timer = [NSTimer scheduledTimerWithTimeInterval:timeout
-                                                 target:self
-                                               selector:@selector(timeoutFired:)
-                                               userInfo:@{ @"task": task, @"result": result }
-                                                repeats:NO];
-    }
-    [[self queue] addOperationWithBlock:^{
-        [task waitUntilExit];
-        int status = [task terminationStatus];
-        NSString *output = [[NSString alloc] initWithData:[NSData dataWithContentsOfFile:outPath] ?: [NSData data]
-                                                 encoding:NSUTF8StringEncoding] ?: @"";
-        NSString *errors = [[NSString alloc] initWithData:[NSData dataWithContentsOfFile:errPath] ?: [NSData data]
-                                                 encoding:NSUTF8StringEncoding] ?: @"";
-        [[NSFileManager defaultManager] removeItemAtPath:outPath error:NULL];
-        [[NSFileManager defaultManager] removeItemAtPath:errPath error:NULL];
-        [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-            [timer invalidate];
-            result.status = status;
-            result.standardOutput = output;
-            result.standardError = errors;
-            completion(result);
-        }];
-    }];
+    NSDictionary *job = @{ @"arguments": [arguments copy], @"environment": environment, @"program": program ?: [NSNull null],
+                           @"timeout": @(timeout), @"completion": [completion copy] };
+    // The whole run on a thread of its own: GNUstep's NSTask watches for the process ending on
+    // the run loop of the thread that launched it (on Windows the main thread never heard).
+    NSThread *thread = [[NSThread alloc] initWithTarget:self selector:@selector(runJob:) object:job];
+    [thread start];
 }
 
-+ (void)timeoutFired:(NSTimer *)timer {
-    NSTask *task = timer.userInfo[@"task"];
-    STCustomActionResult *result = timer.userInfo[@"result"];
-    if ([task isRunning]) {
-        result.timedOut = YES;
-        [task terminate];
++ (void)runJob:(NSDictionary *)job {
+    @autoreleasepool {
+        NSArray<NSString *> *arguments = job[@"arguments"];
+        id program = job[@"program"];
+        NSTimeInterval timeout = [job[@"timeout"] doubleValue];
+        void (^completion)(STCustomActionResult *) = job[@"completion"];
+        STCustomActionResult *result = [[STCustomActionResult alloc] init];
+
+        if (![program isKindOfClass:[NSString class]]) {
+            result.standardError = arguments.count > 0
+                ? [NSString stringWithFormat:@"%@ isn't a program that can be run.", arguments[0]]
+                : @"There's no command.";
+            [self finish:result completion:completion];
+            return;
+        }
+
+        // Output goes to files, not pipes: a helper the command leaves running (an SSH connection
+        // kept open, say) would hold a pipe open, and reading it would never end.
+        NSString *stem = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                          [NSString stringWithFormat:@"screenshottool-action-%@", [[NSProcessInfo processInfo] globallyUniqueString]]];
+        NSString *outPath = [stem stringByAppendingString:@".out"];
+        NSString *errPath = [stem stringByAppendingString:@".err"];
+        NSFileManager *files = [NSFileManager defaultManager];
+        [files createFileAtPath:outPath contents:nil attributes:nil];
+        [files createFileAtPath:errPath contents:nil attributes:nil];
+        NSFileHandle *outHandle = [NSFileHandle fileHandleForWritingAtPath:outPath];
+        NSFileHandle *errHandle = [NSFileHandle fileHandleForWritingAtPath:errPath];
+
+        NSTask *task = [[NSTask alloc] init];
+        task.launchPath = program;
+        task.arguments = [arguments subarrayWithRange:NSMakeRange(1, arguments.count - 1)];
+        task.environment = job[@"environment"];
+        task.standardInput = [NSFileHandle fileHandleWithNullDevice];
+        task.standardOutput = outHandle;
+        task.standardError = errHandle;
+        @try {
+            [task launch];
+            result.launched = YES;
+        } @catch (NSException *exception) {
+            result.standardError = [NSString stringWithFormat:@"%@ couldn't be started: %@", program, exception.reason ?: exception.name];
+        }
+        [outHandle closeFile];
+        [errHandle closeFile];
+
+        if (result.launched) {
+            // This thread's run loop is where NSTask hears that the process ended.
+            NSDate *deadline = timeout > 0.0 ? [NSDate dateWithTimeIntervalSinceNow:timeout] : nil;
+            while ([task isRunning]) {
+                [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+                if (deadline && [deadline timeIntervalSinceNow] <= 0.0 && [task isRunning]) {
+                    result.timedOut = YES;
+                    [task terminate];
+                    deadline = nil;
+                }
+            }
+            result.status = [task terminationStatus];
+            result.standardOutput = [[NSString alloc] initWithData:[NSData dataWithContentsOfFile:outPath] ?: [NSData data]
+                                                          encoding:NSUTF8StringEncoding] ?: @"";
+            result.standardError = [[NSString alloc] initWithData:[NSData dataWithContentsOfFile:errPath] ?: [NSData data]
+                                                         encoding:NSUTF8StringEncoding] ?: @"";
+        }
+        [files removeItemAtPath:outPath error:NULL];
+        [files removeItemAtPath:errPath error:NULL];
+        [self finish:result completion:completion];
     }
+}
+
+/// Calls `completion` with `result` on the main thread.
++ (void)finish:(STCustomActionResult *)result completion:(void (^)(STCustomActionResult *))completion {
+    void (^call)(void) = ^{
+        completion(result);
+    };
+    [self performSelectorOnMainThread:@selector(runBlock:) withObject:[call copy] waitUntilDone:NO];
+}
+
++ (void)runBlock:(void (^)(void))block {
+    block();
 }
 
 @end
