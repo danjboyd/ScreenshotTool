@@ -16,6 +16,9 @@ px (and 48 and 64, their 2x), and 22 and 44 px cut from the 24 and 48 px renderi
 switcher's size, the grid's 1-unit margin left off, so its lines stay on whole pixels). The
 24 px rendering is also <Stem>-symbolic.png, the name older code and packaging look for.
 
+<Stem>-<px>.svg, when there is one, replaces <Stem>.svg at that size: a drawing hinted to that
+size's pixels, still on the 24-unit grid.
+
 Needs librsvg's GObject bindings (gir1.2-rsvg-2.0) and pycairo. Run it after editing an SVG and
 commit the PNGs: the build doesn't render them.
 """
@@ -60,11 +63,16 @@ def main():
     names = sorted(name for name in os.listdir(SOURCES) if name.endswith(".svg"))
     if not names:
         sys.exit("No SVGs in " + SOURCES)
+    hinted = {"%s-%d.svg" % (name[:-len(".svg")], pixels) for name in names for pixels in SIZES}
     for name in names:
+        if name in hinted:
+            continue
         stem = name[:-len(".svg")]
         handle = Rsvg.Handle.new_from_file(os.path.join(SOURCES, name))
         for pixels, (scale, margin) in SIZES.items():
-            surface = render(handle, pixels, scale, margin)
+            override = os.path.join(SOURCES, "%s-%d.svg" % (stem, pixels))
+            source = Rsvg.Handle.new_from_file(override) if os.path.exists(override) else handle
+            surface = render(source, pixels, scale, margin)
             surface.write_to_png(os.path.join(OUTPUT, "%s-%d-symbolic.png" % (stem, pixels)))
             if pixels == 24:
                 surface.write_to_png(os.path.join(OUTPUT, "%s-symbolic.png" % stem))

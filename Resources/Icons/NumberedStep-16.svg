@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <!-- NumberedStep at 16 px (1.5 units = 1 px): the ring and the digit snapped to whole pixels. -->
+  <g fill="#3d3846" stroke="none">
+    <path fill-rule="evenodd" d="M12 3 A9 9 0 1 1 11.99 3 Z M12 4.5 A7.5 7.5 0 1 0 12.01 4.5 Z"/>
+    <path d="M10.5 7.5 H13.5 V16.5 H10.5 Z"/>
+    <path d="M9 9 H10.5 V10.5 H9 Z"/>
+  </g>
+</svg>
