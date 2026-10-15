@@ -289,8 +289,8 @@
     [window orderOut:nil];
 }
 
-/// Callout on: the label becomes a filled box with bold text, unless it already has a look of
-/// its own; the defaults don't change (v0.2.0, #221).
+/// Callout on: the label becomes a filled box with bold text, from any style; the defaults don't
+/// change (v0.2.0, #221).
 - (void)testCalloutStartsAsABoldFilledBox {
     XCTSkipIf(_shouldSkip, @"No window server");
     NSInteger savedStyle = [[NSUserDefaults standardUserDefaults] integerForKey:@"ScreenshotToolTextStyle"];
@@ -307,13 +307,17 @@
     XCTAssertEqual([[NSUserDefaults standardUserDefaults] integerForKey:@"ScreenshotToolTextStyle"], savedStyle,
                    @"The saved default style is unchanged");
 
-    // Off and on again keeps the look the label has now.
+    // From the default style, Outline, too.
     [_appDelegate textOptionsBarDidTogglePointer:nil];
     XCTAssertFalse(entry.hasPointer);
     canvas.textStyle = MarkupTextStyleOutline;
     [_appDelegate textOptionsBarDidTogglePointer:nil];
     XCTAssertTrue(entry.hasPointer);
-    XCTAssertEqual(entry.style, MarkupTextStyleOutline, @"A label with a look of its own keeps it");
+    XCTAssertEqual(entry.style, MarkupTextStyleBackground, @"An outlined label made a callout is a filled box too");
+
+    // The style can still be changed afterwards.
+    canvas.textStyle = MarkupTextStyleShadow;
+    XCTAssertEqual(entry.style, MarkupTextStyleShadow);
     [canvas commitActiveTextIfNeeded];
 }
 

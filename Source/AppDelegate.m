@@ -3318,9 +3318,10 @@ static id STInfoValueForKey(NSString *key) {
     MarkupText *entry = [self.canvasView activeTextEntry];
     BOOL wasCallout = entry.hasPointer;
     [self.canvasView toggleActiveTextPointer];
-    // A label made a callout becomes a filled box with bold text (v0.2.0, #221), unless it
-    // already has a look of its own. This label only: the defaults stay as they are.
-    if (entry && !wasCallout && entry.hasPointer && self.canvasView.textStyle == MarkupTextStylePlain) {
+    // A label made a callout becomes a filled box with bold text (v0.2.0, #221), whatever its
+    // style was (new labels start in the default, Outline); the bar changes it afterwards. The
+    // saved defaults stay as they are.
+    if (entry && !wasCallout && entry.hasPointer) {
         [self applyTextStyle:MarkupTextStyleBackground persist:NO];
         NSFont *font = [self currentTextFont];
         NSFont *bold = [[NSFontManager sharedFontManager] convertFont:font toHaveTrait:NSBoldFontMask];
