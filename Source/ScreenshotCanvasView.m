@@ -3231,6 +3231,11 @@ static NSError *STProjectError(NSString *message) {
 }
 
 - (void)drawRect:(NSRect)dirtyRect {
+    // Since macOS 14 a view needn't clip to its bounds (clipsToBounds is NO), and the dirty rect
+    // can reach past them: on the stage, the canvas would paint over the backdrop round the image,
+    // and annotations at the image's edge would spill onto it.
+    NSRectClip(self.bounds);
+    dirtyRect = NSIntersectionRect(dirtyRect, self.bounds);
     [STThemeCanvasBackgroundColor() setFill];
     NSRectFill(dirtyRect);
 
