@@ -95,7 +95,7 @@
 - (void)testHiddenStatusBarControlsAreNotSized {
     XCTSkipIf(_shouldSkip, @"No window server");
     XCTAssertTrue([self openAnImage]);
-    XCTAssertTrue(_appDelegate.statusZoomContainer.isHidden, @"the status bar is off by default");
+    XCTAssertTrue(_appDelegate.statusZoomContainer.isHidden, @"the status bar is hidden until the settings load");
     XCTAssertEqual(NSWidth(_appDelegate.statusZoomFitButton.frame), 0.0, @"the hidden Fit button isn't sized");
 
     [_appDelegate preferencesController:nil didToggleStatusBar:YES];

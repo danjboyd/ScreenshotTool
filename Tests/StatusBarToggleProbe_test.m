@@ -56,7 +56,7 @@ static const CGFloat kStatusBarHeight = 32.0f; // Room for the 24pt zoom slider 
         _appDelegate = [[AppDelegate alloc] init];
         [_appDelegate setupWindowAndContent];
         [_appDelegate.window makeKeyAndOrderFront:nil];
-        // The bar is off by default (#54); these tests start with it shown.
+        // The window starts with the bar hidden until the settings load; these tests show it.
         [_appDelegate preferencesController:nil didToggleStatusBar:YES];
 
         // Match the normal sizing path the app uses when loading an image.
@@ -107,22 +107,26 @@ static const CGFloat kStatusBarHeight = 32.0f; // Room for the 24pt zoom slider 
     XCTAssertEqualWithAccuracy(scrollView.frame.origin.y, kStatusBarHeight, 0.75, @"Scroll view origin should be restored after re-showing status bar");
 }
 
-- (void)testStatusBarIsOffUnlessChosen {
+- (void)testStatusBarIsOnUnlessTurnedOff {
     XCTSkipIf(_shouldSkip, @"No window server");
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     [defaults removeObjectForKey:@"ScreenshotToolShowStatusBar"];
     [_appDelegate loadToolSettingsFromDefaults];
-    XCTAssertFalse([_appDelegate statusBarVisiblePreference], @"off by default (#54)");
-    XCTAssertNil([defaults objectForKey:@"ScreenshotToolShowStatusBar"], @"nothing is saved until the user chooses");
+    XCTAssertTrue([_appDelegate statusBarVisiblePreference], @"on by default (#221)");
+    for (NSString *domain in [defaults persistentDomainNames]) {
+        XCTAssertNil([defaults persistentDomainForName:domain][@"ScreenshotToolShowStatusBar"],
+                     @"nothing is saved until the user chooses (%@)", domain);
+    }
+    XCTAssertEqualWithAccuracy(_appDelegate.scrollView.frame.origin.y, kStatusBarHeight, 0.75, @"the canvas sits above the bar");
+
+    [defaults setBool:NO forKey:@"ScreenshotToolShowStatusBar"];
+    [_appDelegate loadToolSettingsFromDefaults];
+    XCTAssertFalse([_appDelegate statusBarVisiblePreference], @"a saved choice to hide it is kept");
     XCTAssertEqualWithAccuracy(_appDelegate.scrollView.frame.origin.y, 0.0, 0.75, @"the canvas reaches the bottom");
 
-    [defaults setBool:YES forKey:@"ScreenshotToolShowStatusBar"];
-    [_appDelegate loadToolSettingsFromDefaults];
-    XCTAssertTrue([_appDelegate statusBarVisiblePreference], @"a saved choice to show it is kept");
-
     [_appDelegate preferencesControllerRestoreDefaults:nil];
-    XCTAssertFalse([_appDelegate statusBarVisiblePreference]);
-    XCTAssertNil([defaults objectForKey:@"ScreenshotToolShowStatusBar"]);
+    XCTAssertTrue([_appDelegate statusBarVisiblePreference], @"Restore Defaults shows it again");
+    XCTAssertEqual([defaults boolForKey:@"ScreenshotToolShowStatusBar"], YES);
 }
 
 - (void)testPreferencesSwitchTogglesTheStatusBar {

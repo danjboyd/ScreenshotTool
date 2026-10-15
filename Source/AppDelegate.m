@@ -2740,7 +2740,8 @@ static id STInfoValueForKey(NSString *key) {
     [statusBar addSubview:statusField];
     [self setupStatusControls];
 
-    // Off unless chosen: the toolbar's colour control sets colour and width (#54).
+    // Hidden until the settings load (-loadToolSettingsFromDefaults), which shows it unless the
+    // user turned it off (#221).
     self.statusBarVisiblePreference = NO;
 
     [self.window setContentView:container];
@@ -4262,9 +4263,10 @@ static id STInfoValueForKey(NSString *key) {
         [defaults setBool:YES forKey:STDefaultsClearedHeaderBarToolbarKey];
     }
 
-    // Off unless the user turned it on; nothing is written until they choose (#54).
-    self.statusBarVisiblePreference = [defaults objectForKey:STDefaultsShowStatusBarKey] != nil
-        && [defaults boolForKey:STDefaultsShowStatusBarKey];
+    // Shown unless the user turned it off (#221; it was off by default before, #54). A registered
+    // default, so nothing is written until they choose, and a saved "off" stays off.
+    [defaults registerDefaults:@{STDefaultsShowStatusBarKey: @YES}];
+    self.statusBarVisiblePreference = [defaults boolForKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
 
     if (self.preferencesWindowController) {
@@ -5121,8 +5123,8 @@ static id STInfoValueForKey(NSString *key) {
     [[NSUserDefaults standardUserDefaults] setObject:fallbackDirectory forKey:STDefaultsSaveDirectoryKey];
     [self ensureDirectoryExistsAtPath:fallbackDirectory];
 
-    self.statusBarVisiblePreference = NO;
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsShowStatusBarKey];
+    self.statusBarVisiblePreference = [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
 
     [[NSUserDefaults standardUserDefaults] synchronize];
