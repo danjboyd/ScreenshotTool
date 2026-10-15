@@ -56,6 +56,9 @@ ScreenshotTool_RESOURCE_FILES = Resources/CopyImage-symbolic.png \
 	Resources/Rectangle-symbolic.png \
 	Resources/NumberedStep-symbolic.png \
 	Resources/Redact-symbolic.png \
+	Resources/Save-symbolic.png \
+	Resources/Share-symbolic.png \
+	Resources/More-symbolic.png \
 	Resources/ScreenshotToolIcon.png \
 	Resources/ScreenshotToolIcon.tiff
 
@@ -103,6 +106,13 @@ ScreenshotTool_RESOURCE_FILES += \
 	Resources/MarqueeTool-44-symbolic.png \
 	Resources/MarqueeTool-48-symbolic.png \
 	Resources/MarqueeTool-64-symbolic.png \
+	Resources/More-16-symbolic.png \
+	Resources/More-22-symbolic.png \
+	Resources/More-24-symbolic.png \
+	Resources/More-32-symbolic.png \
+	Resources/More-44-symbolic.png \
+	Resources/More-48-symbolic.png \
+	Resources/More-64-symbolic.png \
 	Resources/NumberedStep-16-symbolic.png \
 	Resources/NumberedStep-22-symbolic.png \
 	Resources/NumberedStep-24-symbolic.png \
@@ -145,6 +155,20 @@ ScreenshotTool_RESOURCE_FILES += \
 	Resources/Redo-44-symbolic.png \
 	Resources/Redo-48-symbolic.png \
 	Resources/Redo-64-symbolic.png \
+	Resources/Save-16-symbolic.png \
+	Resources/Save-22-symbolic.png \
+	Resources/Save-24-symbolic.png \
+	Resources/Save-32-symbolic.png \
+	Resources/Save-44-symbolic.png \
+	Resources/Save-48-symbolic.png \
+	Resources/Save-64-symbolic.png \
+	Resources/Share-16-symbolic.png \
+	Resources/Share-22-symbolic.png \
+	Resources/Share-24-symbolic.png \
+	Resources/Share-32-symbolic.png \
+	Resources/Share-44-symbolic.png \
+	Resources/Share-48-symbolic.png \
+	Resources/Share-64-symbolic.png \
 	Resources/Undo-16-symbolic.png \
 	Resources/Undo-22-symbolic.png \
 	Resources/Undo-24-symbolic.png \
