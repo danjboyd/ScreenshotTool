@@ -55,6 +55,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	StepToolProbe_test.m \
 	RedactToolProbe_test.m \
 	CanvasStageProbe_test.m \
+	CustomActionsProbe_test.m \
 	LargeImageDrawingProbe_test.m \
 	CursorRectProbe_test.m \
 	HudCopyFeedbackProbe_test.m \
@@ -112,6 +113,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STSegmentToolTips.m \
 	../Source/STSplitButton.m \
 	../Source/STEmptyStateView.m \
+	../Source/STCustomActions.m \
 	../Source/STScreenshotCapture.m \
 	../Source/STWindowsIntegration.m \
 	../Source/STFontPicker.m

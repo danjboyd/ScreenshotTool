@@ -50,4 +50,8 @@ static inline void STConfigureTestDefaults(void) {
     NSString *defaultsFile = [defaultsDir stringByAppendingPathComponent:@"GNUstepDefaults.plist"];
     STSetEnvVar("GNUSTEP_DEFAULTS_ROOT", defaultsDir.UTF8String);
     STSetEnvVar("GNUSTEP_USER_DEFAULTS", defaultsFile.UTF8String);
+    // No custom actions (#221) but a test's own: never the user's.
+    NSString *actionsDir = [defaultsDir stringByAppendingPathComponent:@"Actions"];
+    [[NSFileManager defaultManager] createDirectoryAtPath:actionsDir withIntermediateDirectories:YES attributes:nil error:NULL];
+    STSetEnvVar("SCREENSHOT_TOOL_ACTIONS_DIR", actionsDir.UTF8String);
 }
