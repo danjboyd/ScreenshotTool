@@ -34,7 +34,9 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
     ScreenshotCanvasToolText = 3,
     ScreenshotCanvasToolSelect = 4,
     /// Straight arrows (#33); shares the pen's colour and width.
-    ScreenshotCanvasToolArrow = 5
+    ScreenshotCanvasToolArrow = 5,
+    /// Rectangles' outlines (v0.2.0, #221); shares the pen's colour and width.
+    ScreenshotCanvasToolRectangle = 6
 };
 
 /// A view next to the canvas whose controls can take the keyboard while a text box is being edited

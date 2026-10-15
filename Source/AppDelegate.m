@@ -49,8 +49,9 @@
 static NSString * const ToolbarItemHighlighter = @"com.screenshottool.toolbar.highlighter";
 static NSString * const ToolbarItemPen = @"com.screenshottool.toolbar.pen";
 static NSString * const ToolbarItemArrow = @"com.screenshottool.toolbar.arrow";
+static NSString * const ToolbarItemRectangle = @"com.screenshottool.toolbar.rectangle";
 /// Select, Highlighter, Pen, Arrow, Text, Eraser.
-static const NSInteger STToolbarToolSegmentCount = 6;
+static const NSInteger STToolbarToolSegmentCount = 7;
 static NSString * const ToolbarItemEraser = @"com.screenshottool.toolbar.eraser";
 static NSString * const ToolbarItemText = @"com.screenshottool.toolbar.text";
 static NSString * const ToolbarItemSelect = @"com.screenshottool.toolbar.select";
@@ -1143,6 +1144,8 @@ static NSString *STDebugToolName(ScreenshotCanvasTool tool) {
             return @"Select";
         case ScreenshotCanvasToolArrow:
             return @"Arrow";
+        case ScreenshotCanvasToolRectangle:
+            return @"Rectangle";
     }
     return @"Unknown";
 }
@@ -1151,7 +1154,8 @@ static BOOL STToolUsesColor(ScreenshotCanvasTool tool) {
     return (tool == ScreenshotCanvasToolPen ||
             tool == ScreenshotCanvasToolHighlighter ||
             tool == ScreenshotCanvasToolText ||
-            tool == ScreenshotCanvasToolArrow);
+            tool == ScreenshotCanvasToolArrow ||
+            tool == ScreenshotCanvasToolRectangle);
 }
 
 /// Whether a double-click on the tool opens a settings popover. Arrows have none: they use the
@@ -1162,9 +1166,10 @@ static BOOL STToolHasSettingsPopover(ScreenshotCanvasTool tool) {
             tool == ScreenshotCanvasToolText);
 }
 
-/// Arrows draw with the pen's colour and width, so their settings are the pen's (#33).
+/// Arrows and rectangles draw with the pen's colour and width, so their settings are the pen's
+/// (#33, #221).
 static ScreenshotCanvasTool STSettingsToolForTool(ScreenshotCanvasTool tool) {
-    return (tool == ScreenshotCanvasToolArrow) ? ScreenshotCanvasToolPen : tool;
+    return (tool == ScreenshotCanvasToolArrow || tool == ScreenshotCanvasToolRectangle) ? ScreenshotCanvasToolPen : tool;
 }
 
 static BOOL STEventIsMouseEvent(NSEvent *event) {
@@ -1433,6 +1438,9 @@ static AppDelegate *STFrontDocument(void) {
     if ([identifier isEqualToString:ToolbarItemArrow]) {
         return @"Arrow Tool";
     }
+    if ([identifier isEqualToString:ToolbarItemRectangle]) {
+        return @"Rectangle Tool";
+    }
     if ([identifier isEqualToString:ToolbarItemText]) {
         return @"Text Tool — double-click to configure";
     }
@@ -1465,6 +1473,8 @@ static AppDelegate *STFrontDocument(void) {
                 return [NSString stringWithFormat:@"Pen color and width (%.0f px) — click to change", [self currentWidthForTool:ScreenshotCanvasToolPen]];
             case ScreenshotCanvasToolArrow:
                 return [NSString stringWithFormat:@"Arrow color and width (%.0f px) — click to change", [self currentWidthForTool:ScreenshotCanvasToolArrow]];
+            case ScreenshotCanvasToolRectangle:
+                return [NSString stringWithFormat:@"Rectangle color and width (%.0f px) — click to change", [self currentWidthForTool:ScreenshotCanvasToolRectangle]];
             case ScreenshotCanvasToolHighlighter:
                 return [NSString stringWithFormat:@"Highlighter color and width (%.0f px) — click to change", [self currentWidthForTool:ScreenshotCanvasToolHighlighter]];
             case ScreenshotCanvasToolText:
@@ -2749,6 +2759,8 @@ static id STInfoValueForKey(NSString *key) {
     switch (tool) {
         case ScreenshotCanvasToolArrow:
             return ToolbarItemArrow;
+        case ScreenshotCanvasToolRectangle:
+            return ToolbarItemRectangle;
         case ScreenshotCanvasToolHighlighter:
             return ToolbarItemHighlighter;
         case ScreenshotCanvasToolPen:
@@ -2803,6 +2815,9 @@ static id STInfoValueForKey(NSString *key) {
     }
     if ([identifier isEqualToString:ToolbarItemArrow]) {
         return @"Arrow";
+    }
+    if ([identifier isEqualToString:ToolbarItemRectangle]) {
+        return @"Rectangle";
     }
     if ([identifier isEqualToString:ToolbarItemEraser]) {
         return @"Eraser";
@@ -2990,6 +3005,12 @@ static id STInfoValueForKey(NSString *key) {
                                                 action:@selector(activateArrow:)
                                              imageName:@"Arrow"];
     }
+    if ([identifier isEqualToString:ToolbarItemRectangle]) {
+        return [self baselineToolbarItemWithIdentifier:ToolbarItemRectangle
+                                                 label:@"Rectangle"
+                                                action:@selector(activateRectangle:)
+                                             imageName:@"Rectangle"];
+    }
     if ([identifier isEqualToString:ToolbarItemText]) {
         return [self baselineToolbarItemWithIdentifier:ToolbarItemText
                                                  label:@"Text"
@@ -3089,10 +3110,12 @@ static id STInfoValueForKey(NSString *key) {
             return 2;
         case ScreenshotCanvasToolArrow:
             return 3;
-        case ScreenshotCanvasToolText:
+        case ScreenshotCanvasToolRectangle:
             return 4;
-        case ScreenshotCanvasToolEraser:
+        case ScreenshotCanvasToolText:
             return 5;
+        case ScreenshotCanvasToolEraser:
+            return 6;
     }
     return 0;
 }
@@ -3106,8 +3129,10 @@ static id STInfoValueForKey(NSString *key) {
         case 3:
             return ScreenshotCanvasToolArrow;
         case 4:
-            return ScreenshotCanvasToolText;
+            return ScreenshotCanvasToolRectangle;
         case 5:
+            return ScreenshotCanvasToolText;
+        case 6:
             return ScreenshotCanvasToolEraser;
         case 0:
         default:
@@ -3129,6 +3154,8 @@ static id STInfoValueForKey(NSString *key) {
             return @"Eraser";
         case ScreenshotCanvasToolArrow:
             return @"Arrow";
+        case ScreenshotCanvasToolRectangle:
+            return @"Rectangle";
     }
     return @"Tool";
 }
@@ -3147,6 +3174,8 @@ static id STInfoValueForKey(NSString *key) {
             return @"E";
         case ScreenshotCanvasToolArrow:
             return @"A";
+        case ScreenshotCanvasToolRectangle:
+            return @"R";
     }
     return @"";
 }
@@ -3665,6 +3694,42 @@ static id STInfoValueForKey(NSString *key) {
             return image;
         }
     }
+    // A new tool before its icon file is in (#221): a plain drawn one. Not named as a symbolic
+    // icon: Adwaita tints those from their file, and there's none yet.
+    if ([name isEqualToString:@"Rectangle"]) {
+        NSString *symbolic = STSymbolicIconName(name);
+        NSImage *drawn = baselineToolbarCache[symbolic];
+        if (!drawn) {
+            // Into a bitmap, which survives the copies the segments make of it.
+            NSInteger pixels = (NSInteger)ToolbarIconDimension;
+            NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:pixels pixelsHigh:pixels
+                                                                          bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+                                                                         colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+            // Pixels set directly: no graphics context exists yet at launch on GNUstep. An
+            // antialiased rounded-rectangle outline, from its distance to the box's edge.
+            unsigned char *data = [rep bitmapData];
+            NSInteger stride = [rep bytesPerRow];
+            CGFloat halfWidth = pixels * 0.30, halfHeight = pixels * 0.22, radius = pixels * 0.09;
+            CGFloat stroke = pixels / 12.0;
+            for (NSInteger y = 0; y < pixels; y++) {
+                for (NSInteger x = 0; x < pixels; x++) {
+                    CGFloat qx = fabs((x + 0.5) - pixels * 0.5) - (halfWidth - radius);
+                    CGFloat qy = fabs((y + 0.5) - pixels * 0.5) - (halfHeight - radius);
+                    CGFloat outside = hypot(MAX(qx, 0.0), MAX(qy, 0.0)) + MIN(MAX(qx, qy), 0.0) - radius;
+                    CGFloat alpha = MAX(0.0, MIN(1.0, stroke * 0.5 + 0.5 - fabs(outside)));
+                    unsigned char *pixel = data + (y * stride) + (x * 4);
+                    unsigned char value = (unsigned char)lround(alpha * 255.0);
+                    // Premultiplied dark grey.
+                    pixel[0] = pixel[1] = pixel[2] = (unsigned char)lround(alpha * 51.0);
+                    pixel[3] = value;
+                }
+            }
+            drawn = [[NSImage alloc] initWithSize:NSMakeSize(ToolbarIconDimension, ToolbarIconDimension)];
+            [drawn addRepresentation:rep];
+            baselineToolbarCache[symbolic] = drawn;
+        }
+        return drawn;
+    }
 #ifdef NSImageNameAddTemplate
     NSImage *fallback = [NSImage imageNamed:NSImageNameAddTemplate];
     if (fallback) {
@@ -3675,7 +3740,8 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (NSColor *)badgeColorForToolbarIdentifier:(NSToolbarItemIdentifier)identifier {
-    if ([identifier isEqualToString:ToolbarItemPen] || [identifier isEqualToString:ToolbarItemArrow]) {
+    if ([identifier isEqualToString:ToolbarItemPen] || [identifier isEqualToString:ToolbarItemArrow] ||
+        [identifier isEqualToString:ToolbarItemRectangle]) {
         return self.canvasView.penColor;
     }
     if ([identifier isEqualToString:ToolbarItemHighlighter]) {
@@ -4239,6 +4305,8 @@ static id STInfoValueForKey(NSString *key) {
             return @"Pen Width";
         case ScreenshotCanvasToolArrow:
             return @"Arrow Width";
+        case ScreenshotCanvasToolRectangle:
+            return @"Rectangle Width";
         case ScreenshotCanvasToolHighlighter:
             return @"Highlighter Width";
         default:
@@ -6574,6 +6642,11 @@ static id STInfoValueForKey(NSString *key) {
     [self selectTool:ScreenshotCanvasToolArrow];
 }
 
+- (void)activateRectangle:(id)sender {
+    (void)sender;
+    [self selectTool:ScreenshotCanvasToolRectangle];
+}
+
 - (void)activatePen:(id)sender {
     NSEvent *event = [NSApp currentEvent];
     ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action fired (sender=%@, event=%@)",
@@ -6758,9 +6831,13 @@ static id STInfoValueForKey(NSString *key) {
         case ScreenshotCanvasToolArrow:
             selectedIdentifier = ToolbarItemArrow;
             break;
+        case ScreenshotCanvasToolRectangle:
+            selectedIdentifier = ToolbarItemRectangle;
+            break;
     }
 
-    if (tool == ScreenshotCanvasToolPen || tool == ScreenshotCanvasToolHighlighter || tool == ScreenshotCanvasToolArrow) {
+    if (tool == ScreenshotCanvasToolPen || tool == ScreenshotCanvasToolHighlighter || tool == ScreenshotCanvasToolArrow ||
+        tool == ScreenshotCanvasToolRectangle) {
         self.lastWidthTool = STSettingsToolForTool(tool);
     }
     [self updateToolWidthControls];
