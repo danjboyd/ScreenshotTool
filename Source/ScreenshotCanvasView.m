@@ -3188,6 +3188,14 @@ static NSError *STProjectError(NSString *message) {
                                   hasHorizontalScroller:NO
                                     hasVerticalScroller:NO
                                              borderType:self.hostScrollView.borderType];
+    // A theme can draw a border of its own round the clip view (CI's Adwaita draws 1pt) with the
+    // scroll view's border type still none: take it off too. The clip view's left inset is it; its
+    // other insets can be a scroller's.
+    CGFloat themeBorder = MAX(0.0, NSMinX(self.hostScrollView.contentView.frame));
+    if (themeBorder > 0.0 && themeBorder < 8.0) {
+        size.width = MAX(0.0, size.width - (2.0 * themeBorder));
+        size.height = MAX(0.0, size.height - (2.0 * themeBorder));
+    }
     // On the stage, Fit leaves the image its margin.
     if ([self enclosingStageView]) {
         size.width = MAX(0.0, size.width - (2.0 * STCanvasStageMargin));
