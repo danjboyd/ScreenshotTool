@@ -161,9 +161,13 @@
     [_appDelegate layoutContentSubviews];
     XCTAssertNotNil(_appDelegate.toolbarToolSegmentedControl);
     XCTAssertFalse(_appDelegate.toolbarToolSegmentedControl.isEnabled, @"no image, no drawing");
+    for (NSInteger segment = 0; segment < _appDelegate.toolbarToolSegmentedControl.segmentCount; segment++) {
+        XCTAssertFalse([_appDelegate.toolbarToolSegmentedControl isEnabledForSegment:segment], @"each segment too, which GNUstep draws");
+    }
     NSString *path = [self writeSampleImage];
     XCTAssertTrue([_appDelegate openImageAtURL:[NSURL fileURLWithPath:path]]);
     XCTAssertTrue(_appDelegate.toolbarToolSegmentedControl.isEnabled);
+    XCTAssertTrue([_appDelegate.toolbarToolSegmentedControl isEnabledForSegment:0]);
     [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
 }
 

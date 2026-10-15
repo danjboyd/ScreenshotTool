@@ -5634,9 +5634,22 @@ static id STInfoValueForKey(NSString *key) {
 
 /// The drawing tools work only on an image: with none open they're dimmed and disabled (#221).
 - (void)updateDrawingToolsForImage:(BOOL)hasImage {
-    if (self.toolbarToolSegmentedControl.isEnabled != hasImage) {
-        [self.toolbarToolSegmentedControl setEnabled:hasImage];
-        [self.toolbarToolSegmentedControl setNeedsDisplay:YES];
+    NSSegmentedControl *tools = self.toolbarToolSegmentedControl;
+    if (!tools) {
+        return;
+    }
+    BOOL changed = (tools.isEnabled != hasImage);
+    [tools setEnabled:hasImage];
+    // GNUstep's segmented cell draws each segment's own enabled state, not the control's: each
+    // segment is disabled too, so the theme dims them.
+    for (NSInteger segment = 0; segment < tools.segmentCount; segment++) {
+        if ([tools isEnabledForSegment:segment] != hasImage) {
+            [tools setEnabled:hasImage forSegment:segment];
+            changed = YES;
+        }
+    }
+    if (changed) {
+        [tools setNeedsDisplay:YES];
     }
 }
 
