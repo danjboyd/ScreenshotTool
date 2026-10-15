@@ -15,6 +15,7 @@
 - (NSWindow *)window;
 - (NSScrollView *)scrollView;
 - (ScreenshotCanvasView *)canvasView;
+- (void)resizeWindowToImageSize:(NSSize)size;
 @end
 
 /// The stage (v0.2.0, #221): the image on a backdrop, centred with a margin, display only.
@@ -152,6 +153,21 @@
     XCTAssertEqualWithAccuracy(NSHeight(stage.frame), NSHeight(image) + (2.0 * STCanvasStageMargin), 1.0);
     XCTAssertEqualWithAccuracy(NSMinX(image), STCanvasStageMargin, 1.0);
     XCTAssertEqualWithAccuracy(NSMinY(image), STCanvasStageMargin, 1.0);
+}
+
+/// The window opens with room for the margin, so a screenshot that fits the screen opens at 100%.
+- (void)testWindowSizedForAnImageOpensItAtActualSize {
+    XCTSkipIf(_shouldSkip, @"No window server");
+
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    NSSize size = NSMakeSize(860.0, 520.0);
+    [canvas loadImage:[self patternImageOfSize:size]];
+    [_appDelegate resizeWindowToImageSize:size];
+    [canvas updateForEnclosingBoundsChange];
+
+    XCTAssertTrue(canvas.isFitToWindow);
+    XCTAssertEqualWithAccuracy(canvas.zoomScale, 1.0 / canvas.screenPixelsPerPoint, 0.0001,
+                               @"Sized for the image and its margin, Fit should show it at actual size");
 }
 
 /// The stage is display only: the export is the image's own pixels, not the backdrop's.

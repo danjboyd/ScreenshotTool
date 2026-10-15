@@ -4368,10 +4368,14 @@ static const CGFloat STCanvasStageShadowDrop = 5.0;
     }
 
     // A soft shadow below the image: rings that fade as they spread, a little lower than the
-    // image. Drawn by hand, the same on every platform.
+    // image. Drawn by hand, the same on every platform. The image's own rect, dropped, takes the
+    // first ring's shade, so the shadow fades from the image's edge with no step.
     NSRect shadowFrame = NSOffsetRect(imageFrame, 0.0, STCanvasStageShadowDrop);
     if (NSIntersectsRect(NSInsetRect(shadowFrame, -STCanvasStageShadowSpread, -STCanvasStageShadowSpread), dirtyRect)) {
         NSColor *shadow = STThemeCanvasImageShadowColor();
+        CGFloat peak = 1.0 - (1.0 / (STCanvasStageShadowSpread + 1.0));
+        [[shadow colorWithAlphaComponent:0.075 * peak * peak] setFill];
+        NSRectFillUsingOperation(NSIntersectionRect(shadowFrame, dirtyRect), NSCompositeSourceOver);
         for (NSInteger ring = 1; ring <= (NSInteger)STCanvasStageShadowSpread; ring++) {
             CGFloat falloff = 1.0 - ((CGFloat)ring / (STCanvasStageShadowSpread + 1.0));
             [[shadow colorWithAlphaComponent:0.075 * falloff * falloff] setFill];
