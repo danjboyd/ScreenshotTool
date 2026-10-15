@@ -15,7 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 APP_BUNDLE="${1:-${ROOT_DIR}/build/cocoa/ScreenshotTool.app}"
 IMAGE_PATH="${2:-${ROOT_DIR}/Resources/ScreenshotToolIcon.png}"
-TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-8}"
+# How long to wait for the image to open. It usually takes a second or two; a busy CI runner
+# has taken more than 8 (v0.1.3-rc1), so the test polls rather than sleeping a fixed time.
+TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-30}"
 LOG_PATH="${SCREENSHOT_TOOL_LOG_PATH:-${TMPDIR:-/tmp}/screenshottool-macos-smoke.log}"
 BINARY="${APP_BUNDLE}/Contents/MacOS/ScreenshotTool"
 
@@ -30,11 +32,16 @@ fi
 
 rm -f "${LOG_PATH}"
 
-echo "Launching ${APP_BUNDLE} for ${TIMEOUT_SECONDS}s (log: ${LOG_PATH})"
+echo "Launching ${APP_BUNDLE}, waiting up to ${TIMEOUT_SECONDS}s for it to open the image (log: ${LOG_PATH})"
 SCREENSHOT_TOOL_LOG_PATH="${LOG_PATH}" "${BINARY}" "${IMAGE_PATH}" >/dev/null 2>&1 &
 APP_PID=$!
 
-sleep "${TIMEOUT_SECONDS}"
+for (( tick = 0; tick < TIMEOUT_SECONDS * 2; tick++ )); do
+  if grep -q "openImageAtURL loaded" "${LOG_PATH}" 2>/dev/null || ! kill -0 "${APP_PID}" 2>/dev/null; then
+    break
+  fi
+  sleep 0.5
+done
 if ! kill -0 "${APP_PID}" 2>/dev/null; then
   status=0
   wait "${APP_PID}" || status=$?
