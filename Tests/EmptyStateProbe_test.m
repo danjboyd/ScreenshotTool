@@ -2,7 +2,7 @@
  * EmptyStateProbe_test.m
  * Copyright (C) 2026 Daniel Boyd
  *
- * With no image open the window shows an empty state (icon, heading, Take Screenshot, Open… and
+ * With no image open the window shows an empty state (icon, the app's name, Take Screenshot, Open… and
  * Paste, in a dashed drop outline) in the canvas's place, and the drawing tools are disabled;
  * opening an image brings the canvas and the tools back (#55, #221).
  */
@@ -100,7 +100,7 @@
     XCTAssertTrue([capture.title hasPrefix:@"Take Screenshot"], @"titled, with its shortcut after");
     XCTAssertTrue([_appDelegate.emptyStateView isKindOfClass:[STEmptyStateView class]], @"in the dashed drop outline");
     NSTextField *heading = [_appDelegate.emptyStateView viewWithTag:2];
-    XCTAssertEqualObjects(heading.stringValue, @"Capture it. Mark it up. Share it.");
+    XCTAssertEqualObjects(heading.stringValue, @"ScreenshotTool");
     NSTextField *detail = [_appDelegate.emptyStateView viewWithTag:3];
     XCTAssertLessThanOrEqual(NSWidth(detail.frame), 480.0, @"the line under the heading wraps");
     XCTAssertTrue(NSContainsRect(_appDelegate.emptyStateView.bounds, detail.frame));

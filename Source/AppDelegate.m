@@ -5483,7 +5483,7 @@ static id STInfoValueForKey(NSString *key) {
 
 #pragma mark - Empty state (#55)
 
-/// What the window shows with no image: the app's icon, a heading, and Take Screenshot / Open… /
+/// What the window shows with no image: the app's icon, its name, and Take Screenshot / Open… /
 /// Paste (Take Screenshot only where the system has a capture tool, and the accent button, #221).
 /// Standard controls on a view that draws only a dashed outline, so the theme styles the rest (as
 /// libadwaita's status page). On macOS an image dropped on it opens, as on the canvas.
@@ -5508,7 +5508,7 @@ static id STInfoValueForKey(NSString *key) {
     [icon setTag:1];
     [view addSubview:icon];
 
-    NSTextField *title = [self emptyStateLabel:@"Capture it. Mark it up. Share it."
+    NSTextField *title = [self emptyStateLabel:@"ScreenshotTool"
                                           font:[NSFont boldSystemFontOfSize:round([NSFont systemFontSize] * 2.0)]];
     [title setTag:2];
     [view addSubview:title];
