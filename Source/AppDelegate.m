@@ -11,6 +11,7 @@
 #import "STThemeUtilities.h"
 #import "STSegmentToolTips.h"
 #import "STSplitButton.h"
+#import "STEmptyStateView.h"
 #import "STScreenshotCapture.h"
 #import "STWindowsIntegration.h"
 #import "STHudView.h"
@@ -2269,6 +2270,10 @@ static AppDelegate *STFrontDocument(void) {
     if ([identifier isEqualToString:ToolbarItemZoom]) {
         return [self.canvasView hasImage];
     }
+    // The drawing tools need an image (#221); validation would otherwise enable them again.
+    if ([identifier isEqualToString:ToolbarItemTools]) {
+        return [self.canvasView hasImage];
+    }
     return YES;
 }
 
@@ -3471,6 +3476,7 @@ static id STInfoValueForKey(NSString *key) {
         [cell setToolTip:[self toolbarSegmentToolTipForTool:tool] forSegment:segment];
     }
     [self.toolbarToolSegmentedControl setSelectedSegment:selectedSegment];
+    [self updateDrawingToolsForImage:[self.canvasView hasImage]];
     [self.toolbarToolSegmentedControl setNeedsDisplay:YES];
     [self adjustToolbarCustomViewVerticalOffset:self.toolbarToolSegmentedControl];
 }
@@ -5453,6 +5459,7 @@ static id STInfoValueForKey(NSString *key) {
     [self.scrollView setHidden:!hasImage];
     BOOL emptyStateWasHidden = self.emptyStateView.isHidden;
     [self.emptyStateView setHidden:hasImage];
+    [self updateDrawingToolsForImage:hasImage];
     if (emptyStateWasHidden && !hasImage) {
         // The last image closed: Paste's state may be out of date.
         [self performSelector:@selector(refreshPasteAvailability) withObject:nil afterDelay:0.0];
@@ -5476,13 +5483,23 @@ static id STInfoValueForKey(NSString *key) {
 
 #pragma mark - Empty state (#55)
 
-/// What the window shows with no image: the app's icon, "No Image", and Open… / Take Screenshot… /
-/// Paste (Take Screenshot only where the system has a capture tool). Standard
-/// controls on a view that draws nothing, so the theme styles it (as libadwaita's status page).
+/// What the window shows with no image: the app's icon, a heading, and Take Screenshot / Open… /
+/// Paste (Take Screenshot only where the system has a capture tool, and the accent button, #221).
+/// Standard controls on a view that draws only a dashed outline, so the theme styles the rest (as
+/// libadwaita's status page). On macOS an image dropped on it opens, as on the canvas.
 - (NSView *)newEmptyStateView {
-    NSView *view = [[NSView alloc] initWithFrame:NSZeroRect];
+    STEmptyStateView *view = [[STEmptyStateView alloc] initWithFrame:NSZeroRect];
+#if !defined(GNUSTEP)
+    __weak typeof(self) weakDropSelf = self;
+    view.dragOperation = ^NSDragOperation(id<NSDraggingInfo> info) {
+        return [weakDropSelf dragOperationForDraggingInfo:info];
+    };
+    view.performDrop = ^BOOL(id<NSDraggingInfo> info) {
+        return [weakDropSelf performDragOperation:info];
+    };
+#endif
 
-    NSImageView *icon = [[NSImageView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 96.0, 96.0)];
+    NSImageView *icon = [[NSImageView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 80.0, 80.0)];
     // The application icon is already loaded, and small; ScreenshotToolIcon.png is 1024px and took
     // ~75ms to load and scale at launch.
     [icon setImage:[NSApp applicationIconImage] ?: [NSImage imageNamed:@"ScreenshotToolIcon"]];
@@ -5491,16 +5508,17 @@ static id STInfoValueForKey(NSString *key) {
     [icon setTag:1];
     [view addSubview:icon];
 
-    NSTextField *title = [self emptyStateLabel:@"No Image" font:[NSFont boldSystemFontOfSize:round([NSFont systemFontSize] * 1.5)]];
+    NSTextField *title = [self emptyStateLabel:@"Capture it. Mark it up. Share it."
+                                          font:[NSFont boldSystemFontOfSize:round([NSFont systemFontSize] * 2.0)]];
     [title setTag:2];
     [view addSubview:title];
 
-    NSString *detailText = [STScreenshotCapture isAvailable]
-        ? @"Open a screenshot, take one, or paste one from the clipboard."
-        : @"Open a screenshot, or paste one from the clipboard.";
-    NSTextField *detail = [self emptyStateLabel:detailText
+    NSTextField *detail = [self emptyStateLabel:[self emptyStateDetailText]
                                            font:[NSFont systemFontOfSize:[NSFont systemFontSize]]];
     [detail setTextColor:STThemeSecondaryTextColor()];
+    // Wraps at the width -layoutEmptyStateViewInFrame: gives it.
+    [[detail cell] setWraps:YES];
+    [[detail cell] setLineBreakMode:NSLineBreakByWordWrapping];
     [detail setTag:3];
     [view addSubview:detail];
 
@@ -5547,12 +5565,79 @@ static id STInfoValueForKey(NSString *key) {
     [paste setTag:5];
     [view addSubview:paste];
 
-    NSButton *capture = [self emptyStateButton:@"Take Screenshot…" action:@selector(takeScreenshot:)];
+    NSButton *capture = [self emptyStateButton:@"Take Screenshot" action:@selector(takeScreenshot:)];
+    [self showShortcut:[self takeScreenshotShortcutText] onEmptyStateButton:capture];
+    // The accent button, without being the window's default: Return stays with Open… (#103).
+#if defined(GNUSTEP)
+    // A theme-neutral way to ask for the theme's accent button, as the toolbar's Copy does.
+    if ([capture respondsToSelector:@selector(setGSThemeStyle:)]) {
+        [capture performSelector:@selector(setGSThemeStyle:) withObject:@"accent"];
+    }
+#else
+    [capture setBezelColor:[NSColor controlAccentColor]];
+#endif
     [capture setFrameSize:NSMakeSize(MAX(120.0, ceil([[capture cell] cellSize].width) + 8.0), 32.0)];
     [capture setTag:6];
     [capture setHidden:![STScreenshotCapture isAvailable]];
     [view addSubview:capture];
     return view;
+}
+
+/// The line under the heading: what the window can take, by the shortcuts this platform shows.
+- (NSString *)emptyStateDetailText {
+#if defined(GNUSTEP)
+    NSString *paste = @"Ctrl+V";
+#else
+    NSString *paste = @"⌘V";
+#endif
+    NSString *text = [STScreenshotCapture isAvailable]
+        ? [NSString stringWithFormat:@"Take a screenshot, open an image, or paste one with %@.", paste]
+        : [NSString stringWithFormat:@"Open an image, or paste one with %@.", paste];
+#if !defined(GNUSTEP)
+    // Only macOS takes drops so far (Drag out, share and drop).
+    text = [text stringByAppendingString:@" You can also drop an image anywhere in this window."];
+#endif
+    return text;
+}
+
+/// File > Take Screenshot…'s key equivalent, as the menus show it here.
+- (NSString *)takeScreenshotShortcutText {
+#if defined(GNUSTEP)
+    return @"Ctrl+Shift+T";
+#else
+    return @"⇧⌘T";
+#endif
+}
+
+/// Shows `shortcut` after the button's title, dimmer than it, as the mockup's key hint (#221).
+- (void)showShortcut:(NSString *)shortcut onEmptyStateButton:(NSButton *)button {
+#if defined(GNUSTEP)
+    // GNUstep's themes draw the title in their own colour; an attributed one would lose it.
+    [button setTitle:[NSString stringWithFormat:@"%@   %@", button.title, shortcut]];
+#else
+    NSFont *font = button.font ?: [NSFont systemFontOfSize:[NSFont systemFontSize]];
+    NSMutableParagraphStyle *centred = [[NSMutableParagraphStyle alloc] init];
+    centred.alignment = NSTextAlignmentCenter;
+    NSMutableAttributedString *title = [[NSMutableAttributedString alloc] initWithString:button.title attributes:@{
+        NSFontAttributeName: font,
+        NSForegroundColorAttributeName: [NSColor whiteColor],
+        NSParagraphStyleAttributeName: centred,
+    }];
+    [title appendAttributedString:[[NSAttributedString alloc] initWithString:[@"   " stringByAppendingString:shortcut] attributes:@{
+        NSFontAttributeName: font,
+        NSForegroundColorAttributeName: [[NSColor whiteColor] colorWithAlphaComponent:0.7],
+        NSParagraphStyleAttributeName: centred,
+    }]];
+    [button setAttributedTitle:title];
+#endif
+}
+
+/// The drawing tools work only on an image: with none open they're dimmed and disabled (#221).
+- (void)updateDrawingToolsForImage:(BOOL)hasImage {
+    if (self.toolbarToolSegmentedControl.isEnabled != hasImage) {
+        [self.toolbarToolSegmentedControl setEnabled:hasImage];
+        [self.toolbarToolSegmentedControl setNeedsDisplay:YES];
+    }
 }
 
 - (NSTextField *)emptyStateLabel:(NSString *)text font:(NSFont *)font {
@@ -5586,17 +5671,20 @@ static id STInfoValueForKey(NSString *key) {
     NSView *icon = [view viewWithTag:1];
     NSTextField *title = [view viewWithTag:2];
     NSTextField *detail = [view viewWithTag:3];
-    // In a row: Open…, Take Screenshot… (unless hidden), Paste.
+    // In a row: Take Screenshot (unless hidden), Open…, Paste.
     NSMutableArray<NSView *> *buttons = [NSMutableArray array];
-    for (NSNumber *tag in @[@4, @6, @5]) {
+    for (NSNumber *tag in @[@6, @4, @5]) {
         NSView *button = [view viewWithTag:tag.integerValue];
         if (button && !button.isHidden) {
             [buttons addObject:button];
         }
     }
     [title sizeToFit];
-    [detail sizeToFit];
-    CGFloat gap = 12.0, buttonGap = 12.0;
+    // At most 480pt wide, inside the outline, on as many lines as it needs.
+    CGFloat detailWidth = MIN(480.0, NSWidth(frame) - 4.0 * [STEmptyStateView outlineInset]);
+    NSSize detailSize = [[detail cell] cellSizeForBounds:NSMakeRect(0.0, 0.0, MAX(detailWidth, 120.0), 10000.0)];
+    [detail setFrameSize:NSMakeSize(ceil(MAX(detailWidth, 120.0)), ceil(detailSize.height))];
+    CGFloat gap = 12.0, buttonGap = 8.0;
     CGFloat buttonsWidth = buttonGap * (CGFloat)(buttons.count - 1);
     CGFloat rowHeight = 0.0;
     for (NSView *button in buttons) {

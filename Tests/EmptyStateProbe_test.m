@@ -2,8 +2,9 @@
  * EmptyStateProbe_test.m
  * Copyright (C) 2026 Daniel Boyd
  *
- * With no image open the window shows an empty state (icon, "No Image", Open…, Take Screenshot…
- * and Paste) in the canvas's place; opening an image brings the canvas back (#55).
+ * With no image open the window shows an empty state (icon, heading, Take Screenshot, Open… and
+ * Paste, in a dashed drop outline) in the canvas's place, and the drawing tools are disabled;
+ * opening an image brings the canvas and the tools back (#55, #221).
  */
 
 #import <XCTest/XCTest.h>
@@ -11,6 +12,7 @@
 #import "AppDelegate.h"
 #import "ScreenshotCanvasView.h"
 #import "STScreenshotCapture.h"
+#import "STEmptyStateView.h"
 #import "TestEnvironmentHelpers.h"
 #import <objc/runtime.h>
 
@@ -21,6 +23,8 @@
 - (NSView *)emptyStateView;
 - (ScreenshotCanvasView *)canvasView;
 - (BOOL)openImageAtURL:(NSURL *)url;
+- (NSSegmentedControl *)toolbarToolSegmentedControl;
+- (NSToolbarItem *)toolbarItemForToolControl;
 @end
 
 @interface EmptyStateProbeTests : XCTestCase {
@@ -64,6 +68,25 @@
     return nil;
 }
 
+/// The control whose action is `action`.
+- (id)controlWithAction:(SEL)action {
+    for (NSView *view in _appDelegate.emptyStateView.subviews) {
+        if ([view isKindOfClass:[NSControl class]] && sel_isEqual([(NSControl *)view action], action)) {
+            return view;
+        }
+    }
+    return nil;
+}
+
+- (NSString *)writeSampleImage {
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:40 pixelsHigh:30
+                                                                 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+                                                                colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"empty-state-%@.png", [[NSUUID UUID] UUIDString]]];
+    [[rep representationUsingType:NSPNGFileType properties:@{}] writeToFile:path atomically:YES];
+    return path;
+}
+
 - (void)testEmptyStateWithoutAnImage {
     XCTSkipIf(_shouldSkip, @"No window server");
     [_appDelegate layoutContentSubviews];
@@ -73,7 +96,14 @@
     XCTAssertTrue(NSEqualRects(_appDelegate.emptyStateView.frame, _appDelegate.scrollView.frame), @"in the canvas's place");
 
     NSControl *open = [self buttonTitled:@"Open…"];
-    NSButton *capture = [self buttonTitled:@"Take Screenshot…"];
+    NSButton *capture = [self controlWithAction:@selector(takeScreenshot:)];
+    XCTAssertTrue([capture.title hasPrefix:@"Take Screenshot"], @"titled, with its shortcut after");
+    XCTAssertTrue([_appDelegate.emptyStateView isKindOfClass:[STEmptyStateView class]], @"in the dashed drop outline");
+    NSTextField *heading = [_appDelegate.emptyStateView viewWithTag:2];
+    XCTAssertEqualObjects(heading.stringValue, @"Capture it. Mark it up. Share it.");
+    NSTextField *detail = [_appDelegate.emptyStateView viewWithTag:3];
+    XCTAssertLessThanOrEqual(NSWidth(detail.frame), 480.0, @"the line under the heading wraps");
+    XCTAssertTrue(NSContainsRect(_appDelegate.emptyStateView.bounds, detail.frame));
     NSButton *paste = [self buttonTitled:@"Paste"];
     XCTAssertTrue(sel_isEqual(open.action, @selector(openDocument:)));
     XCTAssertTrue(sel_isEqual(capture.action, @selector(takeScreenshot:)));
@@ -85,9 +115,10 @@
     XCTAssertTrue(NSContainsRect(_appDelegate.emptyStateView.bounds, capture.frame));
     XCTAssertTrue(NSContainsRect(_appDelegate.emptyStateView.bounds, paste.frame));
     if (!capture.isHidden) {
-        XCTAssertLessThan(NSMaxX(open.frame), NSMinX(capture.frame), @"Open…, Take Screenshot…, Paste");
-        XCTAssertLessThan(NSMaxX(capture.frame), NSMinX(paste.frame));
+        XCTAssertLessThan(NSMaxX(capture.frame), NSMinX(open.frame), @"Take Screenshot, Open…, Paste");
+        XCTAssertLessThan(NSMaxX(open.frame), NSMinX(paste.frame));
         XCTAssertEqualWithAccuracy(NSMidY(open.frame), NSMidY(capture.frame), 1.0, @"in one row");
+        XCTAssertNotEqualObjects(capture.keyEquivalent, @"\r", @"the accent button, but Return stays with Open… (#103)");
     }
 }
 
@@ -123,13 +154,22 @@
 }
 #endif
 
+/// The drawing tools need an image: disabled in the empty state, enabled once one opens (#221).
+- (void)testDrawingToolsFollowTheImage {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_appDelegate toolbarItemForToolControl];
+    [_appDelegate layoutContentSubviews];
+    XCTAssertNotNil(_appDelegate.toolbarToolSegmentedControl);
+    XCTAssertFalse(_appDelegate.toolbarToolSegmentedControl.isEnabled, @"no image, no drawing");
+    NSString *path = [self writeSampleImage];
+    XCTAssertTrue([_appDelegate openImageAtURL:[NSURL fileURLWithPath:path]]);
+    XCTAssertTrue(_appDelegate.toolbarToolSegmentedControl.isEnabled);
+    [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
+}
+
 - (void)testOpeningAnImageShowsTheCanvas {
     XCTSkipIf(_shouldSkip, @"No window server");
-    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:40 pixelsHigh:30
-                                                                 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
-                                                                colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
-    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:[NSString stringWithFormat:@"empty-state-%@.png", [[NSUUID UUID] UUIDString]]];
-    [[rep representationUsingType:NSPNGFileType properties:@{}] writeToFile:path atomically:YES];
+    NSString *path = [self writeSampleImage];
     XCTAssertTrue([_appDelegate openImageAtURL:[NSURL fileURLWithPath:path]]);
     XCTAssertTrue(_appDelegate.emptyStateView.isHidden);
     XCTAssertFalse(_appDelegate.scrollView.isHidden);

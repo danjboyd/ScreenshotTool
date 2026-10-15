@@ -164,6 +164,7 @@ ScreenshotTool_HEADERS = Source/AppDelegate.h \
 	Source/TextToolPopoverController.h \
 	Source/PreferencesWindowController.h \
 	Source/STThemeUtilities.h \
+	Source/STEmptyStateView.h \
 	Source/STWindowsIntegration.h
 
 ScreenshotTool_OBJC_FILES = Source/main.m \
@@ -186,6 +187,7 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/STThemeUtilities.m \
 	Source/STSegmentToolTips.m \
 	Source/STSplitButton.m \
+	Source/STEmptyStateView.m \
 	Source/STScreenshotCapture.m \
 	Source/STWindowsIntegration.m \
 	Source/STFontPicker.m

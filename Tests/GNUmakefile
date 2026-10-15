@@ -107,6 +107,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STThemeUtilities.m \
 	../Source/STSegmentToolTips.m \
 	../Source/STSplitButton.m \
+	../Source/STEmptyStateView.m \
 	../Source/STScreenshotCapture.m \
 	../Source/STWindowsIntegration.m \
 	../Source/STFontPicker.m
