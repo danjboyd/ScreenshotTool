@@ -1994,6 +1994,24 @@ static AppDelegate *STFrontDocument(void) {
 }
 #endif
 
+/// Files dropped from Explorer (Windows): the first image or project among them opens like Open…,
+/// after asking about unsaved changes. Other files are ignored.
+- (void)openDroppedFilePaths:(NSArray<NSString *> *)paths {
+    for (NSString *path in paths) {
+        NSURL *url = [NSURL fileURLWithPath:path];
+        if (!STURLIsProject(url) && ![STOpenableImageFileTypes() containsObject:url.pathExtension.lowercaseString]) {
+            continue;
+        }
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Dropped file %@", path]);
+        if ([self confirmProceedingWithUnsavedChanges]) {
+            [self openImageAtURL:url];
+            [self.window makeKeyAndOrderFront:nil];
+        }
+        return;
+    }
+    ScreenshotToolAppendLog(@"Dropped files hold no image or project to open");
+}
+
 - (void)showAboutPanel:(id)sender {
     (void)sender;
     NSMutableDictionary *options = [[NSMutableDictionary alloc] init];
@@ -2605,6 +2623,11 @@ static id STInfoValueForKey(NSString *key) {
     // The window passes drags to its delegate (see Drag and drop below).
     [self.window registerForDraggedTypes:@[NSPasteboardTypeFileURL, NSPasteboardTypePNG, NSPasteboardTypeTIFF]];
 #endif
+    // Windows: files dropped from Explorer open too; GNUstep's backend takes no drops from other apps.
+    __weak AppDelegate *weakSelf = self;
+    STWindowsAcceptFileDrops(self.window, ^(NSArray<NSString *> *paths) {
+        [weakSelf openDroppedFilePaths:paths];
+    });
     self.undoManager = [[NSUndoManager alloc] init];
     self.undoManager.levelsOfUndo = 50;
     // The toolbar's Undo and Redo follow every undo manager: the canvas's and an open text box's (#101).

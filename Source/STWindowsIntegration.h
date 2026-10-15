@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
 
+@class NSWindow;
+
 NS_ASSUME_NONNULL_BEGIN
 
 /// Windows services the app uses directly, where GNUstep's own fall short. Everything here is
@@ -31,6 +33,10 @@ extern NSString *const STWindowsClipboardDidChangeNotification;
 /// Starts watching the clipboard, so a change shows even while the app keeps focus: a snip or
 /// PrtScn with the app in front didn't enable Paste until it was activated again (#202).
 void STWindowsStartClipboardMonitoring(void);
+
+/// Files dropped on `window` from Explorer: `handler` gets their paths on the main thread, after
+/// the drop has finished. GNUstep's Windows backend takes no drops from other apps itself.
+void STWindowsAcceptFileDrops(NSWindow *window, void (^handler)(NSArray<NSString *> *paths));
 
 /// Starts `executablePath` with `arguments`, its windows shown. NSTask starts a process hidden
 /// there, so another instance of the app never showed its window.
