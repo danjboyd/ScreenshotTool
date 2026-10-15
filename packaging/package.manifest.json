@@ -75,7 +75,7 @@
             "libaspell.so*",
             "libMagick*"
           ],
-          "maxPayloadBytes": 150000000
+          "maxPayloadBytes": 210000000
         }
       }
     }
