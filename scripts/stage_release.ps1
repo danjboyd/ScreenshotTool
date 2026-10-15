@@ -525,6 +525,12 @@ function Stage-LinuxRuntime {
   [void](Copy-DirectoryTree -Source (Join-Path $gnustepRoot "System\Library\Libraries") -Destination $runtimeLib)
   [void](Copy-DirectoryTree -Source (Join-Path $gnustepRoot "lib") -Destination $runtimeLib)
   [void](Copy-FileIfPresent -Source (Join-Path $gnustepRoot "System\Tools\defaults") -Destination (Join-Path $runtimeBin "defaults"))
+  # CMake and pkg-config files are for building against the toolchain, not for running.
+  foreach ($buildOnly in @((Join-Path $runtimeLib "cmake"), (Join-Path $runtimeLib "pkgconfig"), (Join-Path $runtimeSystemLib "pkgconfig"))) {
+    if (Test-Path -LiteralPath $buildOnly) {
+      Remove-Item -LiteralPath $buildOnly -Recurse -Force
+    }
+  }
 
   Patch-LinuxRunpathIfNeeded -Path (Join-Path $StageRoot "app\ScreenshotTool.app\ScreenshotTool") -NewRunpath '$ORIGIN:$ORIGIN/../../runtime/lib:$ORIGIN/../../runtime/System/Library/Libraries'
   Copy-LinuxDependencyClosure -StageRoot $StageRoot -RuntimeLibraryRoot $runtimeLib
