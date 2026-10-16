@@ -26,6 +26,11 @@
 - (NSToolbarItem *)toolbarItemForCustomAction:(STCustomAction *)action;
 @end
 
+@interface ScreenshotCanvasView (CustomActionsTesting)
+@property (nonatomic, assign) BOOL hasSelectionRect;
+@property (nonatomic, assign) NSRect selectionRect;
+@end
+
 @interface CustomActionsProbeTests : XCTestCase {
     NSString *_directory;
     NSString *_savedActionsDirectory;
@@ -244,6 +249,27 @@
     XCTAssertTrue([self spinUntil:^BOOL { return ![app isRunningCustomAction:action]; } seconds:15.0]);
     XCTAssertEqualObjects([self pasteboardString], @"/remote/Screenshot.png",
                           @"The command got a PNG file, and its output is on the clipboard");
+}
+
+/// With a selection the action gets the selection, as Copy copies it: the PNG's header says so.
+- (void)testAnActionGetsTheSelectionWhenThereIsOne {
+    [self writeAction:@"size.json" json:@"{\"title\": \"Size\", \"command\": [\"/bin/sh\", \"-c\", "
+                                         "\"od -An -tu1 -j16 -N8 \\\"$1\\\" | tr -s ' ' | sed 's/^ //'\", "
+                                         "\"sh\", \"{file}\"]}"];
+    AppDelegate *app = [self appWithActions];
+    XCTSkipIf(app == nil, @"No window server");
+    STCustomAction *action = [app loadedCustomActions].firstObject;
+    XCTAssertNotNil(action);
+
+    [app runCustomAction:action choice:nil];
+    XCTAssertTrue([self spinUntil:^BOOL { return ![app isRunningCustomAction:action]; } seconds:15.0]);
+    XCTAssertEqualObjects([self pasteboardString], @"0 0 0 120 0 0 0 80", @"No selection: the whole 120x80 image");
+
+    app.canvasView.selectionRect = NSMakeRect(10.0, 20.0, 40.0, 30.0);
+    app.canvasView.hasSelectionRect = YES;
+    [app runCustomAction:action choice:nil];
+    XCTAssertTrue([self spinUntil:^BOOL { return ![app isRunningCustomAction:action]; } seconds:15.0]);
+    XCTAssertEqualObjects([self pasteboardString], @"0 0 0 40 0 0 0 30", @"The 40x30 selection, not the image");
 }
 
 /// "choices": the lines become a menu, and the button (no choice) takes the first.

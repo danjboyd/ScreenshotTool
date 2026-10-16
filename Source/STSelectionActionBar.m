@@ -9,18 +9,20 @@ static const CGFloat STSelectionBarPadding = 4.0;
     NSArray<NSButton *> *_buttons;
 }
 
-- (instancetype)initWithTarget:(id)target {
+- (instancetype)initWithTarget:(id)target showsShare:(BOOL)showsShare {
     self = [super initWithFrame:NSZeroRect];
     if (!self) {
         return nil;
     }
-    NSArray<NSString *> *titles = @[@"Crop", @"Copy", @"Redact"];
-    SEL actions[] = { @selector(cropImage:), @selector(copy:), @selector(redactSelection:) };
-    NSArray<NSString *> *toolTips = @[@"Crop to the selection", @"Copy the selection", @"Pixelate the selection"];
+    NSArray<NSString *> *titles = @[@"Crop", @"Copy", @"Redact", @"Share"];
+    SEL actions[] = { @selector(cropImage:), @selector(copy:), @selector(redactSelection:), @selector(shareImage:) };
+    NSArray<NSString *> *toolTips = @[@"Crop to the selection", @"Copy the selection", @"Pixelate the selection",
+                                      @"Share the selection"];
+    NSUInteger count = showsShare ? titles.count : titles.count - 1;
     NSMutableArray<NSButton *> *buttons = [[NSMutableArray alloc] init];
     CGFloat x = STSelectionBarPadding;
     CGFloat height = 0.0;
-    for (NSUInteger i = 0; i < titles.count; i++) {
+    for (NSUInteger i = 0; i < count; i++) {
         NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 64.0, 24.0)];
         button.title = titles[i];
         [button setBezelStyle:NSRoundedBezelStyle];

@@ -285,9 +285,9 @@ defaults are left untouched. CI runs it on each AppImage.
 - Preferences: `Ctrl+,`
 
 ## Custom actions
-A custom action hands the annotated image, as a PNG, to a command of your own and copies what it
-prints, so a personal workflow is one click. The app ships none: each is a JSON file in your
-actions folder, read at launch.
+A custom action hands the annotated image (or the selection, when there is one, as Copy does)
+as a PNG to a command of your own and copies what it prints, so a personal workflow is one
+click. The app ships none: each is a JSON file in your actions folder, read at launch.
 
 | Platform | Folder |
 |---|---|

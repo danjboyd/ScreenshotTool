@@ -1094,6 +1094,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) CGFloat selectionDashPhase;
 @property (nonatomic, assign) NSTrackingRectTag cursorTrackingTag;
 @property (nonatomic, assign) BOOL mouseInsideCanvas;
+@property (nonatomic, assign, readwrite) NSPoint lastContextMenuPoint;
 /// The image scaled down to the zoom it was last shown at, for drawing it 1:1 (GNUstep).
 @property (nonatomic, strong, nullable) NSImage *scaledImageCache;
 /// The image's bitmap as 8-bit RGBA, made once, which the scaled copies are made from.
@@ -2935,6 +2936,7 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
 }
 
 - (STCanvasContextKind)prepareContextMenuAtViewPoint:(NSPoint)viewPoint {
+    self.lastContextMenuPoint = viewPoint;
     if (!self.image) {
         return STCanvasContextKindNone;
     }

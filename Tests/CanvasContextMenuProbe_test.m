@@ -212,6 +212,26 @@
     XCTAssertTrue([self item:@"Copy Image" in:menu].isEnabled);
 }
 
+- (void)testShareIsOfferedOnlyWithAPicker {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    NSMenu *selection = STCanvasContextMenu(STCanvasContextKindSelection, NO, YES, canvas, _appDelegate, nil);
+    XCTAssertEqualObjects([self titlesOf:selection],
+                          (@[@"Crop to Selection", @"Copy Selection", @"Redact Selection", @"Share Selection…", @"-", @"Deselect"]));
+    NSMenu *image = STCanvasContextMenu(STCanvasContextKindImage, NO, YES, canvas, _appDelegate, nil);
+    NSMenuItem *share = [self item:@"Share…" in:image];
+    XCTAssertNotNil(share, @"After Save As…");
+    XCTAssertEqual(share.action, @selector(shareImage:));
+    XCTAssertTrue(share.target == _appDelegate);
+    XCTAssertNil([self item:@"Share…" in:STCanvasContextMenu(STCanvasContextKindImage, NO, NO, canvas, _appDelegate, nil)],
+                 @"No picker, no Share");
+#if defined(GNUSTEP)
+    [canvas loadImage:[self imageOfSize:NSMakeSize(200.0, 100.0)]];
+    XCTAssertNil([self item:@"Share…" in:[self rightClick:canvas at:NSMakePoint(50.0, 50.0)]],
+                 @"Not on GNUstep until libs-sharing gives it a picker");
+#endif
+}
+
 #pragma mark - The menu's own commands
 
 - (void)testRedactSelectionAddsARedactionThatUndoes {

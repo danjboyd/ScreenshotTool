@@ -113,7 +113,7 @@
 #pragma mark - Placement
 
 - (void)testItGoesBelowThenAboveThenInside {
-    STSelectionActionBar *bar = [[STSelectionActionBar alloc] initWithTarget:self];
+    STSelectionActionBar *bar = [[STSelectionActionBar alloc] initWithTarget:self showsShare:NO];
     NSSize size = bar.frame.size;
     XCTAssertTrue(size.width > 150.0 && size.height > 20.0, @"Three buttons and some padding");
 
@@ -140,6 +140,15 @@
     [plain addSubview:bar];
     NSRect plainBelow = [bar frameForSelection:NSMakeRect(200, 250, 200, 100) visible:plain.bounds];
     XCTAssertEqualWithAccuracy(NSMaxY(plainBelow), 242.0, 0.5, @"Below on screen whichever way the view counts");
+}
+
+- (void)testShareIsOfferedOnlyWithAPicker {
+    STSelectionActionBar *plain = [[STSelectionActionBar alloc] initWithTarget:self showsShare:NO];
+    XCTAssertEqualObjects([plain.buttons valueForKey:@"title"], (@[@"Crop", @"Copy", @"Redact"]));
+    STSelectionActionBar *sharing = [[STSelectionActionBar alloc] initWithTarget:self showsShare:YES];
+    XCTAssertEqualObjects([sharing.buttons valueForKey:@"title"], (@[@"Crop", @"Copy", @"Redact", @"Share"]));
+    XCTAssertEqual(sharing.buttons.lastObject.action, @selector(shareImage:));
+    XCTAssertTrue(NSWidth(sharing.frame) > NSWidth(plain.frame), @"The bar grows to fit it");
 }
 
 #pragma mark - Showing it
