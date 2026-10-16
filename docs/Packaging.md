@@ -48,8 +48,10 @@ means existing installs can't verify new updates.
 The app icon is drawn in `Resources/AppIcon/`: `ScreenshotToolIcon.svg` (GNUstep, the AppImage and
 desktop entries) and `ScreenshotToolIcon-macOS.svg` (the same art on Apple's icon grid).
 `scripts/render_app_icon.py` renders them to `Resources/ScreenshotToolIcon.png`, `.tiff` and
-`-macOS.png`; commit those. The `.icns` is made from `-macOS.png`, the Windows `.ico` from
-`ScreenshotToolIcon.png`.
+`-macOS.png`; commit those. The `.icns` is made from `-macOS.png`. The Windows
+`Resources/ScreenshotTool.ico` is made from `ScreenshotToolIcon.png` by
+`scripts/make_windows_icon.ps1`; commit it too. The app exe embeds it (`Source/ScreenshotTool.rc`)
+for the taskbar and Alt+Tab, and the MSI uses the same file for the launcher and Start menu.
 
 ## Local Build And Stage
 
