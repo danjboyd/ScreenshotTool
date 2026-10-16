@@ -6007,7 +6007,8 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
 }
 
 #if defined(GNUSTEP)
-- (void)runEmptyStateThumbnailLoad:(void (^)(void))load {
+/// A class method, so the delayed perform keeps no window controller alive until it fires.
++ (void)runEmptyStateThumbnailLoad:(void (^)(void))load {
     load();
 }
 #endif
@@ -6031,10 +6032,14 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
     // GNUstep's image classes are main-thread only (NSImage reads files through the pasteboard
     // server), and its +[NSOperationQueue mainQueue] runs blocks on a worker thread: so a delayed
     // perform on this thread, one per turn of the run loop, after launch.
+    // It holds the card weakly, and does nothing once the card has left its window.
     void (^load)(void) = ^{
+        if (!weakCard.window) {
+            return;
+        }
         apply(STEmptyStateThumbnailForFile(path, maximum));
     };
-    [self performSelector:@selector(runEmptyStateThumbnailLoad:) withObject:[load copy] afterDelay:0.0];
+    [[self class] performSelector:@selector(runEmptyStateThumbnailLoad:) withObject:[load copy] afterDelay:0.0];
 #else
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSImage *thumbnail = STEmptyStateThumbnailForFile(path, maximum);
