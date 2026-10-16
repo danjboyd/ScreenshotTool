@@ -7,7 +7,7 @@
     "id": "com.danboyd.screenshottool",
     "name": "ScreenshotTool",
     "displayName": "ScreenshotTool",
-    "version": "0.1.3",
+    "version": "0.2.0",
     "manufacturer": "Daniel Boyd",
     "summary": "Annotate screenshots and other images with pen, highlighter, and text tools.",
     "description": "ScreenshotTool is a GNUstep desktop app for opening screenshots and other images, marking them up with pen, highlighter, eraser, and text tools, then saving or copying the annotated result.",
@@ -82,7 +82,7 @@
         "runtimeNotices": [
           {
             "name": "ScreenshotTool",
-            "version": "0.1.3",
+            "version": "0.2.0",
             "license": "GPL-2.0-or-later",
             "source": "ScreenshotTool application bundle",
             "homepage": "https://github.com/danjboyd/ScreenshotTool",
@@ -114,7 +114,7 @@
     {
       "name": "WinUITheme",
       "repo": "https://github.com/danjboyd/plugins-themes-winuitheme.git",
-      "ref": "dee0f34feac474a72803704dea8f53676b5a0d93",
+      "ref": "906e462ca6f3c42d4463cc2f22277888436cda21",
       "platforms": [
         "msi"
       ],
@@ -223,7 +223,7 @@
     "runtimeNotices": [
       {
         "name": "ScreenshotTool",
-        "version": "0.1.3",
+        "version": "0.2.0",
         "license": "GPL-2.0-or-later",
         "source": "ScreenshotTool application bundle",
         "homepage": "https://github.com/danjboyd/ScreenshotTool",
@@ -245,7 +245,7 @@
       },
       {
         "name": "WinUITheme",
-        "version": "0.1.0-alpha7",
+        "version": "0.1.0-alpha8",
         "license": "LGPL-2.1-or-later",
         "source": "Default Windows theme, from danjboyd/plugins-themes-winuitheme",
         "homepage": "https://github.com/danjboyd/plugins-themes-winuitheme",

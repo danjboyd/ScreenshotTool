@@ -204,7 +204,8 @@ shoot() {
   extents="$(xprop -id "${id}" _NET_FRAME_EXTENTS 2>/dev/null | sed -n 's/.*= //p')"
   [[ -n "${extents}" ]] && IFS=', ' read -r left right top bottom <<<"${extents}"
   # A theme that draws its own shadow (Adwaita) marks it with _GTK_FRAME_EXTENTS: leave it out, and
-  # make the window's rounded corners transparent instead of the desktop behind them.
+  # make the window's rounded corners transparent instead of the desktop behind them, from the
+  # window's own alpha (window_alpha_edges).
   local shadow sl=0 sr=0 st=0 sb=0
   shadow="$(xprop -id "${id}" _GTK_FRAME_EXTENTS 2>/dev/null | sed -n 's/.*= //p')"
   [[ -n "${shadow}" ]] && IFS=', ' read -r sl sr st sb <<<"${shadow}"
@@ -212,9 +213,30 @@ shoot() {
     -crop "$((w + left + right - sl - sr))x$((h + top + bottom - st - sb))+$((x - left + sl))+$((y - top + st))" \
     +repage "${OUT_DIR}/${name}-window.png"
   if [[ -n "${shadow}" ]]; then
-    round_corners "${OUT_DIR}/${name}-window.png" "${CORNER_RADIUS:-12}"
+    window_alpha_edges "${OUT_DIR}/${name}-window.png" "${id}" "${sl}" "${sr}" "${st}" "${sb}" \
+      || round_corners "${OUT_DIR}/${name}-window.png" "${CORNER_RADIUS:-12}"
   fi
   echo "screenshots: ${OUT_DIR}/${name}-window.png"
+}
+
+# window_alpha_edges <png> <window> <left> <right> <top> <bottom>: gives the cropped screen shot in
+# <png> the window's own alpha at its edges. A theme that rounds its corners draws them into an
+# ARGB window, antialiased against nothing; the screen shot has them over the desktop, which a
+# mask of our own leaves as a dark fringe where its arc misses the theme's. Where the window is
+# opaque the screen shot stays, popovers and all; elsewhere the window's own pixels, read with xwd
+# and less its shadow (the _GTK_FRAME_EXTENTS insets), replace it. Fails, for round_corners to
+# take over, when the window isn't 32-bit or its size doesn't match.
+window_alpha_edges() {
+  local file="$1" id="$2" raw="${WORK}/window-raw.png"
+  [[ "$(xwininfo -id "${id}" 2>/dev/null | awk '/Depth:/ {print $2}')" == "32" ]] || return 1
+  xwd -id "${id}" -silent >"${WORK}/window.xwd" 2>/dev/null || return 1
+  python3 -I "${ROOT_DIR}/Tools/xwd_to_png.py" "${WORK}/window.xwd" "${raw}" "$3" "$4" "$5" "$6" || return 1
+  if [[ "$(identify -format '%wx%h' "${raw}")" != "$(identify -format '%wx%h' "${file}")" ]]; then
+    echo "screenshots: the window's own pixels are $(identify -format '%wx%h' "${raw}"), the crop $(identify -format '%wx%h' "${file}")" >&2
+    return 1
+  fi
+  convert "${raw}" \( "${file}" -alpha off \( "${raw}" -alpha extract -threshold 99.9% \) \
+            -compose CopyOpacity -composite \) -compose Over -composite "PNG32:${file}"
 }
 
 # round_corners <png> <radius>: makes the area outside rounded corners of that radius transparent.

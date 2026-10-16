@@ -197,6 +197,13 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: "1"
         # The app needs an X server; the runner has none, so give it a virtual one.
         run: xvfb-run -a scripts/smoke_appimage.sh "${{ steps.naming.outputs.appimage_path }}"
+      - name: Alt+F4 under GNOME's window manager
+        # Under GNOME the AppImage uses Adwaita, which decorates its own windows. Without
+        # WM_DELETE_WINDOW on them, Mutter kills the app on Alt+F4. The script runs its own Xvfb
+        # and Mutter (GNOME Shell's window manager).
+        run: |
+          sudo apt-get install -y --no-install-recommends mutter dbus-daemon wmctrl >/dev/null
+          CHECK_WM=mutter Tools/check_wm_close.sh "${{ steps.naming.outputs.appimage_path }}"
       - name: Smoke test AppImage on a host without GNUstep
         # The runner's /usr/GNUstep would hide an AppImage that loads the host's GNUstep.
         # linuxdeploy's excludelist leaves fontconfig, freetype, harfbuzz, GL, X11 and cups to the

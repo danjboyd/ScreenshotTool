@@ -5898,16 +5898,20 @@ static id STInfoValueForKey(NSString *key) {
     [paste setTag:5];
     [view addSubview:paste];
 
-    NSButton *capture = [self emptyStateButton:@"Take Screenshot" action:@selector(takeScreenshot:)];
-    [self showShortcut:[self takeScreenshotShortcutText] onEmptyStateButton:capture];
     // The accent button, without being the window's default: Return stays with Open… (#103).
 #if defined(GNUSTEP)
+    NSButton *capture = [self emptyStateButton:@"Take Screenshot" action:@selector(takeScreenshot:)];
+    [self showShortcut:[self takeScreenshotShortcutText] onEmptyStateButton:capture];
     // A theme-neutral way to ask for the theme's accent button, as the toolbar's Copy does.
     if ([capture respondsToSelector:@selector(setGSThemeStyle:)]) {
         [capture performSelector:@selector(setGSThemeStyle:) withObject:@"accent"];
     }
 #else
-    [capture setBezelColor:[NSColor controlAccentColor]];
+    STAccentButton *capture = [[STAccentButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 120.0, 32.0)];
+    [capture setTitle:@"Take Screenshot"];
+    [capture setShortcut:[self takeScreenshotShortcutText]];
+    [capture setTarget:self];
+    [capture setAction:@selector(takeScreenshot:)];
 #endif
     [capture setFrameSize:NSMakeSize(MAX(120.0, ceil([[capture cell] cellSize].width) + 8.0), 32.0)];
     [capture setTag:6];
@@ -6082,6 +6086,13 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
     [self layoutContentSubviews];
 }
 
+#if defined(GNUSTEP)
+/// A class method, so the delayed perform keeps no window controller alive until it fires.
++ (void)runEmptyStateThumbnailLoad:(void (^)(void))load {
+    load();
+}
+#endif
+
 - (void)loadEmptyStateThumbnailForCard:(STRecentCard *)card path:(NSString *)path key:(NSString *)key {
     __weak STRecentCard *weakCard = card;
     void (^apply)(NSImage *) = ^(NSImage *thumbnail) {
@@ -6098,10 +6109,17 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
     // Twice the 2x card's width, so the crop stays sharp.
     CGFloat maximum = 640.0;
 #if defined(GNUSTEP)
-    // GNUstep's image classes are main-thread only: one per turn of the run loop, after launch.
-    [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+    // GNUstep's image classes are main-thread only (NSImage reads files through the pasteboard
+    // server), and its +[NSOperationQueue mainQueue] runs blocks on a worker thread: so a delayed
+    // perform on this thread, one per turn of the run loop, after launch.
+    // It holds the card weakly, and does nothing once the card has left its window.
+    void (^load)(void) = ^{
+        if (!weakCard.window) {
+            return;
+        }
         apply(STEmptyStateThumbnailForFile(path, maximum));
-    }];
+    };
+    [[self class] performSelector:@selector(runEmptyStateThumbnailLoad:) withObject:[load copy] afterDelay:0.0];
 #else
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSImage *thumbnail = STEmptyStateThumbnailForFile(path, maximum);
@@ -6138,28 +6156,13 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
 #endif
 }
 
-/// Shows `shortcut` after the button's title, dimmer than it, as the mockup's key hint (#221).
-- (void)showShortcut:(NSString *)shortcut onEmptyStateButton:(NSButton *)button {
 #if defined(GNUSTEP)
-    // GNUstep's themes draw the title in their own colour; an attributed one would lose it.
+/// Shows `shortcut` after the button's title, as the mockup's key hint (#221). GNUstep's themes
+/// draw the title in their own colour; an attributed one would lose it. (macOS: STAccentButton.)
+- (void)showShortcut:(NSString *)shortcut onEmptyStateButton:(NSButton *)button {
     [button setTitle:[NSString stringWithFormat:@"%@   %@", button.title, shortcut]];
-#else
-    NSFont *font = button.font ?: [NSFont systemFontOfSize:[NSFont systemFontSize]];
-    NSMutableParagraphStyle *centred = [[NSMutableParagraphStyle alloc] init];
-    centred.alignment = NSTextAlignmentCenter;
-    NSMutableAttributedString *title = [[NSMutableAttributedString alloc] initWithString:button.title attributes:@{
-        NSFontAttributeName: font,
-        NSForegroundColorAttributeName: [NSColor whiteColor],
-        NSParagraphStyleAttributeName: centred,
-    }];
-    [title appendAttributedString:[[NSAttributedString alloc] initWithString:[@"   " stringByAppendingString:shortcut] attributes:@{
-        NSFontAttributeName: font,
-        NSForegroundColorAttributeName: [[NSColor whiteColor] colorWithAlphaComponent:0.7],
-        NSParagraphStyleAttributeName: centred,
-    }]];
-    [button setAttributedTitle:title];
-#endif
 }
+#endif
 
 /// The drawing tools work only on an image: with none open they're dimmed and disabled (#221).
 - (void)updateDrawingToolsForImage:(BOOL)hasImage {
@@ -6384,7 +6387,13 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
     // Undo, Redo and Share do), and opens wide enough for the whole toolbar.
     minimumWidth = MAX(minimumWidth, [self contentWidthShowingToolbarItems:YES atMost:maxWidth from:minimumWidth]);
     CGFloat targetWidth = MAX(contentWidth, minimumWidth);
-    targetWidth = MAX(targetWidth, [self contentWidthShowingToolbarItems:NO atMost:maxWidth from:targetWidth]);
+    CGFloat toolbarWidth = [self contentWidthShowingToolbarItems:NO atMost:maxWidth from:targetWidth];
+    if (toolbarWidth > targetWidth) {
+        // A few points to spare: once the image is in, the toolbar's items can take a point more
+        // than they measured with none (#221's 9-tool toolbar was 1pt short).
+        toolbarWidth = MIN(maxWidth, toolbarWidth + 8.0);
+    }
+    targetWidth = MAX(targetWidth, toolbarWidth);
 #else
     CGFloat targetWidth = MAX(contentWidth, minimumWidth);
 #endif
