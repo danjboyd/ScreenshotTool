@@ -21,6 +21,10 @@
   /* Declares that the toolbar suits a header bar (a few icons, a flexible space): a theme with
      one, such as Adwaita, may put the toolbar in the title bar. Other themes ignore it (#52). */
   GnomeThemeHeaderBarToolbar = YES;
+  /* Declares that the menus suit a "..." button at the toolbar's end, as Edge and File Explorer
+     have them: WinUITheme folds the menu bar into it and the toolbar takes the row (#219).
+     Other themes ignore it; a user default overrides it. */
+  WinUIThemeMenuStyle = more;
   /* The project format, so file choosers can name it. */
   CFBundleDocumentTypes = (
     {
