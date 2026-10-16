@@ -61,6 +61,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	StepToolProbe_test.m \
 	RedactToolProbe_test.m \
 	CanvasStageProbe_test.m \
+	DragOutProbe_test.m \
 	CanvasContextMenuProbe_test.m \
 	SelectionActionBarProbe_test.m \
 	CanvasDrawSpeedProbe_test.m \

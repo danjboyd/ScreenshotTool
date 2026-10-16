@@ -97,14 +97,15 @@ GNUstep's default theme, with the menus in the window. Shortcuts use Ctrl on eve
   file with the original image and editable annotations, which Open and Open
   Recent read back.
 - Crop to Selection, Fit to Window, fixed zoom levels and Zoom In/Out.
+- Drag the annotated image (or the selection) out of the Copy toolbar button into another app,
+  a chat, a mail or a folder, as a PNG file named after the document (macOS and Linux).
 - Custom actions: send the annotated image to a command of your own (an upload script, say)
   from the File menu or a toolbar button; see [Custom actions](#custom-actions).
 - Standard controls throughout, so the GNUstep theme decides the look,
   including the toolbar, symbolic icons and the open and save dialogs.
-- On macOS: a window per image (File > New Window, Open several at once); drag
-  the annotated image out of the Copy toolbar button into another app, share it
-  from the toolbar or File > Share, drop images on a window to open them, and
-  pinch or Command-scroll to zoom.
+- On macOS: a window per image (File > New Window, Open several at once); share
+  the image from the toolbar or File > Share, drop images on a window to open
+  them, and pinch or Command-scroll to zoom.
 
 ## Screenshots
 
