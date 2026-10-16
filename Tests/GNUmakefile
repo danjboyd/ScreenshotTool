@@ -53,6 +53,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	FitToWindowProbe_test.m \
 	RectangleToolProbe_test.m \
 	StepToolProbe_test.m \
+	RedactToolProbe_test.m \
 	CanvasStageProbe_test.m \
 	LargeImageDrawingProbe_test.m \
 	CursorRectProbe_test.m \

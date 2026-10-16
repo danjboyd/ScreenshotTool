@@ -38,7 +38,9 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
     /// Rectangles' outlines (v0.2.0, #221); shares the pen's colour and width.
     ScreenshotCanvasToolRectangle = 6,
     /// Numbered steps, 1, 2, 3… (v0.2.0, #221); in the pen's colour, sized by its width.
-    ScreenshotCanvasToolStep = 7
+    ScreenshotCanvasToolStep = 7,
+    /// Redactions: the image pixelated in a rect (v0.2.0, #221).
+    ScreenshotCanvasToolRedact = 8
 };
 
 /// A view next to the canvas whose controls can take the keyboard while a text box is being edited
