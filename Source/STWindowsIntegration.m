@@ -5,6 +5,7 @@ NSString *const STWindowsClipboardDidChangeNotification = @"STWindowsClipboardDi
 #if defined(_WIN32)
 
 #import <AppKit/AppKit.h>
+#import <GNUstepGUI/GSDisplayServer.h>
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
@@ -330,27 +331,87 @@ NSData *STWindowsClipboardPNGData(void) {
     return pngData.length > 0 ? pngData : nil;
 }
 
+/// The files an HDROP lists: Explorer's file list, on the clipboard or in a drop.
+static NSArray<NSString *> *STPathsInDrop(HDROP drop) {
+    NSMutableArray<NSString *> *paths = [NSMutableArray array];
+    UINT count = DragQueryFileW(drop, 0xFFFFFFFF, NULL, 0);
+    for (UINT i = 0; i < count; i++) {
+        UINT length = DragQueryFileW(drop, i, NULL, 0);
+        if (length == 0) {
+            continue;
+        }
+        NSMutableData *buffer = [NSMutableData dataWithLength:(length + 1) * sizeof(WCHAR)];
+        if (DragQueryFileW(drop, i, buffer.mutableBytes, length + 1) == length) {
+            [paths addObject:[NSString stringWithCharacters:buffer.bytes length:length]];
+        }
+    }
+    return paths;
+}
+
 NSArray<NSString *> *STWindowsClipboardFilePaths(void) {
     if (!IsClipboardFormatAvailable(CF_HDROP) || !STOpenClipboard(NULL)) {
         return nil;
     }
-    NSMutableArray<NSString *> *paths = [NSMutableArray array];
     HDROP drop = (HDROP)GetClipboardData(CF_HDROP);
-    if (drop != NULL) {
-        UINT count = DragQueryFileW(drop, 0xFFFFFFFF, NULL, 0);
-        for (UINT i = 0; i < count; i++) {
-            UINT length = DragQueryFileW(drop, i, NULL, 0);
-            if (length == 0) {
-                continue;
-            }
-            NSMutableData *buffer = [NSMutableData dataWithLength:(length + 1) * sizeof(WCHAR)];
-            if (DragQueryFileW(drop, i, buffer.mutableBytes, length + 1) == length) {
-                [paths addObject:[NSString stringWithCharacters:buffer.bytes length:length]];
-            }
-        }
-    }
+    NSArray<NSString *> *paths = drop != NULL ? STPathsInDrop(drop) : nil;
     CloseClipboard();
     return paths.count > 0 ? paths : nil;
+}
+
+/// The window procedure a window had before it took drops.
+static const WCHAR *const STPreviousWindowProcProperty = L"ScreenshotToolPreviousWindowProc";
+
+/// What a drop on each window calls, by HWND.
+static NSMutableDictionary<NSNumber *, void (^)(NSArray<NSString *> *)> *STDropHandlers(void) {
+    static NSMutableDictionary *handlers = nil;
+    if (handlers == nil) {
+        handlers = [[NSMutableDictionary alloc] init];
+    }
+    return handlers;
+}
+
+/// Takes WM_DROPFILES ahead of the window's own procedure, which ignores it.
+static LRESULT CALLBACK STDropWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
+    WNDPROC previous = (WNDPROC)GetPropW(window, STPreviousWindowProcProperty);
+    NSNumber *key = @((uintptr_t)window);
+    if (message == WM_DROPFILES) {
+        NSArray<NSString *> *paths = STPathsInDrop((HDROP)wParam);
+        DragFinish((HDROP)wParam);
+        void (^handler)(NSArray<NSString *> *) = STDropHandlers()[key];
+        if (handler != nil && paths.count > 0) {
+            // After this message returns, so an unsaved-changes alert doesn't run inside it.
+            [[NSOperationQueue mainQueue] addOperationWithBlock:^{
+                handler(paths);
+            }];
+        }
+        return 0;
+    }
+    if (message == WM_NCDESTROY) {
+        [STDropHandlers() removeObjectForKey:key];
+        RemovePropW(window, STPreviousWindowProcProperty);
+        if (previous != NULL) {
+            SetWindowLongPtrW(window, GWLP_WNDPROC, (LONG_PTR)previous);
+        }
+    }
+    return previous != NULL ? CallWindowProcW(previous, window, message, wParam, lParam)
+                            : DefWindowProcW(window, message, wParam, lParam);
+}
+
+void STWindowsAcceptFileDrops(NSWindow *window, void (^handler)(NSArray<NSString *> *paths)) {
+    if (window == nil || handler == nil || [window windowNumber] == 0) {
+        return;
+    }
+    // GNUstep's Windows backend numbers each window by its HWND.
+    HWND hwnd = (HWND)[GSCurrentServer() windowDevice:[window windowNumber]];
+    if (hwnd == NULL || !IsWindow(hwnd)) {
+        return;
+    }
+    STDropHandlers()[@((uintptr_t)hwnd)] = [handler copy];
+    if (GetPropW(hwnd, STPreviousWindowProcProperty) == NULL) {
+        WNDPROC previous = (WNDPROC)SetWindowLongPtrW(hwnd, GWLP_WNDPROC, (LONG_PTR)STDropWindowProc);
+        SetPropW(hwnd, STPreviousWindowProcProperty, (HANDLE)previous);
+    }
+    DragAcceptFiles(hwnd, TRUE);
 }
 
 NSString *STWindowsQuotedCommandLineArgument(NSString *argument) {
@@ -436,6 +497,11 @@ NSArray<NSString *> *STWindowsClipboardFilePaths(void) {
 }
 
 void STWindowsStartClipboardMonitoring(void) {
+}
+
+void STWindowsAcceptFileDrops(NSWindow *window, void (^handler)(NSArray<NSString *> *paths)) {
+    (void)window;
+    (void)handler;
 }
 
 BOOL STWindowsLaunchProcess(NSString *executablePath, NSArray<NSString *> *arguments) {
