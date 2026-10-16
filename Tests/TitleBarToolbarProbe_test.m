@@ -97,7 +97,11 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     NSToolbar *toolbar = _appDelegate.window.toolbar;
     XCTAssertNotNil(toolbar);
     id<NSToolbarDelegate> delegate = (id<NSToolbarDelegate>)_appDelegate;
-#if defined(GNUSTEP)
+#if defined(GNUSTEP) && defined(_WIN32)
+    // On Windows Copy and Save are push buttons with their names, Copy the accent one (#221).
+    NSArray<NSString *> *plainItems = @[@"preferences"];
+    NSArray<NSString *> *controlItems = @[@"tools", @"color", @"zoom", @"copy", @"save"];
+#elif defined(GNUSTEP)
     NSArray<NSString *> *plainItems = @[@"copy", @"preferences"];
     NSArray<NSString *> *controlItems = @[@"tools", @"color", @"zoom"];
 #else
@@ -128,7 +132,14 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     id<NSToolbarDelegate> delegate = (id<NSToolbarDelegate>)_appDelegate;
     NSArray *defaults = [delegate toolbarDefaultItemIdentifiers:toolbar];
     // Undo and Redo lead (#101).
-#if defined(GNUSTEP)
+#if defined(GNUSTEP) && defined(_WIN32)
+    // Windows closes the row with Save and Copy (#221).
+    XCTAssertEqualObjects(defaults, (@[@"com.screenshottool.toolbar.undo", @"com.screenshottool.toolbar.redo",
+                                       @"com.screenshottool.toolbar.tools", @"com.screenshottool.toolbar.color",
+                                       NSToolbarFlexibleSpaceItemIdentifier, @"com.screenshottool.toolbar.save",
+                                       @"com.screenshottool.toolbar.copy"]));
+#elif defined(GNUSTEP)
+    // GNOME's header bar keeps its room for the title: no Save (#224).
     XCTAssertEqualObjects(defaults, (@[@"com.screenshottool.toolbar.undo", @"com.screenshottool.toolbar.redo",
                                        @"com.screenshottool.toolbar.tools", @"com.screenshottool.toolbar.color",
                                        NSToolbarFlexibleSpaceItemIdentifier, @"com.screenshottool.toolbar.copy"]));
@@ -136,8 +147,8 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     // macOS adds Share before Copy.
     XCTAssertEqualObjects(defaults, (@[@"com.screenshottool.toolbar.undo", @"com.screenshottool.toolbar.redo",
                                        @"com.screenshottool.toolbar.tools", @"com.screenshottool.toolbar.color",
-                                       NSToolbarFlexibleSpaceItemIdentifier, @"com.screenshottool.toolbar.share",
-                                       @"com.screenshottool.toolbar.copy"]));
+                                       NSToolbarFlexibleSpaceItemIdentifier, @"com.screenshottool.toolbar.save",
+                                       @"com.screenshottool.toolbar.share", @"com.screenshottool.toolbar.copy"]));
 #endif
     NSArray *allowed = [delegate toolbarAllowedItemIdentifiers:toolbar];
     XCTAssertTrue([allowed containsObject:@"com.screenshottool.toolbar.zoom"], @"zoom can be added back");

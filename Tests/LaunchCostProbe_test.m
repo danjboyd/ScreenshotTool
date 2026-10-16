@@ -5,13 +5,13 @@
 
 /// Work launch used to do that nothing on screen needed: reading the clipboard with an image open
 /// (it starts GNUstep's pasteboard server and waits for it), and sizing the hidden status bar's
-/// "⋯" button (a font fallback search).
+/// controls (its "⋯" button, since replaced by the zoom controls, needed a font fallback search).
 
 @interface AppDelegate (LaunchCostTesting)
 - (void)setupWindowAndContent;
 - (NSView *)emptyStateView;
-- (NSView *)statusControlsContainer;
-- (NSButton *)toolWidthOptionsButton;
+- (NSView *)statusZoomContainer;
+- (NSButton *)statusZoomFitButton;
 - (BOOL)openImageAtURL:(NSURL *)url;
 - (void)refreshPasteAvailability;
 - (void)preferencesController:(id)controller didToggleStatusBar:(BOOL)show;
@@ -94,12 +94,13 @@
 
 - (void)testHiddenStatusBarControlsAreNotSized {
     XCTSkipIf(_shouldSkip, @"No window server");
-    XCTAssertTrue(_appDelegate.statusControlsContainer.isHidden, @"the status bar is off by default");
-    XCTAssertEqual(NSWidth(_appDelegate.toolWidthOptionsButton.frame), 0.0, @"the hidden \"⋯\" button isn't sized");
+    XCTAssertTrue([self openAnImage]);
+    XCTAssertTrue(_appDelegate.statusZoomContainer.isHidden, @"the status bar is hidden until the settings load");
+    XCTAssertEqual(NSWidth(_appDelegate.statusZoomFitButton.frame), 0.0, @"the hidden Fit button isn't sized");
 
     [_appDelegate preferencesController:nil didToggleStatusBar:YES];
-    XCTAssertFalse(_appDelegate.statusControlsContainer.isHidden, @"showing the status bar shows its controls");
-    XCTAssertGreaterThan(NSWidth(_appDelegate.toolWidthOptionsButton.frame), 0.0, @"and lays them out");
+    XCTAssertFalse(_appDelegate.statusZoomContainer.isHidden, @"showing the status bar shows its zoom controls");
+    XCTAssertGreaterThan(NSWidth(_appDelegate.statusZoomFitButton.frame), 0.0, @"and lays them out");
     [_appDelegate preferencesController:nil didToggleStatusBar:NO];
 }
 

@@ -4,6 +4,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class ZoomPopoverController;
 
+/// The zoom slider's position, 0 to 1, for a scale, and back: logarithmic, so each doubling
+/// takes the same distance. The status bar's zoom slider uses the same mapping (#221).
+CGFloat STZoomSliderFractionForScale(CGFloat scale);
+CGFloat STZoomScaleForSliderFraction(CGFloat fraction);
+
 @protocol ZoomPopoverControllerDelegate <NSObject>
 - (BOOL)zoomPopoverHasImage:(ZoomPopoverController *)controller;
 - (BOOL)zoomPopoverIsFitToWindow:(ZoomPopoverController *)controller;

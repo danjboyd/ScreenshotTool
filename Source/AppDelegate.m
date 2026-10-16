@@ -62,10 +62,12 @@ static NSString * const ToolbarItemPreferences = @"com.screenshottool.toolbar.pr
 static NSString * const ToolbarItemUndo = @"com.screenshottool.toolbar.undo";
 static NSString * const ToolbarItemRedo = @"com.screenshottool.toolbar.redo";
 static NSString * const ToolbarItemColor = @"com.screenshottool.toolbar.color";
+static NSString * const ToolbarItemSave = @"com.screenshottool.toolbar.save";
 #if !defined(GNUSTEP)
 static NSString * const ToolbarItemShare = @"com.screenshottool.toolbar.share";
 #endif
-static const CGFloat StatusBarHeight = 24.0f;
+// Tall enough for a 24pt slider (the zoom slider, #221): WinUITheme draws its slider from 24pt.
+static const CGFloat StatusBarHeight = 32.0f;
 // Smallest canvas area a window gets, so tiny images still leave room for the title and the
 // whole icon-only toolbar: under Adwaita the colour well and Copy overflow below about 640pt
 // (WinUI needs about 550). macOS measures its own, wider minimum (-resizeWindowToImageSize:).
@@ -598,6 +600,29 @@ static NSString *STPathForToolbarResource(NSString *filename, NSString *extensio
     return nil;
 }
 
+/// Whether the app ships a toolbar icon named `stem`, in any of its forms. Ask this rather than
+/// whether the toolbar's loader returned an image: for a name it can't find, it returns an empty
+/// image, which macOS draws as a filled square (#221's Save before its icon landed).
+static BOOL STToolbarIconExists(NSString *stem) {
+    return STPathForToolbarResource(STSymbolicIconName(stem), @"png") != nil ||
+           STPathForToolbarResource(stem, @"png") != nil ||
+           STPathForToolbarResource(stem, @"tiff") != nil;
+}
+
+/// A file size in decimal units, as Finder and Explorer show it: "980 bytes", "214 KB", "1.2 MB".
+static NSString *STFileSizeString(unsigned long long bytes) {
+    if (bytes < 1000ULL) {
+        return [NSString stringWithFormat:@"%llu bytes", bytes];
+    }
+    if (bytes < 1000000ULL) {
+        return [NSString stringWithFormat:@"%.0f KB", bytes / 1000.0];
+    }
+    if (bytes < 1000000000ULL) {
+        return [NSString stringWithFormat:@"%.1f MB", bytes / 1000000.0];
+    }
+    return [NSString stringWithFormat:@"%.1f GB", bytes / 1000000000.0];
+}
+
 /// The sizes, in points, the toolbar draws its icons at: GNOME's small toolbar, the tool
 /// switcher's segments, Adwaita's toolbar items, and other themes' toolbar items.
 static const NSInteger STToolbarIconPointSizes[] = {16, 22, 24, 32};
@@ -698,9 +723,11 @@ static BOOL STIsSizedToolbarIcon(NSImage *image) {
     [fill setFill];
     NSRectFill(dirtyRect);
     if (self.topBorderColor) {
-        NSRect border = NSMakeRect(dirtyRect.origin.x,
-                                   dirtyRect.size.height - 1.0f,
-                                   dirtyRect.size.width,
+        // Along the top of the bounds, whatever part is being redrawn: placed from the dirty
+        // rect, it went missing wherever only part of the bar redrew (#221).
+        NSRect border = NSMakeRect(NSMinX(self.bounds),
+                                   NSMaxY(self.bounds) - 1.0f,
+                                   NSWidth(self.bounds),
                                    1.0f);
         [self.topBorderColor setFill];
         NSRectFill(border);
@@ -1275,7 +1302,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSView *statusBarView;
 @property (nonatomic, strong) NSTextField *statusTextField;
 @property (nonatomic, strong) NSTimer *statusClearTimer;
-@property (nonatomic, strong) NSView *statusControlsContainer;
 @property (nonatomic, strong) NSWindow *hudWindow;
 @property (nonatomic, strong) STHudView *hudView;
 @property (nonatomic, strong) NSTimer *hudDismissTimer;
@@ -1285,10 +1311,15 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) NSTimeInterval hudFadeDuration;
 @property (nonatomic, assign) CGFloat hudFadeStartAlpha;
 @property (nonatomic, assign) CGFloat hudFadeTargetAlpha;
-@property (nonatomic, strong) NSTextField *toolWidthTitleLabel;
-@property (nonatomic, strong) NSSlider *toolWidthSlider;
-@property (nonatomic, strong) NSTextField *toolWidthValueLabel;
-@property (nonatomic, strong) NSButton *toolWidthOptionsButton;
+@property (nonatomic, strong) NSView *statusZoomContainer;
+@property (nonatomic, strong) NSButton *statusZoomOutButton;
+@property (nonatomic, strong) NSSlider *statusZoomSlider;
+@property (nonatomic, strong) NSButton *statusZoomInButton;
+@property (nonatomic, strong) NSTextField *statusZoomLabel;
+@property (nonatomic, strong) NSButton *statusZoomFitButton;
+/// The file the status bar's size was read from, and its size as shown (#221).
+@property (nonatomic, strong, nullable) NSURL *statusFileSizeURL;
+@property (nonatomic, copy, nullable) NSString *statusFileSizeText;
 @property (nonatomic, assign) CGFloat penDefaultWidth;
 @property (nonatomic, assign) CGFloat highlighterDefaultWidth;
 @property (nonatomic, strong) NSColor *penDefaultColor;
@@ -1325,7 +1356,6 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) id documentRouter;
 #endif
 @property (nonatomic, strong) NSUndoManager *undoManager;
-@property (nonatomic, assign) BOOL toolWidthMenuCanReset;
 #if defined(GNUSTEP)
 @property (nonatomic, strong) GPStandardUpdaterController *updaterController;
 #elif ST_USES_SPARKLE
@@ -1453,6 +1483,9 @@ static AppDelegate *STFrontDocument(void) {
 #else
         return @"Copy Image — or drag it into another app";
 #endif
+    }
+    if ([identifier isEqualToString:ToolbarItemSave]) {
+        return @"Save Image As…";
     }
     if ([identifier isEqualToString:ToolbarItemUndo]) {
         return @"Undo";
@@ -2273,8 +2306,11 @@ static AppDelegate *STFrontDocument(void) {
     if ([identifier isEqualToString:ToolbarItemRedo]) {
         return [[self activeUndoManager] canRedo];
     }
-    if ([identifier isEqualToString:ToolbarItemCopy]) {
+    if ([identifier isEqualToString:ToolbarItemCopy] || [identifier isEqualToString:ToolbarItemSave]) {
         return [self.canvasView hasImage];
+    }
+    if ([identifier isEqualToString:ToolbarItemColor]) {
+        return STToolUsesColor(self.canvasView.activeTool) && [self.canvasView hasImage];
     }
     if ([identifier isEqualToString:ToolbarItemZoom]) {
         return [self.canvasView hasImage];
@@ -2718,7 +2754,8 @@ static id STInfoValueForKey(NSString *key) {
     [statusBar addSubview:statusField];
     [self setupStatusControls];
 
-    // Off unless chosen: the toolbar's colour control sets colour and width (#54).
+    // Hidden until the settings load (-loadToolSettingsFromDefaults), which shows it unless the
+    // user turned it off (#221).
     self.statusBarVisiblePreference = NO;
 
     [self.window setContentView:container];
@@ -2828,6 +2865,11 @@ static id STInfoValueForKey(NSString *key) {
     if ([identifier isEqualToString:ToolbarItemCopy]) {
         return @"CopyImage";
     }
+    if ([identifier isEqualToString:ToolbarItemSave]) {
+        // Drawn with the v0.2.0 icon set (#221). Until it's in the app, no stem: an icon that
+        // isn't there would load as an empty placeholder.
+        return STToolbarIconExists(@"Save") ? @"Save" : nil;
+    }
     if ([identifier isEqualToString:ToolbarItemPreferences]) {
         return @"Preferences";
     }
@@ -2874,7 +2916,7 @@ static id STInfoValueForKey(NSString *key) {
     ScreenshotToolAppendLog([NSString stringWithFormat:@"refreshToolButtonIcons: active=%@", activeIdentifier]);
 
     [self refreshToolbarToolsControl];
-    NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[ToolbarItemUndo, ToolbarItemRedo, ToolbarItemCopy, ToolbarItemPreferences];
+    NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[ToolbarItemUndo, ToolbarItemRedo, ToolbarItemSave, ToolbarItemCopy, ToolbarItemPreferences];
     for (NSToolbarItemIdentifier identifier in toolIdentifiers) {
         NSToolbarItem *item = [self toolbarItemForIdentifier:identifier];
         if (!item) {
@@ -2884,12 +2926,22 @@ static id STInfoValueForKey(NSString *key) {
 
         [self applyToolTipToToolbarItem:item source:@"refresh-icons"];
         BOOL isEnabled = YES;
-        if ([identifier isEqualToString:ToolbarItemCopy]) {
+        if ([identifier isEqualToString:ToolbarItemCopy] || [identifier isEqualToString:ToolbarItemSave]) {
             isEnabled = [self.canvasView hasImage];
         } else if ([identifier isEqualToString:ToolbarItemUndo] || [identifier isEqualToString:ToolbarItemRedo]) {
             isEnabled = [self validateToolbarItem:item];
         }
         item.enabled = isEnabled;
+        // A labelled button (Copy and Save on GNUstep, #221) is enabled even without an icon.
+        if (item.view && [item.view respondsToSelector:@selector(setEnabled:)]) {
+            [(NSControl *)item.view setEnabled:isEnabled];
+            [self adjustToolbarCustomViewVerticalOffset:item.view];
+        }
+#if defined(GNUSTEP) && defined(_WIN32)
+        if ([identifier isEqualToString:ToolbarItemCopy] || [identifier isEqualToString:ToolbarItemSave]) {
+            continue;
+        }
+#endif
 
         BOOL isActive = (activeIdentifier && [identifier isEqualToString:activeIdentifier]);
         NSImage *icon = [self toolbarImageForIdentifier:identifier active:isActive];
@@ -2916,6 +2968,7 @@ static id STInfoValueForKey(NSString *key) {
     }
     [self refreshToolbarColorControl];
     [self refreshZoomToolbarControl];
+    [self refreshStatusZoomControls];
 }
 
 - (void)rebuildToolbarBadges {
@@ -2932,29 +2985,42 @@ static id STInfoValueForKey(NSString *key) {
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarAllowedItemIdentifiers:(NSToolbar *)toolbar {
     (void)toolbar;
-    return @[ToolbarItemUndo,
-             ToolbarItemRedo,
-             ToolbarItemTools,
-             ToolbarItemColor,
-             ToolbarItemCopy,
+    NSMutableArray<NSToolbarItemIdentifier> *allowed = [@[ToolbarItemUndo,
+                                                          ToolbarItemRedo,
+                                                          ToolbarItemTools,
+                                                          ToolbarItemColor,
+                                                          ToolbarItemSave,
+                                                          ToolbarItemCopy,
 #if !defined(GNUSTEP)
-             ToolbarItemShare,
+                                                          ToolbarItemShare,
 #endif
-             ToolbarItemPreferences,
-             ToolbarItemZoom,
-             NSToolbarSpaceItemIdentifier,
-             NSToolbarFlexibleSpaceItemIdentifier];
+                                                          ToolbarItemPreferences,
+                                                          ToolbarItemZoom,
+                                                          NSToolbarSpaceItemIdentifier,
+                                                          NSToolbarFlexibleSpaceItemIdentifier] mutableCopy];
+#if defined(GNUSTEP) && !defined(_WIN32)
+    // Under GNOME Save is an icon button, so it's offered only once the app has its icon (#221).
+    if (!STToolbarIconExists(@"Save")) {
+        [allowed removeObject:ToolbarItemSave];
+    }
+#endif
+    return allowed;
 }
 
 - (NSArray<NSToolbarItemIdentifier> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar {
     (void)toolbar;
     // Zoom and Preferences live in the View and app menus (with shortcuts) and can be added back
     // by customising the toolbar (#53). Undo and Redo lead, where GNOME apps keep them (#101).
+    // The commands that finish the job close the row, Copy last as the main one (#221). Under
+    // GNOME's header bar Save is left out, so the title keeps its room (#224).
     return @[ToolbarItemUndo,
              ToolbarItemRedo,
              ToolbarItemTools,
              ToolbarItemColor,
              NSToolbarFlexibleSpaceItemIdentifier,
+#if !defined(GNUSTEP) || defined(_WIN32)
+             ToolbarItemSave,
+#endif
 #if !defined(GNUSTEP)
              ToolbarItemShare,
 #endif
@@ -3045,6 +3111,47 @@ static id STInfoValueForKey(NSString *key) {
         item.delegate = self;
         return item;
     }
+    if ([identifier isEqualToString:ToolbarItemSave]) {
+        BOOL hasIcon = STToolbarIconExists(@"Save");
+        NSToolbarItem *item = [self baselineToolbarItemWithIdentifier:ToolbarItemSave
+                                                                label:@"Save"
+                                                               action:@selector(saveDocumentAs:)
+                                                            imageName:(hasIcon ? @"Save" : nil)];
+        if (!hasIcon) {
+            if (@available(macOS 11.0, *)) {
+                item.image = [NSImage imageWithSystemSymbolName:@"square.and.arrow.down"
+                                       accessibilityDescription:@"Save"];
+            }
+        }
+        item.toolTip = @"Save the annotated image";
+        return item;
+    }
+#elif defined(_WIN32)
+    // Copy and Save finish the job, so they're buttons with their names rather than bare icons,
+    // and Copy is the accent one, as a WinUI command bar's main command is (#221). Not under
+    // GNOME: labelled buttons took the header bar's room for the title, which Adwaita then
+    // dropped (#224); there Copy stays an icon and Save is offered once it has one.
+    if ([identifier isEqualToString:ToolbarItemSave]) {
+        return [self labelledToolbarItemWithIdentifier:ToolbarItemSave
+                                                 label:@"Save"
+                                               toolTip:@"Save the annotated image"
+                                                action:@selector(saveDocumentAs:)
+                                                accent:NO];
+    }
+    if ([identifier isEqualToString:ToolbarItemCopy]) {
+        return [self labelledToolbarItemWithIdentifier:ToolbarItemCopy
+                                                 label:@"Copy"
+                                               toolTip:@"Copy the annotated image"
+                                                action:@selector(copy:)
+                                                accent:YES];
+    }
+#else
+    if ([identifier isEqualToString:ToolbarItemSave]) {
+        return [self baselineToolbarItemWithIdentifier:ToolbarItemSave
+                                                 label:@"Save"
+                                                action:@selector(saveDocumentAs:)
+                                             imageName:@"Save"];
+    }
 #endif
     if ([identifier isEqualToString:ToolbarItemCopy]) {
         return [self baselineToolbarItemWithIdentifier:ToolbarItemCopy
@@ -3090,6 +3197,48 @@ static id STInfoValueForKey(NSString *key) {
     }
     return item;
 }
+
+#if defined(GNUSTEP) && defined(_WIN32)
+/// A toolbar item that's a push button with its name (#221). It has no icon: the toolbar's icons
+/// are monochrome ones the theme tints for its own toolbar buttons, and a button's image isn't
+/// tinted, so it would stay black on an accent fill or a dark toolbar.
+- (NSToolbarItem *)labelledToolbarItemWithIdentifier:(NSToolbarItemIdentifier)identifier
+                                               label:(NSString *)label
+                                             toolTip:(NSString *)toolTip
+                                              action:(SEL)selector
+                                              accent:(BOOL)accent {
+    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 64.0f, STToolbarZoomControlHeight)];
+    button.title = label;
+    [button setBezelStyle:NSRoundedBezelStyle];
+    button.target = self;
+    button.action = selector;
+    button.toolTip = toolTip;
+    STApplyAccessibilityLabel(button, label);
+    // A theme-neutral way to ask for the theme's accent button. Not a Return key equivalent or
+    // the window's default button: Return must not copy, least of all while typing a text
+    // annotation (#103).
+    if (accent && [button respondsToSelector:@selector(setGSThemeStyle:)]) {
+        [button performSelector:@selector(setGSThemeStyle:) withObject:@"accent"];
+    }
+    [button sizeToFit];
+    NSSize size = NSMakeSize(MAX(64.0f, ceil(NSWidth(button.frame)) + 20.0f), STToolbarZoomControlHeight);
+    [button setFrameSize:size];
+
+    NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:identifier];
+    item.label = @"";
+    item.paletteLabel = label;
+    item.toolTip = toolTip;
+    // The item's action too, so the toolbar's validation (-validateToolbarItem:) enables it,
+    // and only with an image open.
+    item.target = self;
+    item.action = selector;
+    item.view = button;
+    button.enabled = [self.canvasView hasImage];
+    item.minSize = size;
+    item.maxSize = size;
+    return item;
+}
+#endif
 
 - (NSInteger)toolbarSegmentIndexForTool:(ScreenshotCanvasTool)tool {
     switch (tool) {
@@ -3587,14 +3736,16 @@ static id STInfoValueForKey(NSString *key) {
     }
     STToolbarColorWellView *colorWellView = (STToolbarColorWellView *)item.view;
     ScreenshotCanvasTool activeTool = self.canvasView.activeTool;
-    BOOL enabled = STToolUsesColor(activeTool);
-    NSColor *color = enabled ? [self currentColorForTool:activeTool] : nil;
+    BOOL usesColor = STToolUsesColor(activeTool);
+    // Dimmed with no image, as the tools are (#221), but still showing the tool's colour.
+    BOOL enabled = usesColor && [self.canvasView hasImage];
+    NSColor *color = usesColor ? [self currentColorForTool:activeTool] : nil;
     [colorWellView setEnabled:enabled];
     [colorWellView setColor:color];
     item.enabled = enabled;
     [self applyToolTipToToolbarItem:item source:@"refresh-color"];
     [self adjustToolbarCustomViewVerticalOffset:colorWellView];
-    if (enabled) {
+    if (usesColor) {
         STApplyAccessibilityLabel(colorWellView, [NSString stringWithFormat:@"%@ color", STDebugToolName(activeTool)]);
     } else {
         STApplyAccessibilityLabel(colorWellView, @"Color settings unavailable for current tool");
@@ -3775,79 +3926,138 @@ static id STInfoValueForKey(NSString *key) {
         return;
     }
 
-    NSView *container = [[NSView alloc] initWithFrame:NSZeroRect];
-    container.autoresizingMask = (NSViewMinXMargin | NSViewHeightSizable);
-    self.statusControlsContainer = container;
-    [self.statusBarView addSubview:container];
+    // Zoom at the bar's end, as Paint and Photos have it: out, a slider, in, the scale and Fit
+    // (#221). The slider is logarithmic, as the zoom popover's is.
+    NSView *zoomContainer = [[NSView alloc] initWithFrame:NSZeroRect];
+    zoomContainer.autoresizingMask = (NSViewMinXMargin | NSViewHeightSizable);
+    self.statusZoomContainer = zoomContainer;
+    [self.statusBarView addSubview:zoomContainer];
 
-    NSTextField *titleLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
-    [titleLabel setEditable:NO];
-    [titleLabel setBezeled:NO];
-    [titleLabel setBordered:NO];
-    [titleLabel setDrawsBackground:NO];
-    [titleLabel setAlignment:NSTextAlignmentRight];
-    [titleLabel setFont:[NSFont boldSystemFontOfSize:[NSFont smallSystemFontSize]]];
-    [titleLabel setTextColor:STThemeStatusValueTextColor()];
-    self.toolWidthTitleLabel = titleLabel;
-    [container addSubview:titleLabel];
+    self.statusZoomOutButton = [self statusZoomButtonWithTitle:@"−" action:@selector(zoomOut:) label:@"Zoom out"];
+    [zoomContainer addSubview:self.statusZoomOutButton];
 
-    NSSlider *slider = [[NSSlider alloc] initWithFrame:NSZeroRect];
-    [slider setMinValue:STToolWidthMin];
-    [slider setMaxValue:STToolWidthMax];
-    [slider setDoubleValue:STHighlighterWidthDefault];
-    [slider setContinuous:YES];
-    [slider setNumberOfTickMarks:0];
-    [slider setAltIncrementValue:1.0];
-    slider.target = self;
-    slider.action = @selector(toolWidthSliderChanged:);
-    self.toolWidthSlider = slider;
-    STApplyAccessibilityLabel(slider, @"Adjust tool width");
-    [container addSubview:slider];
+    NSSlider *zoomSlider = [[NSSlider alloc] initWithFrame:NSZeroRect];
+    [zoomSlider setMinValue:0.0];
+    [zoomSlider setMaxValue:1.0];
+    [zoomSlider setContinuous:YES];
+    [zoomSlider setNumberOfTickMarks:0];
+    zoomSlider.target = self;
+    zoomSlider.action = @selector(statusZoomSliderChanged:);
+    self.statusZoomSlider = zoomSlider;
+    STApplyAccessibilityLabel(zoomSlider, @"Zoom");
+    [zoomContainer addSubview:zoomSlider];
 
-    NSTextField *valueLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
-    [valueLabel setEditable:NO];
-    [valueLabel setBezeled:NO];
-    [valueLabel setBordered:NO];
-    [valueLabel setDrawsBackground:YES];
-    [valueLabel setBackgroundColor:STThemeStatusValueBackgroundColor()];
-    [valueLabel setAlignment:NSTextAlignmentRight];
-    [valueLabel setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
-    [valueLabel setTextColor:STThemeStatusValueTextColor()];
-    [valueLabel setStringValue:@"0 px"];
-    self.toolWidthValueLabel = valueLabel;
-    STApplyAccessibilityLabel(valueLabel, @"Current tool width");
-    [container addSubview:valueLabel];
+    self.statusZoomInButton = [self statusZoomButtonWithTitle:@"+" action:@selector(zoomIn:) label:@"Zoom in"];
+    [zoomContainer addSubview:self.statusZoomInButton];
 
-    NSButton *optionsButton = [[NSButton alloc] initWithFrame:NSZeroRect];
-#if defined(GNUSTEP)
-    // Three middle dots, which every UI font has and which sit centred: Segoe UI has no "⋯"
-    // (it drew as "?" on Windows), and "…" sits on the baseline.
-    optionsButton.title = @"···";
-#else
-    optionsButton.title = @"⋯";
-#endif
+    NSTextField *zoomLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    [zoomLabel setEditable:NO];
+    [zoomLabel setBezeled:NO];
+    [zoomLabel setBordered:NO];
+    [zoomLabel setDrawsBackground:NO];
+    [zoomLabel setAlignment:NSTextAlignmentRight];
+    [zoomLabel setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
+    [zoomLabel setTextColor:STThemeStatusValueTextColor()];
+    self.statusZoomLabel = zoomLabel;
+    [zoomContainer addSubview:zoomLabel];
+
+    NSButton *fitButton = [[NSButton alloc] initWithFrame:NSZeroRect];
+    fitButton.title = @"Fit";
 #ifdef NSRoundedBezelStyle
-    [optionsButton setBezelStyle:NSRoundedBezelStyle];
-#else
-    [optionsButton setBezelStyle:NSRecessedBezelStyle];
+    [fitButton setBezelStyle:NSRoundedBezelStyle];
 #endif
-#ifdef NSFontWeightSemibold
-    optionsButton.font = [NSFont systemFontOfSize:[NSFont systemFontSize] weight:NSFontWeightSemibold];
-#else
-    optionsButton.font = [NSFont boldSystemFontOfSize:[NSFont systemFontSize]];
-#endif
-    optionsButton.target = self;
-    optionsButton.action = @selector(toolWidthOptionsButtonClicked:);
-    optionsButton.toolTip = @"More width options";
-    self.toolWidthOptionsButton = optionsButton;
-    STApplyAccessibilityLabel(optionsButton, @"Tool width options");
-    [container addSubview:optionsButton];
+    [fitButton setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
+    fitButton.target = self;
+    fitButton.action = @selector(zoomFitToWindow:);
+    fitButton.toolTip = @"Fit to Window";
+    STApplyAccessibilityLabel(fitButton, @"Fit to window");
+    self.statusZoomFitButton = fitButton;
+    [zoomContainer addSubview:fitButton];
 
-    // Hidden with the status bar (the default), so launch doesn't lay it out (with "⋯", whose
-    // glyph needed a font fallback, sizing it took a quarter of a second).
-    // updateStatusBarVisibility shows it and lays it out.
-    container.hidden = !self.statusBarVisiblePreference;
-    [self updateToolWidthControls];
+    // Hidden with the status bar (the default), so launch doesn't size these controls.
+    // refreshStatusZoomControls shows them, with an image, and lays them out.
+    zoomContainer.hidden = YES;
+    [self refreshStatusZoomControls];
+}
+
+- (NSButton *)statusZoomButtonWithTitle:(NSString *)title action:(SEL)action label:(NSString *)label {
+    NSButton *button = [[NSButton alloc] initWithFrame:NSZeroRect];
+    button.title = title;
+    [button setBordered:NO];
+    [button setFont:[NSFont systemFontOfSize:[NSFont systemFontSize]]];
+    button.target = self;
+    button.action = action;
+    button.toolTip = label;
+    STApplyAccessibilityLabel(button, label);
+    return button;
+}
+
+- (void)statusZoomSliderChanged:(NSSlider *)sender {
+    if (![self.canvasView hasImage]) {
+        return;
+    }
+    [self setZoomScale:STZoomScaleForSliderFraction(sender.doubleValue)];
+}
+
+/// The zoom controls and, while no message shows, the image's size and format (#221).
+- (void)refreshStatusZoomControls {
+    BOOL hasImage = [self.canvasView hasImage];
+    if (self.statusZoomContainer) {
+        BOOL hidden = !self.statusBarVisiblePreference || !hasImage;
+        if (self.statusZoomContainer.isHidden != hidden) {
+            self.statusZoomContainer.hidden = hidden;
+            [self layoutStatusControls];
+        }
+    }
+    if (hasImage) {
+        CGFloat scale = self.canvasView.displayZoomScale;
+        self.statusZoomSlider.doubleValue = STZoomSliderFractionForScale(scale);
+        self.statusZoomLabel.stringValue = [self displayStringForScale:scale];
+    }
+    if (self.statusTextField && !self.statusClearTimer) {
+        [self.statusTextField setStringValue:[self idleStatusText]];
+    }
+}
+
+/// "1600 × 1000 px · PNG · 214 KB": the image's pixel size and, with a file, its format and size.
+- (NSString *)idleStatusText {
+    NSImage *image = self.canvasView.image;
+    if (!image) {
+        return @"";
+    }
+    NSSize pixels = image.size;
+    for (NSImageRep *rep in image.representations) {
+        if (rep.pixelsWide > 0 && rep.pixelsHigh > 0) {
+            pixels = NSMakeSize(rep.pixelsWide, rep.pixelsHigh);
+            break;
+        }
+    }
+    NSString *text = [NSString stringWithFormat:@"%.0f × %.0f px", pixels.width, pixels.height];
+    NSString *extension = self.currentImageURL.pathExtension;
+    if (extension.length > 0) {
+        text = [text stringByAppendingFormat:@"  ·  %@", extension.uppercaseString];
+    }
+    NSString *fileSize = [self statusFileSizeForURL:self.currentImageURL];
+    if (fileSize.length > 0) {
+        text = [text stringByAppendingFormat:@"  ·  %@", fileSize];
+    }
+    return text;
+}
+
+/// The size of the image's file, as Finder and Explorer give it ("214 KB", "1.2 MB"), or nil
+/// when the image has no file. Read once per file, not on every refresh.
+- (nullable NSString *)statusFileSizeForURL:(nullable NSURL *)url {
+    if (!url.isFileURL) {
+        return nil;
+    }
+    if ([url isEqual:self.statusFileSizeURL]) {
+        return self.statusFileSizeText;
+    }
+    NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:url.path error:NULL];
+    NSNumber *size = attributes[NSFileSize];
+    self.statusFileSizeURL = url;
+    self.statusFileSizeText = size ? STFileSizeString(size.unsignedLongLongValue) : nil;
+    return self.statusFileSizeText;
 }
 
 - (void)layoutStatusControls {
@@ -3860,84 +4070,49 @@ static id STInfoValueForKey(NSString *key) {
     CGFloat verticalInset = 4.0f;
     CGFloat availableHeight = MAX(0.0f, bounds.size.height - (verticalInset * 2.0f));
 
-    CGFloat controlsWidth = 0.0f;
-    if (self.statusControlsContainer && !self.statusControlsContainer.isHidden) {
-        NSSize titleSize = self.toolWidthTitleLabel ? [[self.toolWidthTitleLabel cell] cellSize] : NSZeroSize;
-        NSSize valueSize = self.toolWidthValueLabel ? [[self.toolWidthValueLabel cell] cellSize] : NSZeroSize;
-        if (self.toolWidthOptionsButton) {
-            [self.toolWidthOptionsButton sizeToFit];
-        }
-
-        CGFloat labelWidth = MAX(120.0f, titleSize.width + 10.0f);
-        CGFloat valueWidth = MAX(60.0f, valueSize.width + 14.0f);
-        CGFloat sliderWidth = MIN(320.0f, MAX(220.0f, bounds.size.width * 0.32f));
-        CGFloat optionsWidth = self.toolWidthOptionsButton ? MAX(28.0f, self.toolWidthOptionsButton.frame.size.width) : 0.0f;
-        CGFloat spacing = 6.0f;
-        controlsWidth = labelWidth + sliderWidth + valueWidth + optionsWidth + (spacing * 3.0f);
-
-        CGFloat maxControlsWidth = bounds.size.width - (padding * 2.0f);
-        if (controlsWidth > maxControlsWidth) {
-            sliderWidth = MAX(160.0f, maxControlsWidth - (labelWidth + valueWidth + optionsWidth + (spacing * 3.0f)));
-            controlsWidth = labelWidth + sliderWidth + valueWidth + optionsWidth + (spacing * 3.0f);
-        }
-
-        CGFloat containerX = bounds.size.width - padding - controlsWidth;
-        if (containerX < padding) {
-            containerX = padding;
-        }
-
-        NSRect containerFrame = NSMakeRect(containerX,
-                                           verticalInset,
-                                           controlsWidth,
-                                           availableHeight);
-        [self.statusControlsContainer setFrame:containerFrame];
-
-        CGFloat controlHeight = MIN(availableHeight, 18.0f);
-        CGFloat centerY = (containerFrame.size.height - controlHeight) / 2.0f;
-        CGFloat x = 0.0f;
-
-        if (self.toolWidthTitleLabel) {
-            self.toolWidthTitleLabel.frame = NSMakeRect(x, centerY, labelWidth, controlHeight);
-        }
-        x += labelWidth + spacing;
-
-        if (self.toolWidthSlider) {
-            CGFloat sliderHeight = MIN(16.0f, availableHeight);
-            self.toolWidthSlider.frame = NSMakeRect(x,
-                                                    (containerFrame.size.height - sliderHeight) / 2.0f,
-                                                    sliderWidth,
-                                                    sliderHeight);
-        }
-        x += sliderWidth + spacing;
-
-        if (self.toolWidthValueLabel) {
-            self.toolWidthValueLabel.frame = NSMakeRect(x, centerY, valueWidth, controlHeight);
-        }
-        x += valueWidth + spacing;
-
-        if (self.toolWidthOptionsButton) {
-            CGFloat buttonHeight = MIN(controlHeight + 2.0f, self.toolWidthOptionsButton.frame.size.height);
-            self.toolWidthOptionsButton.frame = NSMakeRect(x,
-                                                           (containerFrame.size.height - buttonHeight) / 2.0f,
-                                                           optionsWidth,
-                                                           buttonHeight);
-        }
-    } else if (self.statusControlsContainer) {
-        self.statusControlsContainer.frame = NSMakeRect(bounds.size.width - padding,
-                                                        verticalInset,
-                                                        0.0f,
-                                                        availableHeight);
+    // The image's size and format on the left, the zoom controls at the end (#221).
+    CGFloat rightEdge = bounds.size.width - padding;
+    if (self.statusZoomContainer && !self.statusZoomContainer.isHidden) {
+        CGFloat zoomWidth = [self layoutStatusZoomControlsWithRightEdge:rightEdge
+                                                          verticalInset:verticalInset
+                                                                 height:availableHeight];
+        rightEdge -= zoomWidth + (padding * 2.0f);
     }
 
-    CGFloat textWidth = MAX(0.0f, bounds.size.width - (padding * 2.0f));
-    if (self.statusControlsContainer && !self.statusControlsContainer.isHidden) {
-        CGFloat limit = self.statusControlsContainer.frame.origin.x - padding;
-        textWidth = MAX(0.0f, limit - padding);
-    }
+    CGFloat textWidth = MAX(0.0f, rightEdge - padding);
     self.statusTextField.frame = NSMakeRect(padding,
                                             verticalInset,
                                             textWidth,
                                             availableHeight);
+}
+
+/// Lays the zoom controls out to end at rightEdge and returns their width.
+- (CGFloat)layoutStatusZoomControlsWithRightEdge:(CGFloat)rightEdge
+                                   verticalInset:(CGFloat)verticalInset
+                                          height:(CGFloat)height {
+    CGFloat buttonWidth = 24.0f;
+    CGFloat sliderWidth = 120.0f;
+    CGFloat labelWidth = 44.0f;
+    [self.statusZoomFitButton sizeToFit];
+    CGFloat fitWidth = MAX(40.0f, NSWidth(self.statusZoomFitButton.frame));
+    CGFloat spacing = 6.0f;
+    CGFloat width = buttonWidth + sliderWidth + buttonWidth + labelWidth + fitWidth + (spacing * 4.0f);
+    self.statusZoomContainer.frame = NSMakeRect(rightEdge - width, verticalInset, width, height);
+
+    CGFloat controlHeight = MIN(height, 24.0f);
+    CGFloat controlY = floor((height - controlHeight) / 2.0f);
+    CGFloat labelHeight = MIN(height, 18.0f);
+    CGFloat x = 0.0f;
+    self.statusZoomOutButton.frame = NSMakeRect(x, controlY, buttonWidth, controlHeight);
+    x += buttonWidth + spacing;
+    self.statusZoomSlider.frame = NSMakeRect(x, controlY, sliderWidth, controlHeight);
+    x += sliderWidth + spacing;
+    self.statusZoomInButton.frame = NSMakeRect(x, controlY, buttonWidth, controlHeight);
+    x += buttonWidth + spacing;
+    self.statusZoomLabel.frame = NSMakeRect(x, floor((height - labelHeight) / 2.0f), labelWidth, labelHeight);
+    x += labelWidth + spacing;
+    self.statusZoomFitButton.frame = NSMakeRect(x, controlY, fitWidth, controlHeight);
+    return width;
 }
 
 - (CGFloat)statusBarHeight {
@@ -3951,12 +4126,10 @@ static id STInfoValueForKey(NSString *key) {
     if (self.statusBarView) {
         [self.statusBarView setHidden:!show];
     }
-    if (self.statusControlsContainer) {
-        [self.statusControlsContainer setHidden:!show];
-    }
     if (self.statusTextField) {
         [self.statusTextField setHidden:!show];
     }
+    [self refreshStatusZoomControls];
     if (!show) {
         [self.statusClearTimer invalidate];
         self.statusClearTimer = nil;
@@ -4003,17 +4176,12 @@ static id STInfoValueForKey(NSString *key) {
     if (self.statusTextField) {
         [self.statusTextField setTextColor:STThemeStatusPrimaryTextColor()];
     }
-    if (self.toolWidthTitleLabel) {
-        [self.toolWidthTitleLabel setTextColor:STThemeStatusValueTextColor()];
-    }
-    if (self.toolWidthValueLabel) {
-        [self.toolWidthValueLabel setBackgroundColor:STThemeStatusValueBackgroundColor()];
-        [self.toolWidthValueLabel setTextColor:STThemeStatusValueTextColor()];
-    }
     if (self.zoomToolbarLabel) {
         [self.zoomToolbarLabel setTextColor:STThemeToolbarLabelColor()];
     }
-    [self updateToolWidthControls];
+    if (self.statusZoomLabel) {
+        [self.statusZoomLabel setTextColor:STThemeStatusValueTextColor()];
+    }
     if (self.statusBarView) {
         [self.statusBarView setNeedsDisplay:YES];
     }
@@ -4093,7 +4261,6 @@ static id STInfoValueForKey(NSString *key) {
     self.canvasView.textAlignment = STStoredTextAlignment(STDefaultsTextAlignmentKey, self.textDefaultAlignment);
     [self.canvasView refreshCursor];
     [self refreshToolButtonIcons];
-    [self updateToolWidthControls];
 
     NSString *savedDirectory = [defaults stringForKey:STDefaultsSaveDirectoryKey];
     if (savedDirectory.length == 0) {
@@ -4111,9 +4278,10 @@ static id STInfoValueForKey(NSString *key) {
         [defaults setBool:YES forKey:STDefaultsClearedHeaderBarToolbarKey];
     }
 
-    // Off unless the user turned it on; nothing is written until they choose (#54).
-    self.statusBarVisiblePreference = [defaults objectForKey:STDefaultsShowStatusBarKey] != nil
-        && [defaults boolForKey:STDefaultsShowStatusBarKey];
+    // Shown unless the user turned it off (#221; it was off by default before, #54). A registered
+    // default, so nothing is written until they choose, and a saved "off" stays off.
+    [defaults registerDefaults:@{STDefaultsShowStatusBarKey: @YES}];
+    self.statusBarVisiblePreference = [defaults boolForKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
 
     if (self.preferencesWindowController) {
@@ -4140,75 +4308,6 @@ static id STInfoValueForKey(NSString *key) {
         number = fallback;
     }
     return [self clampedWidth:(CGFloat)number];
-}
-
-- (void)updateToolWidthControls {
-    if (!self.toolWidthSlider || !self.toolWidthTitleLabel) {
-        return;
-    }
-    ScreenshotCanvasTool tool = [self widthTargetTool];
-    CGFloat currentWidth = [self currentWidthForTool:tool];
-    CGFloat defaultWidth = [self defaultWidthForTool:tool];
-    NSString *title = [self titleForToolWidth:tool];
-    [self.toolWidthTitleLabel setStringValue:title];
-    [self.toolWidthSlider setMinValue:STToolWidthMin];
-    [self.toolWidthSlider setMaxValue:STToolWidthMax];
-    [self.toolWidthSlider setDoubleValue:currentWidth];
-    [self updateToolWidthValueLabelWithWidth:currentWidth];
-    BOOL canReset = fabs(currentWidth - defaultWidth) > 0.01f;
-    self.toolWidthMenuCanReset = canReset;
-    if (self.toolWidthOptionsButton) {
-        [self.toolWidthOptionsButton setEnabled:YES];
-    }
-    if (self.toolWidthValueLabel) {
-        [self.toolWidthValueLabel setBackgroundColor:STThemeStatusValueBackgroundColor()];
-        [self.toolWidthValueLabel setTextColor:STThemeStatusValueTextColor()];
-    }
-    [self layoutStatusControls];
-}
-
-- (void)toolWidthOptionsButtonClicked:(id)sender {
-    NSMenu *menu = [self toolWidthOptionsMenu];
-    if (!menu) {
-        return;
-    }
-    NSButton *button = self.toolWidthOptionsButton;
-    if (!button) {
-        return;
-    }
-    NSPoint location = NSMakePoint(0.0f, NSHeight(button.bounds));
-    [menu popUpMenuPositioningItem:nil atLocation:location inView:button];
-}
-
-- (NSMenu *)toolWidthOptionsMenu {
-    NSMenu *menu = [[NSMenu alloc] initWithTitle:@"Width Options"];
-    NSMenuItem *resetItem = [[NSMenuItem alloc] initWithTitle:@"Reset Width"
-                                                       action:@selector(resetActiveToolWidth:)
-                                                keyEquivalent:@""];
-    [resetItem setTarget:self];
-    [resetItem setEnabled:self.toolWidthMenuCanReset];
-    [menu addItem:resetItem];
-
-    NSMenuItem *defaultItem = [[NSMenuItem alloc] initWithTitle:@"Set as Default"
-                                                         action:@selector(setActiveToolWidthAsDefault:)
-                                                  keyEquivalent:@""];
-    [defaultItem setTarget:self];
-    [defaultItem setEnabled:self.toolWidthMenuCanReset];
-    [menu addItem:defaultItem];
-    return menu;
-}
-
-- (ScreenshotCanvasTool)widthTargetTool {
-    ScreenshotCanvasTool tool = self.canvasView.activeTool;
-    if (tool == ScreenshotCanvasToolPen || tool == ScreenshotCanvasToolHighlighter) {
-        self.lastWidthTool = tool;
-        return tool;
-    }
-    if (self.lastWidthTool == ScreenshotCanvasToolPen || self.lastWidthTool == ScreenshotCanvasToolHighlighter) {
-        return self.lastWidthTool;
-    }
-    self.lastWidthTool = ScreenshotCanvasToolHighlighter;
-    return self.lastWidthTool;
 }
 
 - (NSString *)titleForToolWidth:(ScreenshotCanvasTool)tool {
@@ -4249,14 +4348,6 @@ static id STInfoValueForKey(NSString *key) {
     }
 }
 
-- (void)updateToolWidthValueLabelWithWidth:(CGFloat)width {
-    if (!self.toolWidthValueLabel) {
-        return;
-    }
-    NSString *value = [NSString stringWithFormat:@"%.0f px", roundf(width)];
-    [self.toolWidthValueLabel setStringValue:value];
-}
-
 - (CGFloat)clampedWidth:(CGFloat)value {
     if (value < STToolWidthMin) {
         return STToolWidthMin;
@@ -4265,38 +4356,6 @@ static id STInfoValueForKey(NSString *key) {
         return STToolWidthMax;
     }
     return value;
-}
-
-- (void)toolWidthSliderChanged:(NSSlider *)slider {
-    ScreenshotCanvasTool tool = [self widthTargetTool];
-    CGFloat rawValue = slider.doubleValue;
-    CGFloat rounded = roundf(rawValue);
-    CGFloat clamped = [self clampedWidth:rounded];
-    if (fabs(clamped - rawValue) > 0.01f) {
-        [slider setDoubleValue:clamped];
-    }
-    [self applyWidth:clamped toTool:tool persist:YES];
-}
-
-- (void)resetActiveToolWidth:(id)sender {
-    ScreenshotCanvasTool tool = [self widthTargetTool];
-    CGFloat defaultWidth = [self defaultWidthForTool:tool];
-    [self applyWidth:defaultWidth toTool:tool persist:YES];
-    NSString *message = [NSString stringWithFormat:@"%@ reset to %.0f px",
-                         [self titleForToolWidth:tool],
-                         roundf(defaultWidth)];
-    [self showStatusMessage:message duration:2.0];
-}
-
-- (void)setActiveToolWidthAsDefault:(id)sender {
-    ScreenshotCanvasTool tool = [self widthTargetTool];
-    CGFloat width = [self currentWidthForTool:tool];
-    [self setDefaultWidth:width forTool:tool];
-    NSString *message = [NSString stringWithFormat:@"%@ default set to %.0f px",
-                         [self titleForToolWidth:tool],
-                         roundf(width)];
-    [self showStatusMessage:message duration:2.0];
-    [self updateToolWidthControls];
 }
 
 - (void)setDefaultWidth:(CGFloat)width forTool:(ScreenshotCanvasTool)tool {
@@ -4338,13 +4397,7 @@ static id STInfoValueForKey(NSString *key) {
         default:
             break;
     }
-    ScreenshotCanvasTool displayedTool = [self widthTargetTool];
-    if (displayedTool == tool) {
-        [self.toolWidthSlider setDoubleValue:clamped];
-        [self updateToolWidthValueLabelWithWidth:clamped];
-    }
     [self.canvasView setNeedsDisplay:YES];
-    [self updateToolWidthControls];
     if (self.preferencesWindowController) {
         [self.preferencesWindowController refresh];
     }
@@ -4845,7 +4898,6 @@ static id STInfoValueForKey(NSString *key) {
     [self setDefaultColor:color forTool:tool];
     NSString *message = [NSString stringWithFormat:@"%@ defaults updated", [self titleForToolWidth:tool]];
     [self showStatusMessage:message duration:2.0];
-    [self updateToolWidthControls];
 }
 
 #pragma mark - TextToolPopoverControllerDelegate
@@ -5086,12 +5138,11 @@ static id STInfoValueForKey(NSString *key) {
     [[NSUserDefaults standardUserDefaults] setObject:fallbackDirectory forKey:STDefaultsSaveDirectoryKey];
     [self ensureDirectoryExistsAtPath:fallbackDirectory];
 
-    self.statusBarVisiblePreference = NO;
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsShowStatusBarKey];
+    self.statusBarVisiblePreference = [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
 
     [[NSUserDefaults standardUserDefaults] synchronize];
-    [self updateToolWidthControls];
     [self showStatusMessage:@"Preferences restored" duration:2.0];
 }
 
@@ -5154,7 +5205,8 @@ static id STInfoValueForKey(NSString *key) {
             [undo disableUndoRegistration];
         }
 
-        [self.statusTextField setStringValue:@""];
+        // Back to the image's size and format (#221).
+        [self.statusTextField setStringValue:[self idleStatusText]];
 
         if (undoWasEnabled) {
             [undo enableUndoRegistration];
@@ -7069,7 +7121,6 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
     if (tool == ScreenshotCanvasToolPen || tool == ScreenshotCanvasToolHighlighter || tool == ScreenshotCanvasToolArrow) {
         self.lastWidthTool = STSettingsToolForTool(tool);
     }
-    [self updateToolWidthControls];
 
     if (self.toolbar) {
         [self.toolbar setSelectedItemIdentifier:selectedIdentifier];
@@ -7087,6 +7138,7 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
 - (void)reflectZoomSelection {
     [self refreshZoomToolbarControl];
     [self.zoomPopoverController refresh];
+    [self refreshStatusZoomControls];
 }
 
 - (BOOL)openImageAtURL:(NSURL *)url {
@@ -7137,6 +7189,7 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
                              size.width,
                              size.height]);
     [self.canvasView loadImage:image];
+    self.statusFileSizeURL = nil; // Read the size again, in case the file changed.
     if ([self isTemporaryClipboardImageURL:url]) {
         // Paste as New Image hands us a temp file; present it as an untitled document instead.
         self.currentImageURL = nil;
