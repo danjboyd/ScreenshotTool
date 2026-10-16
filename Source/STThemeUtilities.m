@@ -53,12 +53,41 @@ NSColor *STThemeCanvasBackgroundColor(void) {
     return STThemeCardBackgroundColor();
 }
 
+/// The window's colour, a step darker: the stage the image sits on (v0.2.0, #221). The step
+/// grows as the colour darkens, so it shows under a dark theme as well as a light one, without
+/// the app deciding which the theme is.
 NSColor *STThemeCanvasBackdropColor(void) {
-    return STThemeWindowBackgroundColor();
+    NSColor *window = STThemeWindowBackgroundColor();
+    NSColor *rgb = [window colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
+    if (!rgb) {
+        return window;
+    }
+    CGFloat lightness = (0.2126 * rgb.redComponent) + (0.7152 * rgb.greenComponent) + (0.0722 * rgb.blueComponent);
+    CGFloat step = 0.05 + (0.30 * (1.0 - MAX(0.0, MIN(lightness, 1.0))));
+    return [rgb blendedColorWithFraction:step ofColor:[NSColor blackColor]] ?: window;
 }
 
+/// `color` at `alpha`. GNUstep keeps a theme's named colours opaque under
+/// -colorWithAlphaComponent:, so take the RGB colour first.
+static NSColor *STColorWithAlpha(NSColor *color, CGFloat alpha) {
+    NSColor *rgb = [color colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: color;
+    return [rgb colorWithAlphaComponent:alpha];
+}
+
+/// The stage's dot grid: the text colour, faint.
+NSColor *STThemeCanvasBackdropDotColor(void) {
+    return STColorWithAlpha(STThemePrimaryTextColor(), 0.07);
+}
+
+/// The 1 px line round the image on the stage.
 NSColor *STThemeCanvasImageBorderColor(void) {
-    return STThemeHairlineColor();
+    return STColorWithAlpha(STThemeHairlineColor(), 0.45);
+}
+
+/// The image's soft shadow on the stage, opaque: the stage draws it in faint layers.
+NSColor *STThemeCanvasImageShadowColor(void) {
+    NSColor *shadow = STSystemColor([NSColor shadowColor], [NSColor blackColor]);
+    return [shadow colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]] ?: shadow;
 }
 
 NSColor *STThemeStatusBarBackgroundColor(void) {

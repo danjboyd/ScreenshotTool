@@ -112,6 +112,21 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 @interface STCanvasClipView : NSClipView
 @end
 
+/// The least space between the image and the stage's edge, in points.
+extern const CGFloat STCanvasStageMargin;
+
+/// The canvas scroll view's document view: the canvas centred on a stage at least as big as the
+/// viewport, with a margin round the image, a dot grid, a soft shadow and a hairline (v0.2.0,
+/// #221). Display only: exports and Copy come from the canvas, which draws as before.
+@interface STCanvasStageView : NSView
+@property (nonatomic, strong, readonly) ScreenshotCanvasView *canvasView;
+- (instancetype)initWithCanvasView:(ScreenshotCanvasView *)canvasView;
+/// Sizes the stage to the viewport and the canvas, and centres the canvas on it.
+- (void)layoutCanvas;
+/// The canvas's frame, which the stage draws round.
+@property (nonatomic, readonly) NSRect imageFrame;
+@end
+
 NS_ASSUME_NONNULL_END
 #import <AppKit/AppKit.h>
 
