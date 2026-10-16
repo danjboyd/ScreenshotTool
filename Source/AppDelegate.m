@@ -5822,16 +5822,20 @@ static id STInfoValueForKey(NSString *key) {
     [paste setTag:5];
     [view addSubview:paste];
 
-    NSButton *capture = [self emptyStateButton:@"Take Screenshot" action:@selector(takeScreenshot:)];
-    [self showShortcut:[self takeScreenshotShortcutText] onEmptyStateButton:capture];
     // The accent button, without being the window's default: Return stays with Open… (#103).
 #if defined(GNUSTEP)
+    NSButton *capture = [self emptyStateButton:@"Take Screenshot" action:@selector(takeScreenshot:)];
+    [self showShortcut:[self takeScreenshotShortcutText] onEmptyStateButton:capture];
     // A theme-neutral way to ask for the theme's accent button, as the toolbar's Copy does.
     if ([capture respondsToSelector:@selector(setGSThemeStyle:)]) {
         [capture performSelector:@selector(setGSThemeStyle:) withObject:@"accent"];
     }
 #else
-    [capture setBezelColor:[NSColor controlAccentColor]];
+    STAccentButton *capture = [[STAccentButton alloc] initWithFrame:NSMakeRect(0.0, 0.0, 120.0, 32.0)];
+    [capture setTitle:@"Take Screenshot"];
+    [capture setShortcut:[self takeScreenshotShortcutText]];
+    [capture setTarget:self];
+    [capture setAction:@selector(takeScreenshot:)];
 #endif
     [capture setFrameSize:NSMakeSize(MAX(120.0, ceil([[capture cell] cellSize].width) + 8.0), 32.0)];
     [capture setTag:6];
@@ -6076,28 +6080,13 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
 #endif
 }
 
-/// Shows `shortcut` after the button's title, dimmer than it, as the mockup's key hint (#221).
-- (void)showShortcut:(NSString *)shortcut onEmptyStateButton:(NSButton *)button {
 #if defined(GNUSTEP)
-    // GNUstep's themes draw the title in their own colour; an attributed one would lose it.
+/// Shows `shortcut` after the button's title, as the mockup's key hint (#221). GNUstep's themes
+/// draw the title in their own colour; an attributed one would lose it. (macOS: STAccentButton.)
+- (void)showShortcut:(NSString *)shortcut onEmptyStateButton:(NSButton *)button {
     [button setTitle:[NSString stringWithFormat:@"%@   %@", button.title, shortcut]];
-#else
-    NSFont *font = button.font ?: [NSFont systemFontOfSize:[NSFont systemFontSize]];
-    NSMutableParagraphStyle *centred = [[NSMutableParagraphStyle alloc] init];
-    centred.alignment = NSTextAlignmentCenter;
-    NSMutableAttributedString *title = [[NSMutableAttributedString alloc] initWithString:button.title attributes:@{
-        NSFontAttributeName: font,
-        NSForegroundColorAttributeName: [NSColor whiteColor],
-        NSParagraphStyleAttributeName: centred,
-    }];
-    [title appendAttributedString:[[NSAttributedString alloc] initWithString:[@"   " stringByAppendingString:shortcut] attributes:@{
-        NSFontAttributeName: font,
-        NSForegroundColorAttributeName: [[NSColor whiteColor] colorWithAlphaComponent:0.7],
-        NSParagraphStyleAttributeName: centred,
-    }]];
-    [button setAttributedTitle:title];
-#endif
 }
+#endif
 
 /// The drawing tools work only on an image: with none open they're dimmed and disabled (#221).
 - (void)updateDrawingToolsForImage:(BOOL)hasImage {
