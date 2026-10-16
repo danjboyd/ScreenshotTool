@@ -109,3 +109,117 @@
 }
 
 @end
+
+static const CGFloat STRecentCardPadding = 8.0;
+static const CGFloat STRecentCardThumbnailHeight = 112.0;
+
+@implementation STRecentCard
+
++ (CGFloat)heightForWidth:(CGFloat)width {
+    (void)width;
+    return STRecentCardPadding + STRecentCardThumbnailHeight + 8.0 + 34.0;
+}
+
+- (instancetype)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        [self setBordered:NO];
+        [self setButtonType:NSMomentaryChangeButton];
+        [self setImagePosition:NSNoImage];
+        _detail = @"";
+    }
+    return self;
+}
+
+- (BOOL)isFlipped {
+    return YES;
+}
+
+- (void)setDetail:(NSString *)detail {
+    _detail = [detail copy] ?: @"";
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setThumbnail:(NSImage *)thumbnail {
+    _thumbnail = thumbnail;
+    [self setNeedsDisplay:YES];
+}
+
+- (void)setPlaceholder:(NSImage *)placeholder {
+    _placeholder = placeholder;
+    [self setNeedsDisplay:YES];
+}
+
+- (NSRect)thumbnailFrame {
+    return NSMakeRect(STRecentCardPadding, STRecentCardPadding,
+                      MAX(0.0, NSWidth(self.bounds) - 2.0 * STRecentCardPadding), STRecentCardThumbnailHeight);
+}
+
+- (void)drawText:(NSString *)text inRect:(NSRect)rect font:(NSFont *)font color:(NSColor *)color {
+    NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
+    style.lineBreakMode = NSLineBreakByTruncatingTail;
+    [text drawInRect:rect withAttributes:@{
+        NSFontAttributeName: font,
+        NSForegroundColorAttributeName: color,
+        NSParagraphStyleAttributeName: style,
+    }];
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+    (void)dirtyRect;
+    NSRect card = NSInsetRect(self.bounds, 0.5, 0.5);
+    NSBezierPath *cardPath = [NSBezierPath bezierPathWithRoundedRect:card xRadius:8.0 yRadius:8.0];
+    [STThemeCardBackgroundColor() setFill];
+    [cardPath fill];
+    BOOL pressed = [[self cell] isHighlighted];
+    if (pressed) {
+        [[STThemePrimaryTextColor() colorWithAlphaComponent:0.06] setFill];
+        [cardPath fill];
+    }
+    [[STThemeHairlineColor() colorWithAlphaComponent:0.3] setStroke];
+    [cardPath setLineWidth:1.0];
+    [cardPath stroke];
+
+    NSRect thumbFrame = [self thumbnailFrame];
+    [NSGraphicsContext saveGraphicsState];
+    NSBezierPath *thumbPath = [NSBezierPath bezierPathWithRoundedRect:thumbFrame xRadius:4.0 yRadius:4.0];
+    [STThemeInsetBackgroundColor() setFill];
+    [thumbPath fill];
+    [thumbPath addClip];
+    NSImage *image = self.thumbnail;
+    if (image && image.size.width > 0.0 && image.size.height > 0.0) {
+        // Fill the frame and crop, centred, as a photo grid does.
+        CGFloat scale = MAX(NSWidth(thumbFrame) / image.size.width, NSHeight(thumbFrame) / image.size.height);
+        NSSize drawn = NSMakeSize(image.size.width * scale, image.size.height * scale);
+        NSRect target = NSMakeRect(NSMidX(thumbFrame) - drawn.width / 2.0, NSMidY(thumbFrame) - drawn.height / 2.0,
+                                   drawn.width, drawn.height);
+        [image drawInRect:target fromRect:NSZeroRect operation:NSCompositeSourceOver
+                 fraction:1.0 respectFlipped:YES hints:nil];
+    } else if (self.placeholder) {
+        NSRect icon = NSMakeRect(NSMidX(thumbFrame) - 24.0, NSMidY(thumbFrame) - 24.0, 48.0, 48.0);
+        [self.placeholder drawInRect:icon fromRect:NSZeroRect operation:NSCompositeSourceOver
+                            fraction:1.0 respectFlipped:YES hints:nil];
+    }
+    [NSGraphicsContext restoreGraphicsState];
+    [[STThemeHairlineColor() colorWithAlphaComponent:0.25] setStroke];
+    [thumbPath setLineWidth:1.0];
+    [thumbPath stroke];
+
+    CGFloat textX = STRecentCardPadding + 2.0;
+    CGFloat textWidth = MAX(0.0, NSWidth(self.bounds) - 2.0 * textX);
+    CGFloat y = NSMaxY(thumbFrame) + 8.0;
+    NSFont *nameFont = [NSFont systemFontOfSize:[NSFont systemFontSize] - 0.5];
+    NSFont *detailFont = [NSFont systemFontOfSize:[NSFont smallSystemFontSize] - 0.5];
+    [self drawText:self.title inRect:NSMakeRect(textX, y, textWidth, 17.0) font:nameFont color:STThemePrimaryTextColor()];
+    [self drawText:self.detail inRect:NSMakeRect(textX, y + 17.0, textWidth, 15.0)
+              font:detailFont color:STThemeSecondaryTextColor()];
+
+    if ([self.window firstResponder] == self && [self.window isKeyWindow]) {
+        [[STThemeAccentColor() colorWithAlphaComponent:0.8] setStroke];
+        NSBezierPath *focus = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(self.bounds, 1.0, 1.0) xRadius:7.0 yRadius:7.0];
+        [focus setLineWidth:2.0];
+        [focus stroke];
+    }
+}
+
+@end

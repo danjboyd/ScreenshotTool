@@ -25,6 +25,10 @@
 - (BOOL)openImageAtURL:(NSURL *)url;
 - (NSSegmentedControl *)toolbarToolSegmentedControl;
 - (NSToolbarItem *)toolbarItemForToolControl;
+- (NSMutableArray<NSString *> *)recentDocumentPaths;
+- (void)setRecentDocumentPaths:(NSMutableArray<NSString *> *)paths;
+- (void)refreshEmptyStateRecents;
+- (void)layoutEmptyStateViewInFrame:(NSRect)frame;
 @end
 
 @interface EmptyStateProbeTests : XCTestCase {
@@ -169,6 +173,43 @@
     XCTAssertTrue(_appDelegate.toolbarToolSegmentedControl.isEnabled);
     XCTAssertTrue([_appDelegate.toolbarToolSegmentedControl isEnabledForSegment:0]);
     [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
+}
+
+/// Recent shows up to three of Open Recent's files that still exist, each a card that opens it (#221).
+- (void)testRecentCards {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSString *first = [self writeSampleImage];
+    NSString *second = [self writeSampleImage];
+    NSString *missing = [NSTemporaryDirectory() stringByAppendingPathComponent:@"empty-state-missing.png"];
+    _appDelegate.recentDocumentPaths = [@[first, missing, second] mutableCopy];
+    [_appDelegate refreshEmptyStateRecents];
+    [_appDelegate layoutEmptyStateViewInFrame:NSMakeRect(0.0, 0.0, 900.0, 760.0)];
+
+    NSMutableArray<STRecentCard *> *cards = [NSMutableArray array];
+    for (NSView *view in _appDelegate.emptyStateView.subviews) {
+        if ([view isKindOfClass:[STRecentCard class]] && !view.isHidden) {
+            [cards addObject:(STRecentCard *)view];
+        }
+    }
+    XCTAssertEqual(cards.count, 2u, @"the missing file is left out");
+    [cards sortUsingComparator:^NSComparisonResult(NSView *a, NSView *b) {
+        return [@(NSMinX(a.frame)) compare:@(NSMinX(b.frame))];
+    }];
+    XCTAssertEqualObjects(cards[0].representedObject, first, @"newest first, left to right");
+    XCTAssertEqualObjects(cards[1].representedObject, second);
+    XCTAssertEqualObjects(cards[0].title, first.lastPathComponent);
+    XCTAssertTrue(sel_isEqual(cards[0].action, @selector(openRecentDocument:)), @"opens as Open Recent's item does");
+    XCTAssertEqual(cards[0].target, _appDelegate);
+    XCTAssertEqualWithAccuracy(NSMinY(cards[0].frame), NSMinY(cards[1].frame), 0.5, @"in one row");
+    NSView *capture = [self controlWithAction:@selector(takeScreenshot:)];
+    NSView *paste = [self controlWithAction:@selector(pasteAsNewImage:)];
+    XCTAssertLessThan(NSMaxY(cards[0].frame), NSMinY(capture.isHidden ? paste.frame : capture.frame), @"under the buttons");
+
+    // A window too short for them hides them.
+    [_appDelegate layoutEmptyStateViewInFrame:NSMakeRect(0.0, 0.0, 900.0, 380.0)];
+    XCTAssertTrue(cards[0].isHidden);
+    [[NSFileManager defaultManager] removeItemAtPath:first error:NULL];
+    [[NSFileManager defaultManager] removeItemAtPath:second error:NULL];
 }
 
 - (void)testOpeningAnImageShowsTheCanvas {
