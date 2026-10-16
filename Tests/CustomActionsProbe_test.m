@@ -50,7 +50,7 @@
 - (void)tearDown {
     [[NSFileManager defaultManager] removeItemAtPath:_directory error:NULL];
     if (_savedActionsDirectory) {
-        STSetEnvVar("SCREENSHOT_TOOL_ACTIONS_DIR", [_savedActionsDirectory fileSystemRepresentation]);
+        STSetEnvVar("SCREENSHOT_TOOL_ACTIONS_DIR", _savedActionsDirectory.UTF8String);
     } else {
         STUnsetEnvVar("SCREENSHOT_TOOL_ACTIONS_DIR");
     }
@@ -125,7 +125,7 @@
 }
 
 - (void)testDirectoryCanBeOverridden {
-    STSetEnvVar("SCREENSHOT_TOOL_ACTIONS_DIR", [_directory fileSystemRepresentation]);
+    STSetEnvVar("SCREENSHOT_TOOL_ACTIONS_DIR", _directory.UTF8String);
     XCTAssertEqualObjects([STCustomAction actionsDirectory], _directory);
 }
 
@@ -202,7 +202,7 @@
 #pragma mark - In the app
 
 - (AppDelegate *)appWithActions {
-    STSetEnvVar("SCREENSHOT_TOOL_ACTIONS_DIR", [_directory fileSystemRepresentation]);
+    STSetEnvVar("SCREENSHOT_TOOL_ACTIONS_DIR", _directory.UTF8String);
     AppDelegate *app = nil;
     @try {
         [NSApplication sharedApplication];
