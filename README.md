@@ -19,7 +19,7 @@ Get the latest version from the
 | Platform | Download | Requires |
 |---|---|---|
 | macOS | `ScreenshotTool-<version>-macOS.dmg` (Apple silicon and Intel) | macOS 12 or later |
-| Windows | `ScreenshotTool-<version>-win64.msi` | 64-bit Windows 11 (Windows 10 1809 or later should work, but is untested) |
+| Windows | `ScreenshotTool-<version>-win64.msi`, or `ScreenshotTool-<version>-win64-portable.zip` to run without installing | 64-bit Windows 11 (Windows 10 1809 or later should work, but is untested) |
 | Linux | `ScreenshotTool-<version>-x86_64.AppImage` | x86_64, glibc 2.38 or later (Ubuntu 24.04, Debian 13, Fedora 39 or later) |
 
 `SHA256SUMS` on each release lists the files' checksums. Once installed, the app checks for
@@ -42,13 +42,15 @@ The DMG includes these steps as "Opening an unsigned app.txt".
 
 ### Windows
 
-Run the MSI. It installs for your user only, in `%LOCALAPPDATA%\ScreenshotTool` (about 105 MB),
+Run the MSI. It installs for your user only, in `%LOCALAPPDATA%\ScreenshotTool` (about 85 MB),
 without asking for an administrator. There's no wizard, just a progress box; then
 ScreenshotTool is in the Start menu (there's no desktop shortcut). Your browser may warn that the
 file isn't commonly downloaded, and on a new Windows 11 PC, Smart App Control may block an
 unsigned installer. To check the download, compare `Get-FileHash .\ScreenshotTool-<version>-win64.msi`
 with `SHA256SUMS` (it prints the hash in capitals). Uninstall it from Settings → Apps →
 Installed apps; your settings stay in `%USERPROFILE%\GNUstep\Defaults`.
+
+Or unzip the portable build anywhere and run `ScreenshotTool.exe` from the unzipped folder.
 
 If you installed v0.1.0 or a v0.1.1 release candidate before rc4, download and run the new MSI by hand
 once: those versions' Check for Updates can't install updates on Windows. The MSI upgrades

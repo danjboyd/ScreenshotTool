@@ -127,6 +127,25 @@
 }
 
 #if !defined(GNUSTEP)
+/// Take Screenshot is white on the accent only while its window is key; otherwise AppKit draws the
+/// bezel grey, so its title takes the label colours. The key hint is shown once, however often the
+/// title is refreshed.
+- (void)testAccentButtonTitleReadsWhenTheWindowIsntKey {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_appDelegate layoutContentSubviews];
+    STAccentButton *capture = [self controlWithAction:@selector(takeScreenshot:)];
+    XCTAssertTrue([capture isKindOfClass:[STAccentButton class]]);
+    [capture setEnabled:NO];
+    [capture setEnabled:YES];
+    NSAttributedString *title = capture.attributedTitle;
+    XCTAssertEqual([title.string componentsSeparatedByString:@"⇧⌘T"].count, 2u, @"the hint once: %@", title.string);
+    XCTAssertTrue([title.string hasPrefix:@"Take Screenshot"]);
+    if (!capture.window.isKeyWindow) {
+        NSColor *colour = [title attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:NULL];
+        XCTAssertEqualObjects(colour, [NSColor labelColor], @"not white on the grey bezel of a window that isn't key");
+    }
+}
+
 /// macOS's Open… is AppKit's split button: its arrow lists recent files, and Return still opens.
 - (void)testOpenListsRecentFilesOnMacOS {
     XCTSkipIf(_shouldSkip, @"No window server");
