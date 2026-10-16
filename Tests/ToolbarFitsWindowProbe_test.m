@@ -17,6 +17,10 @@
 - (void)setupToolbar;
 - (BOOL)openImageAtURL:(NSURL *)url;
 - (NSWindow *)window;
+#if defined(GNUSTEP)
+- (CGFloat)contentWidthShowingAllToolbarItems;
+- (void)resizeWindowToImageSize:(NSSize)imageSize;
+#endif
 @end
 
 @interface ToolbarFitsWindowProbeTests : XCTestCase {
@@ -50,6 +54,35 @@
     _appDelegate = nil;
     [super tearDown];
 }
+
+#if defined(GNUSTEP)
+/// GNUstep moves the row's last items, Save and Copy, into ">>" when the row is too narrow. At
+/// 125% and 150% an 860px screenshot's window was (#221): the window now opens at least as wide as
+/// the items at their minimum widths need. Sized directly, not by shrinking a live window (#242).
+- (void)testWindowForASmallImageIsWideEnoughForTheWholeToolbar {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSWindow *window = _appDelegate.window;
+    [window orderFront:nil];
+    [window display];
+    CGFloat needed = [_appDelegate contentWidthShowingAllToolbarItems];
+    XCTSkipIf(needed <= 0.0, @"The toolbar wasn't laid out, so there's nothing to measure");
+
+    // An image narrower than the row: the window's width comes from the toolbar, not the image.
+    [_appDelegate resizeWindowToImageSize:NSMakeSize(40.0, 30.0)];
+    CGFloat limit = floor(NSWidth((window.screen ?: [NSScreen mainScreen]).visibleFrame) * 0.95);
+    CGFloat width = NSWidth([window.contentView frame]);
+    if (needed + 8.0 <= limit) {
+        XCTAssertGreaterThanOrEqual(width, needed, @"the content is as wide as the toolbar needs");
+        XCTAssertLessThanOrEqual(width, MAX(needed + 9.0, 641.0), @"and no wider than that or the smallest canvas");
+        [window display];
+        XCTAssertEqual(window.toolbar.visibleItems.count, window.toolbar.items.count,
+                       @"every toolbar item shows at %.0fpt: %@", width,
+                       [window.toolbar.visibleItems valueForKey:@"itemIdentifier"]);
+    } else {
+        XCTAssertLessThanOrEqual(width, limit + 1.0, @"capped at the screen");
+    }
+}
+#endif
 
 #if !defined(GNUSTEP)
 - (void)testSmallImageOpensWithTheWholeToolbar {

@@ -6342,6 +6342,51 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
 }
 #endif
 
+#if defined(GNUSTEP)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+#pragma clang diagnostic ignored "-Wundeclared-selector"
+/// What an item takes in libs-gui's test for which items fit the row (-_visibleBackViews, which
+/// WinUITheme repeats): a view item its minimum width and 10pt each side, a flexible space its
+/// minimum, any other item its back view's width.
+static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
+    NSString *identifier = item.itemIdentifier;
+    if ([identifier isEqualToString:NSToolbarFlexibleSpaceItemIdentifier]) {
+        return MAX(0.0f, item.minSize.width);
+    }
+    if (item.view != nil) {
+        return item.minSize.width + 2.0f * 10.0f;
+    }
+    if ([item respondsToSelector:@selector(_backView)]) {
+        NSView *backView = [item performSelector:@selector(_backView)];
+        return [backView isKindOfClass:[NSView class]] ? NSWidth(backView.frame) : 0.0f;
+    }
+    return 0.0f;
+}
+
+/// The content width at which every toolbar item shows: the items at their minimum widths, as
+/// libs-gui sums them, plus what the window gives the row besides the toolbar view (the "..." menu
+/// button where WinUITheme puts the menus there). 0 when there's no toolbar to measure. Worked out
+/// from the items rather than by resizing the window, which can leave items in ">>" (#242).
+- (CGFloat)contentWidthShowingAllToolbarItems {
+    NSToolbar *toolbar = self.window.toolbar;
+    if (!toolbar || !toolbar.isVisible || ![toolbar respondsToSelector:@selector(_toolbarView)]) {
+        return 0.0f;
+    }
+    NSView *toolbarView = [toolbar performSelector:@selector(_toolbarView)];
+    if (![toolbarView isKindOfClass:[NSView class]] || NSWidth(toolbarView.frame) < 1.0f) {
+        return 0.0f;
+    }
+    CGFloat itemsWidth = 0.0f;
+    for (NSToolbarItem *item in toolbar.items) {
+        itemsWidth += STToolbarItemMinimumRowWidth(item);
+    }
+    CGFloat besideToolbar = MAX(0.0f, NSWidth([self.window.contentView frame]) - NSWidth(toolbarView.frame));
+    return ceil(itemsWidth + besideToolbar);
+}
+#pragma clang diagnostic pop
+#endif
+
 - (void)resizeWindowToImageSize:(NSSize)imageSize {
     if (imageSize.width <= 0.0f || imageSize.height <= 0.0f || !self.window) {
         return;
@@ -6395,7 +6440,14 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
     }
     targetWidth = MAX(targetWidth, toolbarWidth);
 #else
+    // Wide enough for the whole toolbar too: GNUstep moves the row's last items into the ">>"
+    // menu first, and those are Save and Copy. At 125% and 150% an 860px screenshot's window
+    // was narrower than the row and hid them (#221). The same few points to spare as macOS.
     CGFloat targetWidth = MAX(contentWidth, minimumWidth);
+    CGFloat toolbarWidth = [self contentWidthShowingAllToolbarItems];
+    if (toolbarWidth > targetWidth) {
+        targetWidth = MIN(maxWidth, toolbarWidth + 8.0f);
+    }
 #endif
     CGFloat targetHeight = MAX(contentHeight, minimumHeight) + barHeight;
 
@@ -7179,7 +7231,9 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
 - (NSString *)displayStringForScale:(CGFloat)scale {
     CGFloat percent = scale * 100.0f;
     CGFloat rounded = roundf(percent);
-    if (fabs(percent - rounded) < 0.01f) {
+    // Within what one decimal would show: actual size on a scaled display works out a hair off
+    // a whole percent ("100.0%" at 125%).
+    if (fabs(percent - rounded) < 0.05f) {
         return [NSString stringWithFormat:@"%.0f%%", rounded];
     }
     return [NSString stringWithFormat:@"%.1f%%", percent];
