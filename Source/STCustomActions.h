@@ -88,6 +88,9 @@ typedef NS_ENUM(NSInteger, STCustomActionOutput) {
 /// folders on PATH), which would load them into the user's tools.
 + (NSDictionary<NSString *, NSString *> *)childEnvironmentFrom:(NSDictionary<NSString *, NSString *> *)environment;
 
+/// The environment's PATH. On Windows it's matched in any case: it's usually "Path" there.
++ (nullable NSString *)searchPathInEnvironment:(NSDictionary<NSString *, NSString *> *)environment;
+
 /// `name` if it's a path, else the first executable of that name on `path` (PATH's format).
 + (nullable NSString *)resolvedExecutable:(NSString *)name searchPath:(nullable NSString *)path;
 

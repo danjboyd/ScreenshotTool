@@ -150,6 +150,23 @@
     XCTAssertEqualObjects([STCustomActionRunner childEnvironmentFrom:plain], plain, @"Outside an AppImage nothing changes");
 }
 
+/// Windows calls it "Path" (ScreenshotTool Windows's check of #234).
+- (void)testSearchPathIsFoundUnderItsWindowsName {
+    XCTAssertEqualObjects([STCustomActionRunner searchPathInEnvironment:@{ @"PATH": @"/usr/bin" }], @"/usr/bin");
+#if defined(_WIN32)
+    XCTAssertEqualObjects([STCustomActionRunner searchPathInEnvironment:@{ @"Path": @"C:\\Windows\\system32" }],
+                          @"C:\\Windows\\system32");
+    XCTAssertNotNil([STCustomActionRunner resolvedExecutable:@"cmd.exe"
+                                                  searchPath:[STCustomActionRunner searchPathInEnvironment:[[NSProcessInfo processInfo] environment]]],
+                    @"cmd.exe is found on this system's Path");
+    XCTAssertNotNil([STCustomActionRunner resolvedExecutable:@"cmd"
+                                                  searchPath:[STCustomActionRunner searchPathInEnvironment:[[NSProcessInfo processInfo] environment]]],
+                    @"...and as cmd, by PATHEXT");
+#else
+    XCTAssertNil([STCustomActionRunner searchPathInEnvironment:@{ @"Path": @"/usr/bin" }], @"Elsewhere names are exact");
+#endif
+}
+
 #if !defined(_WIN32)
 - (void)testRunnerReportsOutputAndFailure {
     __block STCustomActionResult *result = nil;

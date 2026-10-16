@@ -266,6 +266,19 @@ static BOOL STIsRunnableFile(NSString *path) {
 #endif
 }
 
++ (NSString *)searchPathInEnvironment:(NSDictionary<NSString *, NSString *> *)environment {
+#if defined(_WIN32)
+    for (NSString *key in environment) {
+        if ([key caseInsensitiveCompare:@"PATH"] == NSOrderedSame) {
+            return environment[key];
+        }
+    }
+    return nil;
+#else
+    return environment[@"PATH"];
+#endif
+}
+
 + (NSString *)resolvedExecutable:(NSString *)name searchPath:(NSString *)path {
     if ([name isAbsolutePath] || [name rangeOfString:@"/"].location != NSNotFound
 #if defined(_WIN32)
@@ -308,7 +321,8 @@ static BOOL STIsRunnableFile(NSString *path) {
              timeout:(NSTimeInterval)timeout
           completion:(void (^)(STCustomActionResult *))completion {
     NSDictionary<NSString *, NSString *> *environment = [self childEnvironmentFrom:[[NSProcessInfo processInfo] environment]];
-    NSString *program = arguments.count > 0 ? [self resolvedExecutable:arguments[0] searchPath:environment[@"PATH"]] : nil;
+    NSString *program = arguments.count > 0
+        ? [self resolvedExecutable:arguments[0] searchPath:[self searchPathInEnvironment:environment]] : nil;
     NSDictionary *job = @{ @"arguments": [arguments copy], @"environment": environment, @"program": program ?: [NSNull null],
                            @"timeout": @(timeout), @"completion": [completion copy] };
     // The whole run on a thread of its own: GNUstep's NSTask watches for the process ending on
