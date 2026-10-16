@@ -49,6 +49,7 @@ NSString * const ScreenshotCanvasViewDidBeginTextEditingNotification = @"Screens
 NSString * const ScreenshotCanvasViewDidEndTextEditingNotification = @"ScreenshotCanvasViewDidEndTextEditingNotification";
 NSString * const ScreenshotCanvasViewRequestsTextFormatNotification = @"ScreenshotCanvasViewRequestsTextFormatNotification";
 NSString * const ScreenshotCanvasViewTextFormatKey = @"format";
+NSString * const ScreenshotCanvasViewSelectionDidChangeNotification = @"ScreenshotCanvasViewSelectionDidChangeNotification";
 #if ST_ENABLE_GNUSTEP_WORKAROUNDS
 BOOL ScreenshotUndoLoggingEnabled(void) __attribute__((weak));
 #else
@@ -1123,10 +1124,18 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
         NSUndoManager *undo = [self undoManager];
         return (undo && [undo canRedo]);
     }
-    if (action == @selector(cropImage:)) {
+    if (action == @selector(cropImage:) || action == @selector(redactSelection:) || action == @selector(deselect:)) {
         return self.hasSelectionRect;
     }
-    return [super validateMenuItem:menuItem];
+    if (action == @selector(editSelectedText:)) {
+        return [self hasSingleTextSelection];
+    }
+    if (action == @selector(duplicateAnnotations:) || action == @selector(bringAnnotationsToFront:) ||
+        action == @selector(sendAnnotationsToBack:) || action == @selector(deleteAnnotations:)) {
+        return [self hasAnnotationSelection];
+    }
+    // NSView doesn't implement it on GNUstep, which would raise.
+    return [NSView instancesRespondToSelector:_cmd] ? [super validateMenuItem:menuItem] : YES;
 }
 
 - (instancetype)initWithFrame:(NSRect)frameRect {
@@ -1676,6 +1685,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 /// Whether a point (in the canvas's coordinates) is on the part of the canvas on screen: the
 /// bounds run on past the clip view (see -resetCursorRects).
 - (BOOL)isPointOnShownCanvas:(NSPoint)viewPoint {
+    NSView *cover = self.coveringView;
+    if (cover && !cover.isHidden && cover.window == self.window &&
+        NSMouseInRect([cover convertPoint:viewPoint fromView:self], cover.bounds, cover.isFlipped)) {
+        return NO;
+    }
     return NSMouseInRect(viewPoint, [self visibleRect], self.isFlipped);
 }
 
@@ -2447,6 +2461,24 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
 - (void)clipViewBoundsDidChange:(NSNotification *)notification {
     [self updateForEnclosingBoundsChange];
     [[self enclosingStageView] layoutCanvas];
+    [self postSelectionDidChange];
+}
+
+- (void)postSelectionDidChange {
+    [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewSelectionDidChangeNotification
+                                                        object:self];
+}
+
+- (NSRect)selectionRectInView {
+    if (!self.image || !self.hasSelectionRect) {
+        return NSZeroRect;
+    }
+    NSRect clamped = [self clampedImageRect:self.selectionRect];
+    return NSIsEmptyRect(clamped) ? NSZeroRect : [self viewRectForImageRect:clamped];
+}
+
+- (BOOL)isAdjustingSelection {
+    return self.isCreatingSelection || self.isMovingSelection || self.isResizingSelection;
 }
 
 /// The stage the canvas sits on in the app's window; nil where it's the document view itself.
@@ -2519,6 +2551,7 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
     [self updateFrameSize];
     [self setNeedsDisplay:YES];
     [self updateActiveTextViewFrame];
+    [self postSelectionDidChange];
 }
 
 - (CGFloat)screenPixelsPerPoint {
@@ -2894,6 +2927,139 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
     return YES;
 }
 
+#pragma mark - Context menu
+
+- (BOOL)hasSingleTextSelection {
+    NSArray *selected = [self selectedAnnotationObjects];
+    return selected.count == 1 && [selected.firstObject isKindOfClass:[MarkupText class]];
+}
+
+- (STCanvasContextKind)prepareContextMenuAtViewPoint:(NSPoint)viewPoint {
+    if (!self.image) {
+        return STCanvasContextKindNone;
+    }
+    [self commitActiveTextIfNeeded];
+    NSPoint imagePoint = NSMakePoint(viewPoint.x / self.zoomScale, viewPoint.y / self.zoomScale);
+    // The region selection wins inside it: right-clicking it is asking about it, not about an
+    // arrow it happens to cover.
+    if (self.hasSelectionRect && NSPointInRect(imagePoint, [self clampedImageRect:self.selectionRect])) {
+        return STCanvasContextKindSelection;
+    }
+    // Outside it, it goes, as with a click: Copy then copies the whole image, as the menu says.
+    if (self.hasSelectionRect) {
+        [self clearSelection];
+    }
+    id hit = [self annotationAtImagePoint:imagePoint];
+    if (!hit) {
+        [self clearAnnotationSelection];
+        return STCanvasContextKindImage;
+    }
+    if (self.activeTool != ScreenshotCanvasToolSelect) {
+        // Through the window, so the toolbar shows the tool; set here too when nothing listens.
+        [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewRequestsToolNotification
+                                                            object:self
+                                                          userInfo:@{ ScreenshotCanvasViewToolKey: @(ScreenshotCanvasToolSelect) }];
+        self.activeTool = ScreenshotCanvasToolSelect;
+    }
+    // Selected first, as Finder and Figma do, so the menu says what it acts on. One already in a
+    // multiple selection keeps the others.
+    [self selectAnnotation:hit extending:NO];
+    return STCanvasContextKindAnnotation;
+}
+
+- (NSMenu *)menuForEvent:(NSEvent *)event {
+    if (!self.contextMenuProvider) {
+        return [super menuForEvent:event];
+    }
+    STCanvasContextKind kind = [self prepareContextMenuAtViewPoint:[self convertPoint:event.locationInWindow fromView:nil]];
+    return kind == STCanvasContextKindNone ? nil : self.contextMenuProvider(kind);
+}
+
+- (IBAction)redactSelection:(id)sender {
+    (void)sender;
+    NSRect rect = [self integralSelectionRect];
+    if (NSIsEmptyRect(rect)) {
+        return;
+    }
+    MarkupStroke *redaction = [[MarkupStroke alloc] initWithType:MarkupStrokeTypeRedact
+                                                           color:self.penColor
+                                                       lineWidth:self.penLineWidth];
+    [redaction setStartPoint:rect.origin endPoint:NSMakePoint(NSMaxX(rect), NSMaxY(rect))];
+    [self clearSelection];
+    [self insertStroke:redaction atIndex:self.strokes.count registeringUndo:YES actionName:@"Redact"];
+}
+
+- (IBAction)deselect:(id)sender {
+    (void)sender;
+    [self clearSelection];
+}
+
+- (IBAction)editSelectedText:(id)sender {
+    (void)sender;
+    [self editSelectedText];
+}
+
+- (IBAction)duplicateAnnotations:(id)sender {
+    (void)sender;
+    NSArray *selected = [self selectedAnnotationObjects];
+    if (selected.count == 0) {
+        return;
+    }
+    NSDictionary *before = [self annotationSnapshot];
+    // Down and to the right of the originals, by the same distance on screen at any zoom.
+    CGFloat offset = 12.0 / MAX(self.zoomScale, 0.05);
+    NSMutableArray *copies = [[NSMutableArray alloc] initWithCapacity:selected.count];
+    for (id annotation in selected) {
+        id copy = [annotation copy];
+        [self translateAnnotations:@[copy] byDelta:NSMakePoint(offset, offset)];
+        if ([copy isKindOfClass:[MarkupText class]]) {
+            [self.texts addObject:copy];
+        } else {
+            [self.strokes addObject:copy];
+        }
+        [copies addObject:copy];
+    }
+    self.selectedAnnotations = copies;
+    [self registerAnnotationUndoWithSnapshot:before actionName:@"Duplicate"];
+    [self setNeedsDisplay:YES];
+}
+
+/// Moves the selected annotations to the top (or bottom) of their own layer, keeping their order.
+/// Labels always draw above strokes, so each moves within its kind.
+- (void)restackSelectedAnnotationsToFront:(BOOL)front {
+    NSArray *selected = [self selectedAnnotationObjects];
+    if (selected.count == 0) {
+        return;
+    }
+    NSDictionary *before = [self annotationSnapshot];
+    for (NSMutableArray *layer in @[self.strokes, self.texts]) {
+        NSMutableArray *moving = [[NSMutableArray alloc] init];
+        NSMutableArray *staying = [[NSMutableArray alloc] init];
+        for (id annotation in layer) {
+            [([selected indexOfObjectIdenticalTo:annotation] != NSNotFound ? moving : staying) addObject:annotation];
+        }
+        [layer setArray:(front ? [staying arrayByAddingObjectsFromArray:moving]
+                               : [moving arrayByAddingObjectsFromArray:staying])];
+    }
+    [self registerAnnotationUndoWithSnapshot:before actionName:(front ? @"Bring to Front" : @"Send to Back")];
+    [self setNeedsDisplay:YES];
+}
+
+- (IBAction)bringAnnotationsToFront:(id)sender {
+    (void)sender;
+    [self restackSelectedAnnotationsToFront:YES];
+}
+
+- (IBAction)sendAnnotationsToBack:(id)sender {
+    (void)sender;
+    [self restackSelectedAnnotationsToFront:NO];
+}
+
+- (IBAction)deleteAnnotations:(id)sender {
+    (void)sender;
+    [self deleteSelectedAnnotations];
+}
+
 - (void)keyDown:(NSEvent *)event {
     NSString *characters = event.charactersIgnoringModifiers;
     unichar key = characters.length > 0 ? [characters characterAtIndex:0] : 0;
@@ -2926,6 +3092,10 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
         case 0x1b:
             if ([self hasAnnotationSelection]) {
                 [self clearAnnotationSelection];
+                return;
+            }
+            if (self.hasSelectionRect) {
+                [self clearSelection];
                 return;
             }
             break;
@@ -3077,6 +3247,8 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
         [self stopSelectionDashAnimation];
         self.selectionDashPhase = 0.0f;
     }
+    // Every start, finish and end of a region selection comes through here.
+    [self postSelectionDidChange];
 }
 
 - (NSPoint)viewPointForImagePoint:(NSPoint)imagePoint {
@@ -3617,13 +3789,21 @@ static NSError *STProjectError(NSString *message) {
     // Fit only ever shrinks, to at most actual size: upscaling a screenshot just blurs it.
     CGFloat newScale = MIN(available.width / imageSize.width, available.height / imageSize.height);
     newScale = MAX(0.05, MIN(newScale, 1.0 / self.screenPixelsPerPoint));
-    if (fabs(newScale - _zoomScale) >= 0.0001) {
+    BOOL changed = fabs(newScale - _zoomScale) >= 0.0001;
+    if (changed) {
         [self zoomDidChange];
     }
     _zoomScale = newScale;
     [self updateFrameSize];
     [self setNeedsDisplay:YES];
     [self updateActiveTextViewFrame];
+    // Not through -setZoomScale:, so say the selection moved on screen here too, and tell the
+    // zoom controls: a window settling after an undone crop fits again with nobody asking.
+    [self postSelectionDidChange];
+    if (changed) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewDidChangeZoomNotification
+                                                            object:self];
+    }
 }
 
 - (void)drawRect:(NSRect)dirtyRect {

@@ -243,6 +243,8 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/STSplitButton.m \
 	Source/STEmptyStateView.m \
 	Source/STCustomActions.m \
+	Source/STCanvasContextMenu.m \
+	Source/STSelectionActionBar.m \
 	Source/STScreenshotCapture.m \
 	Source/STWindowsIntegration.m \
 	Source/STFontPicker.m

@@ -21,6 +21,7 @@
 #import <AppKit/AppKit.h>
 #import "MarkupText.h"
 #import "ScreenshotToolSettings.h"
+#import "STCanvasContextMenu.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -50,7 +51,7 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 - (BOOL)isTakingTextFocus;
 @end
 
-@interface ScreenshotCanvasView : NSView
+@interface ScreenshotCanvasView : NSView <STCanvasContextCommands>
 
 @property (nonatomic, strong, nullable) NSImage *image;
 @property (nonatomic, assign) ScreenshotCanvasTool activeTool;
@@ -106,6 +107,21 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 - (void)refreshCursor;
 - (BOOL)cropToActiveSelection;
 
+/// Asked for the right-click menu (-menuForEvent:) once the canvas has worked out what was clicked.
+@property (nonatomic, copy, nullable) NSMenu * _Nullable (^contextMenuProvider)(STCanvasContextKind kind);
+/// What a right-click at this point is about. Like a left click with the select tool, it selects
+/// the annotation under the pointer first (switching to the select tool), unless the point is in
+/// the region selection, which keeps it; a point outside the region selection clears it.
+- (STCanvasContextKind)prepareContextMenuAtViewPoint:(NSPoint)viewPoint;
+/// YES when the one annotation selected is a text label.
+- (BOOL)hasSingleTextSelection;
+/// The region selection in this view's coordinates, or NSZeroRect without one.
+- (NSRect)selectionRectInView;
+/// YES while the region selection is being drawn, moved or resized.
+- (BOOL)isAdjustingSelection;
+/// A view drawn over the canvas (the selection's bar): the pointer over it isn't on the canvas.
+@property (nonatomic, weak, nullable) NSView *coveringView;
+
 /// See STTextEditingCompanion.
 @property (nonatomic, weak, nullable) id<STTextEditingCompanion> textEditingCompanion;
 /// Gives the keyboard back to the text box being edited, after a companion had it. NO if none is.
@@ -150,5 +166,8 @@ extern NSString * const _Nonnull ScreenshotCanvasViewDidEndTextEditingNotificati
 /// @"bold", @"italic", @"bigger" or @"smaller".
 extern NSString * const _Nonnull ScreenshotCanvasViewRequestsTextFormatNotification;
 extern NSString * const _Nonnull ScreenshotCanvasViewTextFormatKey;
+/// Posted when the region selection starts, changes, finishes or goes, and when the canvas
+/// scrolls or zooms, which moves it on screen.
+extern NSString * const _Nonnull ScreenshotCanvasViewSelectionDidChangeNotification;
 /// Posted when the canvas changes its own zoom (a trackpad pinch, say), for the zoom controls.
 extern NSString * const _Nonnull ScreenshotCanvasViewDidChangeZoomNotification;

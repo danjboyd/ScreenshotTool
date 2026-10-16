@@ -18,6 +18,7 @@
 #import "STWindowsIntegration.h"
 #import "STHudView.h"
 #import "STTextOptionsBar.h"
+#import "STSelectionActionBar.h"
 #import <Foundation/NSTask.h>
 #import <dispatch/dispatch.h>
 #if defined(GNUSTEP)
@@ -1357,6 +1358,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) ScreenshotCanvasTool lastWidthTool;
 @property (nonatomic, copy) NSString *defaultSaveDirectory;
 @property (nonatomic, assign) BOOL statusBarVisiblePreference;
+@property (nonatomic, assign) BOOL selectionBarPreference;
+/// Crop, Copy and Redact next to the region selection, over the canvas.
+@property (nonatomic, strong, nullable) STSelectionActionBar *selectionActionBar;
 @property (nonatomic, copy) NSString *pendingOpenPath;
 @property (nonatomic, strong) NSURL *currentImageURL;
 /// The project file this window was opened from or last saved to (#32).
@@ -1795,7 +1799,9 @@ static AppDelegate *STFrontDocument(void) {
         documentCommands = [NSSet setWithArray:@[@"saveDocumentAs:", @"saveProject:", @"undo:", @"redo:",
                                                  @"cropImage:", @"zoomFitToWindow:", @"zoomPreset25:",
                                                  @"zoomPreset50:", @"zoomPreset100:", @"zoomPreset200:",
-                                                 @"zoomIn:", @"zoomOut:", @"runCustomAction:"]];
+                                                 @"zoomIn:", @"zoomOut:", @"runCustomAction:",
+                                                 @"redactSelection:", @"duplicateAnnotations:",
+                                                 @"bringAnnotationsToFront:", @"sendAnnotationsToBack:"]];
     }
     for (NSMenuItem *item in menu.itemArray) {
         if (item.action && [documentCommands containsObject:NSStringFromSelector(item.action)]) {
@@ -2354,6 +2360,10 @@ static AppDelegate *STFrontDocument(void) {
     if (action == @selector(cropImage:)) {
         return [self.canvasView hasSelection];
     }
+    if (action == @selector(redactSelection:) || action == @selector(duplicateAnnotations:) ||
+        action == @selector(bringAnnotationsToFront:) || action == @selector(sendAnnotationsToBack:)) {
+        return [self.canvasView validateMenuItem:menuItem];
+    }
     if (action == @selector(pasteAsNewImage:)) {
         return [self clipboardHasImage];
     }
@@ -2625,6 +2635,29 @@ static id STInfoValueForKey(NSString *key) {
     [cropSelectionItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
     [cropSelectionItem setTarget:self];
     [editMenu addItem:cropSelectionItem];
+
+    // The canvas's own commands, also in its right-click menu, which shows these shortcuts.
+    NSMenuItem *redactSelectionItem = [[NSMenuItem alloc] initWithTitle:@"Redact Selection"
+                                                                 action:@selector(redactSelection:)
+                                                          keyEquivalent:@""];
+    [redactSelectionItem setTarget:self];
+    [editMenu addItem:redactSelectionItem];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    // Built with @selector: validation compares selectors with ==, and on GNUstep's runtime one
+    // from NSSelectorFromString isn't the same pointer.
+    SEL arrangeActions[] = { @selector(duplicateAnnotations:), @selector(bringAnnotationsToFront:),
+                             @selector(sendAnnotationsToBack:) };
+    NSArray<NSString *> *arrangeTitles = @[@"Duplicate", @"Bring to Front", @"Send to Back"];
+    NSArray<NSString *> *arrangeKeys = @[@"d", @"F", @"B"];
+    for (NSUInteger i = 0; i < arrangeTitles.count; i++) {
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:arrangeTitles[i]
+                                                      action:arrangeActions[i]
+                                               keyEquivalent:arrangeKeys[i]];
+        [item setKeyEquivalentModifierMask:(i == 0 ? NSEventModifierFlagCommand
+                                                   : (NSEventModifierFlagCommand | NSEventModifierFlagShift))];
+        [item setTarget:self];
+        [editMenu addItem:item];
+    }
 #if !defined(GNUSTEP)
     [editMenu addItem:[NSMenuItem separatorItem]];
     [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
@@ -2804,6 +2837,9 @@ static id STInfoValueForKey(NSString *key) {
     self.canvasView.autoresizingMask = NSViewNotSizable;
     self.canvasView.activeTool = ScreenshotCanvasToolHighlighter;
     self.canvasView.textColor = self.canvasView.penColor;
+    self.canvasView.contextMenuProvider = ^NSMenu *(STCanvasContextKind kind) {
+        return [weakSelf canvasContextMenuForKind:kind];
+    };
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(canvasViewDidRestoreState:)
                                                  name:ScreenshotCanvasViewDidRestoreStateNotification
@@ -2812,6 +2848,15 @@ static id STInfoValueForKey(NSString *key) {
                                              selector:@selector(canvasViewRequestsTool:)
                                                  name:ScreenshotCanvasViewRequestsToolNotification
                                                object:self.canvasView];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(canvasViewSelectionDidChange:)
+                                                 name:ScreenshotCanvasViewSelectionDidChangeNotification
+                                               object:self.canvasView];
+    // A window resize moves the selection on screen without the canvas scrolling.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(canvasViewSelectionDidChange:)
+                                                 name:NSViewFrameDidChangeNotification
+                                               object:self.scrollView];
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(canvasViewDidBeginTextEditing:)
                                                  name:ScreenshotCanvasViewDidBeginTextEditingNotification
@@ -4531,9 +4576,11 @@ static id STInfoValueForKey(NSString *key) {
 
     // Shown unless the user turned it off (#221; it was off by default before, #54). A registered
     // default, so nothing is written until they choose, and a saved "off" stays off.
-    [defaults registerDefaults:@{STDefaultsShowStatusBarKey: @YES}];
+    [defaults registerDefaults:@{STDefaultsShowStatusBarKey: @YES, STDefaultsShowSelectionBarKey: @YES}];
     self.statusBarVisiblePreference = [defaults boolForKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
+    self.selectionBarPreference = [defaults boolForKey:STDefaultsShowSelectionBarKey];
+    [self updateSelectionActionBar];
 
     if (self.preferencesWindowController) {
         [self.preferencesWindowController refresh];
@@ -5360,6 +5407,22 @@ static id STInfoValueForKey(NSString *key) {
     [self updateStatusBarVisibility];
 }
 
+- (BOOL)preferencesControllerShouldShowSelectionBar:(PreferencesWindowController *)controller {
+    (void)controller;
+    return self.selectionBarPreference;
+}
+
+- (void)preferencesController:(PreferencesWindowController *)controller didToggleSelectionBar:(BOOL)show {
+#if !defined(GNUSTEP)
+    for (AppDelegate *document in self.documentWindows) {
+        [document preferencesController:controller didToggleSelectionBar:show];
+    }
+#endif
+    self.selectionBarPreference = show;
+    [[NSUserDefaults standardUserDefaults] setBool:show forKey:STDefaultsShowSelectionBarKey];
+    [self updateSelectionActionBar];
+}
+
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller {
     (void)controller;
 #if !defined(GNUSTEP)
@@ -5396,6 +5459,9 @@ static id STInfoValueForKey(NSString *key) {
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsShowStatusBarKey];
     self.statusBarVisiblePreference = [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsShowSelectionBarKey];
+    self.selectionBarPreference = [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsShowSelectionBarKey];
+    [self updateSelectionActionBar];
 
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self showStatusMessage:@"Preferences restored" duration:2.0];
@@ -7045,6 +7111,23 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     [self showStatusMessage:@"Cropped image" duration:2.0];
 }
 
+// The Edit menu's canvas commands, for this window's canvas.
+- (void)redactSelection:(id)sender {
+    [self.canvasView redactSelection:sender];
+}
+
+- (void)duplicateAnnotations:(id)sender {
+    [self.canvasView duplicateAnnotations:sender];
+}
+
+- (void)bringAnnotationsToFront:(id)sender {
+    [self.canvasView bringAnnotationsToFront:sender];
+}
+
+- (void)sendAnnotationsToBack:(id)sender {
+    [self.canvasView sendAnnotationsToBack:sender];
+}
+
 - (void)canvasViewDidRestoreState:(NSNotification *)notification {
     if (notification.object != self.canvasView) {
         return;
@@ -7052,6 +7135,8 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     if ([self.canvasView hasImage]) {
         [self resizeWindowToImageSize:self.canvasView.image.size];
     }
+    // The image's size changed (an undone crop): the status bar says so, and the zoom it fits at.
+    [self refreshStatusZoomControls];
 }
 
 
@@ -7556,6 +7641,57 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     self.currentProjectURL = nil;
     [self markAnnotationsSaved];
     return YES;
+}
+
+#pragma mark - Selection bar
+
+- (void)canvasViewSelectionDidChange:(NSNotification *)notification {
+    (void)notification;
+    [self updateSelectionActionBar];
+}
+
+/// Shows the bar next to a finished region selection that's on screen, and hides it otherwise:
+/// while the selection is drawn or dragged, while a label is edited, and when it's turned off.
+- (void)updateSelectionActionBar {
+    ScreenshotCanvasView *canvas = self.canvasView;
+    if (!canvas) {
+        return;
+    }
+    if (!self.selectionActionBar) {
+        // On the canvas itself, as the text editor is: GNUstep repaints an opaque view over
+        // siblings above it, and the canvas repaints for the selection's moving dashes.
+        self.selectionActionBar = [[STSelectionActionBar alloc] initWithTarget:self];
+        self.selectionActionBar.hidden = YES;
+        [canvas addSubview:self.selectionActionBar];
+        canvas.coveringView = self.selectionActionBar;
+    }
+    // The part of the canvas the scroll view shows (its visibleRect is empty off screen).
+    NSClipView *clip = self.scrollView.contentView;
+    NSRect visible = NSIntersectionRect([canvas convertRect:clip.bounds fromView:clip], canvas.bounds);
+    NSRect selection = [canvas selectionRectInView];
+    BOOL show = self.selectionBarPreference && [canvas hasImage] && [canvas hasSelection] &&
+        ![canvas isAdjustingSelection] && ![canvas activeTextEntry] && NSIntersectsRect(selection, visible);
+    if (show) {
+        [self.selectionActionBar setFrame:[self.selectionActionBar frameForSelection:selection visible:visible]];
+    }
+    if ([self.selectionActionBar isHidden] == show) {
+        self.selectionActionBar.hidden = !show;
+        [self.window invalidateCursorRectsForView:self.selectionActionBar];
+    }
+}
+
+#pragma mark - Canvas context menu
+
+/// The canvas's right-click menu: this window's commands, and on the image's menu the custom
+/// actions, as the File menu lists them.
+- (nullable NSMenu *)canvasContextMenuForKind:(STCanvasContextKind)kind {
+    NSMutableArray<NSMenuItem *> *actionItems = [[NSMutableArray alloc] init];
+    if (kind == STCanvasContextKindImage) {
+        for (STCustomAction *action in [self loadedCustomActions]) {
+            [actionItems addObject:[self menuItemForCustomAction:action]];
+        }
+    }
+    return STCanvasContextMenu(kind, [self.canvasView hasSingleTextSelection], self.canvasView, self, actionItems);
 }
 
 #pragma mark - Custom actions (#221)

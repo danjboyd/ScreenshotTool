@@ -61,6 +61,8 @@ ScreenshotToolTests_OBJC_FILES = \
 	StepToolProbe_test.m \
 	RedactToolProbe_test.m \
 	CanvasStageProbe_test.m \
+	CanvasContextMenuProbe_test.m \
+	SelectionActionBarProbe_test.m \
 	CanvasDrawSpeedProbe_test.m \
 	CustomActionsProbe_test.m \
 	LargeImageDrawingProbe_test.m \
@@ -121,6 +123,8 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STSplitButton.m \
 	../Source/STEmptyStateView.m \
 	../Source/STCustomActions.m \
+	../Source/STCanvasContextMenu.m \
+	../Source/STSelectionActionBar.m \
 	../Source/STScreenshotCapture.m \
 	../Source/STWindowsIntegration.m \
 	../Source/STFontPicker.m

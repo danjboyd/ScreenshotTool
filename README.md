@@ -97,6 +97,8 @@ GNUstep's default theme, with the menus in the window. Shortcuts use Ctrl on eve
   file with the original image and editable annotations, which Open and Open
   Recent read back.
 - Crop to Selection, Fit to Window, fixed zoom levels and Zoom In/Out.
+- Custom actions: send the annotated image to a command of your own (an upload script, say)
+  from the File menu or a toolbar button; see [Custom actions](#custom-actions).
 - Standard controls throughout, so the GNUstep theme decides the look,
   including the toolbar, symbolic icons and the open and save dialogs.
 - On macOS: a window per image (File > New Window, Open several at once); drag
@@ -259,6 +261,12 @@ defaults are left untouched. CI runs it on each AppImage.
 
 ## Usage Tips
 - Double-click a tool's toolbar button to open its popover.
+- Right-click the image for what fits where you clicked: in a selection, Crop, Copy or Redact it;
+  on an annotation (which it selects), Edit Text, Duplicate, Bring to Front, Send to Back or
+  Delete; elsewhere, Copy Image, Paste as New Image, zooming, Save As and your custom actions.
+  `Esc` clears the selection.
+- A finished selection gets a small bar next to it with Crop, Copy and Redact; Preferences >
+  Appearance turns it off.
 - Preferences hold the drawing and text defaults, the default save folder
   and whether the status bar is shown.
 - While editing text, `Ctrl+Return` or `Esc` finishes the label and `Return`
@@ -275,6 +283,45 @@ defaults are left untouched. CI runs it on each AppImage.
 - Fit to Window: `Ctrl+0`; 100%: `Ctrl+1`
 - Zoom In / Out: `Ctrl+=` / `Ctrl+-`
 - Preferences: `Ctrl+,`
+
+## Custom actions
+A custom action hands the annotated image, as a PNG, to a command of your own and copies what it
+prints, so a personal workflow is one click. The app ships none: each is a JSON file in your
+actions folder, read at launch.
+
+| Platform | Folder |
+|---|---|
+| Linux / BSD | `~/.config/screenshottool/actions/` (under `$XDG_CONFIG_HOME`) |
+| Windows | `%APPDATA%\ScreenshotTool\Actions\` |
+| macOS | `~/Library/Application Support/ScreenshotTool/Actions/` |
+
+`$SCREENSHOT_TOOL_ACTIONS_DIR` overrides the folder.
+
+```json
+{ "title": "Send to Server",
+  "command": ["/usr/local/bin/upload", "--file", "{file}", "--host", "{choice}"],
+  "choices": ["/usr/local/bin/upload", "--list-hosts"],
+  "output": "clipboard",
+  "toolbar": true,
+  "icon": "send.png" }
+```
+
+- `title` (required): the name in the File menu and on the toolbar.
+- `command` (required): the program, found on `PATH` or given as a path, and its arguments.
+  `{file}` becomes the PNG's path and `{choice}` the choice picked.
+- `choices`: a command whose output lines are the choices, listed in a submenu (and the toolbar
+  button's arrow). The first is the default, which the button itself runs.
+- `output`: `clipboard` (the default) copies what the command prints and says so; `none` ignores it.
+- `toolbar`: `true` adds a toolbar button. `icon` is an image file for it, relative to the actions
+  folder or absolute. Under GNOME's header bar an action with an icon is an icon button, which
+  leaves room for the window's title.
+- `timeout`: seconds before the command is stopped (120 by default).
+
+The command runs in the background, and the action is disabled while it runs or when no image is
+open. If it fails, an alert shows the last line of its error output. The PNG and its folder are
+removed when the command exits, so a command that hands the file to a process it leaves running
+must copy it first. A file that isn't a valid action is skipped, and the log says why. From the
+AppImage, commands get your own environment, without the AppImage's library paths.
 
 ## Project Docs
 - Contributing and development notes: `CONTRIBUTING.md`
