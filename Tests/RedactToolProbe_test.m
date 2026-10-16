@@ -153,8 +153,22 @@
     return canvas;
 }
 
+/// The export's own bytes: on macOS a TIFF round trip or an NSColor conversion turns 128 into
+/// 0.574 (screenshottool-9f).
+- (NSBitmapImageRep *)rawExportOf:(ScreenshotCanvasView *)canvas {
+    for (NSImageRep *rep in [[canvas flattenedImage] representations]) {
+        if ([rep isKindOfClass:[NSBitmapImageRep class]]) {
+            return (NSBitmapImageRep *)rep;
+        }
+    }
+    return nil;
+}
+
+/// The first sample (red, on these greys) at a pixel, 0–1.
 - (CGFloat)greyAt:(NSBitmapImageRep *)rep x:(NSInteger)x y:(NSInteger)y {
-    return [[rep colorAtX:x y:y] colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]].redComponent;
+    NSUInteger samples[5] = {0, 0, 0, 0, 0};
+    [rep getPixel:samples atX:x y:y];
+    return samples[0] / 255.0;
 }
 
 - (void)testRedactionPixelatesTheExport {
@@ -164,7 +178,7 @@
     XCTAssertEqual(canvas.strokes.count, (NSUInteger)1);
     XCTAssertEqual(canvas.strokes.firstObject.type, MarkupStrokeTypeRedact);
 
-    NSBitmapImageRep *rep = [self exportOf:canvas];
+    NSBitmapImageRep *rep = [self rawExportOf:canvas];
     // Inside: each 10px cell one grey, the stripes' average.
     for (NSInteger x = 100; x < 110; x++) {
         XCTAssertEqualWithAccuracy([self greyAt:rep x:x y:105], [self greyAt:rep x:100 y:105], 0.01, @"One colour across a cell (x %ld)", (long)x);
@@ -224,7 +238,7 @@
     XCTAssertTrue(NSEqualRects([drawn shapeRect], NSMakeRect(80.0, 90.0, 120.0, 60.0)),
                   @"It resizes by a corner handle as a rectangle does: %@", NSStringFromRect([drawn shapeRect]));
     // ...and pixelates what it now covers.
-    NSBitmapImageRep *rep = [self exportOf:canvas];
+    NSBitmapImageRep *rep = [self rawExportOf:canvas];
     for (NSInteger x = 80; x < 90; x++) {
         XCTAssertEqualWithAccuracy([self greyAt:rep x:x y:95], [self greyAt:rep x:80 y:95], 0.01,
                                    @"The newly covered corner is pixelated (x %ld)", (long)x);
@@ -257,7 +271,7 @@
     XCTAssertEqualObjects([canvas.strokes valueForKey:@"number"], (@[@0, @0, @1, @2, @0]));
 
     // The redaction (110,38)-(330,68) exports as cells: across each 10px cell, one colour.
-    NSBitmapImageRep *rep = [self exportOf:canvas];
+    NSBitmapImageRep *rep = [self rawExportOf:canvas];
     NSInteger uniformCells = 0;
     for (NSInteger cell = 0; cell < 20; cell++) {
         NSInteger left = 110 + cell * 10;

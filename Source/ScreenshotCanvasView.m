@@ -1412,8 +1412,8 @@ static void STPixelateBuffer(STBitmapBuffer *buffer, NSRect rect) {
 }
 
 /// `rect` of the image in `buffer` (from `source`) as a mosaic: one pixel a cell, to draw scaled
-/// up without smoothing. In `source`'s colour space, so drawing it converts nothing: tagged
-/// device RGB, macOS colour-matched the averages a gamma step lighter (0.57 for 0.5).
+/// up without smoothing. In `source`'s colour space, so drawing it back over the image converts
+/// nothing.
 static NSImage *STMosaicImage(STBitmapBuffer *buffer, NSBitmapImageRep *source, NSRect rect) {
     NSInteger left, top, right, bottom;
     STRedactCellGrid(rect, buffer->width, buffer->height, &left, &top, &right, &bottom);
