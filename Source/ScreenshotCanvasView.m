@@ -162,6 +162,8 @@ static NSString *STCursorToolName(ScreenshotCanvasTool tool) {
             return @"arrow";
         case ScreenshotCanvasToolRectangle:
             return @"rectangle";
+        case ScreenshotCanvasToolStep:
+            return @"step";
         default:
             return @"unknown";
     }
@@ -1462,6 +1464,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         case ScreenshotCanvasToolSelect:
         case ScreenshotCanvasToolArrow:
         case ScreenshotCanvasToolRectangle:
+        case ScreenshotCanvasToolStep:
             return [NSCursor crosshairCursor];
         case ScreenshotCanvasToolText:
             // Over empty canvas a click creates a box; text under the pointer shows an I-beam (#29).
@@ -2630,6 +2633,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         @"e": @(ScreenshotCanvasToolEraser),
         @"a": @(ScreenshotCanvasToolArrow),
         @"r": @(ScreenshotCanvasToolRectangle),
+        @"n": @(ScreenshotCanvasToolStep),
     };
     NSNumber *tool = shortcuts[characters];
     if (!tool) {
@@ -3714,6 +3718,15 @@ static NSError *STProjectError(NSString *message) {
         return;
     }
 
+    if (self.activeTool == ScreenshotCanvasToolStep) {
+        // A click places the next step: one past the highest so far.
+        MarkupStroke *step = [[MarkupStroke alloc] initWithType:MarkupStrokeTypeStep color:self.penColor lineWidth:self.penLineWidth];
+        [step addPoint:imagePoint];
+        step.number = [self nextStepNumber];
+        [self insertStroke:step atIndex:self.strokes.count registeringUndo:YES actionName:@"Add Step"];
+        return;
+    }
+
     MarkupStrokeType strokeType = (self.activeTool == ScreenshotCanvasToolHighlighter)
         ? MarkupStrokeTypeHighlighter
         : MarkupStrokeTypePen;
@@ -3872,6 +3885,17 @@ static NSError *STProjectError(NSString *message) {
     }
     [self.currentStroke addPoint:imagePoint];
     [self setNeedsDisplay:YES];
+}
+
+/// The number the next step gets: one past the highest on the image.
+- (NSInteger)nextStepNumber {
+    NSInteger highest = 0;
+    for (MarkupStroke *stroke in self.strokes) {
+        if (stroke.type == MarkupStrokeTypeStep) {
+            highest = MAX(highest, stroke.number);
+        }
+    }
+    return highest + 1;
 }
 
 /// With Shift held, the arrow snaps to the nearest multiple of 45 degrees, and a rectangle is a

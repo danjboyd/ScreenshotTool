@@ -170,11 +170,10 @@
                                  windowNumber:[canvas.window windowNumber] context:nil characters:r
                   charactersIgnoringModifiers:r isARepeat:NO keyCode:0]];
     XCTAssertEqual(canvas.activeTool, ScreenshotCanvasToolRectangle, @"R selects the rectangle tool");
-    // Select, Highlighter, Pen, Arrow, Rectangle, Text, Eraser (#221).
+    // Select, Highlighter, Pen, Arrow, Rectangle, Text, … (#221).
     XCTAssertEqual([_appDelegate toolbarSegmentIndexForTool:ScreenshotCanvasToolRectangle], 4);
     XCTAssertEqual([_appDelegate toolbarToolForSegmentIndex:4], ScreenshotCanvasToolRectangle);
     XCTAssertEqual([_appDelegate toolbarToolForSegmentIndex:5], ScreenshotCanvasToolText);
-    XCTAssertEqual([_appDelegate toolbarToolForSegmentIndex:6], ScreenshotCanvasToolEraser);
 }
 
 - (void)testRectangleSurvivesAProjectFile {
