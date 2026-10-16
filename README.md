@@ -246,6 +246,15 @@ xdotool, x11-utils and ImageMagick, plus GNOME Shell or Openbox for window
 decorations. Your GNUstep defaults are left untouched. CI uploads the images
 as the `screenshots` artifact.
 
+### Closing windows under GNOME
+
+`Tools/check_wm_close.sh ScreenshotTool-x86_64.AppImage` runs the AppImage as GNOME would, with
+the Adwaita theme, under GNOME Shell or Mutter on a private virtual display. It checks that
+the windows list `WM_DELETE_WINDOW`, and that asking the window manager to close Preferences,
+then the main window (as Alt+F4 or the Overview does), closes them without the app being
+killed. It needs Xvfb, xdotool, x11-utils, wmctrl and `dbus-run-session`. Your GNUstep
+defaults are left untouched. CI runs it on each AppImage.
+
 ## Usage Tips
 - Double-click a tool's toolbar button to open its popover.
 - Preferences hold the drawing and text defaults, the default save folder
