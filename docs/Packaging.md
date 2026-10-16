@@ -185,9 +185,17 @@ If Pages deployment fails:
 - the release stays draft
 - the release must be fixed and rerun before being considered published
 
+Pages names each deployment after its commit, so a release tagged on a commit that has
+already deployed (an rc's) leaves the feeds as they were, though Deploy Pages reports
+success. The live-feed check then fails and the release stays a draft (v0.1.1, v0.2.0).
+To recover, land a new commit on `main`, run `redeploy-update-feeds` there with the
+release run's ID, and then publish the release with `gh release edit <tag> --draft=false`.
+
 ## Release Checklist
 
-1. Make sure the target commit on `main` is the one you want to ship.
+1. Make sure the target commit on `main` is the one you want to ship. A stable tag can't go on
+   the commit its last rc was tagged on (see Failure Handling): when that commit is the one to
+   ship, land a commit on `main` first, such as this checklist's own updates, and tag that.
 2. Confirm the manifest feed URLs still point at:
    - `https://danjboyd.github.io/ScreenshotTool/updates/windows/stable.json`
    - `https://danjboyd.github.io/ScreenshotTool/updates/linux/stable.json`
