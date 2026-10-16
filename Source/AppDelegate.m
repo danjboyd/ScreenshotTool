@@ -12,6 +12,8 @@
 #import "STSegmentToolTips.h"
 #import "STSplitButton.h"
 #import "STEmptyStateView.h"
+#import "STCustomActions.h"
+#import <objc/runtime.h>
 #import "STScreenshotCapture.h"
 #import "STWindowsIntegration.h"
 #import "STHudView.h"
@@ -66,6 +68,8 @@ static NSString * const ToolbarItemUndo = @"com.screenshottool.toolbar.undo";
 static NSString * const ToolbarItemRedo = @"com.screenshottool.toolbar.redo";
 static NSString * const ToolbarItemColor = @"com.screenshottool.toolbar.color";
 static NSString * const ToolbarItemSave = @"com.screenshottool.toolbar.save";
+/// A custom action's toolbar item: this, then the action's identifier (its file's name).
+static NSString * const ToolbarItemCustomActionPrefix = @"com.screenshottool.toolbar.action.";
 #if !defined(GNUSTEP)
 static NSString * const ToolbarItemShare = @"com.screenshottool.toolbar.share";
 #endif
@@ -1370,6 +1374,13 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 /// The target of the menus' document commands, which it hands to the front window's controller.
 @property (nonatomic, strong) id documentRouter;
 #endif
+/// On the application's delegate: the user's custom actions, read at launch, their choices once
+/// listed, and the ones running now (#221).
+@property (nonatomic, copy, nullable) NSArray<STCustomAction *> *customActions;
+@property (nonatomic, strong, nullable) NSMutableDictionary<NSString *, NSArray<NSString *> *> *customActionChoices;
+@property (nonatomic, strong, nullable) NSMutableSet<NSString *> *runningCustomActions;
+/// What a toolbar control or menu delegate stands for: its custom action.
+@property (nonatomic, strong, nullable) NSMapTable<id, STCustomAction *> *customActionsBySender;
 @property (nonatomic, strong) NSUndoManager *undoManager;
 #if defined(GNUSTEP)
 @property (nonatomic, strong) GPStandardUpdaterController *updaterController;
@@ -1448,6 +1459,31 @@ static AppDelegate *STFrontDocument(void) {
 @end
 #endif
 
+@interface AppDelegate (STCustomActionMenus)
+- (void)fillChoicesMenu:(NSMenu *)menu forCustomAction:(STCustomAction *)action;
+- (NSString *)toolTipForCustomAction:(STCustomAction *)action;
+- (nullable STCustomAction *)customActionForToolbarIdentifier:(NSString *)identifier;
+@end
+
+/// Lists a custom action's choices each time its menu opens. (GNUstep's NSMenuDelegate has no
+/// optional methods, so it doesn't declare the protocol there.)
+#if defined(GNUSTEP)
+@interface STCustomActionMenuDelegate : NSObject
+#else
+@interface STCustomActionMenuDelegate : NSObject <NSMenuDelegate>
+#endif
+@property (nonatomic, strong) STCustomAction *action;
+@property (nonatomic, weak) AppDelegate *controller;
+@end
+
+@implementation STCustomActionMenuDelegate
+
+- (void)menuNeedsUpdate:(NSMenu *)menu {
+    [self.controller fillChoicesMenu:menu forCustomAction:self.action];
+}
+
+@end
+
 @implementation AppDelegate
 
 - (void)applyToolTipToToolbarItem:(NSToolbarItem *)item source:(NSString *)source {
@@ -1473,6 +1509,10 @@ static AppDelegate *STFrontDocument(void) {
 - (NSString *)toolTipForIdentifier:(NSToolbarItemIdentifier)identifier {
     if ([identifier isEqualToString:ToolbarItemTools]) {
         return nil; // Each tool's segment has its own tip.
+    }
+    if ([identifier hasPrefix:ToolbarItemCustomActionPrefix]) {
+        STCustomAction *action = [self customActionForToolbarIdentifier:identifier];
+        return action ? [self toolTipForCustomAction:action] : nil;
     }
     if ([identifier isEqualToString:ToolbarItemHighlighter]) {
         return @"Highlighter Tool — double-click to configure";
@@ -1755,7 +1795,7 @@ static AppDelegate *STFrontDocument(void) {
         documentCommands = [NSSet setWithArray:@[@"saveDocumentAs:", @"saveProject:", @"undo:", @"redo:",
                                                  @"cropImage:", @"zoomFitToWindow:", @"zoomPreset25:",
                                                  @"zoomPreset50:", @"zoomPreset100:", @"zoomPreset200:",
-                                                 @"zoomIn:", @"zoomOut:"]];
+                                                 @"zoomIn:", @"zoomOut:", @"runCustomAction:"]];
     }
     for (NSMenuItem *item in menu.itemArray) {
         if (item.action && [documentCommands containsObject:NSStringFromSelector(item.action)]) {
@@ -2340,6 +2380,10 @@ static AppDelegate *STFrontDocument(void) {
     if (action == @selector(checkForUpdates:)) {
         return [self hasUpdater];
     }
+    if (action == @selector(runCustomAction:)) {
+        STCustomAction *customAction = [self customActionForSender:menuItem];
+        return [self.canvasView hasImage] && customAction && ![self isRunningCustomAction:customAction];
+    }
     return YES;
 }
 
@@ -2364,6 +2408,10 @@ static AppDelegate *STFrontDocument(void) {
     // The drawing tools need an image (#221); validation would otherwise enable them again.
     if ([identifier isEqualToString:ToolbarItemTools]) {
         return [self.canvasView hasImage];
+    }
+    if ([identifier hasPrefix:ToolbarItemCustomActionPrefix]) {
+        STCustomAction *action = [self customActionForToolbarIdentifier:identifier];
+        return [self.canvasView hasImage] && action && ![self isRunningCustomAction:action];
     }
     return YES;
 }
@@ -2501,6 +2549,15 @@ static id STInfoValueForKey(NSString *key) {
     [saveProjectItem setTarget:self];
     [saveProjectItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
     [fileMenu addItem:saveProjectItem];
+
+    // The user's custom actions, each sending the annotated image to a command of theirs (#221).
+    NSArray<STCustomAction *> *customActions = [self loadedCustomActions];
+    if (customActions.count > 0) {
+        [fileMenu addItem:[NSMenuItem separatorItem]];
+        for (STCustomAction *customAction in customActions) {
+            [fileMenu addItem:[self menuItemForCustomAction:customAction]];
+        }
+    }
 
 #if !defined(GNUSTEP)
     [fileMenu addItem:[NSMenuItem separatorItem]];
@@ -2982,7 +3039,8 @@ static id STInfoValueForKey(NSString *key) {
     ScreenshotToolAppendLog([NSString stringWithFormat:@"refreshToolButtonIcons: active=%@", activeIdentifier]);
 
     [self refreshToolbarToolsControl];
-    NSArray<NSToolbarItemIdentifier> *toolIdentifiers = @[ToolbarItemUndo, ToolbarItemRedo, ToolbarItemSave, ToolbarItemCopy, ToolbarItemPreferences];
+    NSArray<NSToolbarItemIdentifier> *toolIdentifiers = [@[ToolbarItemUndo, ToolbarItemRedo, ToolbarItemSave, ToolbarItemCopy, ToolbarItemPreferences]
+                                                          arrayByAddingObjectsFromArray:[self customActionToolbarIdentifiersInToolbarOnly:NO]];
     for (NSToolbarItemIdentifier identifier in toolIdentifiers) {
         NSToolbarItem *item = [self toolbarItemForIdentifier:identifier];
         if (!item) {
@@ -2994,6 +3052,8 @@ static id STInfoValueForKey(NSString *key) {
         BOOL isEnabled = YES;
         if ([identifier isEqualToString:ToolbarItemCopy] || [identifier isEqualToString:ToolbarItemSave]) {
             isEnabled = [self.canvasView hasImage];
+        } else if ([identifier hasPrefix:ToolbarItemCustomActionPrefix]) {
+            isEnabled = [self validateToolbarItem:item];
         } else if ([identifier isEqualToString:ToolbarItemUndo] || [identifier isEqualToString:ToolbarItemRedo]) {
             isEnabled = [self validateToolbarItem:item];
         }
@@ -3008,6 +3068,9 @@ static id STInfoValueForKey(NSString *key) {
             continue;
         }
 #endif
+        if ([identifier hasPrefix:ToolbarItemCustomActionPrefix]) {
+            continue; // Its own button or icon.
+        }
 
         BOOL isActive = (activeIdentifier && [identifier isEqualToString:activeIdentifier]);
         NSImage *icon = [self toolbarImageForIdentifier:identifier active:isActive];
@@ -3070,6 +3133,7 @@ static id STInfoValueForKey(NSString *key) {
         [allowed removeObject:ToolbarItemSave];
     }
 #endif
+    [allowed addObjectsFromArray:[self customActionToolbarIdentifiersInToolbarOnly:NO]];
     return allowed;
 }
 
@@ -3077,20 +3141,28 @@ static id STInfoValueForKey(NSString *key) {
     (void)toolbar;
     // Zoom and Preferences live in the View and app menus (with shortcuts) and can be added back
     // by customising the toolbar (#53). Undo and Redo lead, where GNOME apps keep them (#101).
-    // The commands that finish the job close the row, Copy last as the main one (#221). Under
-    // GNOME's header bar Save is left out, so the title keeps its room (#224).
-    return @[ToolbarItemUndo,
+    // The commands that finish the job close the row, Copy as the main one (#221). Under
+    // GNOME's header bar Save is left out, so the title keeps its room (#224). Custom actions
+    // with "toolbar" set may never push Copy into the overflow: on macOS they go just before
+    // Share and Copy with a lower visibility priority; elsewhere after Copy, as GNUstep's toolbar
+    // overflows into » from the row's end (#221).
+    NSMutableArray<NSToolbarItemIdentifier> *identifiers = [@[ToolbarItemUndo,
              ToolbarItemRedo,
              ToolbarItemTools,
              ToolbarItemColor,
-             NSToolbarFlexibleSpaceItemIdentifier,
+             NSToolbarFlexibleSpaceItemIdentifier] mutableCopy];
 #if !defined(GNUSTEP) || defined(_WIN32)
-             ToolbarItemSave,
+    [identifiers addObject:ToolbarItemSave];
 #endif
 #if !defined(GNUSTEP)
-             ToolbarItemShare,
+    [identifiers addObjectsFromArray:[self customActionToolbarIdentifiersInToolbarOnly:YES]];
+    [identifiers addObject:ToolbarItemShare];
+    [identifiers addObject:ToolbarItemCopy];
+#else
+    [identifiers addObject:ToolbarItemCopy];
+    [identifiers addObjectsFromArray:[self customActionToolbarIdentifiersInToolbarOnly:YES]];
 #endif
-             ToolbarItemCopy];
+    return identifiers;
 }
 
 - (NSToolbarItem *)toolbar:(NSToolbar *)toolbar
@@ -3115,6 +3187,10 @@ static id STInfoValueForKey(NSString *key) {
 - (NSToolbarItem *)baselineToolbarItemForIdentifier:(NSToolbarItemIdentifier)identifier {
     if ([identifier isEqualToString:ToolbarItemTools]) {
         return [self toolbarItemForToolControl];
+    }
+    if ([identifier hasPrefix:ToolbarItemCustomActionPrefix]) {
+        STCustomAction *action = [self customActionForToolbarIdentifier:identifier];
+        return action ? [self toolbarItemForCustomAction:action] : nil;
     }
     if ([identifier isEqualToString:ToolbarItemHighlighter]) {
         return [self baselineToolbarItemWithIdentifier:ToolbarItemHighlighter
@@ -7442,6 +7518,427 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
     self.currentProjectURL = nil;
     [self markAnnotationsSaved];
     return YES;
+}
+
+#pragma mark - Custom actions (#221)
+
+/// Where the custom actions and their state live: the application's delegate, as the menus do.
+- (AppDelegate *)customActionsOwner {
+#if !defined(GNUSTEP)
+    return [self applicationController];
+#else
+    return self;
+#endif
+}
+
+/// The user's custom actions, read once a launch from +[STCustomAction actionsDirectory]. Files
+/// that aren't actions are skipped, and the log says why.
+- (NSArray<STCustomAction *> *)loadedCustomActions {
+    AppDelegate *owner = [self customActionsOwner];
+    if (!owner.customActions) {
+        NSMutableArray<NSString *> *problems = [[NSMutableArray alloc] init];
+        NSString *directory = [STCustomAction actionsDirectory];
+        owner.customActions = [STCustomAction actionsInDirectory:directory problems:problems];
+        owner.customActionChoices = [[NSMutableDictionary alloc] init];
+        owner.runningCustomActions = [[NSMutableSet alloc] init];
+        for (NSString *problem in problems) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Custom action in %@ skipped: %@", directory, problem]);
+        }
+        for (STCustomAction *action in owner.customActions) {
+            [self refreshChoicesForCustomAction:action];
+        }
+    }
+    return owner.customActions;
+}
+
+- (NSArray<NSToolbarItemIdentifier> *)customActionToolbarIdentifiersInToolbarOnly:(BOOL)toolbarOnly {
+    NSMutableArray<NSToolbarItemIdentifier> *identifiers = [[NSMutableArray alloc] init];
+    for (STCustomAction *action in [self loadedCustomActions]) {
+        if (!toolbarOnly || action.showsInToolbar) {
+            [identifiers addObject:[ToolbarItemCustomActionPrefix stringByAppendingString:action.identifier]];
+        }
+    }
+    return identifiers;
+}
+
+- (nullable STCustomAction *)customActionForToolbarIdentifier:(NSString *)identifier {
+    if (![identifier hasPrefix:ToolbarItemCustomActionPrefix]) {
+        return nil;
+    }
+    NSString *actionIdentifier = [identifier substringFromIndex:ToolbarItemCustomActionPrefix.length];
+    for (STCustomAction *action in [self loadedCustomActions]) {
+        if ([action.identifier isEqualToString:actionIdentifier]) {
+            return action;
+        }
+    }
+    return nil;
+}
+
+/// The action a menu item, toolbar item or control runs.
+- (nullable STCustomAction *)customActionForSender:(id)sender {
+    id payload = [sender respondsToSelector:@selector(representedObject)] ? [sender representedObject] : nil;
+    if ([payload isKindOfClass:[NSDictionary class]]) {
+        payload = payload[@"action"];
+    }
+    if ([payload isKindOfClass:[STCustomAction class]]) {
+        return payload;
+    }
+    if ([sender isKindOfClass:[NSToolbarItem class]]) {
+        return [self customActionForToolbarIdentifier:[(NSToolbarItem *)sender itemIdentifier]];
+    }
+    return sender ? [[self customActionsOwner].customActionsBySender objectForKey:sender] : nil;
+}
+
+- (BOOL)isRunningCustomAction:(STCustomAction *)action {
+    return [[self customActionsOwner].runningCustomActions containsObject:action.identifier];
+}
+
+/// Runs the action's "choices" command in the background and keeps its lines.
+- (void)refreshChoicesForCustomAction:(STCustomAction *)action {
+    if (!action.choicesCommand) {
+        return;
+    }
+    AppDelegate *owner = [self customActionsOwner];
+    NSArray<NSString *> *arguments = [action.choicesCommand copy];
+    arguments = [@[[arguments[0] stringByExpandingTildeInPath]] arrayByAddingObjectsFromArray:
+                 [arguments subarrayWithRange:NSMakeRange(1, arguments.count - 1)]];
+    [STCustomActionRunner runArguments:arguments timeout:15.0 completion:^(STCustomActionResult *result) {
+        if (!result.succeeded) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Custom action %@: listing choices failed: %@",
+                                     action.identifier, result.failureSummary]);
+            return;
+        }
+        NSMutableArray<NSString *> *choices = [[NSMutableArray alloc] init];
+        for (NSString *line in [result.standardOutput componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]]) {
+            NSString *choice = [line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+            if (choice.length > 0) {
+                [choices addObject:choice];
+            }
+        }
+        owner.customActionChoices[action.identifier] = choices;
+    }];
+}
+
+- (nullable NSArray<NSString *> *)choicesForCustomAction:(STCustomAction *)action {
+    return [self customActionsOwner].customActionChoices[action.identifier];
+}
+
+/// A menu of the action's choices, the first (the one its button runs) marked; "Loading…" until
+/// they're listed. It lists them again for next time.
+- (NSMenu *)choicesMenuForCustomAction:(STCustomAction *)action {
+    NSMenu *menu = [[NSMenu alloc] initWithTitle:action.title];
+    [self fillChoicesMenu:menu forCustomAction:action];
+    return menu;
+}
+
+- (void)fillChoicesMenu:(NSMenu *)menu forCustomAction:(STCustomAction *)action {
+    // On GNUstep, adding items updates the menu, which asks its delegate to fill it again.
+    static NSHashTable<NSMenu *> *filling = nil;
+    if (!filling) {
+        filling = [NSHashTable weakObjectsHashTable];
+    }
+    if ([filling containsObject:menu]) {
+        return;
+    }
+    [filling addObject:menu];
+    [self fillChoicesMenuNow:menu forCustomAction:action];
+    [filling removeObject:menu];
+}
+
+- (void)fillChoicesMenuNow:(NSMenu *)menu forCustomAction:(STCustomAction *)action {
+    [menu removeAllItems];
+    NSArray<NSString *> *choices = [self choicesForCustomAction:action];
+    if (!choices) {
+        NSMenuItem *loading = (NSMenuItem *)[menu addItemWithTitle:@"Loading…" action:NULL keyEquivalent:@""];
+        loading.enabled = NO;
+    } else if (choices.count == 0) {
+        NSMenuItem *none = (NSMenuItem *)[menu addItemWithTitle:@"Nothing to Choose" action:NULL keyEquivalent:@""];
+        none.enabled = NO;
+    }
+    id target = self;
+#if !defined(GNUSTEP)
+    target = [self customActionsOwner].documentRouter ?: self;
+#endif
+    for (NSString *choice in choices) {
+        NSMenuItem *item = (NSMenuItem *)[menu addItemWithTitle:choice action:@selector(runCustomAction:) keyEquivalent:@""];
+        item.target = target;
+        item.representedObject = @{ @"action": action, @"choice": choice };
+        if (choice == choices.firstObject) {
+            item.state = NSControlStateValueOn;
+        }
+    }
+    [self refreshChoicesForCustomAction:action];
+}
+
+- (NSMenuItem *)menuItemForCustomAction:(STCustomAction *)action {
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:action.title action:@selector(runCustomAction:) keyEquivalent:@""];
+    item.target = self;
+    item.representedObject = action;
+    if (action.choicesCommand) {
+        // A submenu of its choices, listed fresh each time it opens.
+        item.action = NULL;
+        NSMenu *submenu = [[NSMenu alloc] initWithTitle:action.title];
+        STCustomActionMenuDelegate *delegate = [[STCustomActionMenuDelegate alloc] init];
+        delegate.action = action;
+        delegate.controller = self;
+        [self setCustomActionMenuDelegate:delegate forMenu:submenu];
+        [self fillChoicesMenu:submenu forCustomAction:action];
+        item.submenu = submenu;
+    }
+    return item;
+}
+
+/// A menu doesn't keep its delegate (GNUstep's doesn't even zero it when it goes), so the menu
+/// keeps this one for as long as it lives.
+- (void)setCustomActionMenuDelegate:(STCustomActionMenuDelegate *)delegate forMenu:(NSMenu *)menu {
+    static char STCustomActionMenuDelegateKey;
+    objc_setAssociatedObject(menu, &STCustomActionMenuDelegateKey, delegate, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    menu.delegate = (id)delegate;
+}
+
+- (NSToolbarItem *)toolbarItemForCustomAction:(STCustomAction *)action {
+    NSToolbarItemIdentifier identifier = [ToolbarItemCustomActionPrefix stringByAppendingString:action.identifier];
+    AppDelegate *owner = [self customActionsOwner];
+    if (!owner.customActionsBySender) {
+        owner.customActionsBySender = [NSMapTable strongToStrongObjectsMapTable];
+    }
+#if defined(GNUSTEP)
+    // A button with its name, as Save and Copy are; with choices, a split button whose arrow
+    // lists them.
+    NSButton *button = nil;
+    if (action.choicesCommand) {
+        STSplitButton *split = [[STSplitButton alloc] initWithFrame:NSMakeRect(0, 0, 64.0f, STToolbarZoomControlHeight)];
+        __weak AppDelegate *weakSelf = self;
+        split.menuProvider = ^NSMenu *{
+            return [weakSelf choicesMenuForCustomAction:action];
+        };
+        button = split;
+    } else {
+        button = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 64.0f, STToolbarZoomControlHeight)];
+    }
+    [button setBezelStyle:NSRoundedBezelStyle];
+    button.target = self;
+    button.action = @selector(runCustomAction:);
+    button.toolTip = [self toolTipForCustomAction:action];
+    STApplyAccessibilityLabel(button, action.title);
+    CGFloat arrow = [button isKindOfClass:[STSplitButton class]] ? NSWidth([(STSplitButton *)button arrowRect]) : 0.0f;
+    NSImage *icon = [self iconForCustomAction:action size:20.0f];
+#if !defined(_WIN32)
+    BOOL iconOnly = (icon != nil);
+#else
+    BOOL iconOnly = NO; // Labelled, as a WinUI command bar's commands are (#224).
+#endif
+    NSSize size;
+    if (iconOnly) {
+        // Under GNOME's header bar, an icon as the others are, so the title keeps its room.
+        button.title = @"";
+        button.image = icon;
+        button.imagePosition = NSImageOnly;
+        size = NSMakeSize(34.0f + arrow, STToolbarZoomControlHeight);
+    } else {
+        button.title = action.title;
+        [button sizeToFit];
+        size = NSMakeSize(MAX(64.0f, ceil(NSWidth(button.frame)) + 20.0f + arrow), STToolbarZoomControlHeight);
+    }
+    [button setFrameSize:size];
+    [owner.customActionsBySender setObject:action forKey:button];
+
+    NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:identifier];
+    item.label = @"";
+    item.paletteLabel = action.title;
+    item.toolTip = button.toolTip;
+    item.target = self;
+    item.action = @selector(runCustomAction:);
+    item.view = button;
+    if (iconOnly) {
+        // GNUstep 0.32's toolbar gives a custom view the item's image when it lays it out
+        // (libs-gui#952): the item has the same one, so the icon stays.
+        item.image = icon;
+    }
+    button.enabled = [self.canvasView hasImage];
+    item.minSize = size;
+    item.maxSize = size;
+    return item;
+#else
+    NSToolbarItem *item = nil;
+    if (action.choicesCommand) {
+        // Its button runs the first choice; its menu lists them all.
+        NSMenuToolbarItem *menuItem = [[NSMenuToolbarItem alloc] initWithItemIdentifier:identifier];
+        STCustomActionMenuDelegate *delegate = [[STCustomActionMenuDelegate alloc] init];
+        delegate.action = action;
+        delegate.controller = self;
+        NSMenu *menu = [self choicesMenuForCustomAction:action];
+        [self setCustomActionMenuDelegate:delegate forMenu:menu];
+        menuItem.menu = menu;
+        menuItem.showsIndicator = YES;
+        item = menuItem;
+    } else {
+        item = [[NSToolbarItem alloc] initWithItemIdentifier:identifier];
+    }
+    item.label = action.title;
+    item.paletteLabel = action.title;
+    item.toolTip = [self toolTipForCustomAction:action];
+    item.image = [self iconForCustomAction:action size:18.0f]
+        ?: [NSImage imageWithSystemSymbolName:@"paperplane" accessibilityDescription:action.title];
+    item.target = self;
+    item.action = @selector(runCustomAction:);
+    // Into the overflow before Copy does.
+    item.visibilityPriority = NSToolbarItemVisibilityPriorityLow;
+    return item;
+#endif
+}
+
+/// The action's "icon", `size` points square, or nil.
+- (nullable NSImage *)iconForCustomAction:(STCustomAction *)action size:(CGFloat)size {
+    if (action.iconPath.length == 0) {
+        return nil;
+    }
+    NSImage *image = [[NSImage alloc] initWithContentsOfFile:action.iconPath];
+    if (!image || image.size.width <= 0.0 || image.size.height <= 0.0) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Custom action %@: icon %@ can't be read", action.identifier, action.iconPath]);
+        return nil;
+    }
+    [image setSize:NSMakeSize(size, size)];
+    return image;
+}
+
+- (NSString *)toolTipForCustomAction:(STCustomAction *)action {
+    if (action.choicesCommand) {
+        return [NSString stringWithFormat:@"%@ (the arrow chooses where)", action.title];
+    }
+    return action.title;
+}
+
+/// Runs the custom action the sender stands for, with the choice it carries, if any.
+- (void)runCustomAction:(id)sender {
+    id payload = [sender respondsToSelector:@selector(representedObject)] ? [sender representedObject] : nil;
+    NSString *choice = [payload isKindOfClass:[NSDictionary class]] ? payload[@"choice"] : nil;
+    [self runCustomAction:[self customActionForSender:sender] choice:choice];
+}
+
+/// Saves the annotated image as a PNG in a folder of its own, runs the action's command on it,
+/// and, by the action's "output", copies what it prints. With no choice, it takes the first.
+- (void)runCustomAction:(nullable STCustomAction *)action choice:(nullable NSString *)choice {
+    if (!action || ![self.canvasView hasImage]) {
+        return;
+    }
+    AppDelegate *owner = [self customActionsOwner];
+    if ([self isRunningCustomAction:action]) {
+        [self showCopyFeedbackMessage:[NSString stringWithFormat:@"%@ is still running", action.title] duration:2.0];
+        return;
+    }
+    if (choice.length == 0 && action.choicesCommand) {
+        choice = [self choicesForCustomAction:action].firstObject;
+        if (choice.length == 0) {
+            [self refreshChoicesForCustomAction:action];
+            [self showCopyFeedbackMessage:[NSString stringWithFormat:@"%@: its choices aren't listed yet", action.title] duration:2.5];
+            return;
+        }
+    }
+
+    NSImage *flattened = [self.canvasView flattenedImage];
+    NSData *png = flattened ? [self pngDataForImage:flattened] : nil;
+    NSString *folder = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                        [NSString stringWithFormat:@"screenshottool-%@", [[NSProcessInfo processInfo] globallyUniqueString]]];
+    NSString *stem = [[self.currentImageURL lastPathComponent] stringByDeletingPathExtension];
+    NSString *file = [folder stringByAppendingPathComponent:[(stem.length > 0 ? stem : @"Screenshot") stringByAppendingPathExtension:@"png"]];
+#if defined(_WIN32)
+    // The command gets a Windows path: many tools, cmd's own commands among them, take no "/".
+    NSString *commandFile = [file stringByReplacingOccurrencesOfString:@"/" withString:@"\\"];
+#else
+    NSString *commandFile = file;
+#endif
+    if (!png || ![[NSFileManager defaultManager] createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:NULL] ||
+        ![png writeToFile:file atomically:YES]) {
+        [self showCopyFeedbackMessage:[NSString stringWithFormat:@"%@ failed: the image couldn't be saved", action.title] duration:3.0];
+        [[NSFileManager defaultManager] removeItemAtPath:folder error:NULL];
+        return;
+    }
+    NSString *problem = nil;
+    NSArray<NSString *> *arguments = [action argumentsForFile:commandFile choice:choice problem:&problem];
+    if (!arguments) {
+        [[NSFileManager defaultManager] removeItemAtPath:folder error:NULL];
+        [self reportCustomAction:action failure:problem details:nil];
+        return;
+    }
+
+    [owner.runningCustomActions addObject:action.identifier];
+    [self refreshToolButtonIcons];
+    NSString *running = choice.length > 0 ? [NSString stringWithFormat:@"%@ (%@)…", action.title, choice]
+                                          : [NSString stringWithFormat:@"%@…", action.title];
+    [self showCopyFeedbackMessage:running duration:MIN(action.timeout, 30.0)];
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Custom action %@: running %@", action.identifier,
+                             [arguments componentsJoinedByString:@" "]]);
+
+    __weak AppDelegate *weakSelf = self;
+    [STCustomActionRunner runArguments:arguments timeout:action.timeout completion:^(STCustomActionResult *result) {
+        [owner.runningCustomActions removeObject:action.identifier];
+        [[NSFileManager defaultManager] removeItemAtPath:folder error:NULL];
+        AppDelegate *strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
+        [strongSelf refreshToolButtonIcons];
+        if (!result.succeeded) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Custom action %@ failed (status %d%@): %@",
+                                     action.identifier, result.status, result.timedOut ? @", timed out" : @"",
+                                     result.standardError]);
+            [strongSelf reportCustomAction:action failure:result.failureSummary details:result.standardError];
+            return;
+        }
+        if (action.output == STCustomActionOutputClipboard) {
+            NSString *text = [result.standardOutput stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            if (text.length == 0) {
+                [strongSelf showCopyFeedbackMessage:[NSString stringWithFormat:@"%@: done, nothing to copy", action.title] duration:2.5];
+                return;
+            }
+            [strongSelf copyCustomActionText:text];
+            NSString *shown = text.length > 60 ? [[text substringToIndex:59] stringByAppendingString:@"…"] : text;
+            [strongSelf showCopyFeedbackMessage:[NSString stringWithFormat:@"Copied %@", shown] duration:3.0];
+        } else {
+            [strongSelf showCopyFeedbackMessage:[NSString stringWithFormat:@"%@: done", action.title] duration:2.0];
+        }
+    }];
+}
+
+- (void)copyCustomActionText:(NSString *)text {
+    if ([self usesWindowsClipboard]) {
+        // Straight to the Windows clipboard, as Copy's image is: through GNUstep's pasteboard
+        // server the text never reached it (ScreenshotTool Windows's check of #234).
+        STWindowsClipboardWriteText(text);
+        return;
+    }
+    NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
+#if defined(GNUSTEP)
+    [pasteboard declareTypes:@[NSStringPboardType] owner:nil];
+    [pasteboard setString:text forType:NSStringPboardType];
+#else
+    [pasteboard clearContents];
+    [pasteboard setString:text forType:NSPasteboardTypeString];
+#endif
+}
+
+- (void)reportCustomAction:(STCustomAction *)action failure:(NSString *)summary details:(nullable NSString *)details {
+    [self showCopyFeedbackMessage:[NSString stringWithFormat:@"%@ failed", action.title] duration:2.0];
+    // The alert opens on a turn of the run loop of its own, not inside the completion.
+    NSDictionary *report = @{ @"title": action.title ?: @"", @"summary": summary ?: @"", @"details": details ?: @"" };
+    [self performSelector:@selector(showCustomActionFailure:) withObject:report afterDelay:0.0];
+}
+
+- (void)showCustomActionFailure:(NSDictionary *)report {
+    NSString *summary = report[@"summary"];
+    NSString *details = report[@"details"];
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = [NSString stringWithFormat:@"%@ Failed", report[@"title"]];
+    NSString *trimmed = [details stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (trimmed.length > 1200) {
+        trimmed = [@"…" stringByAppendingString:[trimmed substringFromIndex:trimmed.length - 1200]];
+    }
+    alert.informativeText = (trimmed.length > 0 && ![trimmed hasSuffix:summary ?: @""])
+        ? [NSString stringWithFormat:@"%@\n\n%@", summary ?: @"", trimmed]
+        : (summary ?: @"");
+    [alert addButtonWithTitle:@"OK"];
+    [alert runModal];
 }
 
 - (NSData *)pngDataForImage:(NSImage *)image {

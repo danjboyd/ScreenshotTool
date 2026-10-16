@@ -310,6 +310,33 @@ BOOL STWindowsClipboardWritePNGData(NSData *pngData) {
     return wrote;
 }
 
+BOOL STWindowsClipboardWriteText(NSString *text) {
+    if (text.length == 0) {
+        return NO;
+    }
+    // UTF-16, NUL-terminated, as CF_UNICODETEXT wants it.
+    NSMutableData *utf16 = [[text dataUsingEncoding:NSUTF16LittleEndianStringEncoding] mutableCopy];
+    unichar terminator = 0;
+    [utf16 appendBytes:&terminator length:sizeof(terminator)];
+    HWND owner = STClipboardOwnerWindow();
+    if (owner == NULL || !STOpenClipboard(owner)) {
+        return NO;
+    }
+    BOOL wrote = NO;
+    if (EmptyClipboard()) {
+        HGLOBAL handle = STGlobalWithBytes(utf16.bytes, utf16.length);
+        if (handle != NULL) {
+            if (SetClipboardData(CF_UNICODETEXT, handle) != NULL) {
+                wrote = YES;
+            } else {
+                GlobalFree(handle);
+            }
+        }
+    }
+    CloseClipboard();
+    return wrote;
+}
+
 NSData *STWindowsClipboardPNGData(void) {
     if (!STWindowsClipboardHasImage() || !STOpenClipboard(NULL)) {
         return nil;
@@ -498,6 +525,11 @@ BOOL STWindowsClipboardHasImage(void) {
 
 BOOL STWindowsClipboardWritePNGData(NSData *pngData) {
     (void)pngData;
+    return NO;
+}
+
+BOOL STWindowsClipboardWriteText(NSString *text) {
+    (void)text;
     return NO;
 }
 
