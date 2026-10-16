@@ -2184,7 +2184,9 @@ static AppDelegate *STFrontDocument(void) {
     NSSharingService *service = payload.firstObject;
     NSURL *url = payload.lastObject;
     if ([service isKindOfClass:[NSSharingService class]] && [url isKindOfClass:[NSURL class]]) {
-        service.delegate = STFrontDocument() ?: self;
+        AppDelegate *document = STFrontDocument() ?: self;
+        service.delegate = document;
+        [document prepareSharingService:service];
         [service performWithItems:@[url]];
     }
 }
@@ -8004,6 +8006,29 @@ static char STCustomActionSharingServiceKey;
 #endif
     return image;
 }
+
+/// A mail starts with the image's name as its subject (macOS's Mail and Outlook read it).
+- (void)prepareSharingService:(NSSharingService *)service {
+#if !defined(GNUSTEP)
+    NSString *name = [[(self.currentImageURL ?: self.currentProjectURL) lastPathComponent] stringByDeletingPathExtension];
+    // Each +sharingServiceNamed: is a new object, so it's matched by its title.
+    NSString *mail = [NSSharingService sharingServiceNamed:NSSharingServiceNameComposeEmail].title;
+    if (mail.length > 0 && [service.title isEqualToString:mail]) {
+        service.subject = name.length > 0 ? name : @"Screenshot";
+    }
+#else
+    (void)service;
+#endif
+}
+
+#if !defined(GNUSTEP)
+- (void)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker didChooseSharingService:(nullable NSSharingService *)service {
+    (void)sharingServicePicker;
+    if (service) {
+        [self prepareSharingService:service];
+    }
+}
+#endif
 
 /// The system's services report back here; a custom action says how it went itself.
 - (nullable id<NSSharingServiceDelegate>)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker

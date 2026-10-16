@@ -31,6 +31,7 @@
                            delegateForSharingService:(NSSharingService *)service;
 #if !defined(GNUSTEP)
 - (void)menuNeedsUpdate:(NSMenu *)menu;
+- (void)prepareSharingService:(NSSharingService *)service;
 #endif
 @end
 
@@ -307,6 +308,11 @@
     if (mail) {
         XCTAssertTrue(services.firstObject == mail);
         XCTAssertTrue([app sharingServicePicker:nil delegateForSharingService:mail] == (id)app, @"Mail reports back");
+    }
+
+    if (mail) {
+        [app prepareSharingService:mail];
+        XCTAssertEqualObjects(mail.subject, @"Screenshot", @"A mail's subject is the image's name");
     }
 
     NSSharingService *work = services[[titles indexOfObject:@"Send — work"]];
