@@ -251,18 +251,41 @@ static NSArray<NSString *> *STCommandFromJSON(id value) {
     return child;
 }
 
-+ (NSString *)resolvedExecutable:(NSString *)name searchPath:(NSString *)path {
+/// An existing file that can be run. On Windows existing is enough: GNUstep's
+/// -isExecutableFileAtPath: there doesn't know .exe from anything else.
+static BOOL STIsRunnableFile(NSString *path) {
     NSFileManager *files = [NSFileManager defaultManager];
+    BOOL isDirectory = NO;
+    if (![files fileExistsAtPath:path isDirectory:&isDirectory] || isDirectory) {
+        return NO;
+    }
+#if defined(_WIN32)
+    return YES;
+#else
+    return [files isExecutableFileAtPath:path];
+#endif
+}
+
++ (NSString *)resolvedExecutable:(NSString *)name searchPath:(NSString *)path {
     if ([name isAbsolutePath] || [name rangeOfString:@"/"].location != NSNotFound
 #if defined(_WIN32)
         || [name rangeOfString:@"\\"].location != NSNotFound
 #endif
     ) {
-        return [files isExecutableFileAtPath:name] ? name : nil;
+        return STIsRunnableFile(name) ? name : nil;
     }
 #if defined(_WIN32)
     NSString *separator = @";";
-    NSArray<NSString *> *suffixes = @[@"", @".exe", @".bat", @".cmd"];
+    // The name as given (cmd.exe), then with each of PATHEXT's extensions, in either case.
+    NSMutableArray<NSString *> *suffixes = [@[@""] mutableCopy];
+    const char *pathext = getenv("PATHEXT");
+    NSString *extensions = pathext ? [NSString stringWithUTF8String:pathext] : @".COM;.EXE;.BAT;.CMD";
+    for (NSString *extension in [extensions componentsSeparatedByString:@";"]) {
+        if (extension.length > 0) {
+            [suffixes addObject:[extension lowercaseString]];
+            [suffixes addObject:[extension uppercaseString]];
+        }
+    }
 #else
     NSString *separator = @":";
     NSArray<NSString *> *suffixes = @[@""];
@@ -273,8 +296,7 @@ static NSArray<NSString *> *STCommandFromJSON(id value) {
         }
         for (NSString *suffix in suffixes) {
             NSString *candidate = [folder stringByAppendingPathComponent:[name stringByAppendingString:suffix]];
-            BOOL isDirectory = NO;
-            if ([files fileExistsAtPath:candidate isDirectory:&isDirectory] && !isDirectory && [files isExecutableFileAtPath:candidate]) {
+            if (STIsRunnableFile(candidate)) {
                 return candidate;
             }
         }
@@ -367,7 +389,10 @@ static NSArray<NSString *> *STCommandFromJSON(id value) {
     void (^call)(void) = ^{
         completion(result);
     };
-    [self performSelectorOnMainThread:@selector(runBlock:) withObject:[call copy] waitUntilDone:NO];
+    // In the default mode, as an event would be: a modal alert the completion runs then draws
+    // (on Windows it didn't, run from a common-modes callback).
+    [self performSelectorOnMainThread:@selector(runBlock:) withObject:[call copy] waitUntilDone:NO
+                                modes:@[NSDefaultRunLoopMode]];
 }
 
 + (void)runBlock:(void (^)(void))block {

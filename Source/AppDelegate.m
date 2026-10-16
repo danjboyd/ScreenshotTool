@@ -7892,8 +7892,16 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
 
 - (void)reportCustomAction:(STCustomAction *)action failure:(NSString *)summary details:(nullable NSString *)details {
     [self showCopyFeedbackMessage:[NSString stringWithFormat:@"%@ failed", action.title] duration:2.0];
+    // The alert opens on a turn of the run loop of its own, not inside the completion.
+    NSDictionary *report = @{ @"title": action.title ?: @"", @"summary": summary ?: @"", @"details": details ?: @"" };
+    [self performSelector:@selector(showCustomActionFailure:) withObject:report afterDelay:0.0];
+}
+
+- (void)showCustomActionFailure:(NSDictionary *)report {
+    NSString *summary = report[@"summary"];
+    NSString *details = report[@"details"];
     NSAlert *alert = [[NSAlert alloc] init];
-    alert.messageText = [NSString stringWithFormat:@"%@ Failed", action.title];
+    alert.messageText = [NSString stringWithFormat:@"%@ Failed", report[@"title"]];
     NSString *trimmed = [details stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (trimmed.length > 1200) {
         trimmed = [@"…" stringByAppendingString:[trimmed substringFromIndex:trimmed.length - 1200]];
