@@ -24,6 +24,14 @@
 - (NSMenuItem *)menuItemForCustomAction:(STCustomAction *)action;
 - (NSArray<NSString *> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar;
 - (NSToolbarItem *)toolbarItemForCustomAction:(STCustomAction *)action;
+#if !defined(GNUSTEP)
+- (NSArray<NSSharingService *> *)sharingServicePicker:(NSSharingServicePicker *)picker
+                              sharingServicesForItems:(NSArray *)items
+                              proposedSharingServices:(NSArray<NSSharingService *> *)proposed;
+- (id<NSSharingServiceDelegate>)sharingServicePicker:(NSSharingServicePicker *)picker
+                           delegateForSharingService:(NSSharingService *)service;
+- (void)menuNeedsUpdate:(NSMenu *)menu;
+#endif
 @end
 
 @interface ScreenshotCanvasView (CustomActionsTesting)
@@ -271,6 +279,49 @@
     XCTAssertTrue([self spinUntil:^BOOL { return ![app isRunningCustomAction:action]; } seconds:15.0]);
     XCTAssertEqualObjects([self pasteboardString], @"0 0 0 40 0 0 0 30", @"The 40x30 selection, not the image");
 }
+
+#if !defined(GNUSTEP)
+/// Every share picker lists the actions after the system's services, one per choice; picking one
+/// runs it, and it reports back itself, not through the picker's "Shared with".
+- (void)testTheSharePickerAndFileShareListTheActions {
+    [self writeAction:@"send.json" json:@"{\"title\": \"Send\", \"command\": [\"/bin/echo\", \"sent to {choice}\"], "
+                                         "\"choices\": [\"/bin/sh\", \"-c\", \"printf 'home\\\\nwork\\\\n'\"]}"];
+    [self writeAction:@"echo.json" json:@"{\"title\": \"Echo\", \"command\": [\"/bin/echo\", \"echoed\"]}"];
+    AppDelegate *app = [self appWithActions];
+    XCTSkipIf(app == nil, @"No window server");
+    STCustomAction *send = nil;
+    for (STCustomAction *action in [app loadedCustomActions]) {
+        if ([action.title isEqualToString:@"Send"]) {
+            send = action;
+        }
+    }
+    XCTAssertTrue([self spinUntil:^BOOL { return [app choicesForCustomAction:send] != nil; } seconds:10.0]);
+
+    NSSharingService *mail = [NSSharingService sharingServiceNamed:NSSharingServiceNameComposeEmail];
+    NSArray *proposed = mail ? @[mail] : @[];
+    NSArray<NSSharingService *> *services = [app sharingServicePicker:nil sharingServicesForItems:@[] proposedSharingServices:proposed];
+    NSArray<NSString *> *titles = [services valueForKey:@"title"];
+    NSArray<NSString *> *custom = [titles subarrayWithRange:NSMakeRange(proposed.count, titles.count - proposed.count)];
+    XCTAssertEqualObjects([NSSet setWithArray:custom], ([NSSet setWithArray:@[@"Echo", @"Send — home", @"Send — work"]]),
+                          @"The system's services first, then each action and choice: %@", titles);
+    if (mail) {
+        XCTAssertTrue(services.firstObject == mail);
+        XCTAssertTrue([app sharingServicePicker:nil delegateForSharingService:mail] == (id)app, @"Mail reports back");
+    }
+
+    NSSharingService *work = services[[titles indexOfObject:@"Send — work"]];
+    XCTAssertNil([app sharingServicePicker:nil delegateForSharingService:work], @"An action reports back itself");
+    [work performWithItems:@[]];
+    XCTAssertTrue([self spinUntil:^BOOL { return [[self pasteboardString] isEqualToString:@"sent to work"]; } seconds:10.0]);
+
+    NSMenu *share = [[NSMenu alloc] initWithTitle:@"Share"];
+    [app menuNeedsUpdate:share];
+    NSArray<NSString *> *menuTitles = [share.itemArray valueForKey:@"title"];
+    XCTAssertTrue([menuTitles containsObject:@"Send"] && [menuTitles containsObject:@"Echo"], @"%@", menuTitles);
+    NSMenuItem *sendItem = [share itemAtIndex:[share indexOfItemWithTitle:@"Send"]];
+    XCTAssertEqualObjects([sendItem.submenu.itemArray valueForKey:@"title"], (@[@"home", @"work"]), @"A submenu of the choices");
+}
+#endif
 
 /// "choices": the lines become a menu, and the button (no choice) takes the first.
 - (void)testChoicesBecomeAMenuAndTheFirstIsTheDefault {
