@@ -263,6 +263,8 @@ defaults are left untouched. CI runs it on each AppImage.
   on an annotation (which it selects), Edit Text, Duplicate, Bring to Front, Send to Back or
   Delete; elsewhere, Copy Image, Paste as New Image, zooming, Save As and your custom actions.
   `Esc` clears the selection.
+- A finished selection gets a small bar next to it with Crop, Copy and Redact; Preferences >
+  Appearance turns it off.
 - Preferences hold the drawing and text defaults, the default save folder
   and whether the status bar is shown.
 - While editing text, `Ctrl+Return` or `Esc` finishes the label and `Return`

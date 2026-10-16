@@ -30,6 +30,8 @@ extern NSString * const STDefaultsTextDefaultAlignmentKey;
 extern NSString * const STDefaultsSaveDirectoryKey;
 extern NSString * const STDefaultsRecentDocumentsKey;
 extern NSString * const STDefaultsShowStatusBarKey;
+/// Whether a region selection gets its bar of commands next to it (on unless turned off).
+extern NSString * const STDefaultsShowSelectionBarKey;
 
 FOUNDATION_EXPORT NSColor *STDefaultPenColor(void);
 FOUNDATION_EXPORT NSColor *STDefaultHighlighterColor(void);

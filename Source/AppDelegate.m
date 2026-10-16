@@ -18,6 +18,7 @@
 #import "STWindowsIntegration.h"
 #import "STHudView.h"
 #import "STTextOptionsBar.h"
+#import "STSelectionActionBar.h"
 #import <Foundation/NSTask.h>
 #import <dispatch/dispatch.h>
 #if defined(GNUSTEP)
@@ -1357,6 +1358,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) ScreenshotCanvasTool lastWidthTool;
 @property (nonatomic, copy) NSString *defaultSaveDirectory;
 @property (nonatomic, assign) BOOL statusBarVisiblePreference;
+@property (nonatomic, assign) BOOL selectionBarPreference;
+/// Crop, Copy and Redact next to the region selection, over the canvas.
+@property (nonatomic, strong, nullable) STSelectionActionBar *selectionActionBar;
 @property (nonatomic, copy) NSString *pendingOpenPath;
 @property (nonatomic, strong) NSURL *currentImageURL;
 /// The project file this window was opened from or last saved to (#32).
@@ -2844,6 +2848,15 @@ static id STInfoValueForKey(NSString *key) {
                                              selector:@selector(canvasViewRequestsTool:)
                                                  name:ScreenshotCanvasViewRequestsToolNotification
                                                object:self.canvasView];
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(canvasViewSelectionDidChange:)
+                                                 name:ScreenshotCanvasViewSelectionDidChangeNotification
+                                               object:self.canvasView];
+    // A window resize moves the selection on screen without the canvas scrolling.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(canvasViewSelectionDidChange:)
+                                                 name:NSViewFrameDidChangeNotification
+                                               object:self.scrollView];
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(canvasViewDidBeginTextEditing:)
                                                  name:ScreenshotCanvasViewDidBeginTextEditingNotification
@@ -4563,9 +4576,11 @@ static id STInfoValueForKey(NSString *key) {
 
     // Shown unless the user turned it off (#221; it was off by default before, #54). A registered
     // default, so nothing is written until they choose, and a saved "off" stays off.
-    [defaults registerDefaults:@{STDefaultsShowStatusBarKey: @YES}];
+    [defaults registerDefaults:@{STDefaultsShowStatusBarKey: @YES, STDefaultsShowSelectionBarKey: @YES}];
     self.statusBarVisiblePreference = [defaults boolForKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
+    self.selectionBarPreference = [defaults boolForKey:STDefaultsShowSelectionBarKey];
+    [self updateSelectionActionBar];
 
     if (self.preferencesWindowController) {
         [self.preferencesWindowController refresh];
@@ -5392,6 +5407,22 @@ static id STInfoValueForKey(NSString *key) {
     [self updateStatusBarVisibility];
 }
 
+- (BOOL)preferencesControllerShouldShowSelectionBar:(PreferencesWindowController *)controller {
+    (void)controller;
+    return self.selectionBarPreference;
+}
+
+- (void)preferencesController:(PreferencesWindowController *)controller didToggleSelectionBar:(BOOL)show {
+#if !defined(GNUSTEP)
+    for (AppDelegate *document in self.documentWindows) {
+        [document preferencesController:controller didToggleSelectionBar:show];
+    }
+#endif
+    self.selectionBarPreference = show;
+    [[NSUserDefaults standardUserDefaults] setBool:show forKey:STDefaultsShowSelectionBarKey];
+    [self updateSelectionActionBar];
+}
+
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller {
     (void)controller;
 #if !defined(GNUSTEP)
@@ -5428,6 +5459,9 @@ static id STInfoValueForKey(NSString *key) {
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsShowStatusBarKey];
     self.statusBarVisiblePreference = [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsShowStatusBarKey];
     [self updateStatusBarVisibility];
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsShowSelectionBarKey];
+    self.selectionBarPreference = [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsShowSelectionBarKey];
+    [self updateSelectionActionBar];
 
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self showStatusMessage:@"Preferences restored" duration:2.0];
@@ -7605,6 +7639,43 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     self.currentProjectURL = nil;
     [self markAnnotationsSaved];
     return YES;
+}
+
+#pragma mark - Selection bar
+
+- (void)canvasViewSelectionDidChange:(NSNotification *)notification {
+    (void)notification;
+    [self updateSelectionActionBar];
+}
+
+/// Shows the bar next to a finished region selection that's on screen, and hides it otherwise:
+/// while the selection is drawn or dragged, while a label is edited, and when it's turned off.
+- (void)updateSelectionActionBar {
+    ScreenshotCanvasView *canvas = self.canvasView;
+    if (!canvas) {
+        return;
+    }
+    if (!self.selectionActionBar) {
+        // On the canvas itself, as the text editor is: GNUstep repaints an opaque view over
+        // siblings above it, and the canvas repaints for the selection's moving dashes.
+        self.selectionActionBar = [[STSelectionActionBar alloc] initWithTarget:self];
+        self.selectionActionBar.hidden = YES;
+        [canvas addSubview:self.selectionActionBar];
+        canvas.coveringView = self.selectionActionBar;
+    }
+    // The part of the canvas the scroll view shows (its visibleRect is empty off screen).
+    NSClipView *clip = self.scrollView.contentView;
+    NSRect visible = NSIntersectionRect([canvas convertRect:clip.bounds fromView:clip], canvas.bounds);
+    NSRect selection = [canvas selectionRectInView];
+    BOOL show = self.selectionBarPreference && [canvas hasImage] && [canvas hasSelection] &&
+        ![canvas isAdjustingSelection] && ![canvas activeTextEntry] && NSIntersectsRect(selection, visible);
+    if (show) {
+        [self.selectionActionBar setFrame:[self.selectionActionBar frameForSelection:selection visible:visible]];
+    }
+    if ([self.selectionActionBar isHidden] == show) {
+        self.selectionActionBar.hidden = !show;
+        [self.window invalidateCursorRectsForView:self.selectionActionBar];
+    }
 }
 
 #pragma mark - Canvas context menu

@@ -46,6 +46,7 @@ NSString * const ScreenshotCanvasViewDidBeginTextEditingNotification = @"Screens
 NSString * const ScreenshotCanvasViewDidEndTextEditingNotification = @"ScreenshotCanvasViewDidEndTextEditingNotification";
 NSString * const ScreenshotCanvasViewRequestsTextFormatNotification = @"ScreenshotCanvasViewRequestsTextFormatNotification";
 NSString * const ScreenshotCanvasViewTextFormatKey = @"format";
+NSString * const ScreenshotCanvasViewSelectionDidChangeNotification = @"ScreenshotCanvasViewSelectionDidChangeNotification";
 #if ST_ENABLE_GNUSTEP_WORKAROUNDS
 BOOL ScreenshotUndoLoggingEnabled(void) __attribute__((weak));
 #else
@@ -1670,6 +1671,11 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 /// Whether a point (in the canvas's coordinates) is on the part of the canvas on screen: the
 /// bounds run on past the clip view (see -resetCursorRects).
 - (BOOL)isPointOnShownCanvas:(NSPoint)viewPoint {
+    NSView *cover = self.coveringView;
+    if (cover && !cover.isHidden && cover.window == self.window &&
+        NSMouseInRect([cover convertPoint:viewPoint fromView:self], cover.bounds, cover.isFlipped)) {
+        return NO;
+    }
     return NSMouseInRect(viewPoint, [self visibleRect], self.isFlipped);
 }
 
@@ -2241,6 +2247,24 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 - (void)clipViewBoundsDidChange:(NSNotification *)notification {
     [self updateForEnclosingBoundsChange];
     [[self enclosingStageView] layoutCanvas];
+    [self postSelectionDidChange];
+}
+
+- (void)postSelectionDidChange {
+    [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewSelectionDidChangeNotification
+                                                        object:self];
+}
+
+- (NSRect)selectionRectInView {
+    if (!self.image || !self.hasSelectionRect) {
+        return NSZeroRect;
+    }
+    NSRect clamped = [self clampedImageRect:self.selectionRect];
+    return NSIsEmptyRect(clamped) ? NSZeroRect : [self viewRectForImageRect:clamped];
+}
+
+- (BOOL)isAdjustingSelection {
+    return self.isCreatingSelection || self.isMovingSelection || self.isResizingSelection;
 }
 
 /// The stage the canvas sits on in the app's window; nil where it's the document view itself.
@@ -2310,6 +2334,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     [self updateFrameSize];
     [self setNeedsDisplay:YES];
     [self updateActiveTextViewFrame];
+    [self postSelectionDidChange];
 }
 
 - (CGFloat)screenPixelsPerPoint {
@@ -3005,6 +3030,8 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         [self stopSelectionDashAnimation];
         self.selectionDashPhase = 0.0f;
     }
+    // Every start, finish and end of a region selection comes through here.
+    [self postSelectionDidChange];
 }
 
 - (NSPoint)viewPointForImagePoint:(NSPoint)imagePoint {

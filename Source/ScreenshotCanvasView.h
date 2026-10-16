@@ -115,6 +115,12 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 - (STCanvasContextKind)prepareContextMenuAtViewPoint:(NSPoint)viewPoint;
 /// YES when the one annotation selected is a text label.
 - (BOOL)hasSingleTextSelection;
+/// The region selection in this view's coordinates, or NSZeroRect without one.
+- (NSRect)selectionRectInView;
+/// YES while the region selection is being drawn, moved or resized.
+- (BOOL)isAdjustingSelection;
+/// A view drawn over the canvas (the selection's bar): the pointer over it isn't on the canvas.
+@property (nonatomic, weak, nullable) NSView *coveringView;
 
 /// See STTextEditingCompanion.
 @property (nonatomic, weak, nullable) id<STTextEditingCompanion> textEditingCompanion;
@@ -160,5 +166,8 @@ extern NSString * const _Nonnull ScreenshotCanvasViewDidEndTextEditingNotificati
 /// @"bold", @"italic", @"bigger" or @"smaller".
 extern NSString * const _Nonnull ScreenshotCanvasViewRequestsTextFormatNotification;
 extern NSString * const _Nonnull ScreenshotCanvasViewTextFormatKey;
+/// Posted when the region selection starts, changes, finishes or goes, and when the canvas
+/// scrolls or zooms, which moves it on screen.
+extern NSString * const _Nonnull ScreenshotCanvasViewSelectionDidChangeNotification;
 /// Posted when the canvas changes its own zoom (a trackpad pinch, say), for the zoom controls.
 extern NSString * const _Nonnull ScreenshotCanvasViewDidChangeZoomNotification;
