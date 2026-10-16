@@ -15,6 +15,8 @@ FONTCONFIG_CFLAGS := -I/usr/include/freetype2
 # Take Screenshot asks the desktop portal over D-Bus (STScreenshotCapture).
 CAPTURE_CFLAGS := $(shell pkg-config --cflags gio-2.0)
 CAPTURE_LDFLAGS := $(shell pkg-config --libs gio-2.0)
+# Share on Linux: libs-sharing, as the app compiles it in.
+ST_LIBS_SHARING := yes
 # The canvas scales a zoomed-out image once with cairo, as GNUstep's backend draws, instead of
 # on every redraw. Optional: without cairo's headers the canvas draws as before.
 ifeq ($(shell pkg-config --exists cairo && echo yes),yes)
@@ -61,6 +63,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	StepToolProbe_test.m \
 	RedactToolProbe_test.m \
 	CanvasStageProbe_test.m \
+	ShareSheetProbe_test.m \
 	CanvasContextMenuProbe_test.m \
 	SelectionActionBarProbe_test.m \
 	CanvasDrawSpeedProbe_test.m \
@@ -156,6 +159,17 @@ ADDITIONAL_LDFLAGS += -lstdc++
 ADDITIONAL_LDFLAGS += -lobjc
 ADDITIONAL_LDFLAGS += -lfontconfig -lfreetype -ldispatch
 ADDITIONAL_LDFLAGS += $(CAPTURE_LDFLAGS)
+endif
+
+# libs-sharing, compiled in as the app does (see ../GNUmakefile), without ARC.
+ifeq ($(ST_LIBS_SHARING),yes)
+GSSHARING_DIR = ../third_party/libs-sharing
+include $(GSSHARING_DIR)/GSSharing.make
+ScreenshotToolTests_OBJC_FILES += $(GSSHARING_OBJC_FILES)
+ADDITIONAL_INCLUDE_DIRS += $(GSSHARING_INCLUDE_DIRS)
+ADDITIONAL_OBJCFLAGS += $(GSSHARING_OBJCFLAGS) -DST_HAVE_LIBS_SHARING=1
+ADDITIONAL_LDFLAGS += $(GSSHARING_LDFLAGS)
+$(foreach f,$(GSSHARING_OBJC_FILES),$(eval $(f)_FILE_FILTER_OUT_FLAGS = -fobjc-arc)$(eval $(f)_FILE_FLAGS = -fno-objc-arc))
 endif
 
 # Include the bundle makefile

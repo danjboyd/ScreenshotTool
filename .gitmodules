@@ -1,3 +1,6 @@
 [submodule "third_party/tools-xctest"]
 	path = third_party/tools-xctest
 	url = https://github.com/danjboyd/tools-xctest
+[submodule "third_party/libs-sharing"]
+	path = third_party/libs-sharing
+	url = https://github.com/danjboyd/libs-sharing

@@ -24,6 +24,8 @@ FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
 # Take Screenshot asks the desktop portal over D-Bus. GNUstep's backend already loads GIO.
 CAPTURE_CFLAGS := $(shell pkg-config --cflags gio-2.0)
 CAPTURE_LDFLAGS := $(shell pkg-config --libs gio-2.0)
+# Share on Linux: libs-sharing gives NSSharingServicePicker its sheet (danjboyd/libs-sharing).
+ST_LIBS_SHARING := yes
 # The canvas scales a zoomed-out image once with cairo, as GNUstep's backend draws, instead of
 # on every redraw. Optional: without cairo's headers the canvas draws as before.
 ifeq ($(shell pkg-config --exists cairo && echo yes),yes)
@@ -268,7 +270,20 @@ ADDITIONAL_LDFLAGS += $(UPDATER_LDFLAGS)
 ADDITIONAL_LDFLAGS += -lstdc++
 ADDITIONAL_LDFLAGS += -lobjc
 
-
+# libs-sharing, compiled in (third_party/libs-sharing, a submodule). Added through
+# $(APP_NAME)_OBJC_FILES so scripts/build_cocoa.sh, which reads ScreenshotTool_OBJC_FILES
+# lines, doesn't pick them up for macOS. The library manages memory by hand (it builds with
+# GCC too), so its files are compiled without ARC.
+ifeq ($(ST_LIBS_SHARING),yes)
+GSSHARING_DIR = third_party/libs-sharing
+include $(GSSHARING_DIR)/GSSharing.make
+$(APP_NAME)_OBJC_FILES += $(GSSHARING_OBJC_FILES)
+$(APP_NAME)_RESOURCE_FILES += $(GSSHARING_RESOURCE_FILES)
+ADDITIONAL_INCLUDE_DIRS += $(GSSHARING_INCLUDE_DIRS)
+ADDITIONAL_OBJCFLAGS += $(GSSHARING_OBJCFLAGS) -DST_HAVE_LIBS_SHARING=1
+ADDITIONAL_LDFLAGS += $(GSSHARING_LDFLAGS)
+$(foreach f,$(GSSHARING_OBJC_FILES),$(eval $(f)_FILE_FILTER_OUT_FLAGS = -fobjc-arc)$(eval $(f)_FILE_FLAGS = -fno-objc-arc))
+endif
 
 include $(GNUSTEP_MAKEFILES)/application.make
 

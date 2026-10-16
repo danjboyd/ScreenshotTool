@@ -130,7 +130,13 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     id<NSToolbarDelegate> delegate = (id<NSToolbarDelegate>)_appDelegate;
     NSArray *defaults = [delegate toolbarDefaultItemIdentifiers:toolbar];
     // Undo and Redo lead (#101).
-#if defined(GNUSTEP)
+#if defined(GNUSTEP) && defined(ST_HAVE_LIBS_SHARING)
+    // Linux: libs-sharing's Share after Copy, so it goes into » before Copy and Save do.
+    XCTAssertEqualObjects(defaults, (@[@"com.screenshottool.toolbar.undo", @"com.screenshottool.toolbar.redo",
+                                       @"com.screenshottool.toolbar.tools", @"com.screenshottool.toolbar.color",
+                                       NSToolbarFlexibleSpaceItemIdentifier, @"com.screenshottool.toolbar.save",
+                                       @"com.screenshottool.toolbar.copy", @"com.screenshottool.toolbar.share"]));
+#elif defined(GNUSTEP)
     // Save and Copy close the row (#221), under GNOME too now that Adwaita keeps the title (#240).
     XCTAssertEqualObjects(defaults, (@[@"com.screenshottool.toolbar.undo", @"com.screenshottool.toolbar.redo",
                                        @"com.screenshottool.toolbar.tools", @"com.screenshottool.toolbar.color",
