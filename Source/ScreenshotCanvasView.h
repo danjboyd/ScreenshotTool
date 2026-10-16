@@ -21,6 +21,7 @@
 #import <AppKit/AppKit.h>
 #import "MarkupText.h"
 #import "ScreenshotToolSettings.h"
+#import "STCanvasContextMenu.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -50,7 +51,7 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 - (BOOL)isTakingTextFocus;
 @end
 
-@interface ScreenshotCanvasView : NSView
+@interface ScreenshotCanvasView : NSView <STCanvasContextCommands>
 
 @property (nonatomic, strong, nullable) NSImage *image;
 @property (nonatomic, assign) ScreenshotCanvasTool activeTool;
@@ -105,6 +106,15 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 - (void)clearSelection;
 - (void)refreshCursor;
 - (BOOL)cropToActiveSelection;
+
+/// Asked for the right-click menu (-menuForEvent:) once the canvas has worked out what was clicked.
+@property (nonatomic, copy, nullable) NSMenu * _Nullable (^contextMenuProvider)(STCanvasContextKind kind);
+/// What a right-click at this point is about. Like a left click with the select tool, it selects
+/// the annotation under the pointer first (switching to the select tool), unless the point is in
+/// the region selection, which keeps it; a point outside the region selection clears it.
+- (STCanvasContextKind)prepareContextMenuAtViewPoint:(NSPoint)viewPoint;
+/// YES when the one annotation selected is a text label.
+- (BOOL)hasSingleTextSelection;
 
 /// See STTextEditingCompanion.
 @property (nonatomic, weak, nullable) id<STTextEditingCompanion> textEditingCompanion;
