@@ -1795,7 +1795,9 @@ static AppDelegate *STFrontDocument(void) {
         documentCommands = [NSSet setWithArray:@[@"saveDocumentAs:", @"saveProject:", @"undo:", @"redo:",
                                                  @"cropImage:", @"zoomFitToWindow:", @"zoomPreset25:",
                                                  @"zoomPreset50:", @"zoomPreset100:", @"zoomPreset200:",
-                                                 @"zoomIn:", @"zoomOut:", @"runCustomAction:"]];
+                                                 @"zoomIn:", @"zoomOut:", @"runCustomAction:",
+                                                 @"redactSelection:", @"duplicateAnnotations:",
+                                                 @"bringAnnotationsToFront:", @"sendAnnotationsToBack:"]];
     }
     for (NSMenuItem *item in menu.itemArray) {
         if (item.action && [documentCommands containsObject:NSStringFromSelector(item.action)]) {
@@ -2354,6 +2356,10 @@ static AppDelegate *STFrontDocument(void) {
     if (action == @selector(cropImage:)) {
         return [self.canvasView hasSelection];
     }
+    if (action == @selector(redactSelection:) || action == @selector(duplicateAnnotations:) ||
+        action == @selector(bringAnnotationsToFront:) || action == @selector(sendAnnotationsToBack:)) {
+        return [self.canvasView validateMenuItem:menuItem];
+    }
     if (action == @selector(pasteAsNewImage:)) {
         return [self clipboardHasImage];
     }
@@ -2625,6 +2631,29 @@ static id STInfoValueForKey(NSString *key) {
     [cropSelectionItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
     [cropSelectionItem setTarget:self];
     [editMenu addItem:cropSelectionItem];
+
+    // The canvas's own commands, also in its right-click menu, which shows these shortcuts.
+    NSMenuItem *redactSelectionItem = [[NSMenuItem alloc] initWithTitle:@"Redact Selection"
+                                                                 action:@selector(redactSelection:)
+                                                          keyEquivalent:@""];
+    [redactSelectionItem setTarget:self];
+    [editMenu addItem:redactSelectionItem];
+    [editMenu addItem:[NSMenuItem separatorItem]];
+    // Built with @selector: validation compares selectors with ==, and on GNUstep's runtime one
+    // from NSSelectorFromString isn't the same pointer.
+    SEL arrangeActions[] = { @selector(duplicateAnnotations:), @selector(bringAnnotationsToFront:),
+                             @selector(sendAnnotationsToBack:) };
+    NSArray<NSString *> *arrangeTitles = @[@"Duplicate", @"Bring to Front", @"Send to Back"];
+    NSArray<NSString *> *arrangeKeys = @[@"d", @"F", @"B"];
+    for (NSUInteger i = 0; i < arrangeTitles.count; i++) {
+        NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:arrangeTitles[i]
+                                                      action:arrangeActions[i]
+                                               keyEquivalent:arrangeKeys[i]];
+        [item setKeyEquivalentModifierMask:(i == 0 ? NSEventModifierFlagCommand
+                                                   : (NSEventModifierFlagCommand | NSEventModifierFlagShift))];
+        [item setTarget:self];
+        [editMenu addItem:item];
+    }
 #if !defined(GNUSTEP)
     [editMenu addItem:[NSMenuItem separatorItem]];
     [editMenu addItemWithTitle:@"Select All" action:@selector(selectAll:) keyEquivalent:@"a"];
@@ -7046,6 +7075,23 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     }
     [self.window makeFirstResponder:self.canvasView];
     [self showStatusMessage:@"Cropped image" duration:2.0];
+}
+
+// The Edit menu's canvas commands, for this window's canvas.
+- (void)redactSelection:(id)sender {
+    [self.canvasView redactSelection:sender];
+}
+
+- (void)duplicateAnnotations:(id)sender {
+    [self.canvasView duplicateAnnotations:sender];
+}
+
+- (void)bringAnnotationsToFront:(id)sender {
+    [self.canvasView bringAnnotationsToFront:sender];
+}
+
+- (void)sendAnnotationsToBack:(id)sender {
+    [self.canvasView sendAnnotationsToBack:sender];
 }
 
 - (void)canvasViewDidRestoreState:(NSNotification *)notification {

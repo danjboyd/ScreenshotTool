@@ -34,9 +34,11 @@ NSMenu *STCanvasContextMenu(STCanvasContextKind kind, BOOL singleText,
                 STContextItem(menu, @"Edit Text", @selector(editSelectedText:), canvas, @"", 0);
                 [menu addItem:[NSMenuItem separatorItem]];
             }
-            STContextItem(menu, @"Duplicate", @selector(duplicateAnnotations:), canvas, @"", 0);
-            STContextItem(menu, @"Bring to Front", @selector(bringAnnotationsToFront:), canvas, @"", 0);
-            STContextItem(menu, @"Send to Back", @selector(sendAnnotationsToBack:), canvas, @"", 0);
+            STContextItem(menu, @"Duplicate", @selector(duplicateAnnotations:), canvas, @"d", command);
+            STContextItem(menu, @"Bring to Front", @selector(bringAnnotationsToFront:), canvas, @"F",
+                          command | NSEventModifierFlagShift);
+            STContextItem(menu, @"Send to Back", @selector(sendAnnotationsToBack:), canvas, @"B",
+                          command | NSEventModifierFlagShift);
             [menu addItem:[NSMenuItem separatorItem]];
             STContextItem(menu, @"Delete", @selector(deleteAnnotations:), canvas, @"", 0);
             break;

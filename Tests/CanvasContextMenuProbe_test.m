@@ -18,6 +18,7 @@
 - (void)setupWindowAndContent;
 - (NSWindow *)window;
 - (ScreenshotCanvasView *)canvasView;
+- (void)setupMenus;
 @end
 
 @interface ScreenshotCanvasView (CanvasContextMenuTesting)
@@ -295,6 +296,49 @@
                                    characters:characters charactersIgnoringModifiers:characters
                                     isARepeat:NO keyCode:0]];
     XCTAssertFalse(canvas.hasSelectionRect, @"Esc clears the region selection, as Deselect does");
+}
+
+#pragma mark - The Edit menu
+
+/// The Edit menu's item with this title, from the app's menu bar.
+- (NSMenuItem *)editMenuItem:(NSString *)title {
+    NSMenu *edit = [[[NSApp mainMenu] itemWithTitle:@"Edit"] submenu];
+    return [edit itemWithTitle:title];
+}
+
+- (void)testTheMenuOnlyCommandsAreInTheEditMenuToo {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_appDelegate setupMenus];
+    ScreenshotCanvasView *canvas = [self canvasWithAnnotations];
+
+    NSDictionary<NSString *, NSArray *> *expected = @{
+        @"Redact Selection": @[@"", @NO],
+        @"Duplicate": @[@"d", @NO],
+        @"Bring to Front": @[@"F", @YES],
+        @"Send to Back": @[@"B", @YES],
+    };
+    for (NSString *title in expected) {
+        NSMenuItem *item = [self editMenuItem:title];
+        XCTAssertNotNil(item, @"%@ is in the Edit menu", title);
+        XCTAssertEqualObjects(item.keyEquivalent, expected[title][0], @"%@'s shortcut", title);
+        BOOL shift = (item.keyEquivalentModifierMask & NSEventModifierFlagShift) != 0;
+        XCTAssertEqual(shift, [expected[title][1] boolValue], @"%@'s shortcut", title);
+        XCTAssertFalse([_appDelegate validateMenuItem:item], @"%@: nothing selected yet", title);
+    }
+
+    NSMenu *menu = [self rightClick:canvas at:NSMakePoint(150.0, 51.0)];
+    XCTAssertEqualObjects([self item:@"Duplicate" in:menu].keyEquivalent, @"d",
+                          @"The right-click menu shows the Edit menu's shortcut");
+    NSMenuItem *duplicate = [self editMenuItem:@"Duplicate"];
+    XCTAssertTrue([_appDelegate validateMenuItem:duplicate], @"Enabled with an annotation selected");
+    [_appDelegate performSelector:duplicate.action withObject:duplicate];
+    XCTAssertEqual(canvas.strokes.count, (NSUInteger)3, @"The Edit menu's Duplicate duplicates it");
+
+    [self selectRegion:NSMakeRect(420.0, 20.0, 150.0, 100.0) on:canvas];
+    NSMenuItem *redact = [self editMenuItem:@"Redact Selection"];
+    XCTAssertTrue([_appDelegate validateMenuItem:redact]);
+    [_appDelegate performSelector:redact.action withObject:redact];
+    XCTAssertEqual(canvas.strokes.lastObject.type, MarkupStrokeTypeRedact);
 }
 
 @end

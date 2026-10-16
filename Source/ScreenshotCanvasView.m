@@ -1120,7 +1120,8 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
         action == @selector(sendAnnotationsToBack:) || action == @selector(deleteAnnotations:)) {
         return [self hasAnnotationSelection];
     }
-    return [super validateMenuItem:menuItem];
+    // NSView doesn't implement it on GNUstep, which would raise.
+    return [NSView instancesRespondToSelector:_cmd] ? [super validateMenuItem:menuItem] : YES;
 }
 
 - (instancetype)initWithFrame:(NSRect)frameRect {
