@@ -64,9 +64,22 @@
     [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
 
     NSWindow *window = _appDelegate.window;
+    // The whole toolbar where the screen has room for it: the window opens at most 95% of the
+    // screen's width, so one narrower than that was sized to show everything. On a narrower screen
+    // (CI's is 1024pt) the window opens at that limit and only low-priority items may overflow.
     [window layoutIfNeeded];
-    XCTAssertEqual(window.toolbar.visibleItems.count, window.toolbar.items.count,
-                   @"every toolbar item shows at %.0fpt", NSWidth(window.frame));
+    CGFloat limit = floor(NSWidth((window.screen ?: [NSScreen mainScreen]).visibleFrame) * 0.95);
+    NSArray *visible = [window.toolbar.visibleItems valueForKey:@"itemIdentifier"];
+    if (NSWidth(window.frame) < limit - 1.0) {
+        XCTAssertEqual(window.toolbar.visibleItems.count, window.toolbar.items.count,
+                       @"every toolbar item shows at %.0fpt (limit %.0f): %@", NSWidth(window.frame), limit, visible);
+    } else {
+        for (NSToolbarItem *item in window.toolbar.items) {
+            if (item.visibilityPriority > NSToolbarItemVisibilityPriorityLow) {
+                XCTAssertTrue([visible containsObject:item.itemIdentifier], @"%@ shows at %.0fpt", item.itemIdentifier, NSWidth(window.frame));
+            }
+        }
+    }
     XCTAssertLessThan(NSWidth(window.contentView.frame), 1000.0, @"no wider than the toolbar needs");
 }
 
