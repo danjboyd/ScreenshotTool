@@ -6322,7 +6322,13 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
     // Undo, Redo and Share do), and opens wide enough for the whole toolbar.
     minimumWidth = MAX(minimumWidth, [self contentWidthShowingToolbarItems:YES atMost:maxWidth from:minimumWidth]);
     CGFloat targetWidth = MAX(contentWidth, minimumWidth);
-    targetWidth = MAX(targetWidth, [self contentWidthShowingToolbarItems:NO atMost:maxWidth from:targetWidth]);
+    CGFloat toolbarWidth = [self contentWidthShowingToolbarItems:NO atMost:maxWidth from:targetWidth];
+    if (toolbarWidth > targetWidth) {
+        // A few points to spare: once the image is in, the toolbar's items can take a point more
+        // than they measured with none (#221's 9-tool toolbar was 1pt short).
+        toolbarWidth = MIN(maxWidth, toolbarWidth + 8.0);
+    }
+    targetWidth = MAX(targetWidth, toolbarWidth);
 #else
     CGFloat targetWidth = MAX(contentWidth, minimumWidth);
 #endif
