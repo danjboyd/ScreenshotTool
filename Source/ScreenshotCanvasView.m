@@ -3367,6 +3367,13 @@ static NSError *STProjectError(NSString *message) {
     return NSInsetRect([self viewRectForImageRect:self.currentTextEntry.bounds], -outset, -outset);
 }
 
+- (void)scrollActiveTextToVisible {
+    NSRect guide = [self activeTextGuideRectInView];
+    if (self.activeTextView && !NSIsEmptyRect(guide)) {
+        [self scrollRectToVisible:NSInsetRect(guide, -8.0, -8.0)];
+    }
+}
+
 - (NSRect)activeTextHandleRectInView {
     NSRect guideRect = [self activeTextGuideRectInView];
     if (NSIsEmptyRect(guideRect)) {

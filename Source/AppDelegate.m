@@ -1330,6 +1330,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) STTextSizePreset textDefaultSizePreset;
 @property (nonatomic, assign) NSTextAlignment textDefaultAlignment;
 @property (nonatomic, strong) STTextOptionsBar *textOptionsBar;
+/// How far showing the text bar scrolled the canvas, which hiding it undoes.
+@property (nonatomic, assign) CGFloat textBarScrollDelta;
 @property (nonatomic, strong) ToolSettingsPopoverController *penPopoverController;
 @property (nonatomic, strong) ToolSettingsPopoverController *highlighterPopoverController;
 @property (nonatomic, strong) TextToolPopoverController *textPopoverController;
@@ -3356,16 +3358,37 @@ static id STInfoValueForKey(NSString *key) {
         [self.textOptionsBar setAutoresizingMask:(NSViewWidthSizable | NSViewMinYMargin)];
         [container addSubview:self.textOptionsBar];
     }
-    // Keep the image's scale while the row takes its space, and keep it where it is on screen:
-    // the row covers the top of the viewport instead of pushing the image down.
+    // Keep the image's scale while the row takes its space, and keep it where it is on screen
+    // where there's room above it: the row covers what's scrolled past, never the image's top,
+    // which it pushes down instead (#221). The label being edited stays on screen.
     self.canvasView.suspendsFitUpdates = YES;
     [self.textOptionsBar setHidden:NO];
     [self layoutContentSubviews];
     if (!wasShowing) {
-        [self scrollCanvasVerticallyBy:[STTextOptionsBar preferredHeight]];
+        NSClipView *clip = self.scrollView.contentView;
+        CGFloat before = clip.bounds.origin.y;
+        [self scrollCanvasVerticallyBy:MIN([STTextOptionsBar preferredHeight], [self spaceAboveImageInViewport])];
+        [self.canvasView scrollActiveTextToVisible];
+        self.textBarScrollDelta = clip.bounds.origin.y - before;
     }
     [self logWindowFrame:@"text bar shown"];
     [self refreshTextOptionsBar];
+}
+
+/// How far the canvas can scroll down without hiding the image's top: as far as it likes when
+/// the top is already scrolled past, else to a small gap below the viewport's top edge.
+- (CGFloat)spaceAboveImageInViewport {
+    NSClipView *clip = self.scrollView.contentView;
+    if (!clip || ![self.canvasView hasImage]) {
+        return 0.0f;
+    }
+    NSRect imageInClip = [clip convertRect:self.canvasView.bounds fromView:self.canvasView];
+    CGFloat imageTop = clip.isFlipped ? NSMinY(imageInClip) - NSMinY(clip.bounds)
+                                      : NSMaxY(clip.bounds) - NSMaxY(imageInClip);
+    if (imageTop < 0.0f) {
+        return CGFLOAT_MAX;
+    }
+    return MAX(0.0f, imageTop - 8.0f);
 }
 
 /// Scrolls the canvas by delta points (down for positive), within what the clip view allows.
@@ -3394,7 +3417,8 @@ static id STInfoValueForKey(NSString *key) {
     }
     [self.textOptionsBar setHidden:YES];
     [self layoutContentSubviews];
-    [self scrollCanvasVerticallyBy:-[STTextOptionsBar preferredHeight]];
+    [self scrollCanvasVerticallyBy:-self.textBarScrollDelta];
+    self.textBarScrollDelta = 0.0f;
     self.canvasView.suspendsFitUpdates = NO;
     [self.canvasView updateForEnclosingBoundsChange];
     [self logWindowFrame:@"text bar hidden"];

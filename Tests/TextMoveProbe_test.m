@@ -21,6 +21,7 @@
 - (ScreenshotCanvasView *)canvasView;
 - (void)showTextOptionsBar;
 - (void)hideTextOptionsBar;
+- (void)layoutContentSubviews;
 @end
 
 @interface ScreenshotCanvasView (TextMoveTesting)
@@ -223,6 +224,33 @@
     XCTAssertEqualWithAccuracy(NSHeight(_appDelegate.scrollView.frame), NSHeight(scrollFrame), 0.5);
     NSPoint after = [canvas convertPoint:imagePoint toView:nil];
     XCTAssertEqualWithAccuracy(after.y, before.y, 0.5, @"Nor when the row goes");
+}
+
+/// With the image's top on screen (as at Fit), the row pushes the image down rather than
+/// covering its top (#221).
+- (void)testTextBarNeverCoversTheImagesTop {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    // Tall, so Fit fills the viewport's height: no slack for the row to take.
+    [canvas loadImage:[self whiteImageOfSize:NSMakeSize(800.0, 1600.0)]];
+    [_appDelegate.window setContentSize:NSMakeSize(900.0, 600.0)];
+    [_appDelegate layoutContentSubviews];
+    [canvas updateForEnclosingBoundsChange];
+    XCTAssertTrue(canvas.isFitToWindow);
+    NSPoint topBefore = [canvas convertPoint:NSMakePoint(10.0, 0.0) toView:nil];
+
+    [_appDelegate showTextOptionsBar];
+
+    NSScrollView *scrollView = _appDelegate.scrollView;
+    NSRect viewport = [scrollView convertRect:scrollView.bounds toView:nil];
+    NSPoint top = [canvas convertPoint:NSMakePoint(10.0, 0.0) toView:nil];
+    // In the window's (unflipped) coordinates the image's top is the canvas point's y.
+    XCTAssertLessThanOrEqual(top.y, NSMaxY(viewport) - 1.0, @"The image's top is below the row, on screen: top %.1f, viewport %@",
+                             top.y, NSStringFromRect(viewport));
+
+    [_appDelegate hideTextOptionsBar];
+    NSPoint topAfter = [canvas convertPoint:NSMakePoint(10.0, 0.0) toView:nil];
+    XCTAssertEqualWithAccuracy(topAfter.y, topBefore.y, 0.5, @"When the row goes, the image is back where it was");
 }
 
 @end

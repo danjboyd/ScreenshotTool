@@ -104,6 +104,8 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 @property (nonatomic, weak, nullable) id<STTextEditingCompanion> textEditingCompanion;
 /// Gives the keyboard back to the text box being edited, after a companion had it. NO if none is.
 - (BOOL)focusActiveTextView;
+/// Scrolls so the text box being edited is on screen, if one is.
+- (void)scrollActiveTextToVisible;
 
 @end
 
