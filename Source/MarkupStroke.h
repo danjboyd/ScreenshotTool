@@ -24,7 +24,9 @@ typedef NS_ENUM(NSInteger, MarkupStrokeType) {
     MarkupStrokeTypePen = 0,
     MarkupStrokeTypeHighlighter = 1,
     /// A straight arrow from the first point to the last, with a filled head (#33).
-    MarkupStrokeTypeArrow = 2
+    MarkupStrokeTypeArrow = 2,
+    /// A rectangle's outline, its corners the first point and the last (v0.2.0, #221).
+    MarkupStrokeTypeRectangle = 3
 };
 
 NS_ASSUME_NONNULL_BEGIN
@@ -40,13 +42,21 @@ NS_ASSUME_NONNULL_BEGIN
                     lineWidth:(CGFloat)lineWidth;
 
 - (void)addPoint:(NSPoint)point;
-/// For arrows: keeps the start point and moves the end to this point.
+/// For arrows and rectangles: keeps the start point and moves the end to this point.
 - (void)setEndPoint:(NSPoint)point;
+/// For rectangles: corners at these two points.
+- (void)setStartPoint:(NSPoint)start endPoint:(NSPoint)end;
+/// Arrows and rectangles: drawn from two points, with a white outline.
+- (BOOL)isShape;
+/// A rectangle's rect, from its two corners.
+- (NSRect)shapeRect;
 /// Length of an arrow's head, from its tip back to its base.
 - (CGFloat)arrowHeadLength;
 /// Draws an arrow in canvas coordinates; a positive unflippedHeight maps them into an unflipped
 /// context of that height (export), zero draws straight into a flipped view.
 - (void)drawArrowWithUnflippedHeight:(CGFloat)unflippedHeight;
+/// Draws an arrow or a rectangle, as -drawArrowWithUnflippedHeight: does.
+- (void)drawShapeWithUnflippedHeight:(CGFloat)unflippedHeight;
 - (NSArray<NSValue *> *)points;
 - (void)drawPath;
 - (BOOL)containsPoint:(NSPoint)point tolerance:(CGFloat)tolerance;

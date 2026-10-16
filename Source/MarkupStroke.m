@@ -99,6 +99,24 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     self.mutablePath = path;
 }
 
+- (void)setStartPoint:(NSPoint)start endPoint:(NSPoint)end {
+    self.mutablePoints = [[NSMutableArray alloc] initWithObjects:[NSValue valueWithPoint:start], nil];
+    [self setEndPoint:end];
+}
+
+- (BOOL)isShape {
+    return self.type == MarkupStrokeTypeArrow || self.type == MarkupStrokeTypeRectangle;
+}
+
+- (NSRect)shapeRect {
+    if (self.mutablePoints.count == 0) {
+        return NSZeroRect;
+    }
+    NSPoint a = [self.mutablePoints.firstObject pointValue];
+    NSPoint b = [self.mutablePoints.lastObject pointValue];
+    return NSMakeRect(MIN(a.x, b.x), MIN(a.y, b.y), fabs(b.x - a.x), fabs(b.y - a.y));
+}
+
 - (CGFloat)arrowHeadLength {
     return MAX(10.0, self.lineWidth * 4.0);
 }
@@ -160,12 +178,42 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     }
 }
 
+/// A rectangle's outline, over a white one as an arrow's: the two drawn the same way.
+- (void)drawRectangleWithUnflippedHeight:(CGFloat)unflippedHeight {
+    NSRect rect = [self shapeRect];
+    if (NSWidth(rect) < 0.5 && NSHeight(rect) < 0.5) {
+        return;
+    }
+    if (unflippedHeight > 0.0) {
+        rect.origin.y = unflippedHeight - NSMaxY(rect);
+    }
+    CGFloat radius = MIN(4.0, MIN(NSWidth(rect), NSHeight(rect)) * 0.5);
+    NSBezierPath *outline = [NSBezierPath bezierPathWithRoundedRect:rect xRadius:radius yRadius:radius];
+    [outline setLineJoinStyle:NSRoundLineJoinStyle];
+    CGFloat white = [self arrowOutlineWidth];
+    NSArray<NSColor *> *colors = @[[NSColor whiteColor], self.color ?: [NSColor redColor]];
+    NSArray<NSNumber *> *extras = @[@(white * 2.0), @0.0];
+    for (NSUInteger pass = 0; pass < colors.count; pass++) {
+        [colors[pass] setStroke];
+        [outline setLineWidth:self.lineWidth + extras[pass].doubleValue];
+        [outline stroke];
+    }
+}
+
+- (void)drawShapeWithUnflippedHeight:(CGFloat)unflippedHeight {
+    if (self.type == MarkupStrokeTypeRectangle) {
+        [self drawRectangleWithUnflippedHeight:unflippedHeight];
+    } else {
+        [self drawArrowWithUnflippedHeight:unflippedHeight];
+    }
+}
+
 - (void)drawPath {
     if (self.mutablePoints.count == 0) {
         return;
     }
-    if (self.type == MarkupStrokeTypeArrow) {
-        [self drawArrowWithUnflippedHeight:0.0];
+    if ([self isShape]) {
+        [self drawShapeWithUnflippedHeight:0.0];
         return;
     }
 
@@ -189,6 +237,20 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     }
 
     CGFloat tol2 = sqr(MAX(tolerance, self.lineWidth * 0.5));
+
+    if (self.type == MarkupStrokeTypeRectangle) {
+        // Its outline: any of the four sides, white outline included.
+        NSRect rect = [self shapeRect];
+        CGFloat reach2 = sqr(MAX(tolerance, self.lineWidth * 0.5 + [self arrowOutlineWidth]));
+        NSPoint corners[4] = { NSMakePoint(NSMinX(rect), NSMinY(rect)), NSMakePoint(NSMaxX(rect), NSMinY(rect)),
+                               NSMakePoint(NSMaxX(rect), NSMaxY(rect)), NSMakePoint(NSMinX(rect), NSMaxY(rect)) };
+        for (NSInteger side = 0; side < 4; side++) {
+            if (distanceSquaredToSegment(point, corners[side], corners[(side + 1) % 4]) <= reach2) {
+                return YES;
+            }
+        }
+        return NO;
+    }
 
     if (self.mutablePoints.count == 1) {
         NSPoint onlyPoint = [[self.mutablePoints firstObject] pointValue];
@@ -216,8 +278,8 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
         return;
     }
 
-    if (self.type == MarkupStrokeTypeArrow) {
-        [self drawArrowWithUnflippedHeight:size.height];
+    if ([self isShape]) {
+        [self drawShapeWithUnflippedHeight:size.height];
         return;
     }
 
@@ -299,6 +361,8 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     if (self.type == MarkupStrokeTypeArrow) {
         inset = MAX(inset, [self arrowHeadLength] * 0.5f + 1.0f); // the head's wings reach past the shaft
         inset += [self arrowOutlineWidth];
+    } else if (self.type == MarkupStrokeTypeRectangle) {
+        inset += [self arrowOutlineWidth];
     }
     return NSMakeRect(minX - inset, minY - inset, (maxX - minX) + inset * 2.0f, (maxY - minY) + inset * 2.0f);
 }
@@ -351,7 +415,7 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     }
     NSInteger type = [dictionary[@"type"] integerValue];
     NSArray *points = dictionary[@"points"];
-    if (type < MarkupStrokeTypePen || type > MarkupStrokeTypeArrow || ![points isKindOfClass:[NSArray class]] || points.count == 0) {
+    if (type < MarkupStrokeTypePen || type > MarkupStrokeTypeRectangle || ![points isKindOfClass:[NSArray class]] || points.count == 0) {
         return nil;
     }
     MarkupStroke *stroke = [[self alloc] initWithType:(MarkupStrokeType)type
@@ -362,7 +426,7 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
             return nil;
         }
         NSPoint p = NSMakePoint([pair[0] doubleValue], [pair[1] doubleValue]);
-        if (type == MarkupStrokeTypeArrow && [stroke points].count >= 1) {
+        if ((type == MarkupStrokeTypeArrow || type == MarkupStrokeTypeRectangle) && [stroke points].count >= 1) {
             [stroke setEndPoint:p];
         } else {
             [stroke addPoint:p];

@@ -160,6 +160,8 @@ static NSString *STCursorToolName(ScreenshotCanvasTool tool) {
             return @"text";
         case ScreenshotCanvasToolArrow:
             return @"arrow";
+        case ScreenshotCanvasToolRectangle:
+            return @"rectangle";
         default:
             return @"unknown";
     }
@@ -790,7 +792,7 @@ static void STRasterizeStrokeOntoBitmap(MarkupStroke *stroke,
         STRasterizeHighlighterStrokeOntoBitmap(stroke, buffer, canvasSize);
         return;
     }
-    if (stroke.type == MarkupStrokeTypeArrow) {
+    if ([stroke isShape]) {
         STRasterizeArrowOntoBitmap(stroke, buffer, canvasSize);
         return;
     }
@@ -943,7 +945,7 @@ static void STRasterizeArrowOntoBitmap(MarkupStroke *stroke,
                                        STBitmapBuffer *buffer,
                                        NSSize canvasSize) {
     STRasterizeDrawingOntoBitmap([stroke bounds], buffer, canvasSize, ^(CGFloat unflippedHeight) {
-        [stroke drawArrowWithUnflippedHeight:unflippedHeight];
+        [stroke drawShapeWithUnflippedHeight:unflippedHeight];
     });
 }
 
@@ -1056,6 +1058,12 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) BOOL annotationsMoved;
 @property (nonatomic, assign) NSPoint annotationMoveLastPoint;
 @property (nonatomic, strong, nullable) NSDictionary *annotationMoveSnapshot;
+// Resizing a rectangle by a corner handle (#221): the rectangle, its corner that stays put, and
+// where the grabbed corner is from the pointer.
+@property (nonatomic, strong, nullable) MarkupStroke *resizingShape;
+@property (nonatomic, assign) NSPoint resizeFixedCorner;
+@property (nonatomic, assign) NSPoint resizeGrabOffset;
+@property (nonatomic, assign) BOOL shapeResized;
 @property (nonatomic, assign) BOOL activeTextOverflowsImage;
 @property (nonatomic, assign) NSRect pendingTextRect;
 @property (nonatomic, assign) NSPoint textDragStartImagePoint;
@@ -1453,6 +1461,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         }
         case ScreenshotCanvasToolSelect:
         case ScreenshotCanvasToolArrow:
+        case ScreenshotCanvasToolRectangle:
             return [NSCursor crosshairCursor];
         case ScreenshotCanvasToolText:
             // Over empty canvas a click creates a box; text under the pointer shows an I-beam (#29).
@@ -2620,6 +2629,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         @"t": @(ScreenshotCanvasToolText),
         @"e": @(ScreenshotCanvasToolEraser),
         @"a": @(ScreenshotCanvasToolArrow),
+        @"r": @(ScreenshotCanvasToolRectangle),
     };
     NSNumber *tool = shortcuts[characters];
     if (!tool) {
@@ -2651,6 +2661,44 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
             STDrawSelectionHandle(NSMakeRect(x - size * 0.5, y - size * 0.5, size, size), outline);
         }
     }
+}
+
+/// The corner handles of a selected annotation, in view coordinates, in the order
+/// -drawAnnotationSelection draws them: top left, top right, bottom left, bottom right.
+- (void)getSelectionHandleRects:(NSRect *)rects forAnnotation:(id)annotation {
+    NSRect viewRect = NSInsetRect([self viewRectForImageRect:[self boundsOfAnnotation:annotation]], -4.0, -4.0);
+    CGFloat size = STSelectionHandleSize;
+    for (NSInteger corner = 0; corner < 4; corner++) {
+        CGFloat x = (corner % 2 == 0) ? NSMinX(viewRect) : NSMaxX(viewRect);
+        CGFloat y = (corner < 2) ? NSMinY(viewRect) : NSMaxY(viewRect);
+        rects[corner] = NSMakeRect(x - size * 0.5, y - size * 0.5, size, size);
+    }
+}
+
+/// A press on a corner handle of the one selected rectangle starts resizing it from that corner,
+/// the opposite one staying put.
+- (BOOL)beginShapeResizeAtViewPoint:(NSPoint)viewPoint imagePoint:(NSPoint)imagePoint {
+    NSArray *selected = [self selectedAnnotationObjects];
+    MarkupStroke *shape = selected.count == 1 ? selected.firstObject : nil;
+    if (![shape isKindOfClass:[MarkupStroke class]] || shape.type != MarkupStrokeTypeRectangle) {
+        return NO;
+    }
+    NSRect handles[4];
+    [self getSelectionHandleRects:handles forAnnotation:shape];
+    NSRect rect = [shape shapeRect];
+    for (NSInteger corner = 0; corner < 4; corner++) {
+        if (!NSPointInRect(viewPoint, NSInsetRect(handles[corner], -3.0, -3.0))) {
+            continue;
+        }
+        NSPoint grabbed = NSMakePoint((corner % 2 == 0) ? NSMinX(rect) : NSMaxX(rect), (corner < 2) ? NSMinY(rect) : NSMaxY(rect));
+        self.resizeFixedCorner = NSMakePoint((corner % 2 == 0) ? NSMaxX(rect) : NSMinX(rect), (corner < 2) ? NSMaxY(rect) : NSMinY(rect));
+        self.resizeGrabOffset = NSMakePoint(grabbed.x - imagePoint.x, grabbed.y - imagePoint.y);
+        self.resizingShape = shape;
+        self.shapeResized = NO;
+        self.annotationMoveSnapshot = [self annotationSnapshot];
+        return YES;
+    }
+    return NO;
 }
 
 - (void)clearSelection {
@@ -3607,6 +3655,10 @@ static NSError *STProjectError(NSString *message) {
             }
         }
 
+        if ([self beginShapeResizeAtViewPoint:locationInView imagePoint:imagePoint]) {
+            return;
+        }
+
         // Annotations under the pointer are picked before the region selection (#25).
         BOOL extending = (event.modifierFlags & NSEventModifierFlagShift) != 0;
         id hit = [self annotationAtImagePoint:imagePoint];
@@ -3668,6 +3720,9 @@ static NSError *STProjectError(NSString *message) {
     if (self.activeTool == ScreenshotCanvasToolArrow) {
         // Arrows share the pen's colour and width.
         strokeType = MarkupStrokeTypeArrow;
+    } else if (self.activeTool == ScreenshotCanvasToolRectangle) {
+        // So do rectangles.
+        strokeType = MarkupStrokeTypeRectangle;
     }
     NSColor *strokeColor = (strokeType == MarkupStrokeTypeHighlighter) ? self.highlighterColor : self.penColor;
     CGFloat width = (strokeType == MarkupStrokeTypeHighlighter) ? self.highlighterLineWidth : self.penLineWidth;
@@ -3748,6 +3803,20 @@ static NSError *STProjectError(NSString *message) {
     }
 
     if (self.activeTool == ScreenshotCanvasToolSelect) {
+        if (self.resizingShape) {
+            NSPoint corner = NSMakePoint(imagePoint.x + self.resizeGrabOffset.x, imagePoint.y + self.resizeGrabOffset.y);
+            if ((event.modifierFlags & NSEventModifierFlagShift) != 0) {
+                CGFloat dx = corner.x - self.resizeFixedCorner.x;
+                CGFloat dy = corner.y - self.resizeFixedCorner.y;
+                CGFloat side = MAX(fabs(dx), fabs(dy));
+                corner = NSMakePoint(self.resizeFixedCorner.x + (dx < 0.0 ? -side : side),
+                                     self.resizeFixedCorner.y + (dy < 0.0 ? -side : side));
+            }
+            [self.resizingShape setStartPoint:self.resizeFixedCorner endPoint:corner];
+            self.shapeResized = YES;
+            [self setNeedsDisplay:YES];
+            return;
+        }
         if (self.isMovingAnnotations) {
             NSPoint delta = NSMakePoint(imagePoint.x - self.annotationMoveLastPoint.x,
                                         imagePoint.y - self.annotationMoveLastPoint.y);
@@ -3796,7 +3865,7 @@ static NSError *STProjectError(NSString *message) {
         return;
     }
 
-    if (self.currentStroke.type == MarkupStrokeTypeArrow) {
+    if ([self.currentStroke isShape]) {
         [self.currentStroke setEndPoint:[self arrowEndForPoint:imagePoint event:event]];
         [self setNeedsDisplay:YES];
         return;
@@ -3805,7 +3874,8 @@ static NSError *STProjectError(NSString *message) {
     [self setNeedsDisplay:YES];
 }
 
-/// With Shift held, the arrow snaps to the nearest multiple of 45 degrees.
+/// With Shift held, the arrow snaps to the nearest multiple of 45 degrees, and a rectangle is a
+/// square.
 - (NSPoint)arrowEndForPoint:(NSPoint)point event:(NSEvent *)event {
     NSArray<NSValue *> *points = [self.currentStroke points];
     if (points.count == 0 || (event.modifierFlags & NSEventModifierFlagShift) == 0) {
@@ -3814,6 +3884,10 @@ static NSError *STProjectError(NSString *message) {
     NSPoint start = points.firstObject.pointValue;
     CGFloat dx = point.x - start.x;
     CGFloat dy = point.y - start.y;
+    if (self.currentStroke.type == MarkupStrokeTypeRectangle) {
+        CGFloat side = MAX(fabs(dx), fabs(dy));
+        return NSMakePoint(start.x + (dx < 0.0 ? -side : side), start.y + (dy < 0.0 ? -side : side));
+    }
     CGFloat length = hypot(dx, dy);
     CGFloat angle = round(atan2(dy, dx) / (M_PI / 4.0)) * (M_PI / 4.0);
     return NSMakePoint(start.x + cos(angle) * length, start.y + sin(angle) * length);
@@ -3884,6 +3958,16 @@ static NSError *STProjectError(NSString *message) {
     }
 
     if (self.activeTool == ScreenshotCanvasToolSelect) {
+        if (self.resizingShape) {
+            if (self.shapeResized) {
+                [self registerAnnotationUndoWithSnapshot:self.annotationMoveSnapshot actionName:@"Resize"];
+            }
+            self.resizingShape = nil;
+            self.shapeResized = NO;
+            self.annotationMoveSnapshot = nil;
+            [self setNeedsDisplay:YES];
+            return;
+        }
         if (self.isMovingAnnotations) {
             self.isMovingAnnotations = NO;
             if (self.annotationsMoved) {
@@ -3942,6 +4026,16 @@ static NSError *STProjectError(NSString *message) {
             return;
         }
         [self insertStroke:finalStroke atIndex:self.strokes.count registeringUndo:YES actionName:@"Draw Arrow"];
+        return;
+    }
+    if (finalStroke.type == MarkupStrokeTypeRectangle) {
+        [finalStroke setEndPoint:[self arrowEndForStroke:finalStroke point:imagePoint event:event]];
+        NSRect rect = [finalStroke shapeRect];
+        if ([finalStroke points].count < 2 || (NSWidth(rect) < 4.0 && NSHeight(rect) < 4.0)) {
+            [self setNeedsDisplay:YES]; // a stray click
+            return;
+        }
+        [self insertStroke:finalStroke atIndex:self.strokes.count registeringUndo:YES actionName:@"Draw Rectangle"];
         return;
     }
     [finalStroke addPoint:imagePoint];
