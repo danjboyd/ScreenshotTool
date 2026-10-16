@@ -82,7 +82,9 @@ clone_or_refresh() {
 
 # The Adwaita theme, so the unit tests also run under it (#74) and the AppImage bundles it (#83).
 # Pinned past 0.1.0-alpha3 for its open and save panels (GNOME's file chooser through the portal).
-THEME_ADWAITA_REF="${THEME_ADWAITA_REF:-121c5cd30a9d59defb40f56eed866b530d4bee39}"
+# The Adwaita theme the AppImage bundles: 0.1.0-alpha12 (accent buttons, a header-bar title that
+# keeps its room, disabled segments dimmed).
+THEME_ADWAITA_REF="${THEME_ADWAITA_REF:-4ccb16dac52c7f3aff6a7d64aa39703bd03ae8e3}"
 
 # GNUSTEP_TOOLCHAIN=lock (the default): the toolchain is built from scripts/gnustep-toolchain.lock.json
 # by gnustep-cli-new's custom toolchain builder, in its Ubuntu 24.04 image, into TOOLCHAIN_PREFIX
