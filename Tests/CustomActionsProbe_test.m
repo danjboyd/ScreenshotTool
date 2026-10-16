@@ -266,13 +266,17 @@
     XCTAssertTrue([self spinUntil:^BOOL { return ![app isRunningCustomAction:action]; } seconds:10.0]);
     XCTAssertEqualObjects([self pasteboardString], @"sent to work");
 
-    // Its button goes just before Copy, after Save where the toolbar has it (not under GNOME).
+    // Its button may never push Copy into the overflow: on GNUstep, which overflows from the row's
+    // end, it goes after Copy; on macOS before it, with a lower visibility priority.
     NSArray<NSString *> *identifiers = [app toolbarDefaultItemIdentifiers:[[NSToolbar alloc] initWithIdentifier:@"test"]];
-    NSUInteger save = [identifiers indexOfObject:@"com.screenshottool.toolbar.save"];
     NSUInteger send = [identifiers indexOfObject:@"com.screenshottool.toolbar.action.send"];
     NSUInteger copy = [identifiers indexOfObject:@"com.screenshottool.toolbar.copy"];
-    XCTAssertTrue(send != NSNotFound && copy != NSNotFound && send < copy, @"The action, then Copy: %@", identifiers);
-    XCTAssertTrue(save == NSNotFound || save < send, @"Save, then the action: %@", identifiers);
+    XCTAssertTrue(send != NSNotFound && copy != NSNotFound, @"%@", identifiers);
+#if defined(GNUSTEP)
+    XCTAssertTrue(copy < send, @"Copy, then the action: %@", identifiers);
+#else
+    XCTAssertTrue(send < copy, @"The action, then Copy: %@", identifiers);
+#endif
 }
 #endif
 

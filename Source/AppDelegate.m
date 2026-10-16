@@ -3141,9 +3141,11 @@ static id STInfoValueForKey(NSString *key) {
     (void)toolbar;
     // Zoom and Preferences live in the View and app menus (with shortcuts) and can be added back
     // by customising the toolbar (#53). Undo and Redo lead, where GNOME apps keep them (#101).
-    // The commands that finish the job close the row, Copy last as the main one (#221). Under
+    // The commands that finish the job close the row, Copy as the main one (#221). Under
     // GNOME's header bar Save is left out, so the title keeps its room (#224). Custom actions
-    // with "toolbar" set go just before Share and Copy (#221).
+    // with "toolbar" set may never push Copy into the overflow: on macOS they go just before
+    // Share and Copy with a lower visibility priority; elsewhere after Copy, as GNUstep's toolbar
+    // overflows into » from the row's end (#221).
     NSMutableArray<NSToolbarItemIdentifier> *identifiers = [@[ToolbarItemUndo,
              ToolbarItemRedo,
              ToolbarItemTools,
@@ -3152,11 +3154,14 @@ static id STInfoValueForKey(NSString *key) {
 #if !defined(GNUSTEP) || defined(_WIN32)
     [identifiers addObject:ToolbarItemSave];
 #endif
-    [identifiers addObjectsFromArray:[self customActionToolbarIdentifiersInToolbarOnly:YES]];
 #if !defined(GNUSTEP)
+    [identifiers addObjectsFromArray:[self customActionToolbarIdentifiersInToolbarOnly:YES]];
     [identifiers addObject:ToolbarItemShare];
-#endif
     [identifiers addObject:ToolbarItemCopy];
+#else
+    [identifiers addObject:ToolbarItemCopy];
+    [identifiers addObjectsFromArray:[self customActionToolbarIdentifiersInToolbarOnly:YES]];
+#endif
     return identifiers;
 }
 
@@ -7768,6 +7773,8 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
         ?: [NSImage imageWithSystemSymbolName:@"paperplane" accessibilityDescription:action.title];
     item.target = self;
     item.action = @selector(runCustomAction:);
+    // Into the overflow before Copy does.
+    item.visibilityPriority = NSToolbarItemVisibilityPriorityLow;
     return item;
 #endif
 }
@@ -7826,6 +7833,12 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
                         [NSString stringWithFormat:@"screenshottool-%@", [[NSProcessInfo processInfo] globallyUniqueString]]];
     NSString *stem = [[self.currentImageURL lastPathComponent] stringByDeletingPathExtension];
     NSString *file = [folder stringByAppendingPathComponent:[(stem.length > 0 ? stem : @"Screenshot") stringByAppendingPathExtension:@"png"]];
+#if defined(_WIN32)
+    // The command gets a Windows path: many tools, cmd's own commands among them, take no "/".
+    NSString *commandFile = [file stringByReplacingOccurrencesOfString:@"/" withString:@"\\"];
+#else
+    NSString *commandFile = file;
+#endif
     if (!png || ![[NSFileManager defaultManager] createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:NULL] ||
         ![png writeToFile:file atomically:YES]) {
         [self showCopyFeedbackMessage:[NSString stringWithFormat:@"%@ failed: the image couldn't be saved", action.title] duration:3.0];
@@ -7833,7 +7846,7 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
         return;
     }
     NSString *problem = nil;
-    NSArray<NSString *> *arguments = [action argumentsForFile:file choice:choice problem:&problem];
+    NSArray<NSString *> *arguments = [action argumentsForFile:commandFile choice:choice problem:&problem];
     if (!arguments) {
         [[NSFileManager defaultManager] removeItemAtPath:folder error:NULL];
         [self reportCustomAction:action failure:problem details:nil];
