@@ -15,6 +15,12 @@ FONTCONFIG_CFLAGS := -I/usr/include/freetype2
 # Take Screenshot asks the desktop portal over D-Bus (STScreenshotCapture).
 CAPTURE_CFLAGS := $(shell pkg-config --cflags gio-2.0)
 CAPTURE_LDFLAGS := $(shell pkg-config --libs gio-2.0)
+# The canvas scales a zoomed-out image once with cairo, as GNUstep's backend draws, instead of
+# on every redraw. Optional: without cairo's headers the canvas draws as before.
+ifeq ($(shell pkg-config --exists cairo && echo yes),yes)
+CAPTURE_CFLAGS += $(shell pkg-config --cflags cairo) -DST_HAVE_CAIRO=1
+CAPTURE_LDFLAGS += $(shell pkg-config --libs cairo)
+endif
 endif
 endif
 
@@ -57,6 +63,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	CanvasStageProbe_test.m \
 	CanvasContextMenuProbe_test.m \
 	SelectionActionBarProbe_test.m \
+	CanvasDrawSpeedProbe_test.m \
 	CustomActionsProbe_test.m \
 	LargeImageDrawingProbe_test.m \
 	CursorRectProbe_test.m \
