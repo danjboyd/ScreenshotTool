@@ -24,12 +24,12 @@
 - (NSMenuItem *)menuItemForCustomAction:(STCustomAction *)action;
 - (NSArray<NSString *> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar;
 - (NSToolbarItem *)toolbarItemForCustomAction:(STCustomAction *)action;
-#if !defined(GNUSTEP)
 - (NSArray<NSSharingService *> *)sharingServicePicker:(NSSharingServicePicker *)picker
                               sharingServicesForItems:(NSArray *)items
                               proposedSharingServices:(NSArray<NSSharingService *> *)proposed;
 - (id<NSSharingServiceDelegate>)sharingServicePicker:(NSSharingServicePicker *)picker
                            delegateForSharingService:(NSSharingService *)service;
+#if !defined(GNUSTEP)
 - (void)menuNeedsUpdate:(NSMenu *)menu;
 #endif
 @end

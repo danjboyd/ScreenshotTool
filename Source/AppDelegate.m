@@ -1452,9 +1452,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 #if defined(GNUSTEP)
     GPStandardUpdaterControllerDelegate,
 #else
-    NSSharingServicePickerToolbarItemDelegate, NSSharingServiceDelegate, NSMenuDelegate,
+    NSSharingServicePickerToolbarItemDelegate, NSMenuDelegate,
 #endif
-    STTextOptionsBarDelegate>
+    NSSharingServicePickerDelegate, NSSharingServiceDelegate, STTextOptionsBarDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NSScrollView *scrollView;
 /// Shown instead of the canvas while no image is open (#55).
@@ -7944,8 +7944,7 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
 }
 #endif
 
-#if !defined(GNUSTEP)
-// Plain NSSharingService API, so it carries over once libs-sharing gives GNUstep a picker.
+// Plain NSSharingService API, shared with GNUstep's picker from libs-sharing.
 
 /// Every share picker (the toolbar's, the right-click menu's and the selection bar's) lists the
 /// custom actions after the system's services: one per choice, or one for an action without.
@@ -7996,11 +7995,13 @@ static char STCustomActionSharingServiceKey;
 /// A custom action's picture in the share menus: its own icon, else a terminal symbol.
 - (nullable NSImage *)shareImageForCustomAction:(STCustomAction *)action {
     NSImage *image = [self iconForCustomAction:action size:16.0];
+#if !defined(GNUSTEP)
     if (!image) {
         if (@available(macOS 11.0, *)) {
             image = [NSImage imageWithSystemSymbolName:@"terminal" accessibilityDescription:action.title];
         }
     }
+#endif
     return image;
 }
 
@@ -8029,7 +8030,6 @@ static char STCustomActionSharingServiceKey;
     ScreenshotToolAppendLog([NSString stringWithFormat:@"Share with %@ failed: %@", name, error]);
     [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Couldn't share with %@: %@", name, reason] duration:4.0];
 }
-#endif
 
 /// Writes what a share sends as a PNG named after the document, for a drag, a share or a custom
 /// action: the selection when there is one, else the whole annotated image, as Copy copies.
