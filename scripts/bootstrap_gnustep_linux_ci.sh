@@ -217,9 +217,14 @@ pushd libs-back >/dev/null
 # and loses its toolbar (#60).
 # The second lists WM_DELETE_WINDOW on closable windows the theme decorates: without it, Mutter
 # kills the whole app on Alt+F4 under Adwaita (Tools/check_wm_close.sh).
+# The last two let files dragged out of the app (the Copy button's PNG) drop on GTK and Qt apps:
+# answering TARGETS and text/uri-list, and speaking XDND 3. Carried from danjboyd/ObjcMarkdown
+# (#175/#184), not yet sent upstream.
 if [[ "${LIBS_BACK_REF}" == "back-0_32_0" ]]; then
   git apply "${SCRIPT_DIR}/patches/libs-back-0.32-frame-extents.patch"
   git apply "${SCRIPT_DIR}/patches/libs-back-0.32-wm-delete-window.patch"
+  git apply "${SCRIPT_DIR}/patches/libs-back-0.32-xdnd-uri-list.patch"
+  git apply "${SCRIPT_DIR}/patches/libs-back-0.32-xdnd-version-3.patch"
 fi
 source_gnustep_env
 PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \

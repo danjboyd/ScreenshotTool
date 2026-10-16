@@ -903,26 +903,83 @@ static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin)
 
 @end
 
-#if !defined(GNUSTEP)
 /// The Copy toolbar button: a click copies the image; dragging it hands the annotated image (or
-/// the selection) to another app as a PNG file. `dragFileProvider` writes the file as a drag starts.
+/// the selection) to another app as a PNG file. `dragFileProvider` writes the file as a drag
+/// starts. On Linux the file goes out as text/uri-list through libs-back's XDND, which needs
+/// scripts/patches' XDND fixes to reach other apps.
+#if defined(GNUSTEP)
+// The classic drag, whose source methods are informal.
+@interface STDragExportButton : NSButton
+#else
 @interface STDragExportButton : NSButton <NSDraggingSource>
+#endif
 @property (nonatomic, copy, nullable) NSURL * _Nullable (^dragFileProvider)(void);
+/// The press a drag or a click is deciding from (GNUstep).
+@property (nonatomic, strong, nullable) NSEvent *pressEvent;
 @end
 
 @implementation STDragExportButton
 
+- (void)setPressed:(BOOL)pressed {
+#if defined(GNUSTEP)
+    [self highlight:pressed];
+#else
+    self.highlighted = pressed;
+#endif
+}
+
+#if defined(GNUSTEP)
+// GNUstep sends the press's drags and release to the view that took the press, so the button
+// decides there, as the canvas does, rather than in a loop of its own in -mouseDown:: under the
+// Adwaita theme's header bar such a loop never got the release, and a plain click didn't copy.
+- (void)mouseDown:(NSEvent *)event {
+    if (![self isEnabled] || !self.dragFileProvider) {
+        [super mouseDown:event];
+        return;
+    }
+    self.pressEvent = event;
+    [self setPressed:YES];
+}
+
+- (void)mouseDragged:(NSEvent *)event {
+    NSEvent *press = self.pressEvent;
+    if (!press) {
+        [super mouseDragged:event];
+        return;
+    }
+    NSPoint start = press.locationInWindow;
+    NSPoint location = event.locationInWindow;
+    [self setPressed:NSPointInRect([self convertPoint:location fromView:nil], self.bounds)];
+    if (hypot(location.x - start.x, location.y - start.y) >= 4.0) {
+        self.pressEvent = nil;
+        [self setPressed:NO];
+        [self beginExportDragWithEvent:press];
+    }
+}
+
+- (void)mouseUp:(NSEvent *)event {
+    if (!self.pressEvent) {
+        [super mouseUp:event];
+        return;
+    }
+    self.pressEvent = nil;
+    [self setPressed:NO];
+    if (NSPointInRect([self convertPoint:event.locationInWindow fromView:nil], self.bounds)) {
+        [self sendAction:self.action to:self.target];
+    }
+}
+#else
 - (void)mouseDown:(NSEvent *)event {
     if (!self.enabled || !self.dragFileProvider) {
         [super mouseDown:event];
         return;
     }
     NSPoint start = event.locationInWindow;
-    self.highlighted = YES;
+    [self setPressed:YES];
     while (YES) {
         NSEvent *next = [self.window nextEventMatchingMask:(NSEventMaskLeftMouseDragged | NSEventMaskLeftMouseUp)];
         if (next.type == NSEventTypeLeftMouseUp) {
-            self.highlighted = NO;
+            [self setPressed:NO];
             if (NSPointInRect([self convertPoint:next.locationInWindow fromView:nil], self.bounds)) {
                 [self sendAction:self.action to:self.target];
             }
@@ -930,41 +987,79 @@ static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin)
         }
         NSPoint location = next.locationInWindow;
         if (hypot(location.x - start.x, location.y - start.y) >= 4.0) {
-            self.highlighted = NO;
+            [self setPressed:NO];
             [self beginExportDragWithEvent:event];
             return;
         }
     }
 }
+#endif
+
+/// The image, at most 160 points on its long side, to drag.
+static NSImage *STDragPreviewImage(NSImage *image) {
+    NSSize size = image.size;
+    CGFloat scale = MIN(1.0, 160.0 / MAX(MAX(size.width, size.height), 1.0));
+    NSSize dragSize = NSMakeSize(MAX(1.0, round(size.width * scale)), MAX(1.0, round(size.height * scale)));
+#if defined(GNUSTEP)
+    NSImage *preview = [[NSImage alloc] initWithSize:dragSize];
+    [preview lockFocus];
+    [image drawInRect:NSMakeRect(0.0, 0.0, dragSize.width, dragSize.height)
+             fromRect:NSZeroRect
+            operation:NSCompositeSourceOver
+             fraction:0.85];
+    [preview unlockFocus];
+    return preview;
+#else
+    (void)dragSize;
+    return image;
+#endif
+}
 
 - (void)beginExportDragWithEvent:(NSEvent *)event {
     NSURL *url = self.dragFileProvider();
-    NSImage *preview = url ? [[NSImage alloc] initWithContentsOfURL:url] : nil;
-    if (!preview) {
+    NSImage *image = url ? [[NSImage alloc] initWithContentsOfURL:url] : nil;
+    if (!image) {
         NSBeep();
         return;
     }
+    NSImage *preview = STDragPreviewImage(image);
+    NSPoint at = [self convertPoint:event.locationInWindow fromView:nil];
+#if defined(GNUSTEP)
+    // The classic drag: a file list, which the backend offers as text/uri-list (XDND).
+    NSPasteboard *pasteboard = [NSPasteboard pasteboardWithName:NSDragPboard];
+    [pasteboard declareTypes:@[NSFilenamesPboardType] owner:nil];
+    [pasteboard setPropertyList:@[url.path] forType:NSFilenamesPboardType];
     NSSize size = preview.size;
+    NSPoint origin = NSMakePoint(at.x - size.width * 0.5, at.y + (self.isFlipped ? size.height * 0.5 : -size.height * 0.5));
+    [self dragImage:preview at:origin offset:NSZeroSize event:event pasteboard:pasteboard source:self slideBack:YES];
+#else
+    NSSize size = image.size;
     CGFloat scale = MIN(1.0, 160.0 / MAX(MAX(size.width, size.height), 1.0));
     NSSize dragSize = NSMakeSize(size.width * scale, size.height * scale);
-    NSPoint at = [self convertPoint:event.locationInWindow fromView:nil];
     NSDraggingItem *item = [[NSDraggingItem alloc] initWithPasteboardWriter:url];
     [item setDraggingFrame:NSMakeRect(at.x - dragSize.width * 0.5, at.y - dragSize.height * 0.5,
                                       dragSize.width, dragSize.height)
                   contents:preview];
     NSDraggingSession *session = [self beginDraggingSessionWithItems:@[item] event:event source:self];
     session.animatesToStartingPositionsOnCancelOrFail = YES;
+#endif
 }
 
+#if defined(GNUSTEP)
+- (NSDragOperation)draggingSourceOperationMaskForLocal:(BOOL)isLocal {
+    (void)isLocal;
+    return NSDragOperationCopy;
+}
+#else
 - (NSDragOperation)draggingSession:(NSDraggingSession *)session
     sourceOperationMaskForDraggingContext:(NSDraggingContext)context {
     (void)session;
     (void)context;
     return NSDragOperationCopy;
 }
+#endif
 
 @end
-#endif
 
 
 
@@ -3405,7 +3500,16 @@ static id STInfoValueForKey(NSString *key) {
                                              toolTip:(NSString *)toolTip
                                               action:(SEL)selector
                                               accent:(BOOL)accent {
-    NSButton *button = [[NSButton alloc] initWithFrame:NSMakeRect(0, 0, 64.0f, STToolbarZoomControlHeight)];
+    // Copy drags the image out too, as on macOS.
+    BOOL dragsOut = [identifier isEqualToString:ToolbarItemCopy];
+    NSButton *button = [[(dragsOut ? [STDragExportButton class] : [NSButton class]) alloc]
+                        initWithFrame:NSMakeRect(0, 0, 64.0f, STToolbarZoomControlHeight)];
+    if (dragsOut) {
+        __weak AppDelegate *weakSelf = self;
+        ((STDragExportButton *)button).dragFileProvider = ^NSURL * {
+            return [weakSelf exportAnnotatedImageToTemporaryFile];
+        };
+    }
     button.title = label;
     [button setBezelStyle:NSRoundedBezelStyle];
     button.target = self;
