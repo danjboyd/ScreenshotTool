@@ -12,6 +12,7 @@
 #import "MarkupStroke.h"
 #import "MarkupText.h"
 #import "STThemeUtilities.h"
+#import "STWindowsIntegration.h"
 #import "TestEnvironmentHelpers.h"
 
 @interface AppDelegate (ArrowCalloutTesting)
@@ -214,7 +215,9 @@
     [[NSPasteboard generalPasteboard] declareTypes:@[NSPasteboardTypeTIFF] owner:nil];
     [[NSPasteboard generalPasteboard] setData:[NSData data] forType:NSPasteboardTypeTIFF];
     [_appDelegate copy:nil];
-    NSData *png = [[NSPasteboard generalPasteboard] dataForType:NSPasteboardTypePNG];
+    // On Windows Copy writes the Windows clipboard itself, not GNUstep's pasteboard.
+    NSData *png = STWindowsClipboardIsNative() ? STWindowsClipboardPNGData()
+                                               : [[NSPasteboard generalPasteboard] dataForType:NSPasteboardTypePNG];
     NSBitmapImageRep *rep = png ? [NSBitmapImageRep imageRepWithData:png] : nil;
     XCTAssertNotNil(rep, @"The first Copy puts the image on the clipboard");
     XCTAssertEqual(rep.pixelsWide, (NSInteger)600);
