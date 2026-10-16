@@ -208,13 +208,23 @@ static NSImage *STRoundedMaskImage(CGFloat radius) {
     mask.resizingMode = NSImageResizingModeStretch;
     return mask;
 }
+#endif
 
 /// Where dragged-out and shared images are written; cleared at launch.
 static NSURL *STExportDirectoryURL(void) {
     return [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
             URLByAppendingPathComponent:@"ScreenshotTool Exports" isDirectory:YES];
 }
+
+/// YES where there's a share picker: macOS's. GNUstep's NSSharingServicePicker is a stub until
+/// libs-sharing implements it (danjboyd/ObjcMarkdown#170).
+static BOOL STCanShareImages(void) {
+#if !defined(GNUSTEP)
+    return YES;
+#else
+    return NO;
 #endif
+}
 
 static NSArray<NSString *> *STOpenableImageFileTypes(void) {
     return @[ @"png", @"jpg", @"jpeg", @"gif", @"bmp", @"tif", @"tiff", @"webp" ];
@@ -1909,35 +1919,6 @@ static AppDelegate *STFrontDocument(void) {
 
 #pragma mark - Drag out, share and drop (macOS)
 
-/// Writes the annotated image (or the selection) as a PNG named after the document, for a drag
-/// or a share. Each export gets its own folder, so the file keeps the document's name.
-- (nullable NSURL *)exportAnnotatedImageToTemporaryFile {
-    if (![self.canvasView hasImage]) {
-        return nil;
-    }
-    NSImage *image = [self.canvasView flattenedImageForSelection];
-    NSData *pngData = image ? [self pngDataForImage:image] : nil;
-    if (pngData.length == 0) {
-        return nil;
-    }
-    NSString *name = [[(self.currentImageURL ?: self.currentProjectURL) lastPathComponent] stringByDeletingPathExtension];
-    if (name.length == 0) {
-        name = @"Screenshot";
-    }
-    NSURL *directory = [STExportDirectoryURL() URLByAppendingPathComponent:[[NSUUID UUID] UUIDString] isDirectory:YES];
-    NSError *error = nil;
-    if (![[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:&error]) {
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"Export failed: %@", error.localizedDescription]);
-        return nil;
-    }
-    NSURL *url = [directory URLByAppendingPathComponent:[name stringByAppendingPathExtension:@"png"]];
-    if (![pngData writeToURL:url options:NSDataWritingAtomic error:&error]) {
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"Export failed: %@", error.localizedDescription]);
-        return nil;
-    }
-    return url;
-}
-
 - (NSToolbarItem *)dragExportCopyToolbarItem {
     NSToolbarItem *item = [[NSToolbarItem alloc] initWithItemIdentifier:ToolbarItemCopy];
     item.label = @"Copy";
@@ -1962,6 +1943,12 @@ static AppDelegate *STFrontDocument(void) {
 /// when a service asks for it: exporting flattens the image, which would end a label being edited.
 - (NSArray *)itemsForSharingServicePickerToolbarItem:(NSSharingServicePickerToolbarItem *)pickerToolbarItem {
     (void)pickerToolbarItem;
+    return [self shareItemProviders];
+}
+
+/// What every share picker shares: one provider of the PNG a share sends, which exports it only
+/// when a service asks for it (exporting flattens the image and ends a label being edited).
+- (NSArray *)shareItemProviders {
     if (![self.canvasView hasImage]) {
         return @[];
     }
@@ -2223,9 +2210,7 @@ static AppDelegate *STFrontDocument(void) {
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     ScreenshotToolAppendLog(@"ScreenshotTool launched");
-#if !defined(GNUSTEP)
     [[NSFileManager defaultManager] removeItemAtURL:STExportDirectoryURL() error:NULL];
-#endif
 #if defined(GNUSTEP)
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(themeDidActivate:)
@@ -2359,6 +2344,9 @@ static AppDelegate *STFrontDocument(void) {
     }
     if (action == @selector(cropImage:)) {
         return [self.canvasView hasSelection];
+    }
+    if (action == @selector(shareImage:)) {
+        return STCanShareImages() && [self.canvasView hasImage];
     }
     if (action == @selector(redactSelection:) || action == @selector(duplicateAnnotations:) ||
         action == @selector(bringAnnotationsToFront:) || action == @selector(sendAnnotationsToBack:)) {
@@ -7660,7 +7648,7 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     if (!self.selectionActionBar) {
         // On the canvas itself, as the text editor is: GNUstep repaints an opaque view over
         // siblings above it, and the canvas repaints for the selection's moving dashes.
-        self.selectionActionBar = [[STSelectionActionBar alloc] initWithTarget:self];
+        self.selectionActionBar = [[STSelectionActionBar alloc] initWithTarget:self showsShare:STCanShareImages()];
         self.selectionActionBar.hidden = YES;
         [canvas addSubview:self.selectionActionBar];
         canvas.coveringView = self.selectionActionBar;
@@ -7680,6 +7668,67 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     }
 }
 
+#pragma mark - Sharing
+
+/// Share… from the canvas's right-click menu or the selection's bar: the picker for what a share
+/// sends, next to the click or the button.
+- (void)shareImage:(id)sender {
+    if ([sender isKindOfClass:[NSView class]]) {
+        NSView *view = (NSView *)sender;
+        [self presentShareFromView:view rect:view.bounds];
+        return;
+    }
+    NSPoint point = self.canvasView.lastContextMenuPoint;
+    [self presentShareFromView:self.canvasView rect:NSMakeRect(point.x, point.y, 1.0, 1.0)];
+}
+
+/// The share picker for what a share sends, below `rect` in `view`. Its delegate is this
+/// controller, as the toolbar's picker item's is, so both list the same services.
+- (void)presentShareFromView:(NSView *)view rect:(NSRect)rect {
+#if !defined(GNUSTEP)
+    NSArray *items = [self shareItemProviders];
+    if (items.count == 0 || !view.window) {
+        return;
+    }
+    NSSharingServicePicker *picker = [[NSSharingServicePicker alloc] initWithItems:items];
+    picker.delegate = self;
+    [picker showRelativeToRect:rect ofView:view preferredEdge:NSRectEdgeMinY];
+#else
+    (void)view;
+    (void)rect;
+#endif
+}
+
+/// Writes what a share sends as a PNG named after the document, for a drag, a share or a custom
+/// action: the selection when there is one, else the whole annotated image, as Copy copies.
+/// Each export gets its own folder, so the file keeps the document's name.
+- (nullable NSURL *)exportAnnotatedImageToTemporaryFile {
+    if (![self.canvasView hasImage]) {
+        return nil;
+    }
+    NSImage *image = [self.canvasView flattenedImageForSelection];
+    NSData *pngData = image ? [self pngDataForImage:image] : nil;
+    if (pngData.length == 0) {
+        return nil;
+    }
+    NSString *name = [[(self.currentImageURL ?: self.currentProjectURL) lastPathComponent] stringByDeletingPathExtension];
+    if (name.length == 0) {
+        name = @"Screenshot";
+    }
+    NSURL *directory = [STExportDirectoryURL() URLByAppendingPathComponent:[[NSUUID UUID] UUIDString] isDirectory:YES];
+    NSError *error = nil;
+    if (![[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:&error]) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Export failed: %@", error.localizedDescription]);
+        return nil;
+    }
+    NSURL *url = [directory URLByAppendingPathComponent:[name stringByAppendingPathExtension:@"png"]];
+    if (![pngData writeToURL:url options:NSDataWritingAtomic error:&error]) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Export failed: %@", error.localizedDescription]);
+        return nil;
+    }
+    return url;
+}
+
 #pragma mark - Canvas context menu
 
 /// The canvas's right-click menu: this window's commands, and on the image's menu the custom
@@ -7691,7 +7740,8 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
             [actionItems addObject:[self menuItemForCustomAction:action]];
         }
     }
-    return STCanvasContextMenu(kind, [self.canvasView hasSingleTextSelection], self.canvasView, self, actionItems);
+    return STCanvasContextMenu(kind, [self.canvasView hasSingleTextSelection], STCanShareImages(), self.canvasView, self,
+                               actionItems);
 }
 
 #pragma mark - Custom actions (#221)
@@ -7990,8 +8040,9 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     [self runCustomAction:[self customActionForSender:sender] choice:choice];
 }
 
-/// Saves the annotated image as a PNG in a folder of its own, runs the action's command on it,
-/// and, by the action's "output", copies what it prints. With no choice, it takes the first.
+/// Saves the annotated image (the selection, if there is one) as a PNG in a folder of its own,
+/// runs the action's command on it, and, by the action's "output", copies what it prints. With
+/// no choice, it takes the first.
 - (void)runCustomAction:(nullable STCustomAction *)action choice:(nullable NSString *)choice {
     if (!action || ![self.canvasView hasImage]) {
         return;
@@ -8010,7 +8061,8 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
         }
     }
 
-    NSImage *flattened = [self.canvasView flattenedImage];
+    // What every share sends: the selection when there is one, as Copy copies.
+    NSImage *flattened = [self.canvasView flattenedImageForSelection];
     NSData *png = flattened ? [self pngDataForImage:flattened] : nil;
     NSString *folder = [NSTemporaryDirectory() stringByAppendingPathComponent:
                         [NSString stringWithFormat:@"screenshottool-%@", [[NSProcessInfo processInfo] globallyUniqueString]]];

@@ -113,7 +113,7 @@
 #pragma mark - Placement
 
 - (void)testItGoesBelowThenAboveThenInside {
-    STSelectionActionBar *bar = [[STSelectionActionBar alloc] initWithTarget:self];
+    STSelectionActionBar *bar = [[STSelectionActionBar alloc] initWithTarget:self showsShare:NO];
     NSSize size = bar.frame.size;
     XCTAssertTrue(size.width > 150.0 && size.height > 20.0, @"Three buttons and some padding");
 
@@ -142,6 +142,15 @@
     XCTAssertEqualWithAccuracy(NSMaxY(plainBelow), 242.0, 0.5, @"Below on screen whichever way the view counts");
 }
 
+- (void)testShareIsOfferedOnlyWithAPicker {
+    STSelectionActionBar *plain = [[STSelectionActionBar alloc] initWithTarget:self showsShare:NO];
+    XCTAssertEqualObjects([plain.buttons valueForKey:@"title"], (@[@"Crop", @"Copy", @"Redact"]));
+    STSelectionActionBar *sharing = [[STSelectionActionBar alloc] initWithTarget:self showsShare:YES];
+    XCTAssertEqualObjects([sharing.buttons valueForKey:@"title"], (@[@"Crop", @"Copy", @"Redact", @"Share"]));
+    XCTAssertEqual(sharing.buttons.lastObject.action, @selector(shareImage:));
+    XCTAssertTrue(NSWidth(sharing.frame) > NSWidth(plain.frame), @"The bar grows to fit it");
+}
+
 #pragma mark - Showing it
 
 - (void)testItShowsForAFinishedSelectionOnly {
@@ -159,7 +168,11 @@
     XCTAssertFalse(bar.isHidden, @"Shown once it's finished");
     XCTAssertTrue(bar.superview == canvas, @"On the canvas, drawn after it");
     NSArray *titles = [bar.buttons valueForKey:@"title"];
+#if defined(GNUSTEP)
     XCTAssertEqualObjects(titles, (@[@"Crop", @"Copy", @"Redact"]));
+#else
+    XCTAssertEqualObjects(titles, (@[@"Crop", @"Copy", @"Redact", @"Share"]), @"macOS has a share picker");
+#endif
     XCTAssertTrue([self button:@"Crop"].target == _appDelegate);
     XCTAssertFalse(NSIntersectsRect(bar.frame, [canvas selectionRectInView]), @"Next to the selection, not over it");
     XCTAssertTrue(NSContainsRect(canvas.bounds, bar.frame), @"On the image");

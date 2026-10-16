@@ -12,7 +12,7 @@ static NSMenuItem *STContextItem(NSMenu *menu, NSString *title, SEL action, id t
     return item;
 }
 
-NSMenu *STCanvasContextMenu(STCanvasContextKind kind, BOOL singleText,
+NSMenu *STCanvasContextMenu(STCanvasContextKind kind, BOOL singleText, BOOL canShare,
                             id<STCanvasContextCommands> canvas, id controller,
                             NSArray<NSMenuItem *> *extraItems) {
     const NSEventModifierFlags command = NSEventModifierFlagCommand;
@@ -25,6 +25,9 @@ NSMenu *STCanvasContextMenu(STCanvasContextKind kind, BOOL singleText,
             STContextItem(menu, @"Crop to Selection", @selector(cropImage:), controller, @"k", command);
             STContextItem(menu, @"Copy Selection", @selector(copy:), controller, @"c", command);
             STContextItem(menu, @"Redact Selection", @selector(redactSelection:), canvas, @"", 0);
+            if (canShare) {
+                STContextItem(menu, @"Share Selection…", @selector(shareImage:), controller, @"", 0);
+            }
             [menu addItem:[NSMenuItem separatorItem]];
             STContextItem(menu, @"Deselect", @selector(deselect:), canvas, @"", 0);
             break;
@@ -52,6 +55,9 @@ NSMenu *STCanvasContextMenu(STCanvasContextKind kind, BOOL singleText,
             STContextItem(menu, @"Zoom to 100%", @selector(zoomPreset100:), controller, @"1", command);
             [menu addItem:[NSMenuItem separatorItem]];
             STContextItem(menu, @"Save As…", @selector(saveDocumentAs:), controller, @"s", command);
+            if (canShare) {
+                STContextItem(menu, @"Share…", @selector(shareImage:), controller, @"", 0);
+            }
             if (extraItems.count > 0) {
                 [menu addItem:[NSMenuItem separatorItem]];
             }

@@ -113,6 +113,8 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 /// the annotation under the pointer first (switching to the select tool), unless the point is in
 /// the region selection, which keeps it; a point outside the region selection clears it.
 - (STCanvasContextKind)prepareContextMenuAtViewPoint:(NSPoint)viewPoint;
+/// Where the last right-click was, in this view's coordinates: a share picker opens there.
+@property (nonatomic, readonly) NSPoint lastContextMenuPoint;
 /// YES when the one annotation selected is a text label.
 - (BOOL)hasSingleTextSelection;
 /// The region selection in this view's coordinates, or NSZeroRect without one.

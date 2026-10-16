@@ -10,7 +10,8 @@ typedef NS_ENUM(NSInteger, STCustomActionOutput) {
     STCustomActionOutputNone = 1,
 };
 
-/// A command the user adds to the app: it gets the annotated image as a PNG file and runs (#221).
+/// A command the user adds to the app: it gets the annotated image (the selection, if there is
+/// one, as Copy copies) as a PNG file and runs (#221).
 /// Each is a JSON file in +actionsDirectory:
 ///
 ///     { "title": "Send to Server",

@@ -30,8 +30,9 @@ typedef NS_ENUM(NSInteger, STCanvasContextKind) {
 /// first, and every command one the menu bar or a key also has. `canvas` gets the canvas's own
 /// items; `controller` the window's (Copy, Crop to Selection, Save As…, zooming), which it
 /// validates as for the menu bar. `extraItems` (the custom actions) go last on the image's menu.
-/// `singleText` is whether the one annotation selected is a text label (Edit Text).
-NSMenu * _Nullable STCanvasContextMenu(STCanvasContextKind kind, BOOL singleText,
+/// `singleText` is whether the one annotation selected is a text label (Edit Text); `canShare`
+/// whether there's a share picker to show (Share…, sent to the controller's -shareImage:).
+NSMenu * _Nullable STCanvasContextMenu(STCanvasContextKind kind, BOOL singleText, BOOL canShare,
                                        id<STCanvasContextCommands> canvas, id controller,
                                        NSArray<NSMenuItem *> * _Nullable extraItems);
 
