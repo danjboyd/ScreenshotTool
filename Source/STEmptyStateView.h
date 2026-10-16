@@ -37,4 +37,14 @@ NS_ASSUME_NONNULL_BEGIN
 
 @end
 
+#if !defined(GNUSTEP)
+/// The empty state's accent push button on macOS (#221): the accent bezel, its title and a dimmer
+/// key hint after it. White on the accent while the window is key; in the label colours when it
+/// isn't, as AppKit then draws the bezel grey and white wouldn't read on it.
+@interface STAccentButton : NSButton
+/// The key hint after the title, as "⇧⌘T"; nil for none.
+@property (nonatomic, copy, nullable) NSString *shortcut;
+@end
+#endif
+
 NS_ASSUME_NONNULL_END

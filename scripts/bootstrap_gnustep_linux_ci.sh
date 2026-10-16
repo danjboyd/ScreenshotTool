@@ -215,8 +215,11 @@ pushd libs-back >/dev/null
 # libs-back #227 (on master since 0.32.0): with a window manager that draws the title bar (GNOME
 # Shell), 0.32.0 records no frame offsets, so a window resized after it's shown ends up 39pt short
 # and loses its toolbar (#60).
+# The second lists WM_DELETE_WINDOW on closable windows the theme decorates: without it, Mutter
+# kills the whole app on Alt+F4 under Adwaita (Tools/check_wm_close.sh).
 if [[ "${LIBS_BACK_REF}" == "back-0_32_0" ]]; then
   git apply "${SCRIPT_DIR}/patches/libs-back-0.32-frame-extents.patch"
+  git apply "${SCRIPT_DIR}/patches/libs-back-0.32-wm-delete-window.patch"
 fi
 source_gnustep_env
 PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \

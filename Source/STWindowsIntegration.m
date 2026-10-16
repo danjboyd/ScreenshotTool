@@ -370,6 +370,18 @@ static NSMutableDictionary<NSNumber *, void (^)(NSArray<NSString *> *)> *STDropH
     return handlers;
 }
 
+/// Hands a drop's paths to its handler on a later turn of the main thread's run loop.
+@interface STDropDelivery : NSObject
+@property (nonatomic, copy) void (^handler)(NSArray<NSString *> *);
+- (void)deliverPaths:(NSArray<NSString *> *)paths;
+@end
+
+@implementation STDropDelivery
+- (void)deliverPaths:(NSArray<NSString *> *)paths {
+    self.handler(paths);
+}
+@end
+
 /// Takes WM_DROPFILES ahead of the window's own procedure, which ignores it.
 static LRESULT CALLBACK STDropWindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {
     WNDPROC previous = (WNDPROC)GetPropW(window, STPreviousWindowProcProperty);
@@ -379,10 +391,11 @@ static LRESULT CALLBACK STDropWindowProc(HWND window, UINT message, WPARAM wPara
         DragFinish((HDROP)wParam);
         void (^handler)(NSArray<NSString *> *) = STDropHandlers()[key];
         if (handler != nil && paths.count > 0) {
-            // After this message returns, so an unsaved-changes alert doesn't run inside it.
-            [[NSOperationQueue mainQueue] addOperationWithBlock:^{
-                handler(paths);
-            }];
+            // After this message returns, so an unsaved-changes alert doesn't run inside it. Not
+            // [NSOperationQueue mainQueue]: GNUstep runs its blocks on a worker thread.
+            STDropDelivery *delivery = [[STDropDelivery alloc] init];
+            delivery.handler = handler;
+            [delivery performSelector:@selector(deliverPaths:) withObject:paths afterDelay:0.0];
         }
         return 0;
     }
