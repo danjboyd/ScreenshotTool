@@ -1411,9 +1411,10 @@ static void STPixelateBuffer(STBitmapBuffer *buffer, NSRect rect) {
     }
 }
 
-/// `rect` of the image in `buffer` as a mosaic: one pixel a cell, to draw scaled up without
-/// smoothing.
-static NSImage *STMosaicImage(STBitmapBuffer *buffer, NSRect rect) {
+/// `rect` of the image in `buffer` (from `source`) as a mosaic: one pixel a cell, to draw scaled
+/// up without smoothing. In `source`'s colour space, so drawing it converts nothing: tagged
+/// device RGB, macOS colour-matched the averages a gamma step lighter (0.57 for 0.5).
+static NSImage *STMosaicImage(STBitmapBuffer *buffer, NSBitmapImageRep *source, NSRect rect) {
     NSInteger left, top, right, bottom;
     STRedactCellGrid(rect, buffer->width, buffer->height, &left, &top, &right, &bottom);
     NSInteger columns = (right - left + STRedactCellSize - 1) / STRedactCellSize;
@@ -1423,7 +1424,8 @@ static NSImage *STMosaicImage(STBitmapBuffer *buffer, NSRect rect) {
     }
     NSBitmapImageRep *mosaic = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:columns pixelsHigh:rows
                                                                    bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
-                                                                  colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:columns * 4
+                                                                  colorSpaceName:([source colorSpaceName] ?: NSDeviceRGBColorSpace)
+                                                                     bytesPerRow:columns * 4
                                                                     bitsPerPixel:32];
     unsigned char *out = [mosaic bitmapData];
     for (NSInteger row = 0; row < rows; row++) {
@@ -1439,6 +1441,11 @@ static NSImage *STMosaicImage(STBitmapBuffer *buffer, NSRect rect) {
             }
         }
     }
+#if !defined(GNUSTEP)
+    if (source.colorSpace) {
+        mosaic = [mosaic bitmapImageRepByRetaggingWithColorSpace:source.colorSpace] ?: mosaic;
+    }
+#endif
     NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(right - left, bottom - top)];
     [image addRepresentation:mosaic];
     return image;
@@ -4037,7 +4044,7 @@ static NSError *STProjectError(NSString *message) {
     NSImageInterpolation interpolation = [context imageInterpolation];
     [context setImageInterpolation:NSImageInterpolationNone];
     for (MarkupStroke *redaction in redactions) {
-        NSImage *mosaic = STMosaicImage(&buffer, [redaction shapeRect]);
+        NSImage *mosaic = STMosaicImage(&buffer, source, [redaction shapeRect]);
         if (!mosaic) {
             continue;
         }

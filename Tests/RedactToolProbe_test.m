@@ -20,6 +20,7 @@
 - (ScreenshotCanvasView *)canvasView;
 - (void)textOptionsBarDidTogglePointer:(id)bar;
 - (void)copy:(id)sender;
+- (BOOL)openImageAtURL:(NSURL *)url;
 - (ScreenshotCanvasTool)toolbarToolForSegmentIndex:(NSInteger)index;
 - (NSInteger)toolbarSegmentIndexForTool:(ScreenshotCanvasTool)tool;
 @end
@@ -208,6 +209,9 @@
     XCTAssertTrue(NSEqualRects([copy shapeRect], NSMakeRect(10.0, 20.0, 50.0, 20.0)), @"%@", NSStringFromRect([copy shapeRect]));
     XCTAssertTrue([copy containsPoint:NSMakePoint(35.0, 30.0) tolerance:1.0], @"Hit anywhere inside");
 
+    [canvas loadImage:[self stripedImage]];
+    canvas.fitToWindow = NO;
+    canvas.zoomScale = 1.0;
     canvas.activeTool = ScreenshotCanvasToolRedact;
     [self drag:canvas from:NSMakePoint(100.0, 100.0) to:NSMakePoint(200.0, 150.0) flags:0];
     MarkupStroke *drawn = canvas.strokes.firstObject;
@@ -219,6 +223,51 @@
     [self drag:canvas from:grab to:NSMakePoint(grab.x - 20.0, grab.y - 10.0) flags:0];
     XCTAssertTrue(NSEqualRects([drawn shapeRect], NSMakeRect(80.0, 90.0, 120.0, 60.0)),
                   @"It resizes by a corner handle as a rectangle does: %@", NSStringFromRect([drawn shapeRect]));
+    // ...and pixelates what it now covers.
+    NSBitmapImageRep *rep = [self exportOf:canvas];
+    for (NSInteger x = 80; x < 90; x++) {
+        XCTAssertEqualWithAccuracy([self greyAt:rep x:x y:95], [self greyAt:rep x:80 y:95], 0.01,
+                                   @"The newly covered corner is pixelated (x %ld)", (long)x);
+    }
+}
+
+/// Tests/Fixtures/redaction-sample.screenshottool, made on Linux: a redaction, a rectangle, two
+/// steps and an arrow over an image with text. Other platforms compare their Copy with
+/// redaction-sample-linux.png beside it.
+- (void)testProjectFileFixtureOpensRedacted {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    // From the source tree: next to this file, or from where the tests run (the repository or
+    // Tests/).
+    NSString *fixture = nil;
+    for (NSString *folder in @[[[NSString stringWithUTF8String:__FILE__] stringByDeletingLastPathComponent], @"Tests", @".",
+                               @"../Tests"]) {
+        NSString *candidate = [[folder stringByAppendingPathComponent:@"Fixtures"]
+                               stringByAppendingPathComponent:@"redaction-sample.screenshottool"];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:candidate]) {
+            fixture = candidate;
+            break;
+        }
+    }
+    XCTAssertNotNil(fixture, @"Tests/Fixtures/redaction-sample.screenshottool");
+    XCTAssertTrue([_appDelegate openImageAtURL:[NSURL fileURLWithPath:fixture]]);
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    NSArray *types = [canvas.strokes valueForKey:@"type"];
+    XCTAssertEqualObjects(types, (@[@(MarkupStrokeTypeRedact), @(MarkupStrokeTypeRectangle), @(MarkupStrokeTypeStep),
+                                    @(MarkupStrokeTypeStep), @(MarkupStrokeTypeArrow)]));
+    XCTAssertEqualObjects([canvas.strokes valueForKey:@"number"], (@[@0, @0, @1, @2, @0]));
+
+    // The redaction (110,38)-(330,68) exports as cells: across each 10px cell, one colour.
+    NSBitmapImageRep *rep = [self exportOf:canvas];
+    NSInteger uniformCells = 0;
+    for (NSInteger cell = 0; cell < 20; cell++) {
+        NSInteger left = 110 + cell * 10;
+        BOOL uniform = YES;
+        for (NSInteger x = left; x < left + 10; x++) {
+            uniform = uniform && fabs([self greyAt:rep x:x y:52] - [self greyAt:rep x:left y:52]) < 0.01;
+        }
+        uniformCells += uniform ? 1 : 0;
+    }
+    XCTAssertEqual(uniformCells, 20, @"The address stays pixelated when the project is opened");
 }
 
 @end

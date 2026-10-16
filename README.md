@@ -80,7 +80,9 @@ GNUstep's default theme, with the menus in the window. Shortcuts use Ctrl on eve
 ## Features
 - Pen, highlighter, arrow, rectangle, text, numbered step, redact, select and eraser tools; a
   selected rectangle or redaction resizes by its corner handles, steps number themselves 1, 2,
-  3…, and a redaction pixelates the image under it (not the annotations over it). Pen, highlighter and
+  3…, and a redaction pixelates the image under it (not the annotations over it). A project file
+  keeps the original image so it stays editable, redactions included: share the saved image, not
+  the project, when something must stay hidden. Pen, highlighter and
   text colours and widths are set from each tool's popover (double-click its
   toolbar button) and remembered as defaults.
 - Text labels with a text bar for font, size, style and alignment; turn on
