@@ -105,7 +105,8 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
 }
 
 - (BOOL)isShape {
-    return self.type == MarkupStrokeTypeArrow || self.type == MarkupStrokeTypeRectangle || self.type == MarkupStrokeTypeStep;
+    return self.type == MarkupStrokeTypeArrow || self.type == MarkupStrokeTypeRectangle || self.type == MarkupStrokeTypeStep ||
+           self.type == MarkupStrokeTypeRedact;
 }
 
 - (CGFloat)stepDiameter {
@@ -244,6 +245,8 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
         [self drawRectangleWithUnflippedHeight:unflippedHeight];
     } else if (self.type == MarkupStrokeTypeStep) {
         [self drawStepWithUnflippedHeight:unflippedHeight];
+    } else if (self.type == MarkupStrokeTypeRedact) {
+        // Drawn by the canvas, which has the image.
     } else {
         [self drawArrowWithUnflippedHeight:unflippedHeight];
     }
@@ -278,6 +281,10 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     }
 
     CGFloat tol2 = sqr(MAX(tolerance, self.lineWidth * 0.5));
+
+    if (self.type == MarkupStrokeTypeRedact) {
+        return NSPointInRect(point, NSInsetRect([self shapeRect], -tolerance, -tolerance));
+    }
 
     if (self.type == MarkupStrokeTypeStep) {
         NSPoint centre = [self.mutablePoints.firstObject pointValue];
@@ -413,6 +420,8 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
         inset += [self arrowOutlineWidth];
     } else if (self.type == MarkupStrokeTypeStep) {
         inset = [self stepDiameter] * 0.5 + 2.0 + 6.0; // the ring and the shadow
+    } else if (self.type == MarkupStrokeTypeRedact) {
+        inset = 0.0;
     }
     return NSMakeRect(minX - inset, minY - inset, (maxX - minX) + inset * 2.0f, (maxY - minY) + inset * 2.0f);
 }
@@ -469,7 +478,7 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     }
     NSInteger type = [dictionary[@"type"] integerValue];
     NSArray *points = dictionary[@"points"];
-    if (type < MarkupStrokeTypePen || type > MarkupStrokeTypeStep || ![points isKindOfClass:[NSArray class]] || points.count == 0) {
+    if (type < MarkupStrokeTypePen || type > MarkupStrokeTypeRedact || ![points isKindOfClass:[NSArray class]] || points.count == 0) {
         return nil;
     }
     MarkupStroke *stroke = [[self alloc] initWithType:(MarkupStrokeType)type
@@ -483,7 +492,8 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
         if (type == MarkupStrokeTypeStep && [stroke points].count >= 1) {
             break; // one point
         }
-        if ((type == MarkupStrokeTypeArrow || type == MarkupStrokeTypeRectangle) && [stroke points].count >= 1) {
+        if ((type == MarkupStrokeTypeArrow || type == MarkupStrokeTypeRectangle || type == MarkupStrokeTypeRedact) &&
+            [stroke points].count >= 1) {
             [stroke setEndPoint:p];
         } else {
             [stroke addPoint:p];

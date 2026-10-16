@@ -52,8 +52,9 @@ static NSString * const ToolbarItemPen = @"com.screenshottool.toolbar.pen";
 static NSString * const ToolbarItemArrow = @"com.screenshottool.toolbar.arrow";
 static NSString * const ToolbarItemRectangle = @"com.screenshottool.toolbar.rectangle";
 static NSString * const ToolbarItemStep = @"com.screenshottool.toolbar.step";
+static NSString * const ToolbarItemRedact = @"com.screenshottool.toolbar.redact";
 /// Select, Highlighter, Pen, Arrow, Text, Eraser.
-static const NSInteger STToolbarToolSegmentCount = 8;
+static const NSInteger STToolbarToolSegmentCount = 9;
 static NSString * const ToolbarItemEraser = @"com.screenshottool.toolbar.eraser";
 static NSString * const ToolbarItemText = @"com.screenshottool.toolbar.text";
 static NSString * const ToolbarItemSelect = @"com.screenshottool.toolbar.select";
@@ -1181,6 +1182,8 @@ static NSString *STDebugToolName(ScreenshotCanvasTool tool) {
             return @"Rectangle";
         case ScreenshotCanvasToolStep:
             return @"Step";
+        case ScreenshotCanvasToolRedact:
+            return @"Redact";
     }
     return @"Unknown";
 }
@@ -1485,6 +1488,9 @@ static AppDelegate *STFrontDocument(void) {
     }
     if ([identifier isEqualToString:ToolbarItemStep]) {
         return @"Numbered Step Tool";
+    }
+    if ([identifier isEqualToString:ToolbarItemRedact]) {
+        return @"Redact Tool";
     }
     if ([identifier isEqualToString:ToolbarItemText]) {
         return @"Text Tool — double-click to configure";
@@ -2824,6 +2830,8 @@ static id STInfoValueForKey(NSString *key) {
             return ToolbarItemRectangle;
         case ScreenshotCanvasToolStep:
             return ToolbarItemStep;
+        case ScreenshotCanvasToolRedact:
+            return ToolbarItemRedact;
         case ScreenshotCanvasToolHighlighter:
             return ToolbarItemHighlighter;
         case ScreenshotCanvasToolPen:
@@ -2884,6 +2892,9 @@ static id STInfoValueForKey(NSString *key) {
     }
     if ([identifier isEqualToString:ToolbarItemStep]) {
         return @"NumberedStep";
+    }
+    if ([identifier isEqualToString:ToolbarItemRedact]) {
+        return @"Redact";
     }
     if ([identifier isEqualToString:ToolbarItemEraser]) {
         return @"Eraser";
@@ -3112,6 +3123,12 @@ static id STInfoValueForKey(NSString *key) {
                                                 action:@selector(activateStep:)
                                              imageName:@"NumberedStep"];
     }
+    if ([identifier isEqualToString:ToolbarItemRedact]) {
+        return [self baselineToolbarItemWithIdentifier:ToolbarItemRedact
+                                                 label:@"Redact"
+                                                action:@selector(activateRedact:)
+                                             imageName:@"Redact"];
+    }
     if ([identifier isEqualToString:ToolbarItemText]) {
         return [self baselineToolbarItemWithIdentifier:ToolbarItemText
                                                  label:@"Text"
@@ -3300,8 +3317,10 @@ static id STInfoValueForKey(NSString *key) {
             return 5;
         case ScreenshotCanvasToolStep:
             return 6;
-        case ScreenshotCanvasToolEraser:
+        case ScreenshotCanvasToolRedact:
             return 7;
+        case ScreenshotCanvasToolEraser:
+            return 8;
     }
     return 0;
 }
@@ -3321,6 +3340,8 @@ static id STInfoValueForKey(NSString *key) {
         case 6:
             return ScreenshotCanvasToolStep;
         case 7:
+            return ScreenshotCanvasToolRedact;
+        case 8:
             return ScreenshotCanvasToolEraser;
         case 0:
         default:
@@ -3346,6 +3367,8 @@ static id STInfoValueForKey(NSString *key) {
             return @"Rectangle";
         case ScreenshotCanvasToolStep:
             return @"Numbered Step";
+        case ScreenshotCanvasToolRedact:
+            return @"Redact";
     }
     return @"Tool";
 }
@@ -3368,6 +3391,8 @@ static id STInfoValueForKey(NSString *key) {
             return @"R";
         case ScreenshotCanvasToolStep:
             return @"N";
+        case ScreenshotCanvasToolRedact:
+            return @"X";
     }
     return @"";
 }
@@ -3891,8 +3916,9 @@ static id STInfoValueForKey(NSString *key) {
     }
     // A new tool before its icon file is in (#221): a plain drawn one. Not named as a symbolic
     // icon: Adwaita tints those from their file, and there's none yet.
-    if ([name isEqualToString:@"Rectangle"] || [name isEqualToString:@"NumberedStep"]) {
+    if ([name isEqualToString:@"Rectangle"] || [name isEqualToString:@"NumberedStep"] || [name isEqualToString:@"Redact"]) {
         BOOL ring = [name isEqualToString:@"NumberedStep"];
+        BOOL checker = [name isEqualToString:@"Redact"];
         NSString *symbolic = STSymbolicIconName(name);
         NSImage *drawn = baselineToolbarCache[symbolic];
         if (!drawn) {
@@ -3915,6 +3941,13 @@ static id STInfoValueForKey(NSString *key) {
                     CGFloat qy = fabs((y + 0.5) - pixels * 0.5) - (halfHeight - radius);
                     CGFloat outside = hypot(MAX(qx, 0.0), MAX(qy, 0.0)) + MIN(MAX(qx, qy), 0.0) - radius;
                     CGFloat alpha = MAX(0.0, MIN(1.0, stroke * 0.5 + 0.5 - fabs(outside)));
+                    if (checker && outside < 0.0) {
+                        // Redact: the box filled with a checkerboard of cells, every other one solid.
+                        NSInteger cell = MAX(1, pixels / 8);
+                        if (((x / cell) + (y / cell)) % 2 == 0) {
+                            alpha = 1.0;
+                        }
+                    }
                     unsigned char *pixel = data + (y * stride) + (x * 4);
                     unsigned char value = (unsigned char)lround(alpha * 255.0);
                     // Premultiplied dark grey.
@@ -7087,6 +7120,11 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
     [self selectTool:ScreenshotCanvasToolStep];
 }
 
+- (void)activateRedact:(id)sender {
+    (void)sender;
+    [self selectTool:ScreenshotCanvasToolRedact];
+}
+
 - (void)activatePen:(id)sender {
     NSEvent *event = [NSApp currentEvent];
     ScreenshotToolAppendLog([NSString stringWithFormat:@"%@ toolbar action fired (sender=%@, event=%@)",
@@ -7276,6 +7314,9 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
             break;
         case ScreenshotCanvasToolStep:
             selectedIdentifier = ToolbarItemStep;
+            break;
+        case ScreenshotCanvasToolRedact:
+            selectedIdentifier = ToolbarItemRedact;
             break;
     }
 

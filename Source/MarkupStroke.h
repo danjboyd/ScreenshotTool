@@ -28,7 +28,10 @@ typedef NS_ENUM(NSInteger, MarkupStrokeType) {
     /// A rectangle's outline, its corners the first point and the last (v0.2.0, #221).
     MarkupStrokeTypeRectangle = 3,
     /// A numbered step: a disc at its one point with its number in it (v0.2.0, #221).
-    MarkupStrokeTypeStep = 4
+    MarkupStrokeTypeStep = 4,
+    /// A redaction: the image pixelated between its two corners (v0.2.0, #221). The canvas draws
+    /// it, from the image; the stroke only holds the rect.
+    MarkupStrokeTypeRedact = 5
 };
 
 NS_ASSUME_NONNULL_BEGIN

@@ -164,6 +164,8 @@ static NSString *STCursorToolName(ScreenshotCanvasTool tool) {
             return @"rectangle";
         case ScreenshotCanvasToolStep:
             return @"step";
+        case ScreenshotCanvasToolRedact:
+            return @"redact";
         default:
             return @"unknown";
     }
@@ -1066,6 +1068,9 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) NSPoint resizeFixedCorner;
 @property (nonatomic, assign) NSPoint resizeGrabOffset;
 @property (nonatomic, assign) BOOL shapeResized;
+// The image's pixels for redactions, and the image they're of.
+@property (nonatomic, strong, nullable) NSBitmapImageRep *cachedRedactionSourceRep;
+@property (nonatomic, weak, nullable) NSImage *cachedRedactionSource;
 @property (nonatomic, assign) BOOL activeTextOverflowsImage;
 @property (nonatomic, assign) NSRect pendingTextRect;
 @property (nonatomic, assign) NSPoint textDragStartImagePoint;
@@ -1347,6 +1352,105 @@ static NSBitmapImageRep *STPremultipliedRGBABitmapFromRep(NSBitmapImageRep *sour
     return converted;
 }
 
+/// A redaction's mosaic cell, in image pixels (v0.2.0, #221).
+static const NSInteger STRedactCellSize = 10;
+
+/// The average of `buffer`'s pixels in a cell, rows top down from `top`.
+static void STAverageBufferCell(STBitmapBuffer *buffer, NSInteger left, NSInteger top, NSInteger right, NSInteger bottom,
+                                double average[4]) {
+    double sums[4] = {0.0, 0.0, 0.0, 0.0};
+    NSInteger count = 0;
+    for (NSInteger y = top; y < bottom; y++) {
+        unsigned char *row = buffer->data + (buffer->bytesPerRow * y);
+        for (NSInteger x = left; x < right; x++) {
+            unsigned char *pixel = row + (buffer->bytesPerPixel * x);
+            sums[0] += pixel[buffer->rIndex];
+            sums[1] += pixel[buffer->gIndex];
+            sums[2] += pixel[buffer->bIndex];
+            sums[3] += buffer->hasAlpha ? pixel[buffer->aIndex] : 255.0;
+            count++;
+        }
+    }
+    for (NSInteger channel = 0; channel < 4; channel++) {
+        average[channel] = count > 0 ? sums[channel] / (double)count : 0.0;
+    }
+}
+
+/// The cells of `rect` (image coordinates, top down) over `buffer`, clamped to it.
+static void STRedactCellGrid(NSRect rect, NSInteger width, NSInteger height,
+                             NSInteger *left, NSInteger *top, NSInteger *right, NSInteger *bottom) {
+    *left = MAX(0, (NSInteger)floor(NSMinX(rect)));
+    *top = MAX(0, (NSInteger)floor(NSMinY(rect)));
+    *right = MIN(width, (NSInteger)ceil(NSMaxX(rect)));
+    *bottom = MIN(height, (NSInteger)ceil(NSMaxY(rect)));
+}
+
+/// Pixelates `rect` of `buffer` in place: each cell its average.
+static void STPixelateBuffer(STBitmapBuffer *buffer, NSRect rect) {
+    NSInteger left, top, right, bottom;
+    STRedactCellGrid(rect, buffer->width, buffer->height, &left, &top, &right, &bottom);
+    for (NSInteger cellTop = top; cellTop < bottom; cellTop += STRedactCellSize) {
+        NSInteger cellBottom = MIN(bottom, cellTop + STRedactCellSize);
+        for (NSInteger cellLeft = left; cellLeft < right; cellLeft += STRedactCellSize) {
+            NSInteger cellRight = MIN(right, cellLeft + STRedactCellSize);
+            double average[4];
+            STAverageBufferCell(buffer, cellLeft, cellTop, cellRight, cellBottom, average);
+            for (NSInteger y = cellTop; y < cellBottom; y++) {
+                unsigned char *row = buffer->data + (buffer->bytesPerRow * y);
+                for (NSInteger x = cellLeft; x < cellRight; x++) {
+                    unsigned char *pixel = row + (buffer->bytesPerPixel * x);
+                    pixel[buffer->rIndex] = (unsigned char)lround(average[0]);
+                    pixel[buffer->gIndex] = (unsigned char)lround(average[1]);
+                    pixel[buffer->bIndex] = (unsigned char)lround(average[2]);
+                    if (buffer->hasAlpha) {
+                        pixel[buffer->aIndex] = (unsigned char)lround(average[3]);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// `rect` of the image in `buffer` (from `source`) as a mosaic: one pixel a cell, to draw scaled
+/// up without smoothing. In `source`'s colour space, so drawing it back over the image converts
+/// nothing.
+static NSImage *STMosaicImage(STBitmapBuffer *buffer, NSBitmapImageRep *source, NSRect rect) {
+    NSInteger left, top, right, bottom;
+    STRedactCellGrid(rect, buffer->width, buffer->height, &left, &top, &right, &bottom);
+    NSInteger columns = (right - left + STRedactCellSize - 1) / STRedactCellSize;
+    NSInteger rows = (bottom - top + STRedactCellSize - 1) / STRedactCellSize;
+    if (columns <= 0 || rows <= 0) {
+        return nil;
+    }
+    NSBitmapImageRep *mosaic = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:columns pixelsHigh:rows
+                                                                   bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+                                                                  colorSpaceName:([source colorSpaceName] ?: NSDeviceRGBColorSpace)
+                                                                     bytesPerRow:columns * 4
+                                                                    bitsPerPixel:32];
+    unsigned char *out = [mosaic bitmapData];
+    for (NSInteger row = 0; row < rows; row++) {
+        for (NSInteger column = 0; column < columns; column++) {
+            double average[4];
+            NSInteger cellLeft = left + column * STRedactCellSize;
+            NSInteger cellTop = top + row * STRedactCellSize;
+            STAverageBufferCell(buffer, cellLeft, cellTop, MIN(right, cellLeft + STRedactCellSize),
+                                MIN(bottom, cellTop + STRedactCellSize), average);
+            unsigned char *pixel = out + (row * columns * 4) + (column * 4);
+            for (NSInteger channel = 0; channel < 4; channel++) {
+                pixel[channel] = (unsigned char)lround(average[channel]);
+            }
+        }
+    }
+#if !defined(GNUSTEP)
+    if (source.colorSpace) {
+        mosaic = [mosaic bitmapImageRepByRetaggingWithColorSpace:source.colorSpace] ?: mosaic;
+    }
+#endif
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(right - left, bottom - top)];
+    [image addRepresentation:mosaic];
+    return image;
+}
+
 static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) {
     if (!image) {
         return nil;
@@ -1465,6 +1569,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         case ScreenshotCanvasToolArrow:
         case ScreenshotCanvasToolRectangle:
         case ScreenshotCanvasToolStep:
+        case ScreenshotCanvasToolRedact:
             return [NSCursor crosshairCursor];
         case ScreenshotCanvasToolText:
             // Over empty canvas a click creates a box; text under the pointer shows an I-beam (#29).
@@ -2634,6 +2739,7 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
         @"a": @(ScreenshotCanvasToolArrow),
         @"r": @(ScreenshotCanvasToolRectangle),
         @"n": @(ScreenshotCanvasToolStep),
+        @"x": @(ScreenshotCanvasToolRedact),
     };
     NSNumber *tool = shortcuts[characters];
     if (!tool) {
@@ -2684,7 +2790,8 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 - (BOOL)beginShapeResizeAtViewPoint:(NSPoint)viewPoint imagePoint:(NSPoint)imagePoint {
     NSArray *selected = [self selectedAnnotationObjects];
     MarkupStroke *shape = selected.count == 1 ? selected.firstObject : nil;
-    if (![shape isKindOfClass:[MarkupStroke class]] || shape.type != MarkupStrokeTypeRectangle) {
+    if (![shape isKindOfClass:[MarkupStroke class]] ||
+        (shape.type != MarkupStrokeTypeRectangle && shape.type != MarkupStrokeTypeRedact)) {
         return NO;
     }
     NSRect handles[4];
@@ -3344,6 +3451,9 @@ static NSError *STProjectError(NSString *message) {
             respectFlipped:YES
                      hints:nil];
 
+    // Redactions pixelate the image itself, under every other annotation (#221).
+    [self drawRedactions];
+
     for (MarkupStroke *stroke in self.strokes) {
         [stroke drawPath];
     }
@@ -3736,6 +3846,8 @@ static NSError *STProjectError(NSString *message) {
     } else if (self.activeTool == ScreenshotCanvasToolRectangle) {
         // So do rectangles.
         strokeType = MarkupStrokeTypeRectangle;
+    } else if (self.activeTool == ScreenshotCanvasToolRedact) {
+        strokeType = MarkupStrokeTypeRedact;
     }
     NSColor *strokeColor = (strokeType == MarkupStrokeTypeHighlighter) ? self.highlighterColor : self.penColor;
     CGFloat width = (strokeType == MarkupStrokeTypeHighlighter) ? self.highlighterLineWidth : self.penLineWidth;
@@ -3887,6 +3999,67 @@ static NSError *STProjectError(NSString *message) {
     [self setNeedsDisplay:YES];
 }
 
+#pragma mark - Redactions (#221)
+
+/// The redactions, the one being drawn too.
+- (NSArray<MarkupStroke *> *)redactionStrokes {
+    NSMutableArray<MarkupStroke *> *redactions = [[NSMutableArray alloc] init];
+    for (MarkupStroke *stroke in self.strokes) {
+        if (stroke.type == MarkupStrokeTypeRedact) {
+            [redactions addObject:stroke];
+        }
+    }
+    if (self.currentStroke.type == MarkupStrokeTypeRedact && [self.currentStroke points].count >= 2) {
+        [redactions addObject:self.currentStroke];
+    }
+    return redactions;
+}
+
+/// The image's pixels, which redactions average; kept until the image changes.
+- (nullable NSBitmapImageRep *)redactionSourceRep {
+    if (!self.image) {
+        return nil;
+    }
+    if (self.cachedRedactionSource != self.image || !self.cachedRedactionSourceRep) {
+        self.cachedRedactionSourceRep = STBitmapImageRepFromImage(self.image, self.image.size);
+        self.cachedRedactionSource = self.image;
+    }
+    return self.cachedRedactionSourceRep;
+}
+
+- (void)drawRedactions {
+    [self drawRedactionsWithUnflippedHeight:0.0];
+}
+
+/// Each redaction as a mosaic of the image under it, drawn scaled up without smoothing: in
+/// image coordinates, flipped, or unflipped in a context of that height (export).
+- (void)drawRedactionsWithUnflippedHeight:(CGFloat)unflippedHeight {
+    NSArray<MarkupStroke *> *redactions = [self redactionStrokes];
+    NSBitmapImageRep *source = redactions.count > 0 ? [self redactionSourceRep] : nil;
+    STBitmapBuffer buffer;
+    if (!source || !STPrepareBitmapBuffer(source, &buffer)) {
+        return;
+    }
+    NSGraphicsContext *context = [NSGraphicsContext currentContext];
+    NSImageInterpolation interpolation = [context imageInterpolation];
+    [context setImageInterpolation:NSImageInterpolationNone];
+    for (MarkupStroke *redaction in redactions) {
+        NSImage *mosaic = STMosaicImage(&buffer, source, [redaction shapeRect]);
+        if (!mosaic) {
+            continue;
+        }
+        NSInteger left, top, right, bottom;
+        STRedactCellGrid([redaction shapeRect], buffer.width, buffer.height, &left, &top, &right, &bottom);
+        NSRect rect = NSMakeRect(left, top, right - left, bottom - top);
+        if (unflippedHeight > 0.0) {
+            rect.origin.y = unflippedHeight - NSMaxY(rect);
+        }
+        [mosaic drawInRect:rect fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0
+            respectFlipped:(unflippedHeight <= 0.0) hints:nil];
+    }
+    [context setImageInterpolation:interpolation];
+}
+
 /// The number the next step gets: one past the highest on the image.
 - (NSInteger)nextStepNumber {
     NSInteger highest = 0;
@@ -3908,7 +4081,7 @@ static NSError *STProjectError(NSString *message) {
     NSPoint start = points.firstObject.pointValue;
     CGFloat dx = point.x - start.x;
     CGFloat dy = point.y - start.y;
-    if (self.currentStroke.type == MarkupStrokeTypeRectangle) {
+    if (self.currentStroke.type == MarkupStrokeTypeRectangle || self.currentStroke.type == MarkupStrokeTypeRedact) {
         CGFloat side = MAX(fabs(dx), fabs(dy));
         return NSMakePoint(start.x + (dx < 0.0 ? -side : side), start.y + (dy < 0.0 ? -side : side));
     }
@@ -4052,14 +4225,15 @@ static NSError *STProjectError(NSString *message) {
         [self insertStroke:finalStroke atIndex:self.strokes.count registeringUndo:YES actionName:@"Draw Arrow"];
         return;
     }
-    if (finalStroke.type == MarkupStrokeTypeRectangle) {
+    if (finalStroke.type == MarkupStrokeTypeRectangle || finalStroke.type == MarkupStrokeTypeRedact) {
         [finalStroke setEndPoint:[self arrowEndForStroke:finalStroke point:imagePoint event:event]];
         NSRect rect = [finalStroke shapeRect];
         if ([finalStroke points].count < 2 || (NSWidth(rect) < 4.0 && NSHeight(rect) < 4.0)) {
             [self setNeedsDisplay:YES]; // a stray click
             return;
         }
-        [self insertStroke:finalStroke atIndex:self.strokes.count registeringUndo:YES actionName:@"Draw Rectangle"];
+        NSString *name = finalStroke.type == MarkupStrokeTypeRedact ? @"Redact" : @"Draw Rectangle";
+        [self insertStroke:finalStroke atIndex:self.strokes.count registeringUndo:YES actionName:name];
         return;
     }
     [finalStroke addPoint:imagePoint];
@@ -4146,6 +4320,21 @@ static NSError *STProjectError(NSString *message) {
 
     STBitmapBuffer buffer;
     BOOL canRasterizeDirectly = STPrepareBitmapBuffer(bitmap, &buffer);
+
+    // Redactions first: they pixelate the image itself, under every other annotation (#221).
+    NSArray<MarkupStroke *> *redactions = [self redactionStrokes];
+    if (redactions.count > 0) {
+        if (canRasterizeDirectly) {
+            for (MarkupStroke *redaction in redactions) {
+                STPixelateBuffer(&buffer, [redaction shapeRect]);
+            }
+        } else {
+            [NSGraphicsContext saveGraphicsState];
+            [NSGraphicsContext setCurrentContext:bitmapContext];
+            [self drawRedactionsWithUnflippedHeight:size.height];
+            [NSGraphicsContext restoreGraphicsState];
+        }
+    }
 #if ST_ENABLE_GNUSTEP_WORKAROUNDS
     BOOL rasterizeTextDirectly = canRasterizeDirectly;
 #else
