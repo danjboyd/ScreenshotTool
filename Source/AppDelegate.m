@@ -3063,7 +3063,7 @@ static id STInfoValueForKey(NSString *key) {
             [(NSControl *)item.view setEnabled:isEnabled];
             [self adjustToolbarCustomViewVerticalOffset:item.view];
         }
-#if defined(GNUSTEP) && defined(_WIN32)
+#if defined(GNUSTEP)
         if ([identifier isEqualToString:ToolbarItemCopy] || [identifier isEqualToString:ToolbarItemSave]) {
             continue;
         }
@@ -3127,12 +3127,6 @@ static id STInfoValueForKey(NSString *key) {
                                                           ToolbarItemZoom,
                                                           NSToolbarSpaceItemIdentifier,
                                                           NSToolbarFlexibleSpaceItemIdentifier] mutableCopy];
-#if defined(GNUSTEP) && !defined(_WIN32)
-    // Under GNOME Save is an icon button, so it's offered only once the app has its icon (#221).
-    if (!STToolbarIconExists(@"Save")) {
-        [allowed removeObject:ToolbarItemSave];
-    }
-#endif
     [allowed addObjectsFromArray:[self customActionToolbarIdentifiersInToolbarOnly:NO]];
     return allowed;
 }
@@ -3141,8 +3135,7 @@ static id STInfoValueForKey(NSString *key) {
     (void)toolbar;
     // Zoom and Preferences live in the View and app menus (with shortcuts) and can be added back
     // by customising the toolbar (#53). Undo and Redo lead, where GNOME apps keep them (#101).
-    // The commands that finish the job close the row, Copy as the main one (#221). Under
-    // GNOME's header bar Save is left out, so the title keeps its room (#224). Custom actions
+    // The commands that finish the job close the row, Copy as the main one (#221). Custom actions
     // with "toolbar" set may never push Copy into the overflow: on macOS they go just before
     // Share and Copy with a lower visibility priority; elsewhere after Copy, as GNUstep's toolbar
     // overflows into » from the row's end (#221).
@@ -3150,10 +3143,8 @@ static id STInfoValueForKey(NSString *key) {
              ToolbarItemRedo,
              ToolbarItemTools,
              ToolbarItemColor,
-             NSToolbarFlexibleSpaceItemIdentifier] mutableCopy];
-#if !defined(GNUSTEP) || defined(_WIN32)
-    [identifiers addObject:ToolbarItemSave];
-#endif
+             NSToolbarFlexibleSpaceItemIdentifier,
+             ToolbarItemSave] mutableCopy];
 #if !defined(GNUSTEP)
     [identifiers addObjectsFromArray:[self customActionToolbarIdentifiersInToolbarOnly:YES]];
     [identifiers addObject:ToolbarItemShare];
@@ -3286,11 +3277,11 @@ static id STInfoValueForKey(NSString *key) {
         item.toolTip = @"Save the annotated image";
         return item;
     }
-#elif defined(_WIN32)
+#else
     // Copy and Save finish the job, so they're buttons with their names rather than bare icons,
-    // and Copy is the accent one, as a WinUI command bar's main command is (#221). Not under
-    // GNOME: labelled buttons took the header bar's room for the title, which Adwaita then
-    // dropped (#224); there Copy stays an icon and Save is offered once it has one.
+    // and Copy is the accent one, as a WinUI command bar's main command is (#221). Under GNOME
+    // too: Adwaita 0.1.0-alpha12 (#240) keeps the header bar's room for the title and folds
+    // trailing items into » first, so the labelled buttons no longer cost the title (#224).
     if ([identifier isEqualToString:ToolbarItemSave]) {
         return [self labelledToolbarItemWithIdentifier:ToolbarItemSave
                                                  label:@"Save"
@@ -3304,13 +3295,6 @@ static id STInfoValueForKey(NSString *key) {
                                                toolTip:@"Copy the annotated image"
                                                 action:@selector(copy:)
                                                 accent:YES];
-    }
-#else
-    if ([identifier isEqualToString:ToolbarItemSave]) {
-        return [self baselineToolbarItemWithIdentifier:ToolbarItemSave
-                                                 label:@"Save"
-                                                action:@selector(saveDocumentAs:)
-                                             imageName:@"Save"];
     }
 #endif
     if ([identifier isEqualToString:ToolbarItemCopy]) {
@@ -3358,7 +3342,7 @@ static id STInfoValueForKey(NSString *key) {
     return item;
 }
 
-#if defined(GNUSTEP) && defined(_WIN32)
+#if defined(GNUSTEP)
 /// A toolbar item that's a push button with its name (#221). It has no icon: the toolbar's icons
 /// are monochrome ones the theme tints for its own toolbar buttons, and a button's image isn't
 /// tinted, so it would stay black on an accent fill or a dark toolbar.
