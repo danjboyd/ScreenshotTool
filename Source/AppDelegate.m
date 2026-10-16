@@ -7135,6 +7135,8 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     if ([self.canvasView hasImage]) {
         [self resizeWindowToImageSize:self.canvasView.image.size];
     }
+    // The image's size changed (an undone crop): the status bar says so, and the zoom it fits at.
+    [self refreshStatusZoomControls];
 }
 
 

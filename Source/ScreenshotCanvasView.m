@@ -3572,10 +3572,18 @@ static NSError *STProjectError(NSString *message) {
     // Fit only ever shrinks, to at most actual size: upscaling a screenshot just blurs it.
     CGFloat newScale = MIN(available.width / imageSize.width, available.height / imageSize.height);
     newScale = MAX(0.05, MIN(newScale, 1.0 / self.screenPixelsPerPoint));
+    BOOL changed = fabs(newScale - _zoomScale) >= 0.0001;
     _zoomScale = newScale;
     [self updateFrameSize];
     [self setNeedsDisplay:YES];
     [self updateActiveTextViewFrame];
+    // Not through -setZoomScale:, so say the selection moved on screen here too, and tell the
+    // zoom controls: a window settling after an undone crop fits again with nobody asking.
+    [self postSelectionDidChange];
+    if (changed) {
+        [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewDidChangeZoomNotification
+                                                            object:self];
+    }
 }
 
 - (void)drawRect:(NSRect)dirtyRect {

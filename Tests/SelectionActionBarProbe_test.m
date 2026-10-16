@@ -22,6 +22,8 @@
 - (ScreenshotCanvasView *)canvasView;
 - (STSelectionActionBar *)selectionActionBar;
 - (void)loadToolSettingsFromDefaults;
+- (NSString *)idleStatusText;
+- (void)undo:(id)sender;
 @end
 
 @interface ScreenshotCanvasView (SelectionActionBarTesting)
@@ -204,6 +206,50 @@
 
     [_appDelegate preferencesController:nil didToggleSelectionBar:YES];
     XCTAssertFalse(_appDelegate.selectionActionBar.isHidden);
+}
+
+#pragma mark - Following the selection
+
+/// Where the bar should be for the selection as it is on screen now.
+- (NSRect)expectedBarFrameOn:(ScreenshotCanvasView *)canvas {
+    NSClipView *clip = (NSClipView *)canvas.superview.superview;
+    NSRect visible = NSIntersectionRect([canvas convertRect:clip.bounds fromView:clip], canvas.bounds);
+    return [_appDelegate.selectionActionBar frameForSelection:[canvas selectionRectInView] visible:visible];
+}
+
+- (void)testItFollowsTheSelectionWhenFitToWindowRezooms {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = [self canvasWithImage];
+    canvas.fitToWindow = YES;
+    [self select:NSMakeRect(100, 50, 200, 100) on:canvas];
+    CGFloat zoom = canvas.zoomScale;
+
+    // Fit to Window sets the zoom itself, not through -setZoomScale:.
+    NSRect frame = _appDelegate.window.frame;
+    [_appDelegate.window setFrame:NSMakeRect(NSMinX(frame), NSMinY(frame), 500.0, 400.0) display:NO];
+    [canvas updateForEnclosingBoundsChange];
+    XCTAssertTrue(canvas.zoomScale < zoom, @"The smaller window fits the image smaller");
+    NSRect expected = [self expectedBarFrameOn:canvas];
+    XCTAssertTrue(NSEqualRects(_appDelegate.selectionActionBar.frame, expected),
+                  @"The bar moved with the selection: %@, not %@",
+                  NSStringFromRect(expected), NSStringFromRect(_appDelegate.selectionActionBar.frame));
+}
+
+- (void)testUndoingACropPutsTheBarBackNextToTheSelection {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = [self canvasWithImage];
+    canvas.fitToWindow = YES;
+    [self select:NSMakeRect(100, 50, 200, 100) on:canvas];
+    [[self button:@"Crop"] performClick:nil];
+    XCTAssertTrue(_appDelegate.selectionActionBar.isHidden);
+
+    [_appDelegate undo:nil];
+    XCTAssertTrue([canvas hasSelection], @"Undo brings the selection back");
+    XCTAssertFalse(_appDelegate.selectionActionBar.isHidden, @"And the bar with it");
+    XCTAssertTrue(NSEqualRects(_appDelegate.selectionActionBar.frame, [self expectedBarFrameOn:canvas]),
+                  @"Next to the selection at the restored zoom");
+    XCTAssertTrue([[_appDelegate idleStatusText] hasPrefix:@"600 × 300 px"],
+                  @"The status bar gives the restored image's size: %@", [_appDelegate idleStatusText]);
 }
 
 @end
