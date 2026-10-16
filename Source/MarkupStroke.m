@@ -103,6 +103,11 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     return MAX(10.0, self.lineWidth * 4.0);
 }
 
+/// The white outline round an arrow, each side, so it reads on any background (v0.2.0, #221).
+- (CGFloat)arrowOutlineWidth {
+    return MAX(1.5, self.lineWidth * 0.6);
+}
+
 - (void)drawArrowWithUnflippedHeight:(CGFloat)unflippedHeight {
     if (self.mutablePoints.count < 2) {
         return;
@@ -126,24 +131,33 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     NSPoint base = NSMakePoint(end.x - ux * head, end.y - uy * head);
     NSPoint shaftEnd = NSMakePoint(end.x - ux * head * 0.6, end.y - uy * head * 0.6);
 
-    [self.color setStroke];
-    [self.color setFill];
     NSBezierPath *shaft = [NSBezierPath bezierPath];
-    [shaft setLineWidth:self.lineWidth];
     [shaft setLineCapStyle:NSRoundLineCapStyle];
     [shaft moveToPoint:map(start)];
     [shaft lineToPoint:map(shaftEnd)];
-    [shaft stroke];
 
     NSBezierPath *tip = [NSBezierPath bezierPath];
     [tip setLineJoinStyle:NSRoundLineJoinStyle];
-    [tip setLineWidth:MAX(1.0, self.lineWidth * 0.5)];
     [tip moveToPoint:map(end)];
     [tip lineToPoint:map(NSMakePoint(base.x - uy * halfWidth, base.y + ux * halfWidth))];
     [tip lineToPoint:map(NSMakePoint(base.x + uy * halfWidth, base.y - ux * halfWidth))];
     [tip closePath];
-    [tip fill];
-    [tip stroke];
+
+    // The same shapes twice: wider in white, then in the arrow's colour on top.
+    CGFloat tipWidth = MAX(1.0, self.lineWidth * 0.5);
+    CGFloat outline = [self arrowOutlineWidth];
+    NSArray<NSColor *> *colors = @[[NSColor whiteColor], self.color ?: [NSColor redColor]];
+    NSArray<NSNumber *> *extras = @[@(outline * 2.0), @0.0];
+    for (NSUInteger pass = 0; pass < colors.count; pass++) {
+        CGFloat extra = extras[pass].doubleValue;
+        [colors[pass] setStroke];
+        [colors[pass] setFill];
+        [shaft setLineWidth:self.lineWidth + extra];
+        [shaft stroke];
+        [tip setLineWidth:tipWidth + extra];
+        [tip fill];
+        [tip stroke];
+    }
 }
 
 - (void)drawPath {
@@ -284,6 +298,7 @@ static CGFloat distanceSquaredToSegment(NSPoint p, NSPoint v, NSPoint w) {
     CGFloat inset = MAX(self.lineWidth, 1.0f) * 0.5f;
     if (self.type == MarkupStrokeTypeArrow) {
         inset = MAX(inset, [self arrowHeadLength] * 0.5f + 1.0f); // the head's wings reach past the shaft
+        inset += [self arrowOutlineWidth];
     }
     return NSMakeRect(minX - inset, minY - inset, (maxX - minX) + inset * 2.0f, (maxY - minY) + inset * 2.0f);
 }

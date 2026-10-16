@@ -11,12 +11,16 @@
 #import "ScreenshotCanvasView.h"
 #import "MarkupStroke.h"
 #import "MarkupText.h"
+#import "STThemeUtilities.h"
+#import "STWindowsIntegration.h"
 #import "TestEnvironmentHelpers.h"
 
 @interface AppDelegate (ArrowCalloutTesting)
 - (void)setupWindowAndContent;
 - (NSWindow *)window;
 - (ScreenshotCanvasView *)canvasView;
+- (void)textOptionsBarDidTogglePointer:(id)bar;
+- (void)copy:(id)sender;
 @end
 
 @interface ScreenshotCanvasView (ArrowCalloutTesting)
@@ -28,6 +32,8 @@
 - (NSRect)activePointerHandleRectInView;
 - (BOOL)toggleActiveTextPointer;
 - (MarkupText *)activeTextEntry;
+- (void)selectAnnotation:(id)annotation extending:(BOOL)extending;
+- (NSArray *)selectedAnnotationObjects;
 @end
 
 @interface ArrowCalloutProbeTests : XCTestCase {
@@ -158,6 +164,66 @@
     XCTAssertTrue(headColumn > shaftColumn + 4, @"The arrowhead is exported (%ld vs %ld)", (long)headColumn, (long)shaftColumn);
 }
 
+/// A white outline round the arrow, so it reads on a dark image too (v0.2.0, #221).
+- (void)testArrowHasAWhiteOutline {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolArrow];
+    NSImage *black = [[NSImage alloc] initWithSize:NSMakeSize(600.0, 300.0)];
+    [black lockFocus];
+    [[NSColor blackColor] setFill];
+    NSRectFill(NSMakeRect(0.0, 0.0, 600.0, 300.0));
+    [black unlockFocus];
+    [canvas loadImage:black];
+    canvas.fitToWindow = NO;
+    canvas.zoomScale = 1.0;
+    [self drag:canvas from:NSMakePoint(100.0, 150.0) to:NSMakePoint(400.0, 150.0) flags:0];
+    NSBitmapImageRep *rep = [self exportOf:canvas];
+    BOOL (^white)(NSColor *) = ^BOOL(NSColor *p) {
+        return p.redComponent > 0.8 && p.greenComponent > 0.8 && p.blueComponent > 0.8;
+    };
+    BOOL (^blue)(NSColor *) = ^BOOL(NSColor *p) { return p.blueComponent > 0.7 && p.redComponent < 0.4; };
+
+    NSInteger shaft = [self countIn:rep rect:NSMakeRect(200.0, 140.0, 1.0, 20.0) matching:blue];
+    NSInteger whiteAbove = [self countIn:rep rect:NSMakeRect(200.0, 140.0, 1.0, 8.0) matching:white];
+    NSInteger whiteBelow = [self countIn:rep rect:NSMakeRect(200.0, 152.0, 1.0, 8.0) matching:white];
+    XCTAssertTrue(shaft >= 3, @"The shaft is still the arrow's colour (%ld)", (long)shaft);
+    XCTAssertTrue(whiteAbove >= 1 && whiteBelow >= 1, @"White on both sides of the shaft (%ld above, %ld below)",
+                  (long)whiteAbove, (long)whiteBelow);
+    NSRect bounds = [canvas.strokes.firstObject bounds];
+    XCTAssertLessThanOrEqual(NSMinY(bounds), 150.0 - (4.0 * 4.0 * 0.5) - 2.0, @"Its bounds take in the outline");
+}
+
+/// The selection draws in the theme's accent: a colour, never black or grey (#230: WinUI's focus
+/// colour is black).
+- (void)testSelectionAccentHasAHue {
+    NSColor *accent = [STThemeAccentColor() colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
+    XCTAssertNotNil(accent);
+    CGFloat high = MAX(accent.redComponent, MAX(accent.greenComponent, accent.blueComponent));
+    CGFloat low = MIN(accent.redComponent, MIN(accent.greenComponent, accent.blueComponent));
+    XCTAssertGreaterThan(high - low, 0.15, @"The accent is a colour: %@", accent);
+}
+
+/// Copy with an annotation selected copies the whole image, with nothing of the selection.
+- (void)testCopyWithAnAnnotationSelected {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolArrow];
+    [self drag:canvas from:NSMakePoint(100.0, 150.0) to:NSMakePoint(400.0, 150.0) flags:0];
+    canvas.activeTool = ScreenshotCanvasToolSelect;
+    [canvas selectAnnotation:canvas.strokes.firstObject extending:NO];
+    XCTAssertEqual([canvas selectedAnnotationObjects].count, (NSUInteger)1);
+
+    [[NSPasteboard generalPasteboard] declareTypes:@[NSPasteboardTypeTIFF] owner:nil];
+    [[NSPasteboard generalPasteboard] setData:[NSData data] forType:NSPasteboardTypeTIFF];
+    [_appDelegate copy:nil];
+    // On Windows Copy writes the Windows clipboard itself, not GNUstep's pasteboard.
+    NSData *png = STWindowsClipboardIsNative() ? STWindowsClipboardPNGData()
+                                               : [[NSPasteboard generalPasteboard] dataForType:NSPasteboardTypePNG];
+    NSBitmapImageRep *rep = png ? [NSBitmapImageRep imageRepWithData:png] : nil;
+    XCTAssertNotNil(rep, @"The first Copy puts the image on the clipboard");
+    XCTAssertEqual(rep.pixelsWide, (NSInteger)600);
+    XCTAssertEqual(rep.pixelsHigh, (NSInteger)300, @"The whole image, not a selection of it");
+}
+
 - (void)testArrowShortcut {
     XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolSelect];
@@ -257,6 +323,38 @@
                   @"next to it, not at the image's corner: %@ for %@", NSStringFromPoint(entry.pointerTarget), NSStringFromRect(label));
     [canvas commitActiveTextIfNeeded];
     [window orderOut:nil];
+}
+
+/// Callout on: the label becomes a filled box with bold text, from any style; the defaults don't
+/// change (v0.2.0, #221).
+- (void)testCalloutStartsAsABoldFilledBox {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSInteger savedStyle = [[NSUserDefaults standardUserDefaults] integerForKey:@"ScreenshotToolTextStyle"];
+    ScreenshotCanvasView *canvas = [self canvasWithTool:ScreenshotCanvasToolText];
+    [canvas beginTextEntryWithImageRect:NSMakeRect(300.0, 60.0, 1.0, 1.0) existingText:nil];
+    [canvas.activeTextView insertText:@"Callout"];
+
+    [_appDelegate textOptionsBarDidTogglePointer:nil];
+    MarkupText *entry = [canvas activeTextEntry];
+    XCTAssertTrue(entry.hasPointer);
+    XCTAssertEqual(entry.style, MarkupTextStyleBackground, @"A callout is a filled box");
+    NSFontTraitMask traits = [[NSFontManager sharedFontManager] traitsOfFont:entry.font];
+    XCTAssertTrue((traits & NSBoldFontMask) != 0, @"...with bold text (%@)", entry.font.fontName);
+    XCTAssertEqual([[NSUserDefaults standardUserDefaults] integerForKey:@"ScreenshotToolTextStyle"], savedStyle,
+                   @"The saved default style is unchanged");
+
+    // From the default style, Outline, too.
+    [_appDelegate textOptionsBarDidTogglePointer:nil];
+    XCTAssertFalse(entry.hasPointer);
+    canvas.textStyle = MarkupTextStyleOutline;
+    [_appDelegate textOptionsBarDidTogglePointer:nil];
+    XCTAssertTrue(entry.hasPointer);
+    XCTAssertEqual(entry.style, MarkupTextStyleBackground, @"An outlined label made a callout is a filled box too");
+
+    // The style can still be changed afterwards.
+    canvas.textStyle = MarkupTextStyleShadow;
+    XCTAssertEqual(entry.style, MarkupTextStyleShadow);
+    [canvas commitActiveTextIfNeeded];
 }
 
 - (void)testPointerToggleAndDragWhileEditing {

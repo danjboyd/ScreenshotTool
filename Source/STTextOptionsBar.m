@@ -354,7 +354,7 @@ static NSImage *STTextAlignmentImage(NSInteger index) {
     [self prepareControl:self.styleControl toolTip:nil];
     STInstallSegmentToolTips(self.styleControl);
 
-    self.pointerButton = [self smallButtonWithTitle:@"Pointer" action:@selector(pointerPressed:) toolTip:@"Callout pointer — drag its handle to aim it"];
+    self.pointerButton = [self smallButtonWithTitle:@"Callout" action:@selector(pointerPressed:) toolTip:@"Callout: a box with a pointer — drag its handle to aim it"];
     [self.pointerButton setButtonType:NSPushOnPushOffButton];
 
     // An editable combo box: type part of a name to complete it (any installed family), or pick

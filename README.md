@@ -82,7 +82,7 @@ GNUstep's default theme, with the menus in the window. Shortcuts use Ctrl on eve
   text colours and widths are set from each tool's popover (double-click its
   toolbar button) and remembered as defaults.
 - Text labels with a text bar for font, size, style and alignment; turn on
-  Pointer to make a label a callout with a draggable pointer.
+  Callout to make a label a callout: a filled box with bold text and a draggable pointer.
 - Select, move and delete annotations; undo and redo every change from the
   toolbar or the Edit menu.
 - Paste as New Image from the clipboard; Copy puts the annotated image (or the

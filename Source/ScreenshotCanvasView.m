@@ -187,6 +187,18 @@ typedef struct {
 } STBitmapBuffer;
 
 static const CGFloat STSelectionHandleSize = 10.0f;
+/// The selection outline's width (v0.2.0, #221): solid, in the accent colour.
+static const CGFloat STSelectionOutlineWidth = 1.5f;
+
+/// A selection handle: a white disc ringed in `accent`.
+static void STDrawSelectionHandle(NSRect rect, NSColor *accent) {
+    [[NSColor whiteColor] setFill];
+    [[NSBezierPath bezierPathWithOvalInRect:rect] fill];
+    NSBezierPath *ring = [NSBezierPath bezierPathWithOvalInRect:NSInsetRect(rect, STSelectionOutlineWidth * 0.5f, STSelectionOutlineWidth * 0.5f)];
+    [ring setLineWidth:STSelectionOutlineWidth];
+    [accent setStroke];
+    [ring stroke];
+}
 // The editor has no text padding, so the guide sits outside the text instead of on it.
 static const CGFloat STTextGuideOutset = 4.0f;
 // How far outside the edited label's guide its border can still be grabbed to move it.
@@ -2624,22 +2636,19 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
     if (selected.count == 0) {
         return;
     }
-    NSColor *outline = [NSColor keyboardFocusIndicatorColor] ?: [NSColor grayColor];
-    CGFloat dashPattern[] = {5.0f, 3.0f};
+    NSColor *outline = STThemeAccentColor();
     for (id annotation in selected) {
         NSRect viewRect = NSInsetRect([self viewRectForImageRect:[self boundsOfAnnotation:annotation]], -4.0, -4.0);
         NSBezierPath *path = [NSBezierPath bezierPathWithRect:viewRect];
-        [path setLineWidth:1.0f];
-        [path setLineDash:dashPattern count:2 phase:0.0];
+        [path setLineWidth:STSelectionOutlineWidth];
         [outline setStroke];
         [path stroke];
-        // Corner marks show it's an object that can be moved, without suggesting resize handles.
-        [[outline colorWithAlphaComponent:0.9f] setFill];
-        CGFloat mark = 5.0f;
+        // A handle at each corner.
+        CGFloat size = STSelectionHandleSize;
         for (NSInteger corner = 0; corner < 4; corner++) {
             CGFloat x = (corner % 2 == 0) ? NSMinX(viewRect) : NSMaxX(viewRect);
             CGFloat y = (corner < 2) ? NSMinY(viewRect) : NSMaxY(viewRect);
-            NSRectFill(NSMakeRect(x - mark * 0.5, y - mark * 0.5, mark, mark));
+            STDrawSelectionHandle(NSMakeRect(x - size * 0.5, y - size * 0.5, size, size), outline);
         }
     }
 }
@@ -3318,15 +3327,10 @@ static NSError *STProjectError(NSString *message) {
 }
 
 - (void)drawTextGuides {
-    NSColor *outline = [NSColor keyboardFocusIndicatorColor] ?: [NSColor grayColor];
+    NSColor *outline = STThemeAccentColor();
     NSRect pointerHandle = [self activePointerHandleRectInView];
     if (!NSIsEmptyRect(pointerHandle)) {
-        [[NSColor whiteColor] setFill];
-        [[NSBezierPath bezierPathWithOvalInRect:pointerHandle] fill];
-        [outline setStroke];
-        NSBezierPath *ring = [NSBezierPath bezierPathWithOvalInRect:NSInsetRect(pointerHandle, 1.0, 1.0)];
-        [ring setLineWidth:2.0];
-        [ring stroke];
+        STDrawSelectionHandle(pointerHandle, outline);
     }
     CGFloat dashPattern[] = {6.0f, 4.0f};
     const NSInteger dashCount = 2;
@@ -3341,20 +3345,16 @@ static NSError *STProjectError(NSString *message) {
     }
 
     if (self.activeTextView && self.currentTextEntry) {
+        // The label being edited is selected: the same solid outline and round handle.
         NSRect viewRect = [self activeTextGuideRectInView];
         NSBezierPath *path = [NSBezierPath bezierPathWithRect:viewRect];
-        [path setLineWidth:1.0f];
-        [path setLineDash:dashPattern count:dashCount phase:phase];
+        [path setLineWidth:STSelectionOutlineWidth];
         if (self.activeTextOverflowsImage) {
             outline = [NSColor colorWithDeviceRed:0.88 green:0.11 blue:0.14 alpha:1.0];
         }
         [outline setStroke];
         [path stroke];
-
-        NSRect handle = [self activeTextHandleRectInView];
-        [[outline colorWithAlphaComponent:0.8f] setFill];
-        NSBezierPath *handlePath = [NSBezierPath bezierPathWithRect:handle];
-        [handlePath fill];
+        STDrawSelectionHandle([self activeTextHandleRectInView], outline);
     }
 }
 
@@ -3417,9 +3417,7 @@ static NSError *STProjectError(NSString *message) {
                                    NSMaxY(viewRect) - STSelectionHandleSize,
                                    STSelectionHandleSize,
                                    STSelectionHandleSize);
-    NSColor *handleColor = [NSColor alternateSelectedControlColor] ?: [NSColor grayColor];
-    [[handleColor colorWithAlphaComponent:0.7f] setFill];
-    [[NSBezierPath bezierPathWithRect:handleView] fill];
+    STDrawSelectionHandle(handleView, STThemeAccentColor());
 }
 
 - (NSPoint)imagePointForEvent:(NSEvent *)event {
