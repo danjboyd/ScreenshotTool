@@ -2804,6 +2804,9 @@ static id STInfoValueForKey(NSString *key) {
     self.canvasView.autoresizingMask = NSViewNotSizable;
     self.canvasView.activeTool = ScreenshotCanvasToolHighlighter;
     self.canvasView.textColor = self.canvasView.penColor;
+    self.canvasView.contextMenuProvider = ^NSMenu *(STCanvasContextKind kind) {
+        return [weakSelf canvasContextMenuForKind:kind];
+    };
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(canvasViewDidRestoreState:)
                                                  name:ScreenshotCanvasViewDidRestoreStateNotification
@@ -7556,6 +7559,20 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     self.currentProjectURL = nil;
     [self markAnnotationsSaved];
     return YES;
+}
+
+#pragma mark - Canvas context menu
+
+/// The canvas's right-click menu: this window's commands, and on the image's menu the custom
+/// actions, as the File menu lists them.
+- (nullable NSMenu *)canvasContextMenuForKind:(STCanvasContextKind)kind {
+    NSMutableArray<NSMenuItem *> *actionItems = [[NSMutableArray alloc] init];
+    if (kind == STCanvasContextKindImage) {
+        for (STCustomAction *action in [self loadedCustomActions]) {
+            [actionItems addObject:[self menuItemForCustomAction:action]];
+        }
+    }
+    return STCanvasContextMenu(kind, [self.canvasView hasSingleTextSelection], self.canvasView, self, actionItems);
 }
 
 #pragma mark - Custom actions (#221)

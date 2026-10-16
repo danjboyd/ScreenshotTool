@@ -259,6 +259,10 @@ defaults are left untouched. CI runs it on each AppImage.
 
 ## Usage Tips
 - Double-click a tool's toolbar button to open its popover.
+- Right-click the image for what fits where you clicked: in a selection, Crop, Copy or Redact it;
+  on an annotation (which it selects), Edit Text, Duplicate, Bring to Front, Send to Back or
+  Delete; elsewhere, Copy Image, Paste as New Image, zooming, Save As and your custom actions.
+  `Esc` clears the selection.
 - Preferences hold the drawing and text defaults, the default save folder
   and whether the status bar is shown.
 - While editing text, `Ctrl+Return` or `Esc` finishes the label and `Return`
