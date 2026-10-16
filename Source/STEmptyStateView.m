@@ -223,3 +223,86 @@ static const CGFloat STRecentCardThumbnailHeight = 112.0;
 }
 
 @end
+
+#if !defined(GNUSTEP)
+@implementation STAccentButton {
+    NSString *_plainTitle;
+}
+
+- (instancetype)initWithFrame:(NSRect)frame {
+    self = [super initWithFrame:frame];
+    if (self) {
+        [self setButtonType:NSButtonTypeMomentaryPushIn];
+        [self setBezelStyle:NSBezelStyleRounded];
+        [self setBezelColor:[NSColor controlAccentColor]];
+    }
+    return self;
+}
+
+- (void)dealloc {
+    [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)setTitle:(NSString *)title {
+    _plainTitle = [title copy];
+    [super setTitle:title];
+    [self updateTitleColours];
+}
+
+- (void)setShortcut:(NSString *)shortcut {
+    _shortcut = [shortcut copy];
+    [self updateTitleColours];
+}
+
+- (void)viewWillMoveToWindow:(NSWindow *)newWindow {
+    NSNotificationCenter *center = [NSNotificationCenter defaultCenter];
+    if (self.window) {
+        [center removeObserver:self name:NSWindowDidBecomeKeyNotification object:self.window];
+        [center removeObserver:self name:NSWindowDidResignKeyNotification object:self.window];
+    }
+    if (newWindow) {
+        [center addObserver:self selector:@selector(windowKeyStateChanged:) name:NSWindowDidBecomeKeyNotification object:newWindow];
+        [center addObserver:self selector:@selector(windowKeyStateChanged:) name:NSWindowDidResignKeyNotification object:newWindow];
+    }
+    [super viewWillMoveToWindow:newWindow];
+}
+
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    [self updateTitleColours];
+}
+
+- (void)windowKeyStateChanged:(NSNotification *)notification {
+    (void)notification;
+    [self updateTitleColours];
+}
+
+- (void)updateTitleColours {
+    NSString *title = _plainTitle;
+    if (title.length == 0) {
+        return;
+    }
+    BOOL accented = self.window.isKeyWindow && self.isEnabled;
+    NSColor *titleColour = accented ? [NSColor whiteColor] : [NSColor labelColor];
+    NSColor *hintColour = accented ? [[NSColor whiteColor] colorWithAlphaComponent:0.7] : [NSColor secondaryLabelColor];
+    NSFont *font = self.font ?: [NSFont systemFontOfSize:[NSFont systemFontSize]];
+    NSMutableParagraphStyle *centred = [[NSMutableParagraphStyle alloc] init];
+    centred.alignment = NSTextAlignmentCenter;
+    NSMutableAttributedString *text = [[NSMutableAttributedString alloc] initWithString:title attributes:@{
+        NSFontAttributeName: font, NSForegroundColorAttributeName: titleColour, NSParagraphStyleAttributeName: centred,
+    }];
+    if (self.shortcut.length > 0) {
+        [text appendAttributedString:[[NSAttributedString alloc] initWithString:[@"   " stringByAppendingString:self.shortcut] attributes:@{
+            NSFontAttributeName: font, NSForegroundColorAttributeName: hintColour, NSParagraphStyleAttributeName: centred,
+        }]];
+    }
+    [super setAttributedTitle:text];
+}
+
+- (void)setEnabled:(BOOL)enabled {
+    [super setEnabled:enabled];
+    [self updateTitleColours];
+}
+
+@end
+#endif
