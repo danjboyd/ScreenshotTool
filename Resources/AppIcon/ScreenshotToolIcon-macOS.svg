@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- The macOS app icon: the same art on Apple's icon grid, an 824 px rounded square with a drop shadow. -->
+  <defs>
+    <linearGradient id="body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4CC2FF"/>
+      <stop offset="1" stop-color="#0F6CBD"/>
+    </linearGradient>
+    <linearGradient id="pen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF8A65"/>
+      <stop offset="1" stop-color="#E8384F"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#body)" filter="url(#shadow)"/>
+  <!-- The art on a 56-unit square: the mockup's 52x44 body, recentred. -->
+  <g transform="translate(100 100) scale(14.714)">
+    <path d="M12 19 v-7 h7 M37 12 h7 v7 M44 37 v7 h-7 M19 44 h-7 v-7" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M24 42 l4-12 16-16 a4.2 4.2 0 0 1 6 6 L34 36 z" fill="url(#pen)" stroke="#fff" stroke-width="2.5" stroke-linejoin="round"/>
+  </g>
+</svg>

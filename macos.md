@@ -14,7 +14,7 @@ and `docs/Packaging.md`.
   they edit a text label), Enter Full Screen, Window and Help.
 - `Info-cocoa.plist` declares the `.screenshottool` project type and offers the app for images
   (Open With, drops on the Dock icon) without taking over from Preview.
-- The app icon is shaped for macOS (`scripts/make_macos_icon.swift`).
+- The app icon is shaped for macOS (`Resources/AppIcon/ScreenshotToolIcon-macOS.svg`).
 - CI builds, smoke-tests and packages the app on `macos-26`; releases include the DMG.
 
 ## Phase 2: updates (done) and signing (needs an Apple Developer account)

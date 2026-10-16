@@ -1109,7 +1109,8 @@ Write-StageLog "Staged app bundle entry: $normalizedEntryPath"
 Write-LicenseFiles -RepoRoot $repoRoot -DestinationRoot $metadataLicenseRoot -Version $version
 # The themes are bundled only in the MSI (their themeInputs are "msi" only).
 if ($IsWindows) {
-  Write-WindowsIcon -SourcePath (Join-Path $repoRoot "Resources\ScreenshotToolIcon-macOS.png") -DestinationPath (Join-Path $metadataIconRoot "ScreenshotTool.ico")
+  # The full-bleed artwork: Windows icons fill their square, without Apple's grid padding and shadow.
+  Write-WindowsIcon -SourcePath (Join-Path $repoRoot "Resources\ScreenshotToolIcon.png") -DestinationPath (Join-Path $metadataIconRoot "ScreenshotTool.ico")
   Write-ThemeLicenseFiles -Manifest $manifest -RepoRoot $repoRoot -DestinationRoot $metadataLicenseRoot
 }
 
