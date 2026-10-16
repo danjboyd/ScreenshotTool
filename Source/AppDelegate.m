@@ -216,6 +216,16 @@ static NSURL *STExportDirectoryURL(void) {
             URLByAppendingPathComponent:@"ScreenshotTool Exports" isDirectory:YES];
 }
 
+/// YES where there's a share picker: macOS's. GNUstep's NSSharingServicePicker is a stub until
+/// libs-sharing implements it (danjboyd/ObjcMarkdown#170).
+static BOOL STCanShareImages(void) {
+#if !defined(GNUSTEP)
+    return YES;
+#else
+    return NO;
+#endif
+}
+
 static NSArray<NSString *> *STOpenableImageFileTypes(void) {
     return @[ @"png", @"jpg", @"jpeg", @"gif", @"bmp", @"tif", @"tiff", @"webp" ];
 }
@@ -7659,16 +7669,6 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
 }
 
 #pragma mark - Sharing
-
-/// YES where there's a share picker: macOS's. GNUstep's NSSharingServicePicker is a stub until
-/// libs-sharing implements it (danjboyd/ObjcMarkdown#170).
-static BOOL STCanShareImages(void) {
-#if !defined(GNUSTEP)
-    return YES;
-#else
-    return NO;
-#endif
-}
 
 /// Share… from the canvas's right-click menu or the selection's bar: the picker for what a share
 /// sends, next to the click or the button.

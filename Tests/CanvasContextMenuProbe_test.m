@@ -152,7 +152,12 @@
     XCTAssertTrue(canvas.hasSelectionRect);
 
     NSMenu *menu = [self rightClick:canvas at:NSMakePoint(480.0, 60.0)];
+#if defined(GNUSTEP)
     NSArray *expected = @[@"Crop to Selection", @"Copy Selection", @"Redact Selection", @"-", @"Deselect"];
+#else
+    // macOS has a share picker.
+    NSArray *expected = @[@"Crop to Selection", @"Copy Selection", @"Redact Selection", @"Share Selection…", @"-", @"Deselect"];
+#endif
     XCTAssertEqualObjects([self titlesOf:menu], expected);
     NSMenuItem *crop = [self item:@"Crop to Selection" in:menu];
     XCTAssertTrue(crop.target == _appDelegate, @"The window's command, as the Edit menu has it");
@@ -206,7 +211,12 @@
     [self selectRegion:NSMakeRect(420.0, 20.0, 150.0, 100.0) on:canvas];
 
     NSMenu *menu = [self rightClick:canvas at:NSMakePoint(100.0, 250.0)];
+#if defined(GNUSTEP)
     NSArray *expected = @[@"Copy Image", @"Paste as New Image", @"-", @"Fit to Window", @"Zoom to 100%", @"-", @"Save As…"];
+#else
+    NSArray *expected = @[@"Copy Image", @"Paste as New Image", @"-", @"Fit to Window", @"Zoom to 100%", @"-", @"Save As…",
+                          @"Share…"];
+#endif
     XCTAssertEqualObjects([self titlesOf:menu], expected, @"The test environment has no custom actions");
     XCTAssertFalse(canvas.hasSelectionRect, @"So Copy Image copies the whole image");
     XCTAssertTrue([self item:@"Copy Image" in:menu].isEnabled);

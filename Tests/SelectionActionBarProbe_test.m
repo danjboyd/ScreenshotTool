@@ -168,7 +168,11 @@
     XCTAssertFalse(bar.isHidden, @"Shown once it's finished");
     XCTAssertTrue(bar.superview == canvas, @"On the canvas, drawn after it");
     NSArray *titles = [bar.buttons valueForKey:@"title"];
+#if defined(GNUSTEP)
     XCTAssertEqualObjects(titles, (@[@"Crop", @"Copy", @"Redact"]));
+#else
+    XCTAssertEqualObjects(titles, (@[@"Crop", @"Copy", @"Redact", @"Share"]), @"macOS has a share picker");
+#endif
     XCTAssertTrue([self button:@"Crop"].target == _appDelegate);
     XCTAssertFalse(NSIntersectsRect(bar.frame, [canvas selectionRectInView]), @"Next to the selection, not over it");
     XCTAssertTrue(NSContainsRect(canvas.bounds, bar.frame), @"On the image");
