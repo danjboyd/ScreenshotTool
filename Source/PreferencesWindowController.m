@@ -63,6 +63,8 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 @property (nonatomic, strong) NSTextField *interfaceHeaderLabel;
 @property (nonatomic, strong) NSTextField *statusBarLabel;
 @property (nonatomic, strong) NSSwitch *statusBarSwitch;
+@property (nonatomic, strong) NSTextField *selectionBarLabel;
+@property (nonatomic, strong) NSSwitch *selectionBarSwitch;
 @property (nonatomic, strong) NSButton *restoreDefaultsButton;
 @end
 
@@ -274,6 +276,14 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.statusBarSwitch setAction:@selector(statusBarToggled:)];
     [content addSubview:self.statusBarSwitch];
 
+    self.selectionBarLabel = [self fieldLabelWithString:@"Show Crop, Copy and Redact next to a selection" frame:NSZeroRect];
+    [content addSubview:self.selectionBarLabel];
+    self.selectionBarSwitch = [[NSSwitch alloc] initWithFrame:NSZeroRect];
+    [self.selectionBarSwitch setEnabled:YES];
+    [self.selectionBarSwitch setTarget:self];
+    [self.selectionBarSwitch setAction:@selector(selectionBarToggled:)];
+    [content addSubview:self.selectionBarSwitch];
+
     self.restoreDefaultsButton = [[NSButton alloc] initWithFrame:NSZeroRect];
     [self.restoreDefaultsButton setTitle:@"Restore Defaults"];
     [self.restoreDefaultsButton setButtonType:NSMomentaryPushInButton];
@@ -382,7 +392,9 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
         self.chooseDirectoryButton,
         self.interfaceHeaderLabel,
         self.statusBarLabel,
-        self.statusBarSwitch
+        self.statusBarSwitch,
+        self.selectionBarLabel,
+        self.selectionBarSwitch
     ] hidden:YES];
     [self setViews:self.penQuickButtons hidden:YES];
     [self setViews:self.highlighterQuickButtons hidden:YES];
@@ -402,6 +414,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.penWidthValueLabel setTextColor:STThemePrimaryTextColor()];
     [self.highlighterWidthValueLabel setTextColor:STThemePrimaryTextColor()];
     [self.statusBarLabel setTextColor:STThemePrimaryTextColor()];
+    [self.selectionBarLabel setTextColor:STThemePrimaryTextColor()];
     [self.directoryLabel setTextColor:STThemePrimaryTextColor()];
     [self.textColorLabel setTextColor:STThemePrimaryTextColor()];
     [self.textFontLabel setTextColor:STThemePrimaryTextColor()];
@@ -490,6 +503,12 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
             STPreferencesPlaceInRow(self.statusBarLabel, innerX, innerWidth - switchSize.width - gap,
                                     STPreferencesNaturalSize(self.statusBarLabel, NSZeroSize).height, y, rowHeight);
             STPreferencesPlaceInRow(self.statusBarSwitch, innerX + innerWidth - switchSize.width, switchSize.width,
+                                    switchSize.height, y, rowHeight);
+            [self setViews:@[self.selectionBarLabel, self.selectionBarSwitch] hidden:NO];
+            y -= rowGap + rowHeight;
+            STPreferencesPlaceInRow(self.selectionBarLabel, innerX, innerWidth - switchSize.width - gap,
+                                    STPreferencesNaturalSize(self.selectionBarLabel, NSZeroSize).height, y, rowHeight);
+            STPreferencesPlaceInRow(self.selectionBarSwitch, innerX + innerWidth - switchSize.width, switchSize.width,
                                     switchSize.height, y, rowHeight);
             break;
         }
@@ -700,6 +719,8 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
 
     BOOL showStatusBar = [delegate preferencesControllerShouldShowStatusBar:self];
     [self.statusBarSwitch setState:showStatusBar ? NSControlStateValueOn : NSControlStateValueOff];
+    BOOL showSelectionBar = [delegate preferencesControllerShouldShowSelectionBar:self];
+    [self.selectionBarSwitch setState:showSelectionBar ? NSControlStateValueOn : NSControlStateValueOff];
 }
 
 - (NSString *)displayStringForWidth:(CGFloat)width {
@@ -816,6 +837,10 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
 - (void)statusBarToggled:(NSSwitch *)sender {
     BOOL show = (sender.state == NSControlStateValueOn);
     [self.delegate preferencesController:self didToggleStatusBar:show];
+}
+
+- (void)selectionBarToggled:(NSSwitch *)sender {
+    [self.delegate preferencesController:self didToggleSelectionBar:(sender.state == NSControlStateValueOn)];
 }
 
 - (void)restoreDefaultsPressed:(id)sender {
