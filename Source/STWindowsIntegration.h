@@ -21,6 +21,9 @@ BOOL STWindowsClipboardHasImage(void);
 /// bitmap, for the rest.
 BOOL STWindowsClipboardWritePNGData(NSData *pngData);
 
+/// Puts `text` on the clipboard as Unicode text (a custom action's output, #221).
+BOOL STWindowsClipboardWriteText(NSString *text);
+
 /// The clipboard's image as PNG data: its PNG if it has one, else its bitmap, converted.
 NSData * _Nullable STWindowsClipboardPNGData(void);
 

@@ -7880,6 +7880,12 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
 }
 
 - (void)copyCustomActionText:(NSString *)text {
+    if ([self usesWindowsClipboard]) {
+        // Straight to the Windows clipboard, as Copy's image is: through GNUstep's pasteboard
+        // server the text never reached it (ScreenshotTool Windows's check of #234).
+        STWindowsClipboardWriteText(text);
+        return;
+    }
     NSPasteboard *pasteboard = [NSPasteboard generalPasteboard];
 #if defined(GNUSTEP)
     [pasteboard declareTypes:@[NSStringPboardType] owner:nil];
