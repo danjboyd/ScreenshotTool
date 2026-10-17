@@ -155,7 +155,7 @@
 #if defined(GNUSTEP) && !defined(ST_HAVE_LIBS_SHARING)
     NSArray *expected = @[@"Crop to Selection", @"Copy Selection", @"Redact Selection", @"-", @"Deselect"];
 #else
-    // macOS has a share picker, and Linux libs-sharing's.
+    // macOS has a share picker, and Linux and Windows libs-sharing's.
     NSArray *expected = @[@"Crop to Selection", @"Copy Selection", @"Redact Selection", @"Share Selection…", @"-", @"Deselect"];
 #endif
     XCTAssertEqualObjects([self titlesOf:menu], expected);
@@ -238,10 +238,10 @@
     [canvas loadImage:[self imageOfSize:NSMakeSize(200.0, 100.0)]];
 #if defined(GNUSTEP) && !defined(ST_HAVE_LIBS_SHARING)
     XCTAssertNil([self item:@"Share…" in:[self rightClick:canvas at:NSMakePoint(50.0, 50.0)]],
-                 @"Not on GNUstep without libs-sharing's picker (Windows, for now)");
+                 @"Not on GNUstep without libs-sharing's picker");
 #else
     XCTAssertNotNil([self item:@"Share…" in:[self rightClick:canvas at:NSMakePoint(50.0, 50.0)]],
-                    @"macOS's picker, and on Linux libs-sharing's");
+                    @"macOS's picker, and on Linux and Windows libs-sharing's");
 #endif
 }
 

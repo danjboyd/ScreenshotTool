@@ -18,6 +18,9 @@ CAPTURE_LDFLAGS := -lshell32 -luser32 -lgdi32
 UPDATER_LDFLAGS := -lwinhttp
 # The application manifest: declares the app DPI-aware (Source/ScreenshotTool.exe.manifest).
 WINDOWS_RESOURCE_FILES := Source/ScreenshotTool.rc
+# Share on Windows: libs-sharing's sheet with its Windows services (clipboard, mail through
+# MAPI, Explorer, rclone). GSSharing.make adds the system libraries it links.
+ST_LIBS_SHARING := yes
 else
 FONTCONFIG_CFLAGS := -I/usr/include/freetype2
 FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
