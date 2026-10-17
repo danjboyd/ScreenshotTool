@@ -93,6 +93,11 @@ GNUstep's default theme, with the menus in the window. Shortcuts use Ctrl on eve
   toolbar or the Edit menu.
 - Paste as New Image from the clipboard; Copy puts the annotated image (or the
   selection) on the clipboard with transparency intact.
+- Share the annotated image (or the selection) from the toolbar, File > Share, the right-click
+  menu or the bar next to a selection. macOS uses its own share menu. On Linux and Windows a
+  sheet offers Email, Copy, Save a Copy, Show in Folder and Open With…, and, if
+  [rclone](https://rclone.org) is installed, each of your remotes that can make links: the image
+  is uploaded and its link copied.
 - Save As writes a flattened PNG or TIFF. Save Project writes a `.screenshottool`
   file with the original image and editable annotations, which Open and Open
   Recent read back.
