@@ -21,6 +21,8 @@
 - (NSArray *)shareItemProviders;
 - (void)presentShareFromView:(NSView *)view rect:(NSRect)rect;
 - (NSWindow *)window;
+- (void)setupMenus;
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem;
 @end
 
 @interface ScreenshotCanvasView (ShareSheetTesting)
@@ -122,6 +124,31 @@
     XCTAssertNotNil(sheet, @"The share sheet is up");
     [sheet performClose:nil];
     XCTAssertFalse(sheet.isVisible);
+}
+
+/// File > Share… opens the same sheet, so Share isn't only on the toolbar and the canvas.
+- (void)testFileMenuSharesTheImage {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_appDelegate setupMenus];
+    NSMenu *fileMenu = [[NSApp mainMenu] itemWithTitle:@"File"].submenu;
+    NSMenuItem *share = [fileMenu itemWithTitle:@"Share…"];
+    XCTAssertNotNil(share, @"File > Share…");
+    XCTAssertFalse([_appDelegate validateMenuItem:share], @"Nothing to share without an image");
+
+    [self loadImageOfSize:NSMakeSize(120, 80)];
+    XCTAssertTrue([_appDelegate validateMenuItem:share]);
+    [_appDelegate.window orderFront:nil];
+    @autoreleasepool {
+        [NSApp sendAction:share.action to:share.target from:share];
+    }
+    NSWindow *sheet = nil;
+    for (NSWindow *window in [NSApp windows]) {
+        if ([window.title isEqualToString:@"Share"] && window.isVisible) {
+            sheet = window;
+        }
+    }
+    XCTAssertNotNil(sheet, @"The share sheet is up");
+    [sheet performClose:nil];
 }
 
 - (void)testTheToolbarHasShare {
