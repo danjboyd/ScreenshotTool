@@ -152,10 +152,10 @@
     XCTAssertTrue(canvas.hasSelectionRect);
 
     NSMenu *menu = [self rightClick:canvas at:NSMakePoint(480.0, 60.0)];
-#if defined(GNUSTEP)
+#if defined(GNUSTEP) && !defined(ST_HAVE_LIBS_SHARING)
     NSArray *expected = @[@"Crop to Selection", @"Copy Selection", @"Redact Selection", @"-", @"Deselect"];
 #else
-    // macOS has a share picker.
+    // macOS has a share picker, and Linux libs-sharing's.
     NSArray *expected = @[@"Crop to Selection", @"Copy Selection", @"Redact Selection", @"Share Selection…", @"-", @"Deselect"];
 #endif
     XCTAssertEqualObjects([self titlesOf:menu], expected);
@@ -211,7 +211,7 @@
     [self selectRegion:NSMakeRect(420.0, 20.0, 150.0, 100.0) on:canvas];
 
     NSMenu *menu = [self rightClick:canvas at:NSMakePoint(100.0, 250.0)];
-#if defined(GNUSTEP)
+#if defined(GNUSTEP) && !defined(ST_HAVE_LIBS_SHARING)
     NSArray *expected = @[@"Copy Image", @"Paste as New Image", @"-", @"Fit to Window", @"Zoom to 100%", @"-", @"Save As…"];
 #else
     NSArray *expected = @[@"Copy Image", @"Paste as New Image", @"-", @"Fit to Window", @"Zoom to 100%", @"-", @"Save As…",
@@ -235,10 +235,13 @@
     XCTAssertTrue(share.target == _appDelegate);
     XCTAssertNil([self item:@"Share…" in:STCanvasContextMenu(STCanvasContextKindImage, NO, NO, canvas, _appDelegate, nil)],
                  @"No picker, no Share");
-#if defined(GNUSTEP)
     [canvas loadImage:[self imageOfSize:NSMakeSize(200.0, 100.0)]];
+#if defined(GNUSTEP) && !defined(ST_HAVE_LIBS_SHARING)
     XCTAssertNil([self item:@"Share…" in:[self rightClick:canvas at:NSMakePoint(50.0, 50.0)]],
-                 @"Not on GNUstep until libs-sharing gives it a picker");
+                 @"Not on GNUstep without libs-sharing's picker (Windows, for now)");
+#else
+    XCTAssertNotNil([self item:@"Share…" in:[self rightClick:canvas at:NSMakePoint(50.0, 50.0)]],
+                    @"macOS's picker, and on Linux libs-sharing's");
 #endif
 }
 

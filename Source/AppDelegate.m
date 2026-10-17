@@ -19,6 +19,10 @@
 #import "STHudView.h"
 #import "STTextOptionsBar.h"
 #import "STSelectionActionBar.h"
+#if defined(GNUSTEP) && defined(ST_HAVE_LIBS_SHARING)
+// Apple's sharing API as libs-sharing implements it (libs-gui declares only part of it).
+#import "GSSharing.h"
+#endif
 #import <Foundation/NSTask.h>
 #import <dispatch/dispatch.h>
 #if defined(GNUSTEP)
@@ -71,7 +75,7 @@ static NSString * const ToolbarItemColor = @"com.screenshottool.toolbar.color";
 static NSString * const ToolbarItemSave = @"com.screenshottool.toolbar.save";
 /// A custom action's toolbar item: this, then the action's identifier (its file's name).
 static NSString * const ToolbarItemCustomActionPrefix = @"com.screenshottool.toolbar.action.";
-#if !defined(GNUSTEP)
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
 static NSString * const ToolbarItemShare = @"com.screenshottool.toolbar.share";
 #endif
 // Tall enough for a 24pt slider (the zoom slider, #221): WinUITheme draws its slider from 24pt.
@@ -216,10 +220,10 @@ static NSURL *STExportDirectoryURL(void) {
             URLByAppendingPathComponent:@"ScreenshotTool Exports" isDirectory:YES];
 }
 
-/// YES where there's a share picker: macOS's. GNUstep's NSSharingServicePicker is a stub until
-/// libs-sharing implements it (danjboyd/ObjcMarkdown#170).
+/// YES where there's a share picker: macOS's, and on GNUstep libs-sharing's sheet
+/// (third_party/libs-sharing; libs-gui's NSSharingServicePicker alone is a stub).
 static BOOL STCanShareImages(void) {
-#if !defined(GNUSTEP)
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
     return YES;
 #else
     return NO;
@@ -3248,7 +3252,7 @@ static id STInfoValueForKey(NSString *key) {
                                                           ToolbarItemColor,
                                                           ToolbarItemSave,
                                                           ToolbarItemCopy,
-#if !defined(GNUSTEP)
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
                                                           ToolbarItemShare,
 #endif
                                                           ToolbarItemPreferences,
@@ -3279,6 +3283,10 @@ static id STInfoValueForKey(NSString *key) {
     [identifiers addObject:ToolbarItemCopy];
 #else
     [identifiers addObject:ToolbarItemCopy];
+#if defined(ST_HAVE_LIBS_SHARING)
+    // An icon after Copy, so it goes into » before Copy and Save do.
+    [identifiers addObject:ToolbarItemShare];
+#endif
     [identifiers addObjectsFromArray:[self customActionToolbarIdentifiersInToolbarOnly:YES]];
 #endif
     return identifiers;
@@ -3417,6 +3425,19 @@ static id STInfoValueForKey(NSString *key) {
                                                 action:@selector(saveDocumentAs:)
                                                 accent:NO];
     }
+#if defined(ST_HAVE_LIBS_SHARING)
+    if ([identifier isEqualToString:ToolbarItemShare]) {
+        // libs-sharing's item: a click opens its sheet for -itemsForSharingServicePickerToolbarItem:.
+        NSSharingServicePickerToolbarItem *item =
+            [[NSSharingServicePickerToolbarItem alloc] initWithItemIdentifier:ToolbarItemShare];
+        item.image = [self baselineToolbarImageNamed:@"Share" active:NO];
+        item.label = @"Share";
+        item.paletteLabel = @"Share";
+        item.toolTip = @"Share the annotated image";
+        item.delegate = (id<NSSharingServicePickerToolbarItemDelegate>)self;
+        return item;
+    }
+#endif
     if ([identifier isEqualToString:ToolbarItemCopy]) {
         return [self labelledToolbarItemWithIdentifier:ToolbarItemCopy
                                                  label:@"Copy"
@@ -7789,19 +7810,37 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
 /// The share picker for what a share sends, below `rect` in `view`. Its delegate is this
 /// controller, as the toolbar's picker item's is, so both list the same services.
 - (void)presentShareFromView:(NSView *)view rect:(NSRect)rect {
-#if !defined(GNUSTEP)
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
     NSArray *items = [self shareItemProviders];
     if (items.count == 0 || !view.window) {
         return;
     }
     NSSharingServicePicker *picker = [[NSSharingServicePicker alloc] initWithItems:items];
-    picker.delegate = self;
+    picker.delegate = (id<NSSharingServicePickerDelegate>)self;
+#if defined(GNUSTEP)
+    [picker showRelativeToRect:rect ofView:view preferredEdge:NSMinYEdge];
+#else
     [picker showRelativeToRect:rect ofView:view preferredEdge:NSRectEdgeMinY];
+#endif
 #else
     (void)view;
     (void)rect;
 #endif
 }
+
+#if defined(GNUSTEP) && defined(ST_HAVE_LIBS_SHARING)
+/// What libs-sharing's sheet shares: the PNG a share sends. Exported when the sheet opens:
+/// GNUstep has no NSItemProvider to export it only when a service asks.
+- (NSArray *)shareItemProviders {
+    NSURL *url = [self exportAnnotatedImageToTemporaryFile];
+    return url ? @[url] : @[];
+}
+
+- (NSArray *)itemsForSharingServicePickerToolbarItem:(NSSharingServicePickerToolbarItem *)pickerToolbarItem {
+    (void)pickerToolbarItem;
+    return [self shareItemProviders];
+}
+#endif
 
 /// Writes what a share sends as a PNG named after the document, for a drag, a share or a custom
 /// action: the selection when there is one, else the whole annotated image, as Copy copies.
