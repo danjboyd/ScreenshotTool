@@ -12,6 +12,10 @@
 #import "MarkupStroke.h"
 #import "MarkupText.h"
 #import "TestEnvironmentHelpers.h"
+#if defined(_WIN32)
+#include <windows.h>
+#import <dispatch/dispatch.h>
+#endif
 
 @interface AppDelegate (ProjectFileTesting)
 - (void)setupWindowAndContent;
@@ -253,5 +257,41 @@
     XCTAssertTrue([_appDelegate openImageAtURL:[self writeImageNamed:@"c.png" color:[NSColor greenColor]]]);
     XCTAssertTrue([_appDelegate validateMenuItem:item]);
 }
+
+#if defined(_WIN32)
+/// Holds the file open the way a virus scan or indexer does: read, without delete sharing, so the
+/// atomic write's rename over it fails.
+- (HANDLE)holdFileOpen:(NSURL *)url {
+    HANDLE handle = CreateFileW((const wchar_t *)[url.path fileSystemRepresentation], GENERIC_READ, FILE_SHARE_READ,
+                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    XCTAssertTrue(handle != INVALID_HANDLE_VALUE, @"Opened %@", url.path);
+    return handle;
+}
+
+- (void)testSaveWaitsOutABriefLockOnTheFile {
+    NSURL *url = [self writeImageNamed:@"locked.png" color:[NSColor redColor]];
+    NSData *data = [@"replaced" dataUsingEncoding:NSUTF8StringEncoding];
+    HANDLE handle = [self holdFileOpen:url];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.25 * NSEC_PER_SEC)),
+                   dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        CloseHandle(handle);
+    });
+    NSError *error = nil;
+    XCTAssertTrue(STWriteDataAtomically(data, url, &error), @"Written once the lock is gone (#261): %@", error);
+    XCTAssertEqualObjects([NSData dataWithContentsOfURL:url], data);
+}
+
+- (void)testSaveExplainsALockThatStays {
+    NSURL *url = [self writeImageNamed:@"held.png" color:[NSColor redColor]];
+    NSData *before = [NSData dataWithContentsOfURL:url];
+    HANDLE handle = [self holdFileOpen:url];
+    NSError *error = nil;
+    BOOL written = STWriteDataAtomically([@"replaced" dataUsingEncoding:NSUTF8StringEncoding], url, &error);
+    CloseHandle(handle);
+    XCTAssertFalse(written);
+    XCTAssertTrue([error.localizedDescription containsString:@"held.png"], @"Not \"unknown error\": %@", error);
+    XCTAssertEqualObjects([NSData dataWithContentsOfURL:url], before, @"The file is unchanged");
+}
+#endif
 
 @end
