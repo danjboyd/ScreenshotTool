@@ -7872,12 +7872,15 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
 #pragma mark - Sharing
 
 #if !defined(GNUSTEP)
-/// The picker closed, with or without a service: the click's anchor goes.
+/// The picker closed, with or without a service: the click's anchor goes, and a chosen mail gets
+/// its subject.
 - (void)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker didChooseSharingService:(nullable NSSharingService *)service {
     (void)sharingServicePicker;
-    (void)service;
     [self.shareAnchorView removeFromSuperview];
     self.shareAnchorView = nil;
+    if (service) {
+        [self prepareSharingService:service];
+    }
 }
 #endif
 
@@ -8024,15 +8027,6 @@ static char STCustomActionSharingServiceKey;
     (void)service;
 #endif
 }
-
-#if !defined(GNUSTEP)
-- (void)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker didChooseSharingService:(nullable NSSharingService *)service {
-    (void)sharingServicePicker;
-    if (service) {
-        [self prepareSharingService:service];
-    }
-}
-#endif
 
 /// The system's services report back here; a custom action says how it went itself.
 - (nullable id<NSSharingServiceDelegate>)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker
