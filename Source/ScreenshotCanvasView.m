@@ -1361,6 +1361,13 @@ static NSBitmapImageRep *STPremultipliedRGBABitmapFromRep(NSBitmapImageRep *sour
                                                                       colorSpaceName:NSDeviceRGBColorSpace
                                                                          bytesPerRow:0
                                                                         bitsPerPixel:0];
+#if !defined(GNUSTEP)
+    // In the source's own colour space, so the redraw copies its pixels: in device RGB, AppKit
+    // would colour-match them to the display, shifting every pixel of a Copy or Save (#229).
+    if (converted && source.colorSpace.colorSpaceModel == NSColorSpaceModelRGB) {
+        converted = [converted bitmapImageRepByRetaggingWithColorSpace:source.colorSpace] ?: converted;
+    }
+#endif
     NSGraphicsContext *context = converted ? [NSGraphicsContext graphicsContextWithBitmapImageRep:converted] : nil;
     if (!context) {
         return nil;
@@ -4812,6 +4819,20 @@ static NSError *STProjectError(NSString *message) {
         }
     }
 
+#if !defined(GNUSTEP)
+    // Tagged with the image's own colour space, which its pixels are still in (#229).
+    NSColorSpace *sourceSpace = nil;
+    for (NSImageRep *rep in self.image.representations) {
+        if ([rep isKindOfClass:[NSBitmapImageRep class]]) {
+            sourceSpace = ((NSBitmapImageRep *)rep).colorSpace;
+            break;
+        }
+    }
+    if (sourceSpace.colorSpaceModel == NSColorSpaceModelRGB && ![bitmap.colorSpace isEqual:sourceSpace]) {
+        bitmap = [bitmap bitmapImageRepByRetaggingWithColorSpace:sourceSpace] ?: bitmap;
+    }
+#endif
+
     NSImage *output = [[NSImage alloc] initWithSize:size];
     if (!output) {
         return nil;
@@ -4820,6 +4841,12 @@ static NSError *STProjectError(NSString *message) {
 
     if (!NSIsEmptyRect(effectiveClip)) {
         NSBitmapImageRep *cropped = STBitmapImageRepCrop(bitmap, effectiveClip, size);
+#if !defined(GNUSTEP)
+        // The crop takes only the space's name, which would make it Generic RGB (#229).
+        if (cropped && bitmap.colorSpace.colorSpaceModel == NSColorSpaceModelRGB) {
+            cropped = [cropped bitmapImageRepByRetaggingWithColorSpace:bitmap.colorSpace] ?: cropped;
+        }
+#endif
         if (cropped) {
             NSImage *croppedImage = [[NSImage alloc] initWithSize:cropped.size];
             [croppedImage addRepresentation:cropped];
