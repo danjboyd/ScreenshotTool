@@ -1422,6 +1422,21 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 
 
 
+#if !defined(GNUSTEP)
+/// An empty view the share picker points at, for a click inside a larger view. Clicks go through it.
+@interface STShareAnchorView : NSView
+@end
+
+@implementation STShareAnchorView
+
+- (nullable NSView *)hitTest:(NSPoint)point {
+    (void)point;
+    return nil;
+}
+
+@end
+#endif
+
 @interface STStatusTextField : NSTextField
 @end
 
@@ -1499,6 +1514,10 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) BOOL selectionBarPreference;
 /// Crop, Copy and Redact next to the region selection, over the canvas.
 @property (nonatomic, strong, nullable) STSelectionActionBar *selectionActionBar;
+#if !defined(GNUSTEP)
+/// Where the open share picker points, when it was opened from a click inside the canvas.
+@property (nonatomic, strong, nullable) NSView *shareAnchorView;
+#endif
 @property (nonatomic, copy) NSString *pendingOpenPath;
 @property (nonatomic, strong) NSURL *currentImageURL;
 /// The project file this window was opened from or last saved to (#32).
@@ -7835,6 +7854,16 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
 
 #pragma mark - Sharing
 
+#if !defined(GNUSTEP)
+/// The picker closed, with or without a service: the click's anchor goes.
+- (void)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker didChooseSharingService:(nullable NSSharingService *)service {
+    (void)sharingServicePicker;
+    (void)service;
+    [self.shareAnchorView removeFromSuperview];
+    self.shareAnchorView = nil;
+}
+#endif
+
 /// Share… from the canvas's right-click menu or the selection's bar: the picker for what a share
 /// sends, next to the click or the button.
 - (void)shareImage:(id)sender {
@@ -7870,6 +7899,17 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
 #if defined(GNUSTEP)
     [picker showRelativeToRect:rect ofView:view preferredEdge:NSMinYEdge];
 #else
+    // macOS 26's picker points at the view's bounds whatever rect it's given, so a click inside
+    // the canvas gets a view of its own at the click to point at; it goes when the picker does.
+    [self.shareAnchorView removeFromSuperview];
+    self.shareAnchorView = nil;
+    if (!NSEqualRects(rect, view.bounds)) {
+        STShareAnchorView *anchor = [[STShareAnchorView alloc] initWithFrame:rect];
+        [view addSubview:anchor];
+        self.shareAnchorView = anchor;
+        view = anchor;
+        rect = anchor.bounds;
+    }
     [picker showRelativeToRect:rect ofView:view preferredEdge:NSRectEdgeMinY];
 #endif
 #else
