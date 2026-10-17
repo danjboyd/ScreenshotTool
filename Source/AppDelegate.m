@@ -1278,6 +1278,35 @@ void ScreenshotToolAppendLog(NSString *message) {
     [handle closeFile];
 }
 
+BOOL STWriteDataAtomically(NSData *data, NSURL *url, NSError **error) {
+#if defined(GNUSTEP) && defined(_WIN32)
+    // GNUstep's atomic write ends by renaming a temporary file over the target. That rename fails
+    // while another process has the target open for a moment (Defender, the search indexer, a
+    // thumbnail scan of a file just copied there), and the write then returns NO without an
+    // NSError (#261). Retry briefly, and say what most likely happened if it still fails.
+    for (NSUInteger attempt = 0; attempt < 6; attempt++) {
+        if (attempt > 0) {
+            [NSThread sleepForTimeInterval:0.1];
+        }
+        if ([data writeToURL:url options:NSDataWritingAtomic error:error]) {
+            return YES;
+        }
+    }
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Atomic write to %@ failed after retries", url.path]);
+    if (error && !*error) {
+        NSString *description = [NSString stringWithFormat:
+            @"\"%@\" couldn't be written. It may be open in another program; try again.",
+            url.lastPathComponent];
+        *error = [NSError errorWithDomain:NSCocoaErrorDomain
+                                     code:NSFileWriteUnknownError
+                                 userInfo:@{NSLocalizedDescriptionKey: description, NSFilePathErrorKey: url.path ?: @""}];
+    }
+    return NO;
+#else
+    return [data writeToURL:url options:NSDataWritingAtomic error:error];
+#endif
+}
+
 static NSString *STDebugToolName(ScreenshotCanvasTool tool) {
     switch (tool) {
         case ScreenshotCanvasToolHighlighter:
@@ -6783,7 +6812,7 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     [self ensureDirectoryExistsAtPath:[destination.path stringByDeletingLastPathComponent]];
 
     NSError *error = nil;
-    if (![imageData writeToURL:destination options:NSDataWritingAtomic error:&error]) {
+    if (!STWriteDataAtomically(imageData, destination, &error)) {
         NSAlert *alert = [[NSAlert alloc] init];
         alert.messageText = @"Unable to Save Image";
         alert.informativeText = error.localizedDescription ?: @"An unknown error occurred.";
@@ -8514,7 +8543,7 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     NSError *error = nil;
     NSData *data = [self.canvasView projectDataWithError:&error];
     [self ensureDirectoryExistsAtPath:[url.path stringByDeletingLastPathComponent]];
-    if (!data || ![data writeToURL:url options:NSDataWritingAtomic error:&error]) {
+    if (!data || !STWriteDataAtomically(data, url, &error)) {
         NSAlert *alert = [[NSAlert alloc] init];
         alert.messageText = @"Unable to Save Project";
         alert.informativeText = error.localizedDescription ?: @"An unknown error occurred.";
