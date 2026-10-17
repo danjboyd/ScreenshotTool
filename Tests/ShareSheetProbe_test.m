@@ -2,7 +2,7 @@
  * ShareSheetProbe_test.m
  * Copyright (C) 2026 Daniel Boyd
  *
- * Share on Linux through libs-sharing (third_party/libs-sharing): the library is installed into
+ * Share on Linux and Windows through libs-sharing (third_party/libs-sharing): the library is installed into
  * libs-gui's classes, the sheet is given the PNG a share sends, and the toolbar has its Share item.
  */
 

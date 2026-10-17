@@ -10,6 +10,8 @@ FONTCONFIG_CFLAGS :=
 else
 ifneq ($(filter CLANG64,$(MSYSTEM)),)
 FONTCONFIG_CFLAGS := -I/clang64/include/freetype2
+# Share on Windows: libs-sharing, as the app compiles it in.
+ST_LIBS_SHARING := yes
 else
 FONTCONFIG_CFLAGS := -I/usr/include/freetype2
 # Take Screenshot asks the desktop portal over D-Bus (STScreenshotCapture).
@@ -169,7 +171,12 @@ include $(GSSHARING_DIR)/GSSharing.make
 ScreenshotToolTests_OBJC_FILES += $(GSSHARING_OBJC_FILES)
 ADDITIONAL_INCLUDE_DIRS += $(GSSHARING_INCLUDE_DIRS)
 ADDITIONAL_OBJCFLAGS += $(GSSHARING_OBJCFLAGS) -DST_HAVE_LIBS_SHARING=1
+ifneq ($(filter CLANG64,$(MSYSTEM)),)
+# Import libraries, so after -Wl,--no-whole-archive (see above).
+ScreenshotToolTests_BUNDLE_LIBS += $(GSSHARING_LDFLAGS)
+else
 ADDITIONAL_LDFLAGS += $(GSSHARING_LDFLAGS)
+endif
 $(foreach f,$(GSSHARING_OBJC_FILES),$(eval $(f)_FILE_FILTER_OUT_FLAGS = -fobjc-arc)$(eval $(f)_FILE_FLAGS = -fno-objc-arc))
 endif
 

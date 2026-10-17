@@ -171,7 +171,7 @@
 #if defined(GNUSTEP) && !defined(ST_HAVE_LIBS_SHARING)
     XCTAssertEqualObjects(titles, (@[@"Crop", @"Copy", @"Redact"]));
 #else
-    XCTAssertEqualObjects(titles, (@[@"Crop", @"Copy", @"Redact", @"Share"]), @"With a share picker: macOS's, Linux's");
+    XCTAssertEqualObjects(titles, (@[@"Crop", @"Copy", @"Redact", @"Share"]), @"With a share picker: macOS's, or libs-sharing's on Linux and Windows");
 #endif
     XCTAssertTrue([self button:@"Crop"].target == _appDelegate);
     XCTAssertFalse(NSIntersectsRect(bar.frame, [canvas selectionRectInView]), @"Next to the selection, not over it");
