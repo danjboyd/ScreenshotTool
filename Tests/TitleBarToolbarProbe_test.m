@@ -122,6 +122,27 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     }
 }
 
+#if defined(GNUSTEP)
+- (void)testSaveAndCopyKeepTheirNamesInTheOverflowMenu {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    // Their toolbar labels are empty, since the buttons show their names; folded into », the
+    // overflow menu titles an item from its label unless it has a menu form of its own.
+    NSToolbar *toolbar = _appDelegate.window.toolbar;
+    id<NSToolbarDelegate> delegate = (id<NSToolbarDelegate>)_appDelegate;
+    NSDictionary<NSString *, NSString *> *expected = @{@"save": @"Save", @"copy": @"Copy"};
+    NSDictionary<NSString *, NSString *> *actions = @{@"save": @"saveDocumentAs:", @"copy": @"copy:"};
+    for (NSString *name in expected) {
+        NSString *identifier = [@"com.screenshottool.toolbar." stringByAppendingString:name];
+        NSToolbarItem *item = [delegate toolbar:toolbar itemForItemIdentifier:identifier willBeInsertedIntoToolbar:YES];
+        NSMenuItem *menuItem = item.menuFormRepresentation;
+        XCTAssertNotNil(menuItem, @"%@ has a menu form", identifier);
+        XCTAssertEqualObjects(menuItem.title, expected[name], @"%@ is named in »", identifier);
+        XCTAssertEqualObjects(NSStringFromSelector(menuItem.action), actions[name], @"%@ runs its command from »", identifier);
+        XCTAssertEqual(menuItem.target, (id)_appDelegate, @"%@ goes to the app delegate", identifier);
+    }
+}
+#endif
+
 #pragma mark - Slim toolbar (#53)
 
 - (void)testDefaultToolbarIsUndoToolsStyleAndCopy {
