@@ -1454,6 +1454,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 #else
     NSSharingServicePickerToolbarItemDelegate, NSMenuDelegate,
 #endif
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
+    NSSharingServicePickerDelegate, NSSharingServiceDelegate,
+#endif
     STTextOptionsBarDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NSScrollView *scrollView;
@@ -2157,6 +2160,17 @@ static AppDelegate *STFrontDocument(void) {
         item.target = self;
         item.representedObject = @[service, url];
     }
+    // The custom actions after the system's services, as the share picker lists them.
+    AppDelegate *document = STFrontDocument() ?: self;
+    NSArray<STCustomAction *> *actions = [document loadedCustomActions];
+    if (actions.count > 0) {
+        [menu addItem:[NSMenuItem separatorItem]];
+    }
+    for (STCustomAction *action in actions) {
+        NSMenuItem *item = [document menuItemForCustomAction:action];
+        item.image = [document shareImageForCustomAction:action];
+        [menu addItem:item];
+    }
 }
 
 /// The menu of the empty state's Open… split button, if it has one.
@@ -2173,6 +2187,9 @@ static AppDelegate *STFrontDocument(void) {
     NSSharingService *service = payload.firstObject;
     NSURL *url = payload.lastObject;
     if ([service isKindOfClass:[NSSharingService class]] && [url isKindOfClass:[NSURL class]]) {
+        AppDelegate *document = STFrontDocument() ?: self;
+        service.delegate = document;
+        [document prepareSharingService:service];
         [service performWithItems:@[url]];
     }
 }
@@ -7855,12 +7872,15 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
 #pragma mark - Sharing
 
 #if !defined(GNUSTEP)
-/// The picker closed, with or without a service: the click's anchor goes.
+/// The picker closed, with or without a service: the click's anchor goes, and a chosen mail gets
+/// its subject.
 - (void)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker didChooseSharingService:(nullable NSSharingService *)service {
     (void)sharingServicePicker;
-    (void)service;
     [self.shareAnchorView removeFromSuperview];
     self.shareAnchorView = nil;
+    if (service) {
+        [self prepareSharingService:service];
+    }
 }
 #endif
 
@@ -7930,6 +7950,114 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     (void)pickerToolbarItem;
     return [self shareItemProviders];
 }
+#endif
+
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
+// Plain NSSharingService API, shared with GNUstep's picker where libs-sharing is built in.
+
+/// Every share picker (the toolbar's, the right-click menu's and the selection bar's) lists the
+/// custom actions after the system's services: one per choice, or one for an action without.
+- (NSArray<NSSharingService *> *)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker
+                              sharingServicesForItems:(NSArray *)items
+                              proposedSharingServices:(NSArray<NSSharingService *> *)proposedServices {
+    (void)sharingServicePicker;
+    (void)items;
+    NSMutableArray<NSSharingService *> *services = [proposedServices mutableCopy];
+    [services addObjectsFromArray:[self customActionSharingServices]];
+    return services;
+}
+
+static char STCustomActionSharingServiceKey;
+
+/// The custom actions as share services. An action with choices offers each ("Send — host");
+/// until they're listed, it's one service that runs the first, as its toolbar button does.
+- (NSArray<NSSharingService *> *)customActionSharingServices {
+    NSMutableArray<NSSharingService *> *services = [[NSMutableArray alloc] init];
+    __weak AppDelegate *weakSelf = self;
+    for (STCustomAction *action in [self loadedCustomActions]) {
+        NSImage *image = [self shareImageForCustomAction:action];
+        NSArray<NSString *> *choices = action.choicesCommand ? [self choicesForCustomAction:action] : nil;
+        if (choices.count == 0) {
+            [services addObject:[[NSSharingService alloc] initWithTitle:action.title
+                                                                  image:image
+                                                         alternateImage:nil
+                                                                handler:^{
+                [weakSelf runCustomAction:action choice:nil];
+            }]];
+            objc_setAssociatedObject(services.lastObject, &STCustomActionSharingServiceKey, action, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            continue;
+        }
+        for (NSString *choice in choices) {
+            NSString *title = [NSString stringWithFormat:@"%@ — %@", action.title, choice];
+            [services addObject:[[NSSharingService alloc] initWithTitle:title
+                                                                  image:image
+                                                         alternateImage:nil
+                                                                handler:^{
+                [weakSelf runCustomAction:action choice:choice];
+            }]];
+            objc_setAssociatedObject(services.lastObject, &STCustomActionSharingServiceKey, action, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
+    }
+    return services;
+}
+
+/// A custom action's picture in the share menus: its own icon, else a terminal symbol.
+- (nullable NSImage *)shareImageForCustomAction:(STCustomAction *)action {
+    NSImage *image = [self iconForCustomAction:action size:16.0];
+#if !defined(GNUSTEP)
+    if (!image) {
+        if (@available(macOS 11.0, *)) {
+            image = [NSImage imageWithSystemSymbolName:@"terminal" accessibilityDescription:action.title];
+        }
+    }
+#endif
+    return image;
+}
+
+/// A mail starts with the image's name as its subject (macOS's Mail and Outlook read it).
+- (void)prepareSharingService:(NSSharingService *)service {
+#if !defined(GNUSTEP)
+    NSString *name = [[(self.currentImageURL ?: self.currentProjectURL) lastPathComponent] stringByDeletingPathExtension];
+    // Each +sharingServiceNamed: is a new object, so it's matched by its title.
+    NSString *mail = [NSSharingService sharingServiceNamed:NSSharingServiceNameComposeEmail].title;
+    if (mail.length > 0 && [service.title isEqualToString:mail]) {
+        service.subject = name.length > 0 ? name : @"Screenshot";
+    }
+#else
+    (void)service;
+#endif
+}
+
+/// The system's services report back here; a custom action says how it went itself.
+- (nullable id<NSSharingServiceDelegate>)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker
+                                    delegateForSharingService:(NSSharingService *)sharingService {
+    (void)sharingServicePicker;
+    return objc_getAssociatedObject(sharingService, &STCustomActionSharingServiceKey) ? nil : self;
+}
+
+#if !defined(GNUSTEP)
+// macOS only for now: libs-sharing reports a share done as soon as it starts, and never a
+// failure, so on GNUstep these would say "Shared" too early or wrongly.
+
+/// "Shared with Mail", as Copy says "Copied".
+- (void)sharingService:(NSSharingService *)sharingService didShareItems:(NSArray *)items {
+    (void)items;
+    NSString *name = sharingService.menuItemTitle.length > 0 ? sharingService.menuItemTitle : sharingService.title;
+    [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Shared with %@", name] duration:2.5];
+}
+
+/// Why a share failed; a cancelled one says nothing.
+- (void)sharingService:(NSSharingService *)sharingService didFailToShareItems:(NSArray *)items error:(NSError *)error {
+    (void)items;
+    if ([error.domain isEqualToString:NSCocoaErrorDomain] && error.code == NSUserCancelledError) {
+        return;
+    }
+    NSString *name = sharingService.menuItemTitle.length > 0 ? sharingService.menuItemTitle : sharingService.title;
+    NSString *reason = error.localizedDescription.length > 0 ? error.localizedDescription : @"unknown error";
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Share with %@ failed: %@", name, error]);
+    [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Couldn't share with %@: %@", name, reason] duration:4.0];
+}
+#endif
 #endif
 
 /// Writes what a share sends as a PNG named after the document, for a drag, a share or a custom

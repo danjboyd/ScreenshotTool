@@ -105,7 +105,7 @@ GNUstep's default theme, with the menus in the window. Shortcuts use Ctrl on eve
 - Drag the annotated image (or the selection) out of the Copy toolbar button into another app,
   a chat, a mail or a folder, as a PNG file named after the document (macOS and Linux).
 - Custom actions: send the annotated image to a command of your own (an upload script, say)
-  from the File menu or a toolbar button; see [Custom actions](#custom-actions).
+  from the File menu, a toolbar button or the Share menus; see [Custom actions](#custom-actions).
 - Standard controls throughout, so the GNUstep theme decides the look,
   including the toolbar, symbolic icons and the open and save dialogs.
 - On macOS: a window per image (File > New Window, Open several at once); share
