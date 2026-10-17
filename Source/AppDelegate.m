@@ -8041,6 +8041,10 @@ static char STCustomActionSharingServiceKey;
     return objc_getAssociatedObject(sharingService, &STCustomActionSharingServiceKey) ? nil : self;
 }
 
+#if !defined(GNUSTEP)
+// macOS only for now: libs-sharing reports a share done as soon as it starts, and never a
+// failure, so on GNUstep these would say "Shared" too early or wrongly.
+
 /// "Shared with Mail", as Copy says "Copied".
 - (void)sharingService:(NSSharingService *)sharingService didShareItems:(NSArray *)items {
     (void)items;
@@ -8059,6 +8063,7 @@ static char STCustomActionSharingServiceKey;
     ScreenshotToolAppendLog([NSString stringWithFormat:@"Share with %@ failed: %@", name, error]);
     [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Couldn't share with %@: %@", name, reason] duration:4.0];
 }
+#endif
 #endif
 
 /// Writes what a share sends as a PNG named after the document, for a drag, a share or a custom
