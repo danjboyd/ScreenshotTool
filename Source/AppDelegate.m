@@ -2444,7 +2444,7 @@ static AppDelegate *STFrontDocument(void) {
     if (action == @selector(cropImage:)) {
         return [self.canvasView hasSelection];
     }
-    if (action == @selector(shareImage:)) {
+    if (action == @selector(shareImage:) || action == @selector(shareFromFileMenu:)) {
         return STCanShareImages() && [self.canvasView hasImage];
     }
     if (action == @selector(redactSelection:) || action == @selector(duplicateAnnotations:) ||
@@ -2664,6 +2664,12 @@ static id STInfoValueForKey(NSString *key) {
     [shareItem setSubmenu:shareMenu];
     [fileMenu addItem:[NSMenuItem separatorItem]];
     [fileMenu addItemWithTitle:@"Close" action:@selector(performClose:) keyEquivalent:@"w"];
+#elif defined(ST_HAVE_LIBS_SHARING)
+    // libs-sharing's sheet, so Share isn't only on the toolbar (which may fold it into ») and
+    // the canvas.
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *shareItem = [fileMenu addItemWithTitle:@"Share…" action:@selector(shareFromFileMenu:) keyEquivalent:@""];
+    [shareItem setTarget:self];
 #endif
 
     NSMenuItem *fileMenuItem = [[NSMenuItem alloc] initWithTitle:@"File" action:NULL keyEquivalent:@""];
@@ -7805,6 +7811,16 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     }
     NSPoint point = self.canvasView.lastContextMenuPoint;
     [self presentShareFromView:self.canvasView rect:NSMakeRect(point.x, point.y, 1.0, 1.0)];
+}
+
+/// File > Share… on GNUstep: the sheet at the top of the window, where libs-sharing's toolbar
+/// item puts it when the item has no view of its own (it's folded into », say).
+- (void)shareFromFileMenu:(id)sender {
+    (void)sender;
+    NSView *view = self.window.contentView;
+    NSRect bounds = view.bounds;
+    CGFloat top = view.isFlipped ? NSMinY(bounds) : NSMaxY(bounds) - 1.0;
+    [self presentShareFromView:view rect:NSMakeRect(NSMidX(bounds), top, 1.0, 1.0)];
 }
 
 /// The share picker for what a share sends, below `rect` in `view`. Its delegate is this
