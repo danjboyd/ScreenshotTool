@@ -1454,7 +1454,10 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 #else
     NSSharingServicePickerToolbarItemDelegate, NSMenuDelegate,
 #endif
-    NSSharingServicePickerDelegate, NSSharingServiceDelegate, STTextOptionsBarDelegate>
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
+    NSSharingServicePickerDelegate, NSSharingServiceDelegate,
+#endif
+    STTextOptionsBarDelegate>
 @property (nonatomic, strong) NSWindow *window;
 @property (nonatomic, strong) NSScrollView *scrollView;
 /// Shown instead of the canvas while no image is open (#55).
@@ -7946,7 +7949,8 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
 }
 #endif
 
-// Plain NSSharingService API, shared with GNUstep's picker from libs-sharing.
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
+// Plain NSSharingService API, shared with GNUstep's picker where libs-sharing is built in.
 
 /// Every share picker (the toolbar's, the right-click menu's and the selection bar's) lists the
 /// custom actions after the system's services: one per choice, or one for an action without.
@@ -8055,6 +8059,7 @@ static char STCustomActionSharingServiceKey;
     ScreenshotToolAppendLog([NSString stringWithFormat:@"Share with %@ failed: %@", name, error]);
     [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Couldn't share with %@: %@", name, reason] duration:4.0];
 }
+#endif
 
 /// Writes what a share sends as a PNG named after the document, for a drag, a share or a custom
 /// action: the selection when there is one, else the whole annotated image, as Copy copies.

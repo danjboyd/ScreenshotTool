@@ -24,11 +24,13 @@
 - (NSMenuItem *)menuItemForCustomAction:(STCustomAction *)action;
 - (NSArray<NSString *> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar;
 - (NSToolbarItem *)toolbarItemForCustomAction:(STCustomAction *)action;
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
 - (NSArray<NSSharingService *> *)sharingServicePicker:(NSSharingServicePicker *)picker
                               sharingServicesForItems:(NSArray *)items
                               proposedSharingServices:(NSArray<NSSharingService *> *)proposed;
 - (id<NSSharingServiceDelegate>)sharingServicePicker:(NSSharingServicePicker *)picker
                            delegateForSharingService:(NSSharingService *)service;
+#endif
 #if !defined(GNUSTEP)
 - (void)menuNeedsUpdate:(NSMenu *)menu;
 - (void)prepareSharingService:(NSSharingService *)service;
