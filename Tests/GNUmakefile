@@ -68,6 +68,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	ShareSheetProbe_test.m \
 	DragOutProbe_test.m \
 	CanvasContextMenuProbe_test.m \
+	ExportColourProbe_test.m \
 	SelectionActionBarProbe_test.m \
 	CanvasDrawSpeedProbe_test.m \
 	CustomActionsProbe_test.m \
