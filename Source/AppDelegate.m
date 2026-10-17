@@ -3535,6 +3535,11 @@ static id STInfoValueForKey(NSString *key) {
     item.target = self;
     item.action = selector;
     item.view = button;
+    // Folded into » the item is a menu item, titled from its label unless it has its own; the
+    // label is empty so the button's name doesn't show twice.
+    NSMenuItem *menuForm = [[NSMenuItem alloc] initWithTitle:label action:selector keyEquivalent:@""];
+    menuForm.target = self;
+    item.menuFormRepresentation = menuForm;
     button.enabled = [self.canvasView hasImage];
     item.minSize = size;
     item.maxSize = size;
