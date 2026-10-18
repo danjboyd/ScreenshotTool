@@ -22,6 +22,7 @@
 #if defined(GNUSTEP) && defined(ST_HAVE_LIBS_SHARING)
 // Apple's sharing API as libs-sharing implements it (libs-gui declares only part of it).
 #import "GSSharing.h"
+#import "GSSharingRclone.h"
 #endif
 #import <Foundation/NSTask.h>
 #import <dispatch/dispatch.h>
@@ -8028,6 +8029,15 @@ static char STCustomActionSharingServiceKey;
 #endif
 }
 
+#if defined(GNUSTEP)
+/// Whether `service` is libs-sharing's built-in `name`; each +sharingServiceNamed: is a new object,
+/// so it's matched by its title.
+static BOOL STIsSharingService(NSSharingService *service, NSSharingServiceName name) {
+    NSString *title = [NSSharingService sharingServiceNamed:name].title;
+    return title.length > 0 && [service.title isEqualToString:title];
+}
+#endif
+
 /// The system's services report back here; a custom action says how it went itself.
 - (nullable id<NSSharingServiceDelegate>)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker
                                     delegateForSharingService:(NSSharingService *)sharingService {
@@ -8042,13 +8052,23 @@ static char STCustomActionSharingServiceKey;
 - (void)sharingService:(NSSharingService *)sharingService didShareItems:(NSArray *)items {
     (void)items;
 #if defined(GNUSTEP)
-    // The sheet's Copy says what the Copy button says. It writes GNUstep's pasteboard only, which
-    // under Wayland is the X11 clipboard (the button mirrors to Wayland's too).
-    NSString *copyTitle = [NSSharingService sharingServiceNamed:GSSharingServiceNameCopy].title;
-    if (copyTitle.length > 0 && [sharingService.title isEqualToString:copyTitle]) {
+    if (STIsSharingService(sharingService, GSSharingServiceNameCopy)) {
+        // What the Copy button says. The sheet's Copy writes GNUstep's pasteboard only, which
+        // under Wayland is the X11 clipboard (the button mirrors to Wayland's too).
         NSString *what = [self.canvasView hasSelection] ? @"selection" : @"image";
         NSString *where = STScreenshotToolIsWaylandSession() ? @"X11 clipboard" : @"clipboard";
         [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Copied %@ to %@", what, where] duration:3.0];
+        return;
+    }
+    if (STIsSharingService(sharingService, GSSharingServiceNameSaveCopy)) {
+        [self showCopyFeedbackMessage:@"Saved a copy" duration:2.5];
+        return;
+    }
+    // These hand the image to another app, whose window is the news; libs-sharing reports them
+    // when they hand off (Email before its draft opens), so "Shared with" would come too soon.
+    if (STIsSharingService(sharingService, NSSharingServiceNameComposeEmail) ||
+        STIsSharingService(sharingService, GSSharingServiceNameShowInFolder) ||
+        STIsSharingService(sharingService, GSSharingServiceNameOpenWith)) {
         return;
     }
 #endif
@@ -8064,6 +8084,14 @@ static char STCustomActionSharingServiceKey;
     }
     NSString *name = sharingService.menuItemTitle.length > 0 ? sharingService.menuItemTitle : sharingService.title;
     NSString *reason = error.localizedDescription.length > 0 ? error.localizedDescription : @"unknown error";
+#if defined(GNUSTEP)
+    // rclone's own words when libs-sharing has no plainer ones ("quota exceeded", not "rclone
+    // couldn't do it.").
+    if ([error.domain isEqualToString:GSSharingRcloneErrorDomain] && error.code == GSSharingRcloneErrorFailed &&
+        error.localizedFailureReason.length > 0) {
+        reason = error.localizedFailureReason;
+    }
+#endif
     ScreenshotToolAppendLog([NSString stringWithFormat:@"Share with %@ failed: %@", name, error]);
     [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Couldn't share with %@: %@", name, reason] duration:4.0];
 }

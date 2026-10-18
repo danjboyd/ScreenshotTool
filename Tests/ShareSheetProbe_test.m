@@ -14,6 +14,7 @@
 #if defined(ST_HAVE_LIBS_SHARING)
 #import "GSSharing.h"
 #import "GSSharingPrivate.h"
+#import "GSSharingRclone.h"
 #endif
 
 @interface AppDelegate (ShareSheetTesting) <NSToolbarDelegate>
@@ -29,6 +30,8 @@
 #if defined(GNUSTEP) && defined(ST_HAVE_LIBS_SHARING)
 @interface AppDelegate (ShareSheetFeedbackTesting) <NSSharingServicePickerDelegate>
 - (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
+- (void)sharingService:(NSSharingService *)sharingService didShareItems:(NSArray *)items;
+- (void)sharingService:(NSSharingService *)sharingService didFailToShareItems:(NSArray *)items error:(NSError *)error;
 @end
 
 /// Keeps the messages a share's end shows, instead of showing them.
@@ -221,10 +224,30 @@
                                  userInfo:@{NSLocalizedDescriptionKey: @"The sign-in to Work Drive has expired."}]];
     XCTAssertEqualObjects(app.messages.lastObject, @"Couldn't share with Work Drive: The sign-in to Work Drive has expired.");
 
+    // rclone's own words when libs-sharing has none plainer.
+    start();
+    [work finish:[NSError errorWithDomain:GSSharingRcloneErrorDomain code:GSSharingRcloneErrorFailed
+                                 userInfo:@{NSLocalizedDescriptionKey: @"rclone couldn't do it.",
+                                            NSLocalizedFailureReasonErrorKey: @"Failed to copy: quota exceeded"}]];
+    XCTAssertEqualObjects(app.messages.lastObject, @"Couldn't share with Work Drive: Failed to copy: quota exceeded");
+
     NSUInteger count = app.messages.count;
     start();
     [work finish:GSSharingCancelledError()];
     XCTAssertEqual(app.messages.count, count, @"Cancel says nothing");
+
+    // Email, Show in Folder and Open With hand the image to another app, whose window says it.
+    for (NSSharingServiceName name in @[NSSharingServiceNameComposeEmail, GSSharingServiceNameShowInFolder,
+                                         GSSharingServiceNameOpenWith]) {
+        [app sharingService:[NSSharingService sharingServiceNamed:name] didShareItems:items];
+        XCTAssertEqual(app.messages.count, count, @"%@ says nothing when it hands off", name);
+    }
+    [app sharingService:[NSSharingService sharingServiceNamed:NSSharingServiceNameComposeEmail]
+        didFailToShareItems:items
+                      error:[NSError errorWithDomain:NSCocoaErrorDomain code:NSFileNoSuchFileError userInfo:nil]];
+    XCTAssertEqual(app.messages.count, count + 1, @"but says when it fails");
+    [app sharingService:[NSSharingService sharingServiceNamed:GSSharingServiceNameSaveCopy] didShareItems:items];
+    XCTAssertEqualObjects(app.messages.lastObject, @"Saved a copy");
 
     // The sheet's Copy says what the Copy button says: under Wayland, GNUstep's pasteboard is the
     // X11 clipboard only.
