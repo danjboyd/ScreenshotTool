@@ -13,6 +13,7 @@
 #import "TestEnvironmentHelpers.h"
 #if defined(ST_HAVE_LIBS_SHARING)
 #import "GSSharing.h"
+#import "GSSharingPrivate.h"
 #endif
 
 @interface AppDelegate (ShareSheetTesting) <NSToolbarDelegate>
@@ -24,6 +25,44 @@
 - (void)setupMenus;
 - (BOOL)validateMenuItem:(NSMenuItem *)menuItem;
 @end
+
+#if defined(GNUSTEP) && defined(ST_HAVE_LIBS_SHARING)
+@interface AppDelegate (ShareSheetFeedbackTesting) <NSSharingServicePickerDelegate>
+- (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
+@end
+
+/// Keeps the messages a share's end shows, instead of showing them.
+@interface STFeedbackRecordingAppDelegate : AppDelegate
+@property (nonatomic, strong) NSMutableArray<NSString *> *messages;
+@end
+
+@implementation STFeedbackRecordingAppDelegate
+- (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration {
+    (void)duration;
+    if (!self.messages) {
+        self.messages = [NSMutableArray array];
+    }
+    [self.messages addObject:message];
+}
+@end
+
+/// A service whose work ends after it returns, as libs-sharing's rclone upload's does.
+@interface STLaterShare : NSObject
+@property (nonatomic, strong) NSSharingService *service;
+@property (nonatomic, strong) NSArray *items;
+@end
+
+@implementation STLaterShare
+- (void)shareItems:(NSArray *)items service:(NSSharingService *)service {
+    GSSharingServiceWillFinishLater(service);
+    self.service = service;
+    self.items = items;
+}
+- (void)finish:(NSError *)error {
+    GSSharingServiceFinish(self.service, self.items, error);
+}
+@end
+#endif
 
 @interface ScreenshotCanvasView (ShareSheetTesting)
 @property (nonatomic, assign) BOOL hasSelectionRect;
@@ -149,6 +188,67 @@
     }
     XCTAssertNotNil(sheet, @"The share sheet is up");
     [sheet performClose:nil];
+}
+
+/// A share says how it went once it has ended: "Shared with" when it's done, why it failed, and
+/// nothing for Cancel or while it's still going (libs-sharing reports the end, its #5).
+- (void)testAShareSaysHowItWentWhenItEnds {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STFeedbackRecordingAppDelegate *app = [[STFeedbackRecordingAppDelegate alloc] init];
+    [app setupWindowAndContent];
+    STLaterShare *work = [[STLaterShare alloc] init];
+    NSArray *items = @[[NSURL fileURLWithPath:@"/tmp/Shot.png"]];
+
+    NSSharingService *(^start)(void) = ^NSSharingService * {
+        NSSharingService *service = [[NSSharingService alloc] initWithTitle:@"Work Drive"
+                                                                      image:nil
+                                                             alternateImage:nil
+                                                                     target:work
+                                                                     action:@selector(shareItems:service:)];
+        // As the sheet does: the service reports to the delegate the picker's delegate names.
+        service.delegate = [app sharingServicePicker:nil delegateForSharingService:service];
+        [service performWithItems:items];
+        return service;
+    };
+
+    start();
+    XCTAssertEqual(app.messages.count, (NSUInteger)0, @"Nothing while the upload is going");
+    [work finish:nil];
+    XCTAssertEqualObjects(app.messages.lastObject, @"Shared with Work Drive");
+
+    start();
+    [work finish:[NSError errorWithDomain:@"rclone" code:3
+                                 userInfo:@{NSLocalizedDescriptionKey: @"The sign-in to Work Drive has expired."}]];
+    XCTAssertEqualObjects(app.messages.lastObject, @"Couldn't share with Work Drive: The sign-in to Work Drive has expired.");
+
+    NSUInteger count = app.messages.count;
+    start();
+    [work finish:GSSharingCancelledError()];
+    XCTAssertEqual(app.messages.count, count, @"Cancel says nothing");
+
+    // The sheet's Copy says what the Copy button says: under Wayland, GNUstep's pasteboard is the
+    // X11 clipboard only.
+    const char *wayland = getenv("WAYLAND_DISPLAY");
+    const char *session = getenv("XDG_SESSION_TYPE");
+    NSString *savedWayland = wayland ? @(wayland) : nil;
+    NSString *savedSession = session ? @(session) : nil;
+    NSSharingService *copy = [NSSharingService sharingServiceNamed:GSSharingServiceNameCopy];
+    copy.delegate = [app sharingServicePicker:nil delegateForSharingService:copy];
+    STUnsetEnvVar("WAYLAND_DISPLAY");
+    STSetEnvVar("XDG_SESSION_TYPE", "x11");
+    [copy performWithItems:items];
+    XCTAssertEqualObjects(app.messages.lastObject, @"Copied image to clipboard");
+    STSetEnvVar("XDG_SESSION_TYPE", "wayland");
+    [copy performWithItems:items];
+    XCTAssertEqualObjects(app.messages.lastObject, @"Copied image to X11 clipboard");
+    if (savedWayland) {
+        STSetEnvVar("WAYLAND_DISPLAY", savedWayland.UTF8String);
+    }
+    if (savedSession) {
+        STSetEnvVar("XDG_SESSION_TYPE", savedSession.UTF8String);
+    } else {
+        STUnsetEnvVar("XDG_SESSION_TYPE");
+    }
 }
 
 - (void)testTheToolbarHasShare {

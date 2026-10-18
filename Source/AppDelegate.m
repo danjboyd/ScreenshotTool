@@ -8035,13 +8035,23 @@ static char STCustomActionSharingServiceKey;
     return objc_getAssociatedObject(sharingService, &STCustomActionSharingServiceKey) ? nil : self;
 }
 
-#if !defined(GNUSTEP)
-// macOS only for now: libs-sharing reports a share done as soon as it starts, and never a
-// failure, so on GNUstep these would say "Shared" too early or wrongly.
+// On GNUstep libs-sharing reports when a share ends (an upload, once its link is made), not when
+// it starts, and a failure or Cancel as such (libs-sharing 07289ba, its #5).
 
 /// "Shared with Mail", as Copy says "Copied".
 - (void)sharingService:(NSSharingService *)sharingService didShareItems:(NSArray *)items {
     (void)items;
+#if defined(GNUSTEP)
+    // The sheet's Copy says what the Copy button says. It writes GNUstep's pasteboard only, which
+    // under Wayland is the X11 clipboard (the button mirrors to Wayland's too).
+    NSString *copyTitle = [NSSharingService sharingServiceNamed:GSSharingServiceNameCopy].title;
+    if (copyTitle.length > 0 && [sharingService.title isEqualToString:copyTitle]) {
+        NSString *what = [self.canvasView hasSelection] ? @"selection" : @"image";
+        NSString *where = STScreenshotToolIsWaylandSession() ? @"X11 clipboard" : @"clipboard";
+        [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Copied %@ to %@", what, where] duration:3.0];
+        return;
+    }
+#endif
     NSString *name = sharingService.menuItemTitle.length > 0 ? sharingService.menuItemTitle : sharingService.title;
     [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Shared with %@", name] duration:2.5];
 }
@@ -8057,7 +8067,6 @@ static char STCustomActionSharingServiceKey;
     ScreenshotToolAppendLog([NSString stringWithFormat:@"Share with %@ failed: %@", name, error]);
     [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Couldn't share with %@: %@", name, reason] duration:4.0];
 }
-#endif
 #endif
 
 /// Writes what a share sends as a PNG named after the document, for a drag, a share or a custom
