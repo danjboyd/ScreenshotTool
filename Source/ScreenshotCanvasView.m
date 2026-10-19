@@ -2658,7 +2658,7 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
     if (presetSize <= 0.0) {
         return font;
     }
-    return [NSFont fontWithName:font.fontName size:presetSize] ?: [NSFont systemFontOfSize:presetSize];
+    return STFontWithSize(font, presetSize);
 }
 
 - (void)setTextAlignment:(NSTextAlignment)textAlignment {
@@ -3267,11 +3267,7 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
 - (NSFont *)scaledFontForEditingWithBaseFont:(NSFont *)baseFont {
     NSFont *font = baseFont ?: self.textFont ?: [NSFont systemFontOfSize:24.0f];
     CGFloat size = font.pointSize * self.zoomScale;
-    NSFont *scaled = [NSFont fontWithName:font.fontName size:MAX(1.0, size)];
-    if (!scaled) {
-        scaled = [NSFont systemFontOfSize:MAX(1.0, size)];
-    }
-    return scaled;
+    return STFontWithSize(font, MAX(1.0, size));
 }
 
 - (NSRect)viewRectForImageRect:(NSRect)imageRect {

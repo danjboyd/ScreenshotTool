@@ -37,6 +37,12 @@ FOUNDATION_EXPORT NSColor *STDefaultPenColor(void);
 FOUNDATION_EXPORT NSColor *STDefaultHighlighterColor(void);
 FOUNDATION_EXPORT NSColor *STDefaultTextColor(void);
 FOUNDATION_EXPORT NSFont *STDefaultTextFont(void);
+/// `font` at another size, keeping its face. On macOS a bold or italic system font has a private
+/// name (".SFNS-Bold") that +fontWithName:size: can't find, so going by name would lose the face.
+FOUNDATION_EXPORT NSFont *STFontWithSize(NSFont *font, CGFloat size);
+/// The font a stored name names, as -fontName gave it, or nil. Knows the system font's private
+/// names, bold and italic included.
+FOUNDATION_EXPORT NSFont * _Nullable STFontNamed(NSString *name, CGFloat size);
 /// The built-in text style (a MarkupTextStyle value): outlined, so labels read on any image.
 FOUNDATION_EXPORT NSInteger STDefaultTextStyle(void);
 /// A stored MarkupTextStyle value, or the fallback when it is missing or out of range.

@@ -715,7 +715,7 @@ static void STTextPopoverPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
         }
     }
     if (!font) {
-        font = [NSFont fontWithName:STDefaultTextFont().fontName size:size];
+        font = STFontWithSize(STDefaultTextFont(), size);
     }
     return font ?: STDefaultTextFont();
 }
