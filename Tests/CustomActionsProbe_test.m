@@ -357,8 +357,8 @@
 
 #if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
 /// A custom action says how it went itself, so the share callbacks leave it alone even when
-/// they're called for it: macOS 26 calls -sharingService:didShareItems: as it starts, though the
-/// picker gave it no delegate (#280).
+/// they're called for it: macOS 26 calls -sharingService:didShareItems: as it starts, on a copy of
+/// its service, though the picker gave it no delegate (#280).
 - (void)testTheShareCallbacksLeaveACustomActionAlone {
     [self writeAction:@"echo.json" json:@"{\"title\": \"Echo\", \"command\": [\"/bin/echo\", \"echoed\"]}"];
     STActionFeedbackAppDelegate *app = (STActionFeedbackAppDelegate *)[self appWithActionsOfClass:[STActionFeedbackAppDelegate class]];
@@ -370,6 +370,11 @@
     [app sharingService:echo didFailToShareItems:@[]
                   error:[NSError errorWithDomain:NSCocoaErrorDomain code:NSFileWriteUnknownError userInfo:nil]];
     XCTAssertEqual(app.messages.count, (NSUInteger)0, @"Nothing for the action: %@", app.messages);
+
+    // macOS 26 passes a copy of the service, without what the app attached to it.
+    NSSharingService *copy = [[NSSharingService alloc] initWithTitle:@"Echo" image:nil alternateImage:nil handler:^{}];
+    [app sharingService:copy didShareItems:@[]];
+    XCTAssertEqual(app.messages.count, (NSUInteger)0, @"Nor for a copy of its service: %@", app.messages);
 
     NSSharingService *drive = [[NSSharingService alloc] initWithTitle:@"Work Drive" image:nil alternateImage:nil handler:^{}];
     [app sharingService:drive didShareItems:@[]];

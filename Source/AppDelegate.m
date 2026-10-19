@@ -7970,9 +7970,21 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
 
 static char STCustomActionSharingServiceKey;
 
-/// Whether `service` is one of the custom actions, which say how they went themselves.
+/// The titles the custom actions' services have had. macOS 26 hands the picker's callbacks copies
+/// of a service, without its associated objects, so a copy is known by its title (#280).
+static NSMutableSet<NSString *> *STCustomActionSharingTitles(void) {
+    static NSMutableSet<NSString *> *titles;
+    if (!titles) {
+        titles = [[NSMutableSet alloc] init];
+    }
+    return titles;
+}
+
+/// Whether `service` is one of the custom actions, which say how they went themselves. A custom
+/// action titled as a system service is ("Mail") would silence that service too.
 static BOOL STIsCustomActionSharingService(NSSharingService *service) {
-    return objc_getAssociatedObject(service, &STCustomActionSharingServiceKey) != nil;
+    return objc_getAssociatedObject(service, &STCustomActionSharingServiceKey) != nil ||
+           (service.title.length > 0 && [STCustomActionSharingTitles() containsObject:service.title]);
 }
 
 /// The custom actions as share services. An action with choices offers each ("Send — host");
@@ -7991,6 +8003,7 @@ static BOOL STIsCustomActionSharingService(NSSharingService *service) {
                 [weakSelf runCustomAction:action choice:nil];
             }]];
             objc_setAssociatedObject(services.lastObject, &STCustomActionSharingServiceKey, action, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [STCustomActionSharingTitles() addObject:services.lastObject.title];
             continue;
         }
         for (NSString *choice in choices) {
@@ -8002,6 +8015,7 @@ static BOOL STIsCustomActionSharingService(NSSharingService *service) {
                 [weakSelf runCustomAction:action choice:choice];
             }]];
             objc_setAssociatedObject(services.lastObject, &STCustomActionSharingServiceKey, action, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [STCustomActionSharingTitles() addObject:services.lastObject.title];
         }
     }
     return services;
