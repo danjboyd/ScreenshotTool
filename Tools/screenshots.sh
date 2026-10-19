@@ -190,6 +190,35 @@ wait_for_window() {
   return 1
 }
 
+# menu_window: GNUstep's main menu when it's a window of its own (its NeXTSTEP-style menus, under
+# its default theme), id x y width height: a narrow column of the app's that isn't its main window.
+menu_window() {
+  [[ "${MENU_STYLE:-}" == "nextstep" ]] || return 1
+  local w info width height
+  for w in $(xdotool search --onlyvisible --classname ScreenshotTool 2>/dev/null); do
+    info="$(xwininfo -id "${w}" 2>/dev/null)" || continue
+    width="$(awk '/Width:/ {print $2}' <<<"${info}")"
+    height="$(awk '/Height:/ {print $2}' <<<"${info}")"
+    (( width >= 60 && width <= 300 && height >= 40 && height <= 400 )) || continue
+    xwininfo -id "${w}" -all 2>/dev/null | grep -q 'Override Redirect State: no' || continue
+    echo "${w} $(awk '/Absolute upper-left X:/ {print $4}' <<<"${info}") $(awk '/Absolute upper-left Y:/ {print $4}' <<<"${info}") ${width} ${height}"
+    return 0
+  done
+  return 1
+}
+
+# place_menu: GNUstep opens its menu at the screen's top left, under GNOME Shell's top bar. The main
+# window stays where the app put it (moving or resizing it under GNUstep's theme can clip it, #60):
+# the menu goes beside it, level with its top, so the shot shows them together.
+place_menu() {
+  local mid mx my mw mh wid wx wy
+  read -r mid mx my mw mh < <(menu_window) || return 0
+  read -r wid wx wy _ < <(client_window "sample.png") || return 0
+  local top
+  top="$(xprop -id "${wid}" _NET_FRAME_EXTENTS 2>/dev/null | sed -n 's/.*= //p' | awk -F', ' '{print $3}')"
+  xdotool windowmove "${mid}" $((wx - mw - 24)) $((wy - ${top:-0})); sleep 1
+}
+
 # shoot <name> <window title>: the whole screen, and the window with that title cropped out of it.
 shoot() {
   local name="$1" title="$2" id x y w h extents left=0 right=0 top=0 bottom=0
@@ -205,12 +234,29 @@ shoot() {
   local shadow sl=0 sr=0 st=0 sb=0
   shadow="$(xprop -id "${id}" _GTK_FRAME_EXTENTS 2>/dev/null | sed -n 's/.*= //p')"
   [[ -n "${shadow}" ]] && IFS=', ' read -r sl sr st sb <<<"${shadow}"
-  convert "${OUT_DIR}/${name}.png" \
-    -crop "$((w + left + right - sl - sr))x$((h + top + bottom - st - sb))+$((x - left + sl))+$((y - top + st))" \
-    +repage "${OUT_DIR}/${name}-window.png"
+  local fx=$((x - left + sl)) fy=$((y - top + st)) fw=$((w + left + right - sl - sr)) fh=$((h + top + bottom - st - sb))
+  local mid mx my mw mh
+  if read -r mid mx my mw mh < <(menu_window); then
+    # GNUstep's own menu, in a window of its own: the shot is both windows, with nothing between.
+    local bx=$((fx < mx ? fx : mx)) by=$((fy < my ? fy : my))
+    local bw=$(( (fx + fw > mx + mw ? fx + fw : mx + mw) - bx )) bh=$(( (fy + fh > my + mh ? fy + fh : my + mh) - by ))
+    read -r sw sh < <(identify -format '%w %h' "${OUT_DIR}/${name}.png")
+    convert "${OUT_DIR}/${name}.png" \
+      \( -size "${sw}x${sh}" xc:black -fill white \
+         -draw "rectangle ${fx},${fy} $((fx + fw - 1)),$((fy + fh - 1))" \
+         -draw "rectangle ${mx},${my} $((mx + mw - 1)),$((my + mh - 1))" \) \
+      -alpha off -compose CopyOpacity -composite -crop "${bw}x${bh}+${bx}+${by}" +repage \
+      "PNG32:${OUT_DIR}/${name}-window.png"
+    echo "screenshots: ${OUT_DIR}/${name}-window.png"
+    return 0
+  fi
+  convert "${OUT_DIR}/${name}.png" -crop "${fw}x${fh}+${fx}+${fy}" +repage "${OUT_DIR}/${name}-window.png"
   if [[ -n "${shadow}" ]]; then
-    window_alpha_edges "${OUT_DIR}/${name}-window.png" "${id}" "${sl}" "${sr}" "${st}" "${sb}" \
-      || round_corners "${OUT_DIR}/${name}-window.png" "${CORNER_RADIUS:-12}"
+    if window_alpha_edges "${OUT_DIR}/${name}-window.png" "${id}" "${sl}" "${sr}" "${st}" "${sb}"; then
+      clip_corners "${OUT_DIR}/${name}-window.png" "${CORNER_RADIUS:-12}"
+    else
+      round_corners "${OUT_DIR}/${name}-window.png" "${CORNER_RADIUS:-12}"
+    fi
   fi
   echo "screenshots: ${OUT_DIR}/${name}-window.png"
 }
@@ -233,6 +279,19 @@ window_alpha_edges() {
   fi
   convert "${raw}" \( "${file}" -alpha off \( "${raw}" -alpha extract -threshold 99.9% \) \
             -compose CopyOpacity -composite \) -compose Over -composite "PNG32:${file}"
+}
+
+# clip_corners <png> <radius>: clears what's outside the window's rounded corners from the
+# window's own pixels. The theme's shadow reaches into the corner squares, outside the curve, and
+# would show there as a faint grey wedge on a light page. Each pixel keeps the lesser of its own
+# alpha and a rounded rectangle's, so the theme's antialiased edge stays inside the curve.
+clip_corners() {
+  local file="$1" r="$2" w h
+  read -r w h < <(identify -format '%w %h' "${file}")
+  convert "${file}" \( +clone -alpha extract \
+      \( -size "${w}x${h}" xc:black -fill white -draw "roundrectangle 0,0 $((w - 1)),$((h - 1)) ${r},${r}" \) \
+      -compose Darken -composite \) \
+    -alpha off -compose CopyOpacity -composite "PNG32:${file}"
 }
 
 # round_corners <png> <radius>: makes the area outside rounded corners of that radius transparent.
@@ -350,6 +409,9 @@ if theme == default_theme.get("name"):
     values["GSTheme"] = theme
 elif theme != "default":
     values.update({"GSTheme": theme, "GSX11HandlesWindowDecorations": False})
+else:
+    # GNUstep's own menus, a column of their own, as its theme is best known for.
+    values["NSMenuInterfaceStyle"] = "NSNextStepInterfaceStyle"
 def literal(value):
     if isinstance(value, bool):
         return "YES" if value else "NO"
@@ -362,6 +424,8 @@ for key in sorted(values):
 print("}")
 EOF_DEFAULTS
   LOG="${WORK}/app-${label}.log"
+  MENU_STYLE=""
+  [[ "${theme}" == "default" ]] && MENU_STYLE=nextstep
 
   # 1. No image: the empty state.
   launch "${LOG}"
@@ -381,9 +445,13 @@ EOF_DEFAULTS
   wait_for_window "sample.png" || { echo "screenshots: ${theme}: the image window didn't appear" >&2; continue; }
   sleep 2
   shoot "${label}-image" "sample.png"
-  # Wide enough for the whole header bar, Share included, as on a desktop with room for it.
+  # Wide enough for the whole header bar, Share included, as on a desktop with room for it. Not
+  # under GNUstep's theme, which opens wide enough for its toolbar, and whose window an xdotool
+  # resize leaves undrawn (#60).
   read -r WID X Y W H < <(client_window "sample.png")
-  if [[ -n "${WID:-}" ]] && (( W < ${SHOT_WIDTH:-1300} )); then
+  if [[ "${MENU_STYLE}" == "nextstep" ]]; then
+    place_menu
+  elif [[ -n "${WID:-}" ]] && (( W < ${SHOT_WIDTH:-1300} )); then
     xdotool windowsize "${WID}" "${SHOT_WIDTH:-1300}" "${H}"; sleep 2
   fi
   read -r X Y W H < <(client_geometry "sample.png")

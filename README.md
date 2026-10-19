@@ -151,8 +151,9 @@ bar row.
 
 ![Marking up a settings page under GNUstep's default theme](docs/images/gnustep-text.png)
 
-Under GNUstep's default theme, as on other desktops: the window manager's title bar, with the
-menus in the window.
+Under GNUstep's default theme, as on other desktops: the window manager's title bar, here with
+GNUstep's own menus, a column of their own (`defaults write NSGlobalDomain NSMenuInterfaceStyle
+NSNextStepInterfaceStyle`; the AppImage puts them in the window).
 
 ![The highlighter's settings popover under the Adwaita theme](docs/images/adwaita-popover.png)
 
@@ -165,7 +166,8 @@ window (`*-window.png`; under Adwaita without the theme's shadow, with transpare
 corners). The images here are `adwaita-text-toolbar-window.png`, `default-text-toolbar-window.png`
 and `adwaita-popover-window.png`. The default theme's needs the release build's GNUstep backend,
 whose patch keeps the toolbar showing after the window resizes (#60): point `SCREENSHOT_APP` at a
-script that runs the release AppImage's binary with its runtime.
+script that runs the built app on the release AppImage's runtime. `SCREENSHOT_SAMPLE_DIR` opens the
+sample from a folder the title bar shows, such as `~/Pictures` in a throwaway account.
 
 ## Building from source
 
