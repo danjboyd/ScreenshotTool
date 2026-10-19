@@ -23,9 +23,10 @@ WINDOWS_RESOURCE_FILES := Source/ScreenshotTool.rc
 ST_LIBS_SHARING := yes
 # The canvas scales the image itself with cairo, as on Linux: a zoomed-out image once per zoom,
 # and the visible part of a zoomed-in one, which the backend's own draw smeared from 300% (#231).
-ifeq ($(shell pkg-config --exists cairo && echo yes),yes)
-CAPTURE_CFLAGS += $(shell pkg-config --cflags cairo) -DST_HAVE_CAIRO=1
-CAPTURE_LDFLAGS += $(shell pkg-config --libs cairo)
+# Found by its header, not pkg-config: on the CI runner `pkg-config` is Strawberry Perl's, which fails.
+ifneq ($(wildcard /clang64/include/cairo/cairo.h),)
+CAPTURE_CFLAGS += -I/clang64/include/cairo -DST_HAVE_CAIRO=1
+CAPTURE_LDFLAGS += -lcairo
 endif
 else
 FONTCONFIG_CFLAGS := -I/usr/include/freetype2
