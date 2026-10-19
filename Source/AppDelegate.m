@@ -3871,7 +3871,7 @@ static id STInfoValueForKey(NSString *key) {
 - (void)stepTextSizeBy:(CGFloat)delta {
     NSFont *font = [self currentTextFont];
     CGFloat size = MAX(6.0, MIN(400.0, round(font.pointSize + delta)));
-    NSFont *resized = [NSFont fontWithName:font.fontName size:size] ?: font;
+    NSFont *resized = STFontWithSize(font, size);
     // Stepping picks an exact size.
     [self applyTextSizePreset:STTextSizePresetExact persist:YES];
     [self applyTextFont:resized persist:YES];
@@ -4948,7 +4948,7 @@ static id STInfoValueForKey(NSString *key) {
         }
         return fallback ?: STDefaultTextFont();
     }
-    NSFont *font = [NSFont fontWithName:name size:(CGFloat)sizeValue];
+    NSFont *font = STFontNamed(name, (CGFloat)sizeValue);
     if (!font) {
         font = fallback ?: STDefaultTextFont();
     }

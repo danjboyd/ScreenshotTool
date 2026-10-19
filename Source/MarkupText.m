@@ -339,7 +339,7 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
     NSFont *baseFont = self.font ?: [NSFont systemFontOfSize:18.0];
     NSFont *font = baseFont;
     if (fabs(scale - 1.0) > 0.0001) {
-        font = [NSFont fontWithName:baseFont.fontName size:MAX(1.0, baseFont.pointSize * scale)] ?: baseFont;
+        font = STFontWithSize(baseFont, MAX(1.0, baseFont.pointSize * scale));
     }
 
     NSRect box = [self textRectForCanvas];
@@ -477,7 +477,7 @@ static NSPoint STProjectPoint(id value, NSPoint fallback) {
     }
     CGFloat size = MAX(1.0, [dictionary[@"fontSize"] doubleValue]);
     NSString *fontName = [dictionary[@"fontName"] isKindOfClass:[NSString class]] ? dictionary[@"fontName"] : @"";
-    NSFont *font = (fontName.length > 0 ? [NSFont fontWithName:fontName size:size] : nil) ?: [NSFont systemFontOfSize:size];
+    NSFont *font = STFontNamed(fontName, size) ?: [NSFont systemFontOfSize:size];
     NSPoint boxSize = STProjectPoint(dictionary[@"boxSize"], NSMakePoint(1.0, 1.0));
     MarkupText *text = [[self alloc] initWithText:dictionary[@"text"]
                                              font:font

@@ -244,4 +244,69 @@
     [canvas commitActiveTextIfNeeded];
 }
 
+#if !defined(GNUSTEP)
+static BOOL STFontHasTrait(NSFont *font, NSFontTraitMask trait) {
+    return ([[NSFontManager sharedFontManager] traitsOfFont:font] & trait) != 0;
+}
+
+/// The bold system font is ".SFNS-Bold", which +fontWithName:size: can't find, so a size change
+/// that went by name came back regular: B did nothing with System Font.
+- (void)testBoldSystemFontStaysBoldAtEverySize {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = [self editingCanvas];
+    canvas.textFont = [[NSFontManager sharedFontManager] convertFont:[NSFont systemFontOfSize:24.0] toHaveTrait:NSBoldFontMask];
+    canvas.textSizePreset = STTextSizePresetMedium;
+    XCTAssertTrue(STFontHasTrait([canvas effectiveTextFont], NSBoldFontMask), @"a preset's size keeps the bold face");
+
+    canvas.zoomScale = 2.0;
+    [canvas beginTextEntryWithImageRect:NSMakeRect(100.0, 250.0, 1.0, 1.0) existingText:nil];
+    [canvas.activeTextView insertText:@"Bold"];
+    XCTAssertTrue(STFontHasTrait([canvas activeTextEntry].font, NSBoldFontMask), @"the label is bold");
+    XCTAssertTrue(STFontHasTrait(canvas.activeTextView.font, NSBoldFontMask), @"and is typed in bold at 2x zoom");
+    [canvas commitActiveTextIfNeeded];
+}
+
+- (void)testBoldButtonWorksWithTheSystemFont {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = [self editingCanvas];
+    canvas.textFont = [NSFont systemFontOfSize:24.0];
+    canvas.textSizePreset = STTextSizePresetMedium;
+    [canvas beginTextEntryWithImageRect:NSMakeRect(100.0, 250.0, 1.0, 1.0) existingText:nil];
+    [canvas.activeTextView insertText:@"Bold"];
+
+    [_appDelegate textOptionsBarDidToggleBold:_appDelegate.textOptionsBar];
+    XCTAssertTrue(STFontHasTrait([canvas effectiveTextFont], NSBoldFontMask), @"B makes System Font bold");
+    XCTAssertTrue(STFontHasTrait([canvas activeTextEntry].font, NSBoldFontMask), @"and the label being typed");
+    [_appDelegate textOptionsBarDidToggleBold:_appDelegate.textOptionsBar];
+    XCTAssertFalse(STFontHasTrait([canvas effectiveTextFont], NSBoldFontMask), @"B again makes it regular");
+    [canvas commitActiveTextIfNeeded];
+}
+
+/// Fonts are stored by -fontName, in the defaults and in projects.
+- (void)testSystemFontNamesFindTheirFace {
+    NSFontManager *fonts = [NSFontManager sharedFontManager];
+    NSFont *bold = [fonts convertFont:[NSFont systemFontOfSize:20.0] toHaveTrait:NSBoldFontMask];
+    NSFont *boldItalic = [fonts convertFont:bold toHaveTrait:NSItalicFontMask];
+    NSFont *found = STFontNamed(bold.fontName, 20.0);
+    XCTAssertTrue(STFontHasTrait(found, NSBoldFontMask), @"%@ is bold", bold.fontName);
+    XCTAssertEqualObjects(found.familyName, bold.familyName, @"and the system font, not a stand-in");
+    XCTAssertEqual(found.pointSize, 20.0);
+    found = STFontNamed(boldItalic.fontName, 12.0);
+    XCTAssertTrue(STFontHasTrait(found, NSBoldFontMask) && STFontHasTrait(found, NSItalicFontMask), @"%@", boldItalic.fontName);
+    XCTAssertFalse(STFontHasTrait(STFontNamed([NSFont systemFontOfSize:12.0].fontName, 12.0), NSBoldFontMask));
+    XCTAssertEqualObjects(STFontNamed(@"Helvetica", 12.0).fontName, @"Helvetica", @"other fonts by name as before");
+    XCTAssertNil(STFontNamed(@"", 12.0));
+}
+
+- (void)testABoldSystemFontLabelSurvivesAProject {
+    NSFont *bold = [[NSFontManager sharedFontManager] convertFont:[NSFont systemFontOfSize:30.0] toHaveTrait:NSBoldFontMask];
+    MarkupText *text = [[MarkupText alloc] initWithText:@"Turn this on" font:bold color:[NSColor redColor]
+                                                 origin:NSMakePoint(10.0, 10.0) boxSize:NSMakeSize(200.0, 40.0)];
+    MarkupText *loaded = [MarkupText textWithProjectRepresentation:[text projectRepresentation]];
+    XCTAssertTrue(STFontHasTrait(loaded.font, NSBoldFontMask), @"reopened bold, not regular (or Times)");
+    XCTAssertEqualObjects(loaded.font.familyName, bold.familyName);
+    XCTAssertEqual(loaded.font.pointSize, 30.0);
+}
+#endif
+
 @end

@@ -46,6 +46,38 @@ NSFont *STDefaultTextFont(void) {
     return [NSFont systemFontOfSize:24.0f];
 }
 
+NSFont *STFontWithSize(NSFont *font, CGFloat size) {
+#if defined(GNUSTEP)
+    NSFont *resized = [NSFont fontWithName:font.fontName size:size];
+#else
+    NSFont *resized = [NSFont fontWithDescriptor:font.fontDescriptor size:size];
+#endif
+    // The size matters more than the face: a preset or the zoom must still apply.
+    return resized ?: [NSFont systemFontOfSize:size];
+}
+
+NSFont *STFontNamed(NSString *name, CGFloat size) {
+    if (name.length == 0) {
+        return nil;
+    }
+#if !defined(GNUSTEP)
+    // The system font's faces are named ".AppleSystemUIFont", ".SFNS-Bold", ".SFNS-BoldItalic"...
+    // CoreText won't look these up by name (it offers Times instead), so rebuild the face.
+    if ([name hasPrefix:@"."]) {
+        NSFontManager *fonts = [NSFontManager sharedFontManager];
+        NSFont *font = [NSFont systemFontOfSize:size];
+        if ([name rangeOfString:@"Bold"].location != NSNotFound) {
+            font = [fonts convertFont:font toHaveTrait:NSBoldFontMask];
+        }
+        if ([name rangeOfString:@"Italic"].location != NSNotFound) {
+            font = [fonts convertFont:font toHaveTrait:NSItalicFontMask];
+        }
+        return font;
+    }
+#endif
+    return [NSFont fontWithName:name size:size];
+}
+
 NSInteger STDefaultTextStyle(void) {
     return 1; // MarkupTextStyleOutline
 }
