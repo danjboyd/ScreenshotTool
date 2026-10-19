@@ -2589,10 +2589,11 @@ static id STInfoValueForKey(NSString *key) {
 #pragma mark - Setup
 
 - (void)setupMenus {
-    NSMenu *mainMenu = [[NSMenu alloc] initWithTitle:@"GSMainMenu"];
+    NSString *appName = [[NSProcessInfo processInfo] processName];
+    // GNUstep's own (NeXTSTEP-style) menus show the main menu's title above it.
+    NSMenu *mainMenu = [[NSMenu alloc] initWithTitle:appName];
     [NSApp setMainMenu:mainMenu];
 
-    NSString *appName = [[NSProcessInfo processInfo] processName];
     NSInterfaceStyle style = NSInterfaceStyleForKey(@"NSMenuInterfaceStyle", nil);
 
     NSMenuItem *appMenuItem = nil;
