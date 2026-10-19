@@ -21,6 +21,12 @@ WINDOWS_RESOURCE_FILES := Source/ScreenshotTool.rc
 # Share on Windows: libs-sharing's sheet with its Windows services (clipboard, mail through
 # MAPI, Explorer, rclone). GSSharing.make adds the system libraries it links.
 ST_LIBS_SHARING := yes
+# The canvas scales the image itself with cairo, as on Linux: a zoomed-out image once per zoom,
+# and the visible part of a zoomed-in one, which the backend's own draw smeared from 300% (#231).
+ifeq ($(shell pkg-config --exists cairo && echo yes),yes)
+CAPTURE_CFLAGS += $(shell pkg-config --cflags cairo) -DST_HAVE_CAIRO=1
+CAPTURE_LDFLAGS += $(shell pkg-config --libs cairo)
+endif
 else
 FONTCONFIG_CFLAGS := -I/usr/include/freetype2
 FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
