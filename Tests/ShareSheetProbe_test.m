@@ -193,6 +193,29 @@
     [sheet performClose:nil];
 }
 
+/// An rclone upload names its remote: libs-sharing's tile says "Link on Work" and its title is a
+/// sentence, neither of which reads well after "Shared with".
+- (void)testAnRcloneShareNamesItsRemote {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STFeedbackRecordingAppDelegate *app = [[STFeedbackRecordingAppDelegate alloc] init];
+    [app setupWindowAndContent];
+    NSArray *items = @[[NSURL fileURLWithPath:@"/tmp/Shot.png"]];
+    // As libs-sharing makes them (GSSharingRcloneService.m).
+    NSSharingService *upload = [[NSSharingService alloc] initWithTitle:@"Upload a copy to Work (Google Drive) and copy a link to it"
+                                                                 image:nil
+                                                        alternateImage:nil
+                                                               handler:^{}];
+    upload.menuItemTitle = @"Link on Work";
+
+    [app sharingService:upload didShareItems:items];
+    XCTAssertEqualObjects(app.messages.lastObject, @"Uploaded to Work; link copied");
+    [app sharingService:upload didFailToShareItems:items
+                  error:[NSError errorWithDomain:GSSharingRcloneErrorDomain code:GSSharingRcloneErrorFailed
+                                        userInfo:@{NSLocalizedDescriptionKey: @"rclone couldn't do it.",
+                                                   NSLocalizedFailureReasonErrorKey: @"Failed to copy: quota exceeded"}]];
+    XCTAssertEqualObjects(app.messages.lastObject, @"Couldn't share with Work: Failed to copy: quota exceeded");
+}
+
 /// A share says how it went once it has ended: "Shared with" when it's done, why it failed, and
 /// nothing for Cancel or while it's still going (libs-sharing reports the end, its #5).
 - (void)testAShareSaysHowItWentWhenItEnds {
