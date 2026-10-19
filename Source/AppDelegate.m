@@ -7981,7 +7981,7 @@ static NSMutableSet<NSString *> *STCustomActionSharingTitles(void) {
 }
 
 /// Whether `service` is one of the custom actions, which say how they went themselves. A custom
-/// action titled as a system service is ("Mail") would silence that service too.
+/// action with a system service's title ("Mail") would silence that service too.
 static BOOL STIsCustomActionSharingService(NSSharingService *service) {
     return objc_getAssociatedObject(service, &STCustomActionSharingServiceKey) != nil ||
            (service.title.length > 0 && [STCustomActionSharingTitles() containsObject:service.title]);
