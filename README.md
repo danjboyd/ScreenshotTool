@@ -5,7 +5,7 @@ image or paste one from the clipboard, mark it up with pens, highlighters, arrow
 callouts, then copy the result, save it as an image, or save it as a project you can keep
 editing.
 
-![ScreenshotTool on macOS, adding a text annotation](docs/images/macos-text.png)
+![ScreenshotTool on macOS, marking up a settings page](docs/images/macos-text.png)
 
 It's free software (GPL v2 or later). On macOS it's a native AppKit app; on Windows, Linux and
 the BSDs it's built with [GNUstep](https://gnustep.github.io/), and the GNUstep theme decides
@@ -116,14 +116,16 @@ GNUstep's default theme, with the menus in the window. Shortcuts use Ctrl on eve
 
 ### macOS
 
-The native macOS app (adding text is shown at the top of this page). In dark mode, a tool's
-width and colour, from its toolbar button:
+The native macOS app, shown at the top of this page marking up a settings page: numbered steps,
+a highlight, an arrow with a callout, and the email address and API key redacted. In dark mode, a
+tool's width and colour, from its colour button:
 
 ![The highlighter's settings popover on macOS in dark mode](docs/images/macos-dark-popover.png)
 
-To regenerate these, run `Tools/screenshots_macos.sh` after `scripts/build_cocoa.sh`; it saves
-`macos-text.png` and `macos-dark-popover.png` in `build/screenshots-macos/`. The terminal needs
-the Screen Recording permission.
+To regenerate these, run `Tools/screenshots_macos.sh` after `scripts/build_cocoa.sh`; it marks up
+the shared sample (`Tools/screenshot-sample/security-settings.png`) and saves `macos-text.png` and
+`macos-dark-popover.png` in `build/screenshots-macos/`. The terminal needs the Screen Recording
+permission.
 
 ### Windows
 
