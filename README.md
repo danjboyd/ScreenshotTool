@@ -127,12 +127,13 @@ the Screen Recording permission.
 
 ### Windows
 
-Under the [WinUI theme](https://github.com/danjboyd/plugins-themes-winuitheme), adding a text
-annotation:
+Under the [WinUI theme](https://github.com/danjboyd/plugins-themes-winuitheme), marking up a
+settings page: numbered steps, a highlight, an arrow with a callout, and the email address and
+API key redacted:
 
-![Adding text on Windows](docs/images/windows-text.png)
+![Marking up a settings page on Windows](docs/images/windows-text.png)
 
-A tool's width and colour, from its toolbar button:
+A tool's width and colour, from its colour button:
 
 ![The highlighter's settings popover on Windows](docs/images/windows-popover.png)
 
