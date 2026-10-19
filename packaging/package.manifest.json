@@ -7,7 +7,7 @@
     "id": "com.danboyd.screenshottool",
     "name": "ScreenshotTool",
     "displayName": "ScreenshotTool",
-    "version": "0.3.0",
+    "version": "0.3.1",
     "manufacturer": "Daniel Boyd",
     "summary": "Annotate screenshots and other images with pen, highlighter, and text tools.",
     "description": "ScreenshotTool is a GNUstep desktop app for opening screenshots and other images, marking them up with pen, highlighter, eraser, and text tools, then saving or copying the annotated result.",
@@ -82,7 +82,7 @@
         "runtimeNotices": [
           {
             "name": "ScreenshotTool",
-            "version": "0.3.0",
+            "version": "0.3.1",
             "license": "GPL-2.0-or-later",
             "source": "ScreenshotTool application bundle",
             "homepage": "https://github.com/danjboyd/ScreenshotTool",
@@ -223,7 +223,7 @@
     "runtimeNotices": [
       {
         "name": "ScreenshotTool",
-        "version": "0.3.0",
+        "version": "0.3.1",
         "license": "GPL-2.0-or-later",
         "source": "ScreenshotTool application bundle",
         "homepage": "https://github.com/danjboyd/ScreenshotTool",
