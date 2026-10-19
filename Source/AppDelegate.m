@@ -7970,6 +7970,11 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
 
 static char STCustomActionSharingServiceKey;
 
+/// Whether `service` is one of the custom actions, which say how they went themselves.
+static BOOL STIsCustomActionSharingService(NSSharingService *service) {
+    return objc_getAssociatedObject(service, &STCustomActionSharingServiceKey) != nil;
+}
+
 /// The custom actions as share services. An action with choices offers each ("Send — host");
 /// until they're listed, it's one service that runs the first, as its toolbar button does.
 - (NSArray<NSSharingService *> *)customActionSharingServices {
@@ -8042,7 +8047,7 @@ static BOOL STIsSharingService(NSSharingService *service, NSSharingServiceName n
 - (nullable id<NSSharingServiceDelegate>)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker
                                     delegateForSharingService:(NSSharingService *)sharingService {
     (void)sharingServicePicker;
-    return objc_getAssociatedObject(sharingService, &STCustomActionSharingServiceKey) ? nil : self;
+    return STIsCustomActionSharingService(sharingService) ? nil : self;
 }
 
 // On GNUstep libs-sharing reports when a share ends (an upload, once its link is made), not when
@@ -8051,6 +8056,10 @@ static BOOL STIsSharingService(NSSharingService *service, NSSharingServiceName n
 /// "Shared with Mail", as Copy says "Copied".
 - (void)sharingService:(NSSharingService *)sharingService didShareItems:(NSArray *)items {
     (void)items;
+    // macOS 26 reports a custom action here as it starts, though its delegate is nil (#280).
+    if (STIsCustomActionSharingService(sharingService)) {
+        return;
+    }
 #if defined(GNUSTEP)
     if (STIsSharingService(sharingService, GSSharingServiceNameCopy)) {
         // What the Copy button says. The sheet's Copy writes GNUstep's pasteboard only, which
@@ -8079,6 +8088,9 @@ static BOOL STIsSharingService(NSSharingService *service, NSSharingServiceName n
 /// Why a share failed; a cancelled one says nothing.
 - (void)sharingService:(NSSharingService *)sharingService didFailToShareItems:(NSArray *)items error:(NSError *)error {
     (void)items;
+    if (STIsCustomActionSharingService(sharingService)) {
+        return;
+    }
     if ([error.domain isEqualToString:NSCocoaErrorDomain] && error.code == NSUserCancelledError) {
         return;
     }
