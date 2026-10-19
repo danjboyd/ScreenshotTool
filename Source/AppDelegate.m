@@ -8036,6 +8036,14 @@ static BOOL STIsSharingService(NSSharingService *service, NSSharingServiceName n
     NSString *title = [NSSharingService sharingServiceNamed:name].title;
     return title.length > 0 && [service.title isEqualToString:title];
 }
+
+/// The rclone remote a libs-sharing upload service sends to, or nil for another service. Its tile
+/// says "Link on <remote>" (libs-sharing #13), and its title is a sentence about what it does.
+static NSString *STRcloneRemoteOfService(NSSharingService *service) {
+    NSString *prefix = @"Link on ";
+    NSString *title = service.menuItemTitle;
+    return ([title hasPrefix:prefix] && title.length > prefix.length) ? [title substringFromIndex:prefix.length] : nil;
+}
 #endif
 
 /// The system's services report back here; a custom action says how it went itself.
@@ -8064,6 +8072,11 @@ static BOOL STIsSharingService(NSSharingService *service, NSSharingServiceName n
         [self showCopyFeedbackMessage:@"Saved a copy" duration:2.5];
         return;
     }
+    NSString *remote = STRcloneRemoteOfService(sharingService);
+    if (remote) {
+        [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Uploaded to %@; link copied", remote] duration:3.0];
+        return;
+    }
     // These hand the image to another app, whose window is the news; libs-sharing reports them
     // when they hand off (Email before its draft opens), so "Shared with" would come too soon.
     if (STIsSharingService(sharingService, NSSharingServiceNameComposeEmail) ||
@@ -8085,6 +8098,7 @@ static BOOL STIsSharingService(NSSharingService *service, NSSharingServiceName n
     NSString *name = sharingService.menuItemTitle.length > 0 ? sharingService.menuItemTitle : sharingService.title;
     NSString *reason = error.localizedDescription.length > 0 ? error.localizedDescription : @"unknown error";
 #if defined(GNUSTEP)
+    name = STRcloneRemoteOfService(sharingService) ?: name;
     // rclone's own words when libs-sharing has no plainer ones ("quota exceeded", not "rclone
     // couldn't do it.").
     if ([error.domain isEqualToString:GSSharingRcloneErrorDomain] && error.code == GSSharingRcloneErrorFailed &&
