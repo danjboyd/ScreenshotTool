@@ -48,10 +48,12 @@ NSFont *STDefaultTextFont(void) {
 
 NSFont *STFontWithSize(NSFont *font, CGFloat size) {
 #if defined(GNUSTEP)
-    return [NSFont fontWithName:font.fontName size:size] ?: font;
+    NSFont *resized = [NSFont fontWithName:font.fontName size:size];
 #else
-    return [NSFont fontWithDescriptor:font.fontDescriptor size:size] ?: font;
+    NSFont *resized = [NSFont fontWithDescriptor:font.fontDescriptor size:size];
 #endif
+    // The size matters more than the face: a preset or the zoom must still apply.
+    return resized ?: [NSFont systemFontOfSize:size];
 }
 
 NSFont *STFontNamed(NSString *name, CGFloat size) {
