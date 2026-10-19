@@ -6,8 +6,15 @@
 #   THEMES="default Adwaita"   the themes to use; "default" is GNUstep's own
 #   SCREENSHOT_LIBRARY_DIR     a GNUstep Library folder holding Themes/ (default: the user's)
 #   SCREENSHOT_WM              gnome-shell, openbox or none (default: the first one installed)
-#   SCREENSHOT_SAMPLE          the image to open (default: a generated chart)
+#   SCREENSHOT_SAMPLE          the image to open (default: Tools/screenshot-sample/security-settings.png,
+#                              marked up as the README shows it; another image isn't marked up)
+#   SCREENSHOT_SAMPLE_DIR      the folder the sample is opened from, which a title bar shows
+#                              (default: the work folder; ~/Pictures in a throwaway account reads well)
 #   KEEP_WORK=1                keep the work folder (app logs, generated configuration)
+#   SCREENSHOT_APP             the program to run (default: the built app), such as a script that
+#                              runs a release build's binary with its runtime: its GNUstep backend
+#                              may carry patches this machine's doesn't (#60)
+#   SCREENSHOT_APP_EXE         that program's executable, if the script execs another (to stop it)
 #
 # Each shot is saved twice: <name>.png, the whole screen, and <name>-window.png, cropped to the
 # window it's about (with the window manager's title bar, when it draws one). The README's images
@@ -24,7 +31,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 OUT_DIR="$(mkdir -p "${1:-${ROOT_DIR}/screenshots}" && cd "${1:-${ROOT_DIR}/screenshots}" && pwd)"
 THEMES="${THEMES:-default Adwaita}"
-APP="${ROOT_DIR}/ScreenshotTool.app/ScreenshotTool"
+APP="${SCREENSHOT_APP:-${ROOT_DIR}/ScreenshotTool.app/ScreenshotTool}"
+APP_EXE="${SCREENSHOT_APP_EXE:-${APP}}"
 WORK="$(mktemp -d)"
 PIDS=()
 
@@ -55,7 +63,7 @@ trap cleanup EXIT
 # SIGKILL: on SIGTERM the app asks to save annotations and stays open. Its defaults are private.
 stop_app() {
   for pid in $(pgrep -u "$(id -u)" 2>/dev/null); do
-    [[ "$(readlink "/proc/${pid}/exe" 2>/dev/null)" == "${APP}" ]] && kill -KILL "${pid}" 2>/dev/null
+    [[ "$(readlink "/proc/${pid}/exe" 2>/dev/null)" == "$(realpath "${APP_EXE}")" ]] && kill -KILL "${pid}" 2>/dev/null
   done
   sleep 1
 }
@@ -139,26 +147,14 @@ else
   echo "screenshots: no window manager (GNOME Shell or Openbox); windows have no title bars" >&2
 fi
 
-# A sample image: the one asked for, or a simple chart, as a screenshot to mark up might show.
-# Either way it's sample.png, the title the script looks for.
-if [[ -n "${SCREENSHOT_SAMPLE:-}" ]]; then
-  convert "${SCREENSHOT_SAMPLE}" -define png:color-type=6 "PNG32:${WORK}/sample.png"
-else
-  bars=(140 190 120 260 210 70 160)
-  days=(Mon Tue Wed Thu Fri Sat Sun)
-  draw=()
-  for i in "${!bars[@]}"; do
-    x=$((80 + i * 105))
-    draw+=(-fill '#3b6ea8' -draw "rectangle ${x},$((440 - bars[i])) $((x + 75)),440"
-           -fill '#555' -pointsize 14 -annotate "+$((x + 22))+468" "${days[i]}")
-  done
-  convert -size 860x520 xc:'#fbfbfa' -font DejaVu-Sans \
-    -fill '#222' -pointsize 26 -annotate +40+56 'Weekly builds' \
-    -fill '#666' -pointsize 15 -annotate +40+84 'Successful builds per day' \
-    -stroke '#ddd' -draw 'line 40,440 820,440' -draw 'line 40,340 820,340' \
-    -draw 'line 40,240 820,240' -draw 'line 40,140 820,140' -stroke none \
-    "${draw[@]}" -define png:color-type=6 "PNG32:${WORK}/sample.png"
-fi
+# The sample image, as sample.png, the title the script looks for: the README's shared one (a
+# fictional settings page, the same on every platform's shots), or the one asked for.
+SAMPLE="${SCREENSHOT_SAMPLE:-${ROOT_DIR}/Tools/screenshot-sample/security-settings.png}"
+SAMPLE_DIR="${SCREENSHOT_SAMPLE_DIR:-${WORK}}"
+mkdir -p "${SAMPLE_DIR}"
+convert "${SAMPLE}" -define png:color-type=6 "PNG32:${SAMPLE_DIR}/sample.png"
+MARKUP=0
+[[ "$(realpath "${SAMPLE}")" == "$(realpath "${ROOT_DIR}/Tools/screenshot-sample/security-settings.png")" ]] && MARKUP=1
 
 # The app's window with that title, x y width height: the GNUstep client window, not the window
 # manager's frame, which GNOME Shell gives the same title (and an invisible shadow border).
@@ -194,6 +190,35 @@ wait_for_window() {
   return 1
 }
 
+# menu_window: GNUstep's main menu when it's a window of its own (its NeXTSTEP-style menus, under
+# its default theme), id x y width height: a narrow column of the app's that isn't its main window.
+menu_window() {
+  [[ "${MENU_STYLE:-}" == "nextstep" ]] || return 1
+  local w info width height
+  for w in $(xdotool search --onlyvisible --classname ScreenshotTool 2>/dev/null); do
+    info="$(xwininfo -id "${w}" 2>/dev/null)" || continue
+    width="$(awk '/Width:/ {print $2}' <<<"${info}")"
+    height="$(awk '/Height:/ {print $2}' <<<"${info}")"
+    (( width >= 60 && width <= 300 && height >= 40 && height <= 400 )) || continue
+    xwininfo -id "${w}" -all 2>/dev/null | grep -q 'Override Redirect State: no' || continue
+    echo "${w} $(awk '/Absolute upper-left X:/ {print $4}' <<<"${info}") $(awk '/Absolute upper-left Y:/ {print $4}' <<<"${info}") ${width} ${height}"
+    return 0
+  done
+  return 1
+}
+
+# place_menu: GNUstep opens its menu at the screen's top left, under GNOME Shell's top bar. The main
+# window stays where the app put it (moving or resizing it under GNUstep's theme can clip it, #60):
+# the menu goes beside it, level with its top, so the shot shows them together.
+place_menu() {
+  local mid mx my mw mh wid wx wy
+  read -r mid mx my mw mh < <(menu_window) || return 0
+  read -r wid wx wy _ < <(client_window "sample.png") || return 0
+  local top
+  top="$(xprop -id "${wid}" _NET_FRAME_EXTENTS 2>/dev/null | sed -n 's/.*= //p' | awk -F', ' '{print $3}')"
+  xdotool windowmove "${mid}" $((wx - mw - 24)) $((wy - ${top:-0})); sleep 1
+}
+
 # shoot <name> <window title>: the whole screen, and the window with that title cropped out of it.
 shoot() {
   local name="$1" title="$2" id x y w h extents left=0 right=0 top=0 bottom=0
@@ -209,12 +234,29 @@ shoot() {
   local shadow sl=0 sr=0 st=0 sb=0
   shadow="$(xprop -id "${id}" _GTK_FRAME_EXTENTS 2>/dev/null | sed -n 's/.*= //p')"
   [[ -n "${shadow}" ]] && IFS=', ' read -r sl sr st sb <<<"${shadow}"
-  convert "${OUT_DIR}/${name}.png" \
-    -crop "$((w + left + right - sl - sr))x$((h + top + bottom - st - sb))+$((x - left + sl))+$((y - top + st))" \
-    +repage "${OUT_DIR}/${name}-window.png"
+  local fx=$((x - left + sl)) fy=$((y - top + st)) fw=$((w + left + right - sl - sr)) fh=$((h + top + bottom - st - sb))
+  local mid mx my mw mh
+  if read -r mid mx my mw mh < <(menu_window); then
+    # GNUstep's own menu, in a window of its own: the shot is both windows, with nothing between.
+    local bx=$((fx < mx ? fx : mx)) by=$((fy < my ? fy : my))
+    local bw=$(( (fx + fw > mx + mw ? fx + fw : mx + mw) - bx )) bh=$(( (fy + fh > my + mh ? fy + fh : my + mh) - by ))
+    read -r sw sh < <(identify -format '%w %h' "${OUT_DIR}/${name}.png")
+    convert "${OUT_DIR}/${name}.png" \
+      \( -size "${sw}x${sh}" xc:black -fill white \
+         -draw "rectangle ${fx},${fy} $((fx + fw - 1)),$((fy + fh - 1))" \
+         -draw "rectangle ${mx},${my} $((mx + mw - 1)),$((my + mh - 1))" \) \
+      -alpha off -compose CopyOpacity -composite -crop "${bw}x${bh}+${bx}+${by}" +repage \
+      "PNG32:${OUT_DIR}/${name}-window.png"
+    echo "screenshots: ${OUT_DIR}/${name}-window.png"
+    return 0
+  fi
+  convert "${OUT_DIR}/${name}.png" -crop "${fw}x${fh}+${fx}+${fy}" +repage "${OUT_DIR}/${name}-window.png"
   if [[ -n "${shadow}" ]]; then
-    window_alpha_edges "${OUT_DIR}/${name}-window.png" "${id}" "${sl}" "${sr}" "${st}" "${sb}" \
-      || round_corners "${OUT_DIR}/${name}-window.png" "${CORNER_RADIUS:-12}"
+    if window_alpha_edges "${OUT_DIR}/${name}-window.png" "${id}" "${sl}" "${sr}" "${st}" "${sb}"; then
+      clip_corners "${OUT_DIR}/${name}-window.png" "${CORNER_RADIUS:-12}"
+    else
+      round_corners "${OUT_DIR}/${name}-window.png" "${CORNER_RADIUS:-12}"
+    fi
   fi
   echo "screenshots: ${OUT_DIR}/${name}-window.png"
 }
@@ -239,6 +281,19 @@ window_alpha_edges() {
             -compose CopyOpacity -composite \) -compose Over -composite "PNG32:${file}"
 }
 
+# clip_corners <png> <radius>: clears what's outside the window's rounded corners from the
+# window's own pixels. The theme's shadow reaches into the corner squares, outside the curve, and
+# would show there as a faint grey wedge on a light page. Each pixel keeps the lesser of its own
+# alpha and a rounded rectangle's, so the theme's antialiased edge stays inside the curve.
+clip_corners() {
+  local file="$1" r="$2" w h
+  read -r w h < <(identify -format '%w %h' "${file}")
+  convert "${file}" \( +clone -alpha extract \
+      \( -size "${w}x${h}" xc:black -fill white -draw "roundrectangle 0,0 $((w - 1)),$((h - 1)) ${r},${r}" \) \
+      -compose Darken -composite \) \
+    -alpha off -compose CopyOpacity -composite "PNG32:${file}"
+}
+
 # round_corners <png> <radius>: makes the area outside rounded corners of that radius transparent.
 round_corners() {
   local file="$1" r="$2"
@@ -250,11 +305,80 @@ round_corners() {
     -alpha off -compose CopyOpacity -composite "${file}"
 }
 
+# image_origin: where the image's pixel (0,0) is on screen, at 100%: found from the first pixel of
+# the sample's logo colour, at (25,16) in the image.
+image_origin() {
+  local x y w h sx sy
+  read -r x y w h < <(client_geometry "sample.png") || return 1
+  read -r sx sy < <(import -window root png:- 2>/dev/null | convert png:- -crop "${w}x${h}+${x}+${y}" +repage txt:- \
+    | awk -F'[ ,:]+' '/#5B5BD6/ { print $1, $2; exit }')
+  [[ -n "${sx}" ]] || return 1
+  echo "$((x + sx - 25)) $((y + sy - 16))"
+}
+
+# at <x> <y>: moves the pointer to that image pixel.
+at() { xdotool mousemove $((OX + $1)) $((OY + $2)); }
+
+# drag <x1> <y1> <x2> <y2>: a drag between image pixels, in steps, as a hand makes it.
+drag() {
+  local i
+  at "$1" "$2"; sleep 0.2
+  xdotool mousedown 1; sleep 0.1
+  for i in $(seq 1 12); do
+    at $(($1 + ($3 - $1) * i / 12)) $(($2 + ($4 - $2) * i / 12)); sleep 0.03
+  done
+  sleep 0.1; xdotool mouseup 1; sleep 0.4
+}
+
+# click_at <x> <y>: a click at an image pixel.
+click_at() { at "$1" "$2"; sleep 0.2; xdotool mousedown 1; sleep 0.1; xdotool mouseup 1; sleep 0.4; }
+
+# use_tool <key> <tool>: picks a tool by its shortcut, and checks the app's log that it took (a tool
+# that was already active logs nothing, so it's only retried once).
+use_tool() {
+  local i _ lines
+  for i in 1 2 3; do
+    lines="$(wc -l <"${LOG}" 2>/dev/null || echo 0)"
+    xdotool key "$1"
+    for _ in $(seq 1 8); do
+      tail -n "+$((lines + 1))" "${LOG}" 2>/dev/null | grep -q "active=com.screenshottool.toolbar.$2\$" && return 0
+      sleep 0.25
+    done
+    tail -n 40 "${LOG}" 2>/dev/null | grep "active=com.screenshottool.toolbar." | tail -1 \
+      | grep -q "toolbar.$2\$" && return 0
+  done
+  echo "screenshots: ${theme}: the $2 tool didn't take" >&2
+  return 1
+}
+
+# The README's markup, in the sample's pixels (as on the Windows and macOS shots): the email
+# address and API key redacted, steps 1 and 2, a highlight, and an arrow to the toggle. The text
+# ("Turn this on") is added by the caller, which shoots it while it's being edited. Its box starts at
+# (576,326), a little left of the Windows shot's, so DejaVu Sans Bold under GNUstep's default theme
+# clears the arrow.
+mark_up() {
+  # The canvas takes the tool shortcuts only once the image has been clicked (under GNUstep's default
+  # theme, not before): a click where the email address is redacted next, which covers it.
+  click_at 450 164
+  use_tool x redact
+  drag 354 151 548 177
+  drag 354 263 568 289
+  use_tool h highlighter
+  drag 242 349 530 349
+  use_tool n step
+  click_at 158 147
+  click_at 212 327
+  use_tool a arrow
+  drag 680 337 764 337
+}
+
 launch() {
   local log="$1"; shift
   stop_app
+  # No custom actions: the user's own would show on the toolbar.
+  mkdir -p "${WORK}/actions"
   GNUSTEP_CONFIG_FILE="${CONFIG}" WAYLAND_DISPLAY= XDG_SESSION_TYPE=x11 SCREENSHOT_TOOL_LOG_PATH="${log}" \
-    "${APP}" "$@" >/dev/null 2>&1 &
+    SCREENSHOT_TOOL_ACTIONS_DIR="${WORK}/actions" "${APP}" "$@" >/dev/null 2>&1 &
   sleep 1
 }
 
@@ -285,6 +409,9 @@ if theme == default_theme.get("name"):
     values["GSTheme"] = theme
 elif theme != "default":
     values.update({"GSTheme": theme, "GSX11HandlesWindowDecorations": False})
+else:
+    # GNUstep's own menus, a column of their own, as its theme is best known for.
+    values["NSMenuInterfaceStyle"] = "NSNextStepInterfaceStyle"
 def literal(value):
     if isinstance(value, bool):
         return "YES" if value else "NO"
@@ -297,6 +424,8 @@ for key in sorted(values):
 print("}")
 EOF_DEFAULTS
   LOG="${WORK}/app-${label}.log"
+  MENU_STYLE=""
+  [[ "${theme}" == "default" ]] && MENU_STYLE=nextstep
 
   # 1. No image: the empty state.
   launch "${LOG}"
@@ -312,39 +441,74 @@ EOF_DEFAULTS
   shoot "${label}-preferences" "^Preferences$"
 
   # 3. An image.
-  launch "${LOG}" "${WORK}/sample.png"
+  launch "${LOG}" "${SAMPLE_DIR}/sample.png"
   wait_for_window "sample.png" || { echo "screenshots: ${theme}: the image window didn't appear" >&2; continue; }
   sleep 2
   shoot "${label}-image" "sample.png"
+  # Wide enough for the whole header bar, Share included, as on a desktop with room for it. Not
+  # under GNUstep's theme, which opens wide enough for its toolbar, and whose window an xdotool
+  # resize leaves undrawn (#60).
+  read -r WID X Y W H < <(client_window "sample.png")
+  if [[ "${MENU_STYLE}" == "nextstep" ]]; then
+    place_menu
+  elif [[ -n "${WID:-}" ]] && (( W < ${SHOT_WIDTH:-1300} )); then
+    xdotool windowsize "${WID}" "${SHOT_WIDTH:-1300}" "${H}"; sleep 2
+  fi
   read -r X Y W H < <(client_geometry "sample.png")
 
-  # 4. The text toolbar: the text tool (T, a canvas shortcut), then a click on the canvas.
-  xdotool mousemove $((X + W / 2)) $((Y + H / 2)) click 1; sleep 0.3
+  # 4. The text toolbar, while a text annotation is being written. On the README's sample, it's the
+  #    README's markup with "Turn this on" (bold) left of the arrow; on another image, "Annotation".
+  #    The window is focused through its status bar: a click on the canvas would draw.
+  xdotool search --onlyvisible --name "sample.png" windowactivate --sync >/dev/null 2>&1; sleep 0.5
+  xdotool mousemove $((X + W / 2)) $((Y + H - 6)) click 1; sleep 0.5
+  if [[ "${MARKUP}" == 1 ]]; then
+    xdotool key ctrl+1; sleep 1
+    if read -r OX OY < <(image_origin); then
+      mark_up
+    else
+      echo "screenshots: ${theme}: the sample's logo isn't on screen; no markup" >&2
+      MARKUP=0
+    fi
+  fi
   xdotool key t
   for _ in $(seq 1 20); do
     tail -n 30 "${LOG}" 2>/dev/null | grep -q 'active=com.screenshottool.toolbar.text' && break
     sleep 0.25
   done
   sleep 0.5
-  xdotool mousemove $((X + W / 3)) $((Y + H / 2)) click 1
+  if [[ "${MARKUP}" == 1 ]]; then
+    click_at 576 326
+  else
+    xdotool mousemove $((X + W / 3)) $((Y + H / 2)) click 1
+  fi
   for _ in $(seq 1 20); do
     tail -n 30 "${LOG}" 2>/dev/null | grep -q 'showHUDMessage' && break
     sleep 0.25
   done
   # The text bar can take a few seconds to lay out.
   sleep 3
-  xdotool type --delay 80 "Annotation"; sleep 1
+  if [[ "${MARKUP}" == 1 ]]; then
+    xdotool type --delay 80 "Turn this on"; sleep 0.5
+    xdotool key ctrl+b; sleep 1
+  else
+    xdotool type --delay 80 "Annotation"; sleep 1
+  fi
   # The text row scrolls the canvas so the image stays put on screen, covering its top: scroll
   # back to the top (wheel up, over the canvas) so the shot shows the whole image.
   xdotool mousemove $((X + W / 2)) $((Y + H * 3 / 4)) click --repeat 5 --delay 100 4; sleep 1
   shoot "${label}-text-toolbar" "sample.png"
 
-  # 5. The tool settings popover, from the colour control, in a fresh window. The control is found
-  #    by its swatch (the highlighter's yellow) in the window's top rows, wherever the theme and
-  #    the toolbar's other items put it.
-  launch "${LOG}" "${WORK}/sample.png"
-  wait_for_window "sample.png" || { echo "screenshots: ${theme}: the image window didn't appear" >&2; continue; }
-  sleep 2
+  # 5. The tool settings popover, from the colour control. On the README's sample it's over the
+  #    finished markup; on another image, in a fresh window. The control is found by its swatch (the
+  #    highlighter's yellow) in the window's top rows, wherever the theme and the toolbar's other
+  #    items put it.
+  if [[ "${MARKUP}" == 1 ]]; then
+    xdotool key Escape; sleep 1
+  else
+    launch "${LOG}" "${SAMPLE_DIR}/sample.png"
+    wait_for_window "sample.png" || { echo "screenshots: ${theme}: the image window didn't appear" >&2; continue; }
+    sleep 2
+  fi
   read -r X Y W H < <(client_geometry "sample.png")
   before="$(grep -c 'popover show invoked' "${LOG}" 2>/dev/null || true)"
   # The highlighter (H), so the swatch is its yellow whatever the last tool was.

@@ -142,27 +142,34 @@ A tool's width and colour, from its colour button:
 ### Linux and BSD (GNUstep)
 
 The app is built from standard controls, and the GNUstep theme decides how it looks. The same
-window, adding a text annotation:
+window, marking up a settings page: numbered steps, a highlight, an arrow with a callout, and the
+email address and API key redacted:
 
-![Adding text under the Adwaita theme](docs/images/adwaita-text.png)
+![Marking up a settings page under the Adwaita theme](docs/images/adwaita-text.png)
 
 Under the [Adwaita theme](https://github.com/danjboyd/plugins-themes-Adwaita), as on a GNOME
 desktop: the toolbar sits in the header bar, and the menus are in its ☰ menu, with no menu
 bar row.
 
-![Adding text under GNUstep's default theme](docs/images/gnustep-text.png)
+![Marking up a settings page under GNUstep's default theme](docs/images/gnustep-text.png)
 
-Under GNUstep's default theme, as on other desktops: the window manager's title bar, with the
-menus in the window.
+Under GNUstep's default theme, as on other desktops: the window manager's title bar, here with
+GNUstep's own menus, a column of their own (`defaults write NSGlobalDomain NSMenuInterfaceStyle
+NSNextStepInterfaceStyle`; the AppImage puts them in the window).
 
 ![The highlighter's settings popover under the Adwaita theme](docs/images/adwaita-popover.png)
 
-A tool's width and colour, from its toolbar button.
+A tool's width and colour, from its colour button.
 
 To regenerate these images, run `Tools/screenshots.sh` after building the app. It opens the app on a
-private display under both themes, and saves each screen whole and cropped to its window
-(`*-window.png`; under Adwaita without the theme's shadow, with transparent rounded corners). The images here are `adwaita-text-toolbar-window.png`,
-`default-text-toolbar-window.png` and `adwaita-popover-window.png`.
+private display under both themes, marks up the shared sample
+(`Tools/screenshot-sample/security-settings.png`), and saves each screen whole and cropped to its
+window (`*-window.png`; under Adwaita without the theme's shadow, with transparent rounded
+corners). The images here are `adwaita-text-toolbar-window.png`, `default-text-toolbar-window.png`
+and `adwaita-popover-window.png`. The default theme's needs the release build's GNUstep backend,
+whose patch keeps the toolbar showing after the window resizes (#60): point `SCREENSHOT_APP` at a
+script that runs the built app on the release AppImage's runtime. `SCREENSHOT_SAMPLE_DIR` opens the
+sample from a folder the title bar shows, such as `~/Pictures` in a throwaway account.
 
 ## Building from source
 
