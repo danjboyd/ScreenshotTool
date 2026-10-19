@@ -3,10 +3,11 @@
 #
 # Usage: Tools/screenshots_macos.sh [output-dir]          (default: build/screenshots-macos/)
 #
-# Opens the sample chart (Tools/macos-screenshots/chart.swift) in build/cocoa/ScreenshotTool.app
-# and saves, each as a window with its shadow on a transparent background:
-#   macos-text.png            the text tool, typing a label, with the text bar
-#   macos-dark-popover.png    dark mode, the highlighter's settings popover
+# Opens the shared sample (Tools/screenshot-sample/security-settings.png, as the Windows shots use)
+# in build/cocoa/ScreenshotTool.app, marks it up, and saves, each as a window with its shadow on a
+# transparent background:
+#   macos-text.png            the markup, with a label being typed and the text bar showing
+#   macos-dark-popover.png    dark mode, the finished markup and the highlighter's settings popover
 # A small library (Tools/macos-screenshots/Scenes.m), loaded into the app, sets each scene up.
 # The README's macOS images are these, copied to docs/images/.
 #
@@ -32,17 +33,15 @@ trap 'rm -rf "${WORK}"' EXIT
 
 clang -dynamiclib -fobjc-arc -framework AppKit "${TOOLS}/Scenes.m" -o "${WORK}/Scenes.dylib"
 codesign --force --sign - "${WORK}/Scenes.dylib" >/dev/null 2>&1
-swiftc -O "${TOOLS}/chart.swift" -o "${WORK}/chart"
 swiftc -O "${TOOLS}/capture.swift" -o "${WORK}/capture"
-mkdir -p "${WORK}/sample"
-"${WORK}/chart" "${WORK}/sample/sample.png"
+SAMPLE="${ROOT_DIR}/Tools/screenshot-sample/security-settings.png"
 
 # shot <scene> <file> [dark]
 shot() {
   local dark=()
   [[ "${3:-}" == dark ]] && dark=(SCREENSHOT_DARK=1)
   env ${dark[@]+"${dark[@]}"} SCREENSHOT_SCENE="$1" DYLD_INSERT_LIBRARIES="${WORK}/Scenes.dylib" \
-    SCREENSHOT_TOOL_LOG_PATH="${WORK}/app.log" "${APP}" "${WORK}/sample/sample.png" >/dev/null 2>&1 &
+    SCREENSHOT_TOOL_LOG_PATH="${WORK}/app.log" "${APP}" "${SAMPLE}" >/dev/null 2>&1 &
   local pid=$!
   sleep 1.5
   osascript -e "tell application \"System Events\" to set frontmost of (first process whose unix id is ${pid}) to true" \
