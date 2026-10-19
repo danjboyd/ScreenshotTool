@@ -7970,6 +7970,23 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
 
 static char STCustomActionSharingServiceKey;
 
+/// The titles the custom actions' services have had. macOS 26 hands the picker's callbacks copies
+/// of a service, without its associated objects, so a copy is known by its title (#280).
+static NSMutableSet<NSString *> *STCustomActionSharingTitles(void) {
+    static NSMutableSet<NSString *> *titles;
+    if (!titles) {
+        titles = [[NSMutableSet alloc] init];
+    }
+    return titles;
+}
+
+/// Whether `service` is one of the custom actions, which say how they went themselves. A custom
+/// action with a system service's title ("Mail") would silence that service too.
+static BOOL STIsCustomActionSharingService(NSSharingService *service) {
+    return objc_getAssociatedObject(service, &STCustomActionSharingServiceKey) != nil ||
+           (service.title.length > 0 && [STCustomActionSharingTitles() containsObject:service.title]);
+}
+
 /// The custom actions as share services. An action with choices offers each ("Send — host");
 /// until they're listed, it's one service that runs the first, as its toolbar button does.
 - (NSArray<NSSharingService *> *)customActionSharingServices {
@@ -7986,6 +8003,7 @@ static char STCustomActionSharingServiceKey;
                 [weakSelf runCustomAction:action choice:nil];
             }]];
             objc_setAssociatedObject(services.lastObject, &STCustomActionSharingServiceKey, action, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [STCustomActionSharingTitles() addObject:services.lastObject.title];
             continue;
         }
         for (NSString *choice in choices) {
@@ -7997,6 +8015,7 @@ static char STCustomActionSharingServiceKey;
                 [weakSelf runCustomAction:action choice:choice];
             }]];
             objc_setAssociatedObject(services.lastObject, &STCustomActionSharingServiceKey, action, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [STCustomActionSharingTitles() addObject:services.lastObject.title];
         }
     }
     return services;
@@ -8042,7 +8061,7 @@ static BOOL STIsSharingService(NSSharingService *service, NSSharingServiceName n
 - (nullable id<NSSharingServiceDelegate>)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker
                                     delegateForSharingService:(NSSharingService *)sharingService {
     (void)sharingServicePicker;
-    return objc_getAssociatedObject(sharingService, &STCustomActionSharingServiceKey) ? nil : self;
+    return STIsCustomActionSharingService(sharingService) ? nil : self;
 }
 
 // On GNUstep libs-sharing reports when a share ends (an upload, once its link is made), not when
@@ -8051,6 +8070,10 @@ static BOOL STIsSharingService(NSSharingService *service, NSSharingServiceName n
 /// "Shared with Mail", as Copy says "Copied".
 - (void)sharingService:(NSSharingService *)sharingService didShareItems:(NSArray *)items {
     (void)items;
+    // macOS 26 reports a custom action here as it starts, though its delegate is nil (#280).
+    if (STIsCustomActionSharingService(sharingService)) {
+        return;
+    }
 #if defined(GNUSTEP)
     if (STIsSharingService(sharingService, GSSharingServiceNameCopy)) {
         // What the Copy button says. The sheet's Copy writes GNUstep's pasteboard only, which
@@ -8079,6 +8102,9 @@ static BOOL STIsSharingService(NSSharingService *service, NSSharingServiceName n
 /// Why a share failed; a cancelled one says nothing.
 - (void)sharingService:(NSSharingService *)sharingService didFailToShareItems:(NSArray *)items error:(NSError *)error {
     (void)items;
+    if (STIsCustomActionSharingService(sharingService)) {
+        return;
+    }
     if ([error.domain isEqualToString:NSCocoaErrorDomain] && error.code == NSUserCancelledError) {
         return;
     }
