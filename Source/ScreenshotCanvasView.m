@@ -1102,6 +1102,13 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) CGFloat scaledImageCacheScale;
 /// The canvas background the copy was made on (it's in its partly covered edge pixels).
 @property (nonatomic, strong, nullable) NSColor *scaledImageCacheBackground;
+/// Zoomed in, the visible part of the image scaled to the screen's pixels (GNUstep), and what it
+/// was made for, so a redraw that doesn't scroll or zoom (a stroke being drawn) reuses it.
+@property (nonatomic, strong, nullable) NSImage *zoomedPartCache;
+@property (nonatomic, assign) NSRect zoomedPartCacheRect;
+@property (nonatomic, assign) CGFloat zoomedPartCacheScale;
+@property (nonatomic, strong, nullable) NSColor *zoomedPartCacheBackground;
+@property (nonatomic, assign) NSImageInterpolation zoomedPartCacheInterpolation;
 /// When the zoom last changed, and the timer that rescales the image once it stops changing.
 @property (nonatomic, assign) NSTimeInterval lastZoomChange;
 @property (nonatomic, strong, nullable) NSTimer *zoomSettleTimer;
@@ -2581,9 +2588,20 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
             if (NSIsEmptyRect(part)) {
                 return;
             }
-            NSImage *zoomed = STZoomedPartForDrawing(source, part, scale / pixelsPerPoint,
-                                                     STThemeCanvasBackgroundColor(),
-                                                     [[NSGraphicsContext currentContext] imageInterpolation]);
+            NSColor *background = STThemeCanvasBackgroundColor();
+            NSImageInterpolation filter = [[NSGraphicsContext currentContext] imageInterpolation];
+            NSImage *zoomed = self.zoomedPartCache;
+            if (!zoomed || !NSEqualRects(self.zoomedPartCacheRect, part) ||
+                fabs(self.zoomedPartCacheScale - scale) >= 0.0001 ||
+                ![self.zoomedPartCacheBackground isEqual:background] ||
+                self.zoomedPartCacheInterpolation != filter) {
+                zoomed = STZoomedPartForDrawing(source, part, scale / pixelsPerPoint, background, filter);
+                self.zoomedPartCache = zoomed;
+                self.zoomedPartCacheRect = part;
+                self.zoomedPartCacheScale = scale;
+                self.zoomedPartCacheBackground = background;
+                self.zoomedPartCacheInterpolation = filter;
+            }
             if (zoomed) {
                 [NSGraphicsContext saveGraphicsState];
                 NSAffineTransform *toView = [NSAffineTransform transform];
@@ -2685,6 +2703,7 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
     _image = image;
     self.scaledImageCache = nil;
     self.scaledImageSource = nil;
+    self.zoomedPartCache = nil;
 }
 
 - (void)loadImage:(NSImage *)image {
