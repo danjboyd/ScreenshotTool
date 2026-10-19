@@ -8,6 +8,8 @@
 #   SCREENSHOT_WM              gnome-shell, openbox or none (default: the first one installed)
 #   SCREENSHOT_SAMPLE          the image to open (default: Tools/screenshot-sample/security-settings.png,
 #                              marked up as the README shows it; another image isn't marked up)
+#   SCREENSHOT_SAMPLE_DIR      the folder the sample is opened from, which a title bar shows
+#                              (default: the work folder; ~/Pictures in a throwaway account reads well)
 #   KEEP_WORK=1                keep the work folder (app logs, generated configuration)
 #   SCREENSHOT_APP             the program to run (default: the built app), such as a script that
 #                              runs a release build's binary with its runtime: its GNUstep backend
@@ -148,7 +150,9 @@ fi
 # The sample image, as sample.png, the title the script looks for: the README's shared one (a
 # fictional settings page, the same on every platform's shots), or the one asked for.
 SAMPLE="${SCREENSHOT_SAMPLE:-${ROOT_DIR}/Tools/screenshot-sample/security-settings.png}"
-convert "${SAMPLE}" -define png:color-type=6 "PNG32:${WORK}/sample.png"
+SAMPLE_DIR="${SCREENSHOT_SAMPLE_DIR:-${WORK}}"
+mkdir -p "${SAMPLE_DIR}"
+convert "${SAMPLE}" -define png:color-type=6 "PNG32:${SAMPLE_DIR}/sample.png"
 MARKUP=0
 [[ "$(realpath "${SAMPLE}")" == "$(realpath "${ROOT_DIR}/Tools/screenshot-sample/security-settings.png")" ]] && MARKUP=1
 
@@ -373,7 +377,7 @@ EOF_DEFAULTS
   shoot "${label}-preferences" "^Preferences$"
 
   # 3. An image.
-  launch "${LOG}" "${WORK}/sample.png"
+  launch "${LOG}" "${SAMPLE_DIR}/sample.png"
   wait_for_window "sample.png" || { echo "screenshots: ${theme}: the image window didn't appear" >&2; continue; }
   sleep 2
   shoot "${label}-image" "sample.png"
@@ -433,7 +437,7 @@ EOF_DEFAULTS
   if [[ "${MARKUP}" == 1 ]]; then
     xdotool key Escape; sleep 1
   else
-    launch "${LOG}" "${WORK}/sample.png"
+    launch "${LOG}" "${SAMPLE_DIR}/sample.png"
     wait_for_window "sample.png" || { echo "screenshots: ${theme}: the image window didn't appear" >&2; continue; }
     sleep 2
   fi
