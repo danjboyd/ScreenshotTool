@@ -7401,11 +7401,7 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     if (![self.canvasView hasImage]) {
         return;
     }
-    if (self.canvasView.isFitToWindow) {
-        [self setZoomScale:0.5];
-        return;
-    }
-
+    // From Fit too, the step below the scale shown: a fixed 50% zoomed in when Fit was below it (#307).
     CGFloat current = self.canvasView.displayZoomScale;
     CGFloat next = [self nextZoomScaleBelow:current];
     [self setZoomScale:next];
