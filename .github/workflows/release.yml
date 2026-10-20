@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   resolve-version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       package-version: ${{ steps.version.outputs.package_version }}
       release-tag: ${{ steps.version.outputs.release_tag }}
@@ -83,6 +83,9 @@ jobs:
       manifest-path: packaging/package.manifest.json
       backend: appimage
       package-version: ${{ needs.resolve-version.outputs.package-version }}
+      # An explicit image, not ubuntu-latest (Ubuntu 26 from October 2026): the AppImage bundles
+      # the runner's libraries, so its base and glibc floor change only when this does.
+      runs-on-appimage: '["ubuntu-24.04"]'
       skip-default-host-setup: true
       # The packager rejects its default apt list when it skips host setup; the
       # preflight script installs those packages itself.
@@ -156,7 +159,7 @@ jobs:
       - package-windows
       - package-linux
       - package-macos
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment:
       name: github-pages
     steps:
