@@ -127,6 +127,28 @@ static BOOL STTestToolbarHonoursVisibilityPriority(id self, SEL _cmd) {
     XCTAssertGreaterThanOrEqual(checked, (NSUInteger)6, @"the default toolbar's items were checked");
 }
 
+/// Each tool stays a touch target of at least 40pt: 46 here, 40 on Windows, where the window's
+/// minimum has to fit on half of a 1920px screen at 150%.
+- (void)testToolSegmentsAreTouchTargets {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSSegmentedControl *tools = nil;
+    for (NSToolbarItem *item in _appDelegate.window.toolbar.items) {
+        if ([item.itemIdentifier isEqualToString:@"com.screenshottool.toolbar.tools"]) {
+            tools = (NSSegmentedControl *)item.view;
+        }
+    }
+    XCTAssertTrue([tools isKindOfClass:[NSSegmentedControl class]], @"the tools are a segmented control");
+#if defined(_WIN32)
+    CGFloat expected = 40.0;
+#else
+    CGFloat expected = 46.0;
+#endif
+    for (NSInteger segment = 0; segment < tools.segmentCount; segment++) {
+        XCTAssertGreaterThanOrEqual([tools widthForSegment:segment], 40.0, @"segment %ld", (long)segment);
+        XCTAssertEqualWithAccuracy([tools widthForSegment:segment], expected, 0.5, @"segment %ld", (long)segment);
+    }
+}
+
 /// Opens a 40 x 30 image, smaller than any window: the window's minimum comes from the toolbar.
 - (void)openSmallImage {
     NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:40 pixelsHigh:30

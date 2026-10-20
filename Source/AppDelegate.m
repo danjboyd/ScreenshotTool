@@ -125,7 +125,13 @@ static const NSInteger STEmptyStateRecentFirstCardTag = 20;
 static const NSInteger STEmptyStateRecentCount = 3;
 static NSString * const STRecentDocumentsEmptyTitle = @"No Recent Documents";
 static NSString * const STRecentDocumentsClearTitle = @"Clear Menu";
+#if defined(_WIN32)
+// WinUI's segmented icon items, so that at 150% the narrowest window (the tools, colour and Copy
+// kept) still fits on half of a 1920px screen. Each one stays a 40px touch target.
+static const CGFloat STToolbarToolSegmentWidth = 40.0f;
+#else
 static const CGFloat STToolbarToolSegmentWidth = 46.0f;
+#endif
 static const CGFloat STToolbarToolControlHeight = 32.0f;
 static const CGFloat STToolbarToolIconSize = 22.0f;
 static const CGFloat STToolbarColorControlWidth = 40.0f;
