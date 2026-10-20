@@ -30,6 +30,14 @@
 #endif
 @end
 
+/// The app's smallest canvas width: 600pt on Windows, so a window fits on half of a 1920px screen
+/// at 150%, and 640pt elsewhere.
+#if defined(GNUSTEP) && defined(_WIN32)
+static const CGFloat STTestMinimumCanvasWidth = 600.0;
+#elif defined(GNUSTEP)
+static const CGFloat STTestMinimumCanvasWidth = 640.0;
+#endif
+
 #if defined(GNUSTEP)
 /// What the theme answers to -toolbarHonoursVisibilityPriority in these tests, as WinUITheme and
 /// Adwaita will once they send the lowest priority into ">>" first.
@@ -92,7 +100,7 @@ static BOOL STTestToolbarHonoursVisibilityPriority(id self, SEL _cmd) {
     CGFloat width = NSWidth([window.contentView frame]);
     if (needed + 8.0 <= limit) {
         XCTAssertGreaterThanOrEqual(width, needed, @"the content is as wide as the toolbar needs");
-        XCTAssertLessThanOrEqual(width, MAX(needed + 9.0, 641.0), @"and no wider than that or the smallest canvas");
+        XCTAssertLessThanOrEqual(width, MAX(needed + 9.0, STTestMinimumCanvasWidth + 1.0), @"and no wider than that or the smallest canvas");
         [window display];
         XCTAssertEqual(window.toolbar.visibleItems.count, window.toolbar.items.count,
                        @"every toolbar item shows at %.0fpt: %@", width,
@@ -187,7 +195,7 @@ static BOOL STTestToolbarHonoursVisibilityPriority(id self, SEL _cmd) {
     [self openSmallImage];
     CGFloat kept = [_appDelegate contentWidthShowingToolbarItems:YES];
     XCTSkipIf(kept <= 0.0, @"The toolbar wasn't laid out, so there's nothing to measure");
-    XCTAssertLessThanOrEqual(window.contentMinSize.width, 641.0, @"the canvas minimum, not the toolbar's %.0fpt", kept);
+    XCTAssertLessThanOrEqual(window.contentMinSize.width, STTestMinimumCanvasWidth + 1.0, @"the canvas minimum, not the toolbar's %.0fpt", kept);
 }
 
 /// A theme that sends the lowest priority into ">>" first: the window can't be made narrower than
@@ -209,7 +217,7 @@ static BOOL STTestToolbarHonoursVisibilityPriority(id self, SEL _cmd) {
 
     XCTAssertLessThan(kept, all, @"the kept items need less than the whole row");
     // With 4pt to spare for the theme's rounding to whole pixels at 125% and 150%.
-    XCTAssertEqualWithAccuracy(window.contentMinSize.width, MAX(kept + 4.0, 640.0), 1.0,
+    XCTAssertEqualWithAccuracy(window.contentMinSize.width, MAX(kept + 4.0, STTestMinimumCanvasWidth), 1.0,
                                @"the minimum keeps the tools, colour and Copy (%.0fpt)", kept);
 }
 #else

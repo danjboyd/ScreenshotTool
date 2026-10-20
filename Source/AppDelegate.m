@@ -107,9 +107,15 @@ static NSInteger STToolbarVisibilityPriorityForIdentifier(NSToolbarItemIdentifie
 // Tall enough for a 24pt slider (the zoom slider, #221): WinUITheme draws its slider from 24pt.
 static const CGFloat StatusBarHeight = 32.0f;
 // Smallest canvas area a window gets, so tiny images still leave room for the title and the
-// whole icon-only toolbar: under Adwaita the colour well and Copy overflow below about 640pt
-// (WinUI needs about 550). macOS measures its own, wider minimum (-resizeWindowToImageSize:).
+// whole icon-only toolbar: under Adwaita the colour well and Copy overflow below about 640pt.
+// macOS measures its own, wider minimum (-resizeWindowToImageSize:). On Windows 600pt, 900px at
+// 150%, so a window fits on half of a 1920px screen with room to spare; WinUITheme's minimum
+// keeps the tools, colour and Copy where it honours visibility priority.
+#if defined(_WIN32)
+static const CGFloat STMinimumCanvasWidth = 600.0f;
+#else
 static const CGFloat STMinimumCanvasWidth = 640.0f;
+#endif
 static const CGFloat STMinimumCanvasHeight = 240.0f;
 static const CGFloat STHudCornerRadius = 10.0f;
 static const CGFloat STHudHorizontalPadding = 20.0f;
