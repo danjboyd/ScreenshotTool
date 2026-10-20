@@ -10,11 +10,12 @@
 #
 """Render the toolbar icons from Resources/Icons/*.svg to the PNGs the app loads.
 
-Each icon is drawn on a 24-unit grid, its art inside 1 to 23. It's rendered at every size the
-toolbar draws it at, so no icon is resampled on screen: <Stem>-<px>-symbolic.png for 16, 24 and 32
-px (and 48 and 64, their 2x), and 22 and 44 px cut from the 24 and 48 px renderings (the tool
-switcher's size, the grid's 1-unit margin left off, so its lines stay on whole pixels). The
-24 px rendering is also <Stem>-symbolic.png, the name older code and packaging look for.
+Each icon is drawn on a 24-unit grid, its art inside 3 to 21. Only that middle 18 units is
+rendered, so the glyph fills about 85% of the icon, as Fluent's and Adwaita's do. Drawn whole,
+the grid left the glyph at about 62%, and 10 px in WinUITheme's 16 px toolbar icon. It's rendered
+at every size the toolbar draws it at, so no icon is resampled on screen:
+<Stem>-<px>-symbolic.png for 16, 22, 24 and 32 px, and 44, 48 and 64, their 2x. The 24 px
+rendering is also <Stem>-symbolic.png, the name older code and packaging look for.
 
 <Stem>-<px>.svg, when there is one, replaces <Stem>.svg at that size: a drawing hinted to that
 size's pixels, still on the 24-unit grid.
@@ -36,23 +37,17 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCES = os.path.join(ROOT, "Resources", "Icons")
 OUTPUT = os.path.join(ROOT, "Resources")
 
-# Pixel size -> (scale from the 24-unit grid, units cut from each edge).
-SIZES = {
-    16: (16 / 24, 0),
-    22: (1, 1),
-    24: (1, 0),
-    32: (32 / 24, 0),
-    44: (2, 1),
-    48: (2, 0),
-    64: (64 / 24, 0),
-}
+SIZES = (16, 22, 24, 32, 44, 48, 64)
+# The part of the 24-unit grid an icon shows: the 18 units in the middle.
+MARGIN = 3
+SHOWN = 24 - 2 * MARGIN
 
 
-def render(handle, pixels, scale, margin):
+def render(handle, pixels):
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, pixels, pixels)
     context = cairo.Context(surface)
-    context.scale(scale, scale)
-    context.translate(-margin, -margin)
+    context.scale(pixels / SHOWN, pixels / SHOWN)
+    context.translate(-MARGIN, -MARGIN)
     viewport = Rsvg.Rectangle()
     viewport.x, viewport.y, viewport.width, viewport.height = 0, 0, 24, 24
     handle.render_document(context, viewport)
@@ -69,10 +64,10 @@ def main():
             continue
         stem = name[:-len(".svg")]
         handle = Rsvg.Handle.new_from_file(os.path.join(SOURCES, name))
-        for pixels, (scale, margin) in SIZES.items():
+        for pixels in SIZES:
             override = os.path.join(SOURCES, "%s-%d.svg" % (stem, pixels))
             source = Rsvg.Handle.new_from_file(override) if os.path.exists(override) else handle
-            surface = render(source, pixels, scale, margin)
+            surface = render(source, pixels)
             surface.write_to_png(os.path.join(OUTPUT, "%s-%d-symbolic.png" % (stem, pixels)))
             if pixels == 24:
                 surface.write_to_png(os.path.join(OUTPUT, "%s-symbolic.png" % stem))
