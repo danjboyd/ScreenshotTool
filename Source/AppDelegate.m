@@ -6627,6 +6627,7 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
 #pragma clang diagnostic ignored "-Wundeclared-selector"
 static const CGFloat STToolbarOverflowButtonWidth = 28.0f; // libs-gui's ClippedItemsViewWidth
 static const CGFloat STHeaderBarTitleRoom = 100.0f; // Adwaita's GnomeThemeHeaderBarMinimumTitleWidth
+static const CGFloat STToolbarKeptItemsSlack = 4.0f;
 
 /// What an item takes in libs-gui's test for which items fit the row (-_visibleBackViews, which
 /// WinUITheme repeats): a view item its minimum width and 10pt each side, a flexible space its
@@ -6761,8 +6762,13 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     // Where the theme honours visibility priority, the window can't be made so narrow that the
     // tools, colour or Copy go into ">>". libs-gui keeps the row's first items instead, and keeping
     // Copy would keep everything before it (over 1100pt under Adwaita), so the canvas minimum stands.
+    // A few points to spare: at 125% and 150% the theme rounds the items to whole pixels, and at
+    // the bare sum Copy went into ">>" 2px short of it.
     if (STToolbarThemeHonoursVisibilityPriority()) {
-        minimumWidth = MAX(minimumWidth, MIN(maxWidth, [self contentWidthShowingToolbarItems:YES]));
+        CGFloat kept = [self contentWidthShowingToolbarItems:YES];
+        if (kept > 0.0f) {
+            minimumWidth = MAX(minimumWidth, MIN(maxWidth, kept + STToolbarKeptItemsSlack));
+        }
     }
     // Wide enough for the whole toolbar too: GNUstep moves the row's last items into the ">>"
     // menu first, and those are Save and Copy. At 125% and 150% an 860px screenshot's window

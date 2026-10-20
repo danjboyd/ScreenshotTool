@@ -208,7 +208,8 @@ static BOOL STTestToolbarHonoursVisibilityPriority(id self, SEL _cmd) {
     XCTSkipIf(kept >= limit, @"The screen is too narrow for the items the window keeps");
 
     XCTAssertLessThan(kept, all, @"the kept items need less than the whole row");
-    XCTAssertEqualWithAccuracy(window.contentMinSize.width, MAX(kept, 640.0), 1.0,
+    // With 4pt to spare for the theme's rounding to whole pixels at 125% and 150%.
+    XCTAssertEqualWithAccuracy(window.contentMinSize.width, MAX(kept + 4.0, 640.0), 1.0,
                                @"the minimum keeps the tools, colour and Copy (%.0fpt)", kept);
 }
 #else
