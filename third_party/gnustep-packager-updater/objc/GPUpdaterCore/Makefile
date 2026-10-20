@@ -9,7 +9,7 @@ OBJCFLAGS += -DHAVE_MODE_T
 BASE_LIBS := $(shell $(GNUSTEP_CONFIG) --base-libs)
 LIB_NAME := libGPUpdaterCore.a
 INCLUDE_DIR := Headers
-SOURCES := Source/GPUpdater.m Source/GPUpdaterDownload.m
+SOURCES := Source/GPUpdater.m Source/GPUpdaterDownload.m Source/GPUpdaterApplyOutcome.m
 C_SOURCES := Source/GPUpdaterWinHTTP.c
 OBJECTS := $(SOURCES:.m=.o) $(C_SOURCES:.c=.o)
 
@@ -24,6 +24,9 @@ Source/GPUpdater.o: Source/GPUpdater.m Headers/GPUpdater.h Headers/GPUpdaterDown
 	clang $(OBJCFLAGS) -I$(INCLUDE_DIR) -c $< -o $@
 
 Source/GPUpdaterDownload.o: Source/GPUpdaterDownload.m Headers/GPUpdaterDownload.h Source/GPUpdaterWinHTTP.h
+	clang $(OBJCFLAGS) -I$(INCLUDE_DIR) -c $< -o $@
+
+Source/GPUpdaterApplyOutcome.o: Source/GPUpdaterApplyOutcome.m Headers/GPUpdaterApplyOutcome.h
 	clang $(OBJCFLAGS) -I$(INCLUDE_DIR) -c $< -o $@
 
 Source/GPUpdaterWinHTTP.o: Source/GPUpdaterWinHTTP.c Source/GPUpdaterWinHTTP.h
