@@ -1463,6 +1463,20 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
     return nil;
 }
 
+#if defined(GNUSTEP)
+/// Asks the opaque view behind the field to redraw too, so the old text is erased (#290). GNUstep
+/// forwards a see-through view's invalid rect to that view only when the rect grows. At a
+/// fractional scale (150%) the rect isn't always cleared after drawing, because it was rounded to
+/// device pixels and back. Then later changes redraw the text alone, over the old one.
+- (void)setStringValue:(NSString *)value {
+    [super setStringValue:value];
+    NSView *opaqueView = [self opaqueAncestor];
+    if (opaqueView && opaqueView != self) {
+        [opaqueView setNeedsDisplayInRect:[self convertRect:self.bounds toView:opaqueView]];
+    }
+}
+#endif
+
 @end
 
 @interface AppDelegate () <NSToolbarDelegate, ToolSettingsPopoverControllerDelegate, TextToolPopoverControllerDelegate, ZoomPopoverControllerDelegate, PreferencesWindowControllerDelegate,
@@ -4453,7 +4467,7 @@ static id STInfoValueForKey(NSString *key) {
     self.statusZoomInButton = [self statusZoomButtonWithTitle:@"+" action:@selector(zoomIn:) label:@"Zoom in"];
     [zoomContainer addSubview:self.statusZoomInButton];
 
-    NSTextField *zoomLabel = [[NSTextField alloc] initWithFrame:NSZeroRect];
+    STStatusTextField *zoomLabel = [[STStatusTextField alloc] initWithFrame:NSZeroRect];
     [zoomLabel setEditable:NO];
     [zoomLabel setBezeled:NO];
     [zoomLabel setBordered:NO];
