@@ -114,7 +114,7 @@
     {
       "name": "WinUITheme",
       "repo": "https://github.com/danjboyd/plugins-themes-winuitheme.git",
-      "ref": "596e0e65da2b99bb59c1b102ad09a1186e632c22",
+      "ref": "958c38f4b1e45f188bb280930c57682fc624976c",
       "platforms": [
         "msi"
       ],
@@ -245,7 +245,7 @@
       },
       {
         "name": "WinUITheme",
-        "version": "0.1.0-alpha9",
+        "version": "0.1.0-alpha10",
         "license": "LGPL-2.1-or-later",
         "source": "Default Windows theme, from danjboyd/plugins-themes-winuitheme",
         "homepage": "https://github.com/danjboyd/plugins-themes-winuitheme",
