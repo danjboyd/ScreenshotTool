@@ -12,6 +12,11 @@ ifneq ($(filter CLANG64,$(MSYSTEM)),)
 FONTCONFIG_CFLAGS := -I/clang64/include/freetype2
 # Share on Windows: libs-sharing, as the app compiles it in.
 ST_LIBS_SHARING := yes
+# The canvas scales the image with cairo, as the app compiles it (linked with the bundle's
+# libraries below), found by its header as the app's is.
+ifneq ($(wildcard /clang64/include/cairo/cairo.h),)
+CAPTURE_CFLAGS += -I/clang64/include/cairo -DST_HAVE_CAIRO=1
+endif
 else
 FONTCONFIG_CFLAGS := -I/usr/include/freetype2
 # Take Screenshot asks the desktop portal over D-Bus (STScreenshotCapture).
@@ -157,6 +162,9 @@ ifneq ($(filter CLANG64,$(MSYSTEM)),)
 # member of these import libraries (and their duplicate __NULL_IMPORT_DESCRIPTORs); as bundle
 # libraries they come after -Wl,--no-whole-archive.
 ScreenshotToolTests_BUNDLE_LIBS += -lstdc++ -lobjc -lfontconfig -lfreetype -ldispatch -lshell32 -luser32 -lgdi32 -lwinhttp
+ifneq ($(wildcard /clang64/include/cairo/cairo.h),)
+ScreenshotToolTests_BUNDLE_LIBS += -lcairo
+endif
 ADDITIONAL_LDFLAGS += -nostartfiles /clang64/lib/dllcrt2.o -Wl,--entry,DllMainCRTStartup
 else
 ADDITIONAL_LDFLAGS += -lstdc++

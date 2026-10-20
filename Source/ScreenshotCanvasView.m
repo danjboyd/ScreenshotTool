@@ -1102,6 +1102,13 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 @property (nonatomic, assign) CGFloat scaledImageCacheScale;
 /// The canvas background the copy was made on (it's in its partly covered edge pixels).
 @property (nonatomic, strong, nullable) NSColor *scaledImageCacheBackground;
+/// Zoomed in, the visible part of the image scaled to the screen's pixels (GNUstep), and what it
+/// was made for, so a redraw that doesn't scroll or zoom (a stroke being drawn) reuses it.
+@property (nonatomic, strong, nullable) NSImage *zoomedPartCache;
+@property (nonatomic, assign) NSRect zoomedPartCacheRect;
+@property (nonatomic, assign) CGFloat zoomedPartCacheScale;
+@property (nonatomic, strong, nullable) NSColor *zoomedPartCacheBackground;
+@property (nonatomic, assign) NSImageInterpolation zoomedPartCacheInterpolation;
 /// When the zoom last changed, and the timer that rescales the image once it stops changing.
 @property (nonatomic, assign) NSTimeInterval lastZoomChange;
 @property (nonatomic, strong, nullable) NSTimer *zoomSettleTimer;
@@ -2377,6 +2384,136 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
     [scaled setCacheMode:NSImageCacheNever];
     return scaled;
 }
+
+/// The part `part` of the image (in its pixels, from the top left) scaled up by `scale` on
+/// `background`, as the backend draws it: cairo's filter for `interpolation`, padded edges, clipped
+/// to the image so its partly covered last pixels blend into the background. Zoomed in on
+/// Windows, the backend's own scaled draw smeared the image from 300% and dropped it from 400%
+/// (#231); a bitmap of the visible part, drawn 1:1, doesn't go through that path.
+static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFloat scale,
+                                       NSColor *background, NSImageInterpolation interpolation) {
+    STBitmapBuffer in;
+    if (scale <= 1.0 || !STPrepareBitmapBuffer(rgba, &in)) {
+        return nil;
+    }
+    part = NSIntersectionRect(NSIntegralRect(part), NSMakeRect(0.0, 0.0, in.width, in.height));
+    if (NSIsEmptyRect(part)) {
+        return nil;
+    }
+    NSInteger left = (NSInteger)NSMinX(part), top = (NSInteger)NSMinY(part);
+    NSInteger partWidth = (NSInteger)NSWidth(part), partHeight = (NSInteger)NSHeight(part);
+    NSInteger width = (NSInteger)ceil(partWidth * scale);
+    NSInteger height = (NSInteger)ceil(partHeight * scale);
+    BOOL premultiplied = !in.hasAlpha || (rgba.bitmapFormat & NSAlphaNonpremultipliedBitmapFormat) == 0;
+    cairo_surface_t *from = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, (int)partWidth, (int)partHeight);
+    cairo_surface_t *to = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, (int)width, (int)height);
+    NSBitmapImageRep *bitmap = nil;
+    if (cairo_surface_status(from) == CAIRO_STATUS_SUCCESS && cairo_surface_status(to) == CAIRO_STATUS_SUCCESS) {
+        // Only the part's pixels, into cairo's layout: one native-endian word a r g b, premultiplied.
+        cairo_surface_flush(from);
+        unsigned char *fromData = cairo_image_surface_get_data(from);
+        int fromStride = cairo_image_surface_get_stride(from);
+        for (NSInteger y = 0; y < partHeight; y++) {
+            const unsigned char *pixel = in.data + (top + y) * in.bytesPerRow + left * in.bytesPerPixel;
+            uint32_t *word = (uint32_t *)(fromData + y * fromStride);
+            for (NSInteger x = 0; x < partWidth; x++, pixel += in.bytesPerPixel) {
+                uint32_t a = in.hasAlpha ? pixel[in.aIndex] : 255;
+                uint32_t r = pixel[in.rIndex], g = pixel[in.gIndex], b = pixel[in.bIndex];
+                if (!premultiplied) {
+                    r = (r * a + 127) / 255;
+                    g = (g * a + 127) / 255;
+                    b = (b * a + 127) / 255;
+                }
+                word[x] = (a << 24) | (r << 16) | (g << 8) | b;
+            }
+        }
+        cairo_surface_mark_dirty(from);
+
+        cairo_t *cr = cairo_create(to);
+        NSColor *fill = [background colorUsingColorSpaceName:NSDeviceRGBColorSpace] ?: [NSColor whiteColor];
+        cairo_set_source_rgba(cr, fill.redComponent, fill.greenComponent, fill.blueComponent, fill.alphaComponent);
+        cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
+        cairo_paint(cr);
+        cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+        cairo_scale(cr, scale, scale);
+        cairo_set_source_surface(cr, from, 0.0, 0.0);
+        cairo_filter_t filter = CAIRO_FILTER_GOOD;
+        if (interpolation == NSImageInterpolationNone) {
+            filter = CAIRO_FILTER_NEAREST;
+        } else if (interpolation == NSImageInterpolationLow) {
+            filter = CAIRO_FILTER_FAST;
+        } else if (interpolation == NSImageInterpolationHigh) {
+            filter = CAIRO_FILTER_BEST;
+        }
+        cairo_pattern_set_filter(cairo_get_source(cr), filter);
+        cairo_pattern_set_extend(cairo_get_source(cr), CAIRO_EXTEND_PAD);
+        // The part has a pixel to spare on each side within the image, so padding shows only where
+        // the image itself ends.
+        cairo_rectangle(cr, 0.0, 0.0, partWidth, partHeight);
+        cairo_clip(cr);
+        cairo_paint(cr);
+        cairo_destroy(cr);
+        cairo_surface_flush(to);
+
+        bitmap = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                         pixelsWide:width
+                                                         pixelsHigh:height
+                                                      bitsPerSample:8
+                                                    samplesPerPixel:4
+                                                           hasAlpha:YES
+                                                           isPlanar:NO
+                                                     colorSpaceName:NSDeviceRGBColorSpace
+                                                       bitmapFormat:0
+                                                        bytesPerRow:width * 4
+                                                       bitsPerPixel:32];
+        unsigned char *out = bitmap.bitmapData;
+        const unsigned char *toData = cairo_image_surface_get_data(to);
+        int toStride = cairo_image_surface_get_stride(to);
+        for (NSInteger y = 0; out && y < height; y++) {
+            const uint32_t *word = (const uint32_t *)(toData + y * toStride);
+            unsigned char *o = out + y * width * 4;
+            for (NSInteger x = 0; x < width; x++, o += 4) {
+                uint32_t value = word[x];
+                o[0] = (value >> 16) & 0xff;
+                o[1] = (value >> 8) & 0xff;
+                o[2] = value & 0xff;
+                o[3] = value >> 24;
+            }
+        }
+        if (!out) {
+            bitmap = nil;
+        }
+    }
+    cairo_surface_destroy(from);
+    cairo_surface_destroy(to);
+    if (!bitmap) {
+        return nil;
+    }
+    NSSize pixels = NSMakeSize(width, height);
+    [bitmap setSize:pixels];
+    NSImage *zoomed = [[NSImage alloc] initWithSize:pixels];
+    [zoomed addRepresentation:bitmap];
+    [zoomed setCacheMode:NSImageCacheNever];
+    return zoomed;
+}
+#endif
+
+#if defined(GNUSTEP) && defined(ST_HAVE_CAIRO)
+/// The image as 8-bit RGBA, for drawing it scaled ourselves. Converted once (16-bit and grayscale
+/// images take a while), not per zoom.
+- (nullable NSBitmapImageRep *)scaledSourceBitmap {
+    NSBitmapImageRep *source = self.scaledImageSource;
+    if (!source) {
+        for (NSImageRep *rep in self.image.representations) {
+            if ([rep isKindOfClass:[NSBitmapImageRep class]]) {
+                source = STRGBABitmapFromRep((NSBitmapImageRep *)rep);
+                break;
+            }
+        }
+        self.scaledImageSource = source;
+    }
+    return source;
+}
 #endif
 
 /// Draws the image at the current zoom. On GNUstep, cairo scales a bitmap down with a costly
@@ -2395,17 +2532,7 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
                        [self.scaledImageCacheBackground isEqual:background];
         BOOL settling = [NSDate timeIntervalSinceReferenceDate] - self.lastZoomChange < STZoomSettleDelay;
         if (!current && !(settling && cache)) {
-            NSBitmapImageRep *source = self.scaledImageSource;
-            if (!source) {
-                for (NSImageRep *rep in self.image.representations) {
-                    if ([rep isKindOfClass:[NSBitmapImageRep class]]) {
-                        // Converted once (16-bit and grayscale images take a while), not per zoom.
-                        source = STRGBABitmapFromRep((NSBitmapImageRep *)rep);
-                        break;
-                    }
-                }
-                self.scaledImageSource = source;
-            }
+            NSBitmapImageRep *source = [self scaledSourceBitmap];
             cache = source ? STScaledImageForDrawing(source, scale, background) : nil;
             self.scaledImageCache = cache;
             self.scaledImageCacheScale = scale;
@@ -2430,11 +2557,70 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
                 // A stretch of the last copy, which is near this size, until the zoom settles.
                 [self scheduleZoomSettle];
             }
+            // GNUstep's restoreGraphicsState leaves the interpolation as set, so it's put back
+            // by hand: the zoomed-in draw takes its filter from it.
+            NSImageInterpolation interpolation = [context imageInterpolation];
             [context setImageInterpolation:NSImageInterpolationNone];
             [cache drawInRect:target fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0
                respectFlipped:YES hints:nil];
+            [context setImageInterpolation:interpolation];
             [NSGraphicsContext restoreGraphicsState];
             return;
+        }
+    }
+#endif
+#if defined(GNUSTEP) && defined(ST_HAVE_CAIRO)
+    // Zoomed in, the part of the image in view (and a pixel round it) is scaled into a bitmap of
+    // the screen's pixels and copied 1:1: on Windows the backend's own scaled draw smeared the
+    // image from 300% and dropped it from 400% (#231).
+    if (scale > 1.001) {
+        NSBitmapImageRep *source = [self scaledSourceBitmap];
+        if (source && NSWidth(imageRect) > 0.0 && NSHeight(imageRect) > 0.0) {
+            CGFloat zoom = self.zoomScale;
+            CGFloat pixelsPerPoint = source.pixelsWide / NSWidth(imageRect);
+            NSRect visible = [self visibleRect];
+            NSRect inPixels = NSMakeRect((NSMinX(visible) / zoom - NSMinX(imageRect)) * pixelsPerPoint,
+                                         (NSMinY(visible) / zoom - NSMinY(imageRect)) * pixelsPerPoint,
+                                         NSWidth(visible) / zoom * pixelsPerPoint,
+                                         NSHeight(visible) / zoom * pixelsPerPoint);
+            NSRect part = NSIntersectionRect(NSIntegralRect(NSInsetRect(inPixels, -1.0, -1.0)),
+                                             NSMakeRect(0.0, 0.0, source.pixelsWide, source.pixelsHigh));
+            if (NSIsEmptyRect(part)) {
+                return;
+            }
+            NSColor *background = STThemeCanvasBackgroundColor();
+            NSImageInterpolation filter = [[NSGraphicsContext currentContext] imageInterpolation];
+            NSImage *zoomed = self.zoomedPartCache;
+            if (!zoomed || !NSEqualRects(self.zoomedPartCacheRect, part) ||
+                fabs(self.zoomedPartCacheScale - scale) >= 0.0001 ||
+                ![self.zoomedPartCacheBackground isEqual:background] ||
+                self.zoomedPartCacheInterpolation != filter) {
+                zoomed = STZoomedPartForDrawing(source, part, scale / pixelsPerPoint, background, filter);
+                self.zoomedPartCache = zoomed;
+                self.zoomedPartCacheRect = part;
+                self.zoomedPartCacheScale = scale;
+                self.zoomedPartCacheBackground = background;
+                self.zoomedPartCacheInterpolation = filter;
+            }
+            if (zoomed) {
+                [NSGraphicsContext saveGraphicsState];
+                NSAffineTransform *toView = [NSAffineTransform transform];
+                [toView scaleBy:1.0 / zoom];
+                [toView concat];
+                NSImageRep *rep = zoomed.representations.firstObject;
+                CGFloat pointsPerPixel = 1.0 / self.screenPixelsPerPoint;
+                NSRect target = NSMakeRect((NSMinX(imageRect) + NSMinX(part) / pixelsPerPoint) * zoom,
+                                           (NSMinY(imageRect) + NSMinY(part) / pixelsPerPoint) * zoom,
+                                           rep.pixelsWide * pointsPerPixel, rep.pixelsHigh * pointsPerPixel);
+                NSGraphicsContext *context = [NSGraphicsContext currentContext];
+                NSImageInterpolation interpolation = [context imageInterpolation];
+                [context setImageInterpolation:NSImageInterpolationNone];
+                [zoomed drawInRect:target fromRect:NSZeroRect operation:NSCompositeSourceOver fraction:1.0
+                    respectFlipped:YES hints:nil];
+                [context setImageInterpolation:interpolation];
+                [NSGraphicsContext restoreGraphicsState];
+                return;
+            }
         }
     }
 #endif
@@ -2517,6 +2703,7 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
     _image = image;
     self.scaledImageCache = nil;
     self.scaledImageSource = nil;
+    self.zoomedPartCache = nil;
 }
 
 - (void)loadImage:(NSImage *)image {
