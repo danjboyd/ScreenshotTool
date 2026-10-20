@@ -2283,13 +2283,28 @@ static const NSTimeInterval STZoomSettleDelay = 0.3;
 }
 
 #if defined(ST_HAVE_CAIRO)
+/// `bitmap`, already scaled to the screen's pixels, as an image sized in the points those pixels
+/// cover (`pointsPerPixel` of them each). Drawn into a rect of that size it is copied 1:1, with no
+/// scaling for NSImage to reconcile between its size and the rect: sized in pixels instead, at 125%
+/// and 150% on Windows the backend scaled it down and back up, and smeared its top and right edges.
+static NSImage *STImageSizedForScreen(NSBitmapImageRep *bitmap, CGFloat pointsPerPixel) {
+    NSSize size = NSMakeSize(bitmap.pixelsWide * pointsPerPixel, bitmap.pixelsHigh * pointsPerPixel);
+    [bitmap setSize:size];
+    NSImage *image = [[NSImage alloc] initWithSize:size];
+    [image addRepresentation:bitmap];
+    [image setCacheMode:NSImageCacheNever];
+    return image;
+}
+
 /// The image scaled by `scale` (under 1) on `background`, as the canvas shows it: drawn as
 /// GNUstep's cairo backend draws it (cairo's good filter, padded edges, clipped to the image so
 /// its partly covered last pixels blend into the background), into premultiplied 8-bit RGBA
 /// (bitmapFormat 0), the one layout that backend draws without converting it first. Done with
 /// cairo itself because GNUstep's backend doesn't draw into a bitmap's context (the exports
-/// rasterise themselves for the same reason). `rgba` is the image as STRGBABitmapFromRep gives it.
-static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, NSColor *background) {
+/// rasterise themselves for the same reason). `rgba` is the image as STRGBABitmapFromRep gives it;
+/// the result is sized for a screen of `pointsPerPixel`, as STImageSizedForScreen says.
+static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, NSColor *background,
+                                        CGFloat pointsPerPixel) {
     STBitmapBuffer in;
     if (scale <= 0.0 || scale >= 1.0 || !STPrepareBitmapBuffer(rgba, &in)) {
         return nil;
@@ -2375,23 +2390,18 @@ static NSImage *STScaledImageForDrawing(NSBitmapImageRep *rgba, CGFloat scale, N
     if (!bitmap) {
         return nil;
     }
-    // Sized in its own pixels: drawn into a rect of that size it is copied 1:1, with no scaling
-    // for NSImage to reconcile between its size and the rect.
-    NSSize pixels = NSMakeSize(width, height);
-    [bitmap setSize:pixels];
-    NSImage *scaled = [[NSImage alloc] initWithSize:pixels];
-    [scaled addRepresentation:bitmap];
-    [scaled setCacheMode:NSImageCacheNever];
-    return scaled;
+    return STImageSizedForScreen(bitmap, pointsPerPixel);
 }
 
 /// The part `part` of the image (in its pixels, from the top left) scaled up by `scale` on
 /// `background`, as the backend draws it: cairo's filter for `interpolation`, padded edges, clipped
 /// to the image so its partly covered last pixels blend into the background. Zoomed in on
 /// Windows, the backend's own scaled draw smeared the image from 300% and dropped it from 400%
-/// (#231); a bitmap of the visible part, drawn 1:1, doesn't go through that path.
+/// (#231); a bitmap of the visible part, drawn 1:1, doesn't go through that path. Sized for a
+/// screen of `pointsPerPixel`, as STImageSizedForScreen says.
 static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFloat scale,
-                                       NSColor *background, NSImageInterpolation interpolation) {
+                                       NSColor *background, NSImageInterpolation interpolation,
+                                       CGFloat pointsPerPixel) {
     STBitmapBuffer in;
     if (scale <= 1.0 || !STPrepareBitmapBuffer(rgba, &in)) {
         return nil;
@@ -2489,12 +2499,7 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
     if (!bitmap) {
         return nil;
     }
-    NSSize pixels = NSMakeSize(width, height);
-    [bitmap setSize:pixels];
-    NSImage *zoomed = [[NSImage alloc] initWithSize:pixels];
-    [zoomed addRepresentation:bitmap];
-    [zoomed setCacheMode:NSImageCacheNever];
-    return zoomed;
+    return STImageSizedForScreen(bitmap, pointsPerPixel);
 }
 #endif
 
@@ -2533,7 +2538,7 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
         BOOL settling = [NSDate timeIntervalSinceReferenceDate] - self.lastZoomChange < STZoomSettleDelay;
         if (!current && !(settling && cache)) {
             NSBitmapImageRep *source = [self scaledSourceBitmap];
-            cache = source ? STScaledImageForDrawing(source, scale, background) : nil;
+            cache = source ? STScaledImageForDrawing(source, scale, background, 1.0 / self.screenPixelsPerPoint) : nil;
             self.scaledImageCache = cache;
             self.scaledImageCacheScale = scale;
             self.scaledImageCacheBackground = background;
@@ -2595,7 +2600,8 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
                 fabs(self.zoomedPartCacheScale - scale) >= 0.0001 ||
                 ![self.zoomedPartCacheBackground isEqual:background] ||
                 self.zoomedPartCacheInterpolation != filter) {
-                zoomed = STZoomedPartForDrawing(source, part, scale / pixelsPerPoint, background, filter);
+                zoomed = STZoomedPartForDrawing(source, part, scale / pixelsPerPoint, background, filter,
+                                                1.0 / self.screenPixelsPerPoint);
                 self.zoomedPartCache = zoomed;
                 self.zoomedPartCacheRect = part;
                 self.zoomedPartCacheScale = scale;
