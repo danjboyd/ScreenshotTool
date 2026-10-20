@@ -5,13 +5,18 @@
  * On macOS the toolbar shares its row with the window's title, so a window opened at the smallest
  * canvas width showed only Undo and Redo. A small image's window now opens wide enough for the
  * whole toolbar. When the window is narrower, Undo and Redo overflow first and Save and Share last,
- * and the window can't be made so narrow that the tools, colour or Copy overflow.
+ * and the window can't be made so narrow that the tools, colour or Copy overflow: on GNUstep only
+ * where the theme honours visibility priority.
  */
 
 #import <XCTest/XCTest.h>
 #import <AppKit/AppKit.h>
 #import "AppDelegate.h"
 #import "TestEnvironmentHelpers.h"
+#if defined(GNUSTEP)
+#import <GNUstepGUI/GSTheme.h>
+#import <objc/runtime.h>
+#endif
 
 @interface AppDelegate (ToolbarFitsWindowTesting)
 - (void)setupWindowAndContent;
@@ -20,9 +25,22 @@
 - (NSWindow *)window;
 #if defined(GNUSTEP)
 - (CGFloat)contentWidthShowingAllToolbarItems;
+- (CGFloat)contentWidthShowingToolbarItems:(BOOL)keptOnly;
 - (void)resizeWindowToImageSize:(NSSize)imageSize;
 #endif
 @end
+
+#if defined(GNUSTEP)
+/// What the theme answers to -toolbarHonoursVisibilityPriority in these tests, as WinUITheme and
+/// Adwaita will once they send the lowest priority into ">>" first.
+static BOOL STTestThemeHonoursVisibilityPriority = NO;
+
+static BOOL STTestToolbarHonoursVisibilityPriority(id self, SEL _cmd) {
+    (void)self;
+    (void)_cmd;
+    return STTestThemeHonoursVisibilityPriority;
+}
+#endif
 
 @interface ToolbarFitsWindowProbeTests : XCTestCase {
     BOOL _shouldSkip;
@@ -109,41 +127,87 @@
     XCTAssertGreaterThanOrEqual(checked, (NSUInteger)6, @"the default toolbar's items were checked");
 }
 
-/// As narrow as the window may be made, the tools, colour and Copy still show. GNUstep moves the
-/// row's last items into ">>" (and the theme the lowest priority first), so its minimum width
-/// reaches past Copy; macOS measures the width at which the items it must keep show.
-- (void)testTheNarrowestWindowStillShowsTheToolsColourAndCopy {
-    XCTSkipIf(_shouldSkip, @"No window server");
+/// Opens a 40 x 30 image, smaller than any window: the window's minimum comes from the toolbar.
+- (void)openSmallImage {
     NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:40 pixelsHigh:30
                                                                  bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
                                                                 colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
     NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:
                       [NSString stringWithFormat:@"toolbar-narrow-%@.png", [[NSUUID UUID] UUIDString]]];
     [[rep representationUsingType:NSPNGFileType properties:@{}] writeToFile:path atomically:YES];
-    NSWindow *window = _appDelegate.window;
-#if defined(GNUSTEP)
-    // libs-gui lays the toolbar out once the window is on screen, and the minimum is measured from it.
-    [window orderFront:nil];
-    [window display];
-#endif
     XCTAssertTrue([_appDelegate openImageAtURL:[NSURL fileURLWithPath:path]]);
     [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
+}
 
+#if defined(GNUSTEP)
+/// Makes the current theme answer -toolbarHonoursVisibilityPriority with `honours`.
+- (void)setThemeHonoursVisibilityPriority:(BOOL)honours {
+    STTestThemeHonoursVisibilityPriority = honours;
+    Class themeClass = [[GSTheme theme] class];
+    SEL selector = @selector(toolbarHonoursVisibilityPriority);
+    if (!class_getInstanceMethod(themeClass, selector)) {
+        class_addMethod(themeClass, selector, (IMP)STTestToolbarHonoursVisibilityPriority, "c@:");
+    }
+}
+
+/// A theme that keeps the row's first items, as libs-gui does: keeping Copy would keep the whole
+/// row before it (over 1100pt under Adwaita), so the window keeps the canvas minimum and Copy may
+/// go into ">>".
+- (void)testWithoutPriorityTheMinimumIsTheCanvasMinimum {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    Method answer = class_getInstanceMethod([[GSTheme theme] class], @selector(toolbarHonoursVisibilityPriority));
+    XCTSkipIf(answer && method_getImplementation(answer) != (IMP)STTestToolbarHonoursVisibilityPriority,
+              @"The theme itself answers -toolbarHonoursVisibilityPriority");
+    [self setThemeHonoursVisibilityPriority:NO];
+    NSWindow *window = _appDelegate.window;
+    [window orderFront:nil];
+    [window display];
+    [self openSmallImage];
+    CGFloat kept = [_appDelegate contentWidthShowingToolbarItems:YES];
+    XCTSkipIf(kept <= 0.0, @"The toolbar wasn't laid out, so there's nothing to measure");
+    XCTAssertLessThanOrEqual(window.contentMinSize.width, 641.0, @"the canvas minimum, not the toolbar's %.0fpt", kept);
+}
+
+/// A theme that sends the lowest priority into ">>" first: the window can't be made narrower than
+/// the tools, colour, Copy, the flexible spaces and the ">>" button need, which is less than the
+/// whole row.
+- (void)testWithPriorityTheMinimumKeepsTheToolsColourAndCopy {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [self setThemeHonoursVisibilityPriority:YES];
+    NSWindow *window = _appDelegate.window;
+    [window orderFront:nil];
+    [window display];
+    [self openSmallImage];
+    CGFloat kept = [_appDelegate contentWidthShowingToolbarItems:YES];
+    CGFloat all = [_appDelegate contentWidthShowingAllToolbarItems];
+    [self setThemeHonoursVisibilityPriority:NO];
+    XCTSkipIf(kept <= 0.0, @"The toolbar wasn't laid out, so there's nothing to measure");
+    CGFloat limit = floor(NSWidth((window.screen ?: [NSScreen mainScreen]).visibleFrame) * 0.95);
+    XCTSkipIf(kept >= limit, @"The screen is too narrow for the items the window keeps");
+
+    XCTAssertLessThan(kept, all, @"the kept items need less than the whole row");
+    XCTAssertEqualWithAccuracy(window.contentMinSize.width, MAX(kept, 640.0), 1.0,
+                               @"the minimum keeps the tools, colour and Copy (%.0fpt)", kept);
+}
+#else
+/// As narrow as the window may be made, the tools, colour and Copy still show: macOS measures the
+/// width at which the items it must keep show.
+- (void)testTheNarrowestWindowStillShowsTheToolsColourAndCopy {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [self openSmallImage];
+    NSWindow *window = _appDelegate.window;
     CGFloat limit = floor(NSWidth((window.screen ?: [NSScreen mainScreen]).visibleFrame) * 0.95);
     XCTSkipIf(window.contentMinSize.width >= limit, @"The screen is too narrow for the items the window keeps");
-    [window setContentSize:NSMakeSize(window.contentMinSize.width, NSHeight([window.contentView frame]))];
-#if defined(GNUSTEP)
-    [window display];
-#else
+    [window setContentSize:NSMakeSize(window.contentMinSize.width, NSHeight(window.contentView.frame))];
     [window layoutIfNeeded];
-#endif
     NSArray *visible = [window.toolbar.visibleItems valueForKey:@"itemIdentifier"];
     for (NSString *identifier in @[@"com.screenshottool.toolbar.tools", @"com.screenshottool.toolbar.color",
                                    @"com.screenshottool.toolbar.copy"]) {
         XCTAssertTrue([visible containsObject:identifier], @"%@ shows at %.0fpt: %@", identifier,
-                      NSWidth([window.contentView frame]), visible);
+                      NSWidth(window.contentView.frame), visible);
     }
 }
+#endif
 
 #if !defined(GNUSTEP)
 - (void)testSmallImageOpensWithTheWholeToolbar {

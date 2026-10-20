@@ -6648,9 +6648,18 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     return [self contentWidthShowingToolbarItems:NO];
 }
 
+/// Whether the theme sends the toolbar's lowest-priority items into ">>" first (WinUITheme and
+/// Adwaita say so), rather than libs-gui's last items. Asked of the theme, so a theme switched
+/// away from stops answering.
+static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
+    GSTheme *theme = [GSTheme theme];
+    return [theme respondsToSelector:@selector(toolbarHonoursVisibilityPriority)] &&
+           (BOOL)(intptr_t)[theme performSelector:@selector(toolbarHonoursVisibilityPriority)];
+}
+
 /// With `keptOnly`, the content width at which the items that must never overflow show (the tools,
-/// colour and Copy): the row up to the last of them and the ">>" button, as libs-gui keeps the
-/// row's first items. Enough too where the theme sends the lowest priority into ">>" first.
+/// colour and Copy) where the theme honours visibility priority: those items, the flexible spaces
+/// and the ">>" button.
 - (CGFloat)contentWidthShowingToolbarItems:(BOOL)keptOnly {
     NSToolbar *toolbar = self.window.toolbar;
     if (!toolbar || !toolbar.isVisible || ![toolbar respondsToSelector:@selector(_toolbarView)]) {
@@ -6661,30 +6670,27 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
         return 0.0f;
     }
     NSArray<NSToolbarItem *> *items = toolbar.items;
-    NSUInteger count = keptOnly ? 0 : items.count;
-    if (keptOnly) {
-        for (NSUInteger index = 0; index < items.count; index++) {
-            if (items[index].visibilityPriority >= NSToolbarItemVisibilityPriorityUser) {
-                count = index + 1;
-            }
-        }
-    }
     // Adwaita's header bar counts its first flexible space as room for the title.
     NSView *bar = toolbarView.superview;
     BOOL titleInRow = [bar respondsToSelector:@selector(holdsToolbarInBar)] &&
                       (BOOL)(intptr_t)[bar performSelector:@selector(holdsToolbarInBar)];
     BOOL titleCounted = NO;
+    BOOL anyOverflows = NO;
     CGFloat itemsWidth = 0.0f;
-    for (NSUInteger index = 0; index < count; index++) {
-        NSToolbarItem *item = items[index];
+    for (NSToolbarItem *item in items) {
+        BOOL flexible = [item.itemIdentifier isEqualToString:NSToolbarFlexibleSpaceItemIdentifier];
+        if (keptOnly && !flexible && item.visibilityPriority < NSToolbarItemVisibilityPriorityUser) {
+            anyOverflows = YES;
+            continue;
+        }
         CGFloat width = STToolbarItemMinimumRowWidth(item);
-        if (titleInRow && !titleCounted && [item.itemIdentifier isEqualToString:NSToolbarFlexibleSpaceItemIdentifier]) {
+        if (titleInRow && !titleCounted && flexible) {
             width = MAX(width, STHeaderBarTitleRoom);
             titleCounted = YES;
         }
         itemsWidth += width;
     }
-    if (count < items.count) {
+    if (anyOverflows) {
         itemsWidth += STToolbarOverflowButtonWidth;
     }
     CGFloat besideToolbar = MAX(0.0f, NSWidth([self.window.contentView frame]) - NSWidth(toolbarView.frame));
@@ -6746,8 +6752,12 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     }
     targetWidth = MAX(targetWidth, toolbarWidth);
 #else
-    // The window can't be made so narrow that the tools, colour or Copy go into ">>".
-    minimumWidth = MAX(minimumWidth, MIN(maxWidth, [self contentWidthShowingToolbarItems:YES]));
+    // Where the theme honours visibility priority, the window can't be made so narrow that the
+    // tools, colour or Copy go into ">>". libs-gui keeps the row's first items instead, and keeping
+    // Copy would keep everything before it (over 1100pt under Adwaita), so the canvas minimum stands.
+    if (STToolbarThemeHonoursVisibilityPriority()) {
+        minimumWidth = MAX(minimumWidth, MIN(maxWidth, [self contentWidthShowingToolbarItems:YES]));
+    }
     // Wide enough for the whole toolbar too: GNUstep moves the row's last items into the ">>"
     // menu first, and those are Save and Copy. At 125% and 150% an 860px screenshot's window
     // was narrower than the row and hid them (#221). The same few points to spare as macOS.
