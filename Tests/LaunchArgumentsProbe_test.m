@@ -60,23 +60,21 @@
 - (void)testALaunchKeepsRecentExports {
     NSFileManager *fileManager = [NSFileManager defaultManager];
     NSString *exports = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
-    NSString *recent = [exports stringByAppendingPathComponent:@"recent"];
-    NSString *old = [exports stringByAppendingPathComponent:@"old"];
-    for (NSString *folder in @[recent, old]) {
-        XCTAssertTrue([fileManager createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:NULL]);
-        XCTAssertTrue([[NSData data] writeToFile:[folder stringByAppendingPathComponent:@"shot.png"] atomically:NO]);
-    }
-    NSDate *twoDaysAgo = [NSDate dateWithTimeIntervalSinceNow:-2 * 24 * 60 * 60];
-    XCTAssertTrue([fileManager setAttributes:@{NSFileModificationDate: twoDaysAgo} ofItemAtPath:old error:NULL]);
+    NSString *export = [[exports stringByAppendingPathComponent:@"export"] stringByAppendingPathComponent:@"shot.png"];
+    XCTAssertTrue([fileManager createDirectoryAtPath:[export stringByDeletingLastPathComponent]
+                         withIntermediateDirectories:YES attributes:nil error:NULL]);
+    XCTAssertTrue([[NSData data] writeToFile:export atomically:NO]);
+    NSURL *directory = [NSURL fileURLWithPath:exports isDirectory:YES];
 
-    STRemoveExportsChangedBefore([NSURL fileURLWithPath:exports isDirectory:YES],
-                                 [NSDate dateWithTimeIntervalSinceNow:-24 * 60 * 60]);
+    // The cutoff moves rather than the export's date: GNUstep on Windows doesn't backdate a folder.
+    STRemoveExportsChangedBefore(directory, [NSDate dateWithTimeIntervalSinceNow:-24 * 60 * 60]);
+    XCTAssertTrue([fileManager fileExistsAtPath:export], @"A recent export stays");
+    STRemoveExportsChangedBefore(directory, [NSDate dateWithTimeIntervalSinceNow:60]);
+    XCTAssertFalse([fileManager fileExistsAtPath:[export stringByDeletingLastPathComponent]], @"An older one goes");
 
-    XCTAssertTrue([fileManager fileExistsAtPath:[recent stringByAppendingPathComponent:@"shot.png"]]);
-    XCTAssertFalse([fileManager fileExistsAtPath:old]);
     [fileManager removeItemAtPath:exports error:NULL];
     // No exports folder yet is fine.
-    STRemoveExportsChangedBefore([NSURL fileURLWithPath:exports isDirectory:YES], [NSDate date]);
+    STRemoveExportsChangedBefore(directory, [NSDate date]);
 }
 
 @end
