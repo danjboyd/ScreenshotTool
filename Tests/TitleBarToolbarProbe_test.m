@@ -177,6 +177,14 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
     XCTAssertTrue(toolbar.autosavesConfiguration, @"a customised toolbar is kept");
 }
 
+/// GNUstep's own menus (NSNextStepInterfaceStyle) show the main menu's title above it: the app's
+/// name, not an internal "GSMainMenu".
+- (void)testTheMainMenuIsTitledWithTheAppsName {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_appDelegate setupMenus];
+    XCTAssertEqualObjects([NSApp mainMenu].title, [[NSProcessInfo processInfo] processName]);
+}
+
 - (void)testZoomAndPreferencesAreInTheMenusWithShortcuts {
     XCTSkipIf(_shouldSkip, @"No window server");
     [_appDelegate setupMenus];
