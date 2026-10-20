@@ -4,7 +4,8 @@
  *
  * On macOS the toolbar shares its row with the window's title, so a window opened at the smallest
  * canvas width showed only Undo and Redo. A small image's window now opens wide enough for the
- * whole toolbar, and when the window is narrower, Undo, Redo and Share overflow before the tools.
+ * whole toolbar. When the window is narrower, Undo and Redo overflow first and Save and Share last,
+ * and the window can't be made so narrow that the tools, colour or Copy overflow.
  */
 
 #import <XCTest/XCTest.h>
@@ -84,6 +85,66 @@
 }
 #endif
 
+/// The order items go into the overflow menu in: Undo and Redo first, Save and Share last, and
+/// never the tools, colour or Copy. AppKit honours it; on GNUstep the theme does.
+- (void)testItemsOverflowInOrderOfUse {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSDictionary<NSString *, NSNumber *> *expected = @{
+        @"com.screenshottool.toolbar.tools": @(NSToolbarItemVisibilityPriorityUser),
+        @"com.screenshottool.toolbar.color": @(NSToolbarItemVisibilityPriorityUser),
+        @"com.screenshottool.toolbar.copy": @(NSToolbarItemVisibilityPriorityUser),
+        @"com.screenshottool.toolbar.save": @(NSToolbarItemVisibilityPriorityHigh),
+        @"com.screenshottool.toolbar.share": @(NSToolbarItemVisibilityPriorityHigh),
+        @"com.screenshottool.toolbar.undo": @(NSToolbarItemVisibilityPriorityLow),
+        @"com.screenshottool.toolbar.redo": @(NSToolbarItemVisibilityPriorityLow),
+    };
+    NSUInteger checked = 0;
+    for (NSToolbarItem *item in _appDelegate.window.toolbar.items) {
+        NSNumber *priority = expected[item.itemIdentifier];
+        if (priority) {
+            XCTAssertEqual(item.visibilityPriority, priority.integerValue, @"%@", item.itemIdentifier);
+            checked += 1;
+        }
+    }
+    XCTAssertGreaterThanOrEqual(checked, (NSUInteger)6, @"the default toolbar's items were checked");
+}
+
+/// As narrow as the window may be made, the tools, colour and Copy still show. GNUstep moves the
+/// row's last items into ">>" (and the theme the lowest priority first), so its minimum width
+/// reaches past Copy; macOS measures the width at which the items it must keep show.
+- (void)testTheNarrowestWindowStillShowsTheToolsColourAndCopy {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:40 pixelsHigh:30
+                                                                 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+                                                                colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:
+                      [NSString stringWithFormat:@"toolbar-narrow-%@.png", [[NSUUID UUID] UUIDString]]];
+    [[rep representationUsingType:NSPNGFileType properties:@{}] writeToFile:path atomically:YES];
+    NSWindow *window = _appDelegate.window;
+#if defined(GNUSTEP)
+    // libs-gui lays the toolbar out once the window is on screen, and the minimum is measured from it.
+    [window orderFront:nil];
+    [window display];
+#endif
+    XCTAssertTrue([_appDelegate openImageAtURL:[NSURL fileURLWithPath:path]]);
+    [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
+
+    CGFloat limit = floor(NSWidth((window.screen ?: [NSScreen mainScreen]).visibleFrame) * 0.95);
+    XCTSkipIf(window.contentMinSize.width >= limit, @"The screen is too narrow for the items the window keeps");
+    [window setContentSize:NSMakeSize(window.contentMinSize.width, NSHeight([window.contentView frame]))];
+#if defined(GNUSTEP)
+    [window display];
+#else
+    [window layoutIfNeeded];
+#endif
+    NSArray *visible = [window.toolbar.visibleItems valueForKey:@"itemIdentifier"];
+    for (NSString *identifier in @[@"com.screenshottool.toolbar.tools", @"com.screenshottool.toolbar.color",
+                                   @"com.screenshottool.toolbar.copy"]) {
+        XCTAssertTrue([visible containsObject:identifier], @"%@ shows at %.0fpt: %@", identifier,
+                      NSWidth([window.contentView frame]), visible);
+    }
+}
+
 #if !defined(GNUSTEP)
 - (void)testSmallImageOpensWithTheWholeToolbar {
     XCTSkipIf(_shouldSkip, @"No window server");
@@ -114,44 +175,6 @@
         }
     }
     XCTAssertLessThan(NSWidth(window.contentView.frame), 1000.0, @"no wider than the toolbar needs");
-}
-
-- (void)testUndoRedoAndShareOverflowBeforeTheTools {
-    XCTSkipIf(_shouldSkip, @"No window server");
-    NSDictionary<NSString *, NSNumber *> *expected = @{
-        @"com.screenshottool.toolbar.tools": @(NSToolbarItemVisibilityPriorityHigh),
-        @"com.screenshottool.toolbar.color": @(NSToolbarItemVisibilityPriorityHigh),
-        @"com.screenshottool.toolbar.undo": @(NSToolbarItemVisibilityPriorityLow),
-        @"com.screenshottool.toolbar.redo": @(NSToolbarItemVisibilityPriorityLow),
-        @"com.screenshottool.toolbar.share": @(NSToolbarItemVisibilityPriorityLow),
-    };
-    for (NSToolbarItem *item in _appDelegate.window.toolbar.items) {
-        NSNumber *priority = expected[item.itemIdentifier];
-        if (priority) {
-            XCTAssertEqual(item.visibilityPriority, priority.integerValue, @"%@", item.itemIdentifier);
-        }
-    }
-
-}
-
-- (void)testTheNarrowestWindowStillShowsTheTools {
-    XCTSkipIf(_shouldSkip, @"No window server");
-    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:40 pixelsHigh:30
-                                                                 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
-                                                                colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
-    NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:
-                      [NSString stringWithFormat:@"toolbar-narrow-%@.png", [[NSUUID UUID] UUIDString]]];
-    [[rep representationUsingType:NSBitmapImageFileTypePNG properties:@{}] writeToFile:path atomically:YES];
-    XCTAssertTrue([_appDelegate openImageAtURL:[NSURL fileURLWithPath:path]]);
-    [[NSFileManager defaultManager] removeItemAtPath:path error:NULL];
-
-    // As narrow as the window may be made.
-    NSWindow *window = _appDelegate.window;
-    [window setContentSize:NSMakeSize(window.contentMinSize.width, NSHeight(window.contentView.frame))];
-    [window layoutIfNeeded];
-    NSArray *visible = [window.toolbar.visibleItems valueForKey:@"itemIdentifier"];
-    XCTAssertTrue([visible containsObject:@"com.screenshottool.toolbar.tools"], @"visible: %@", visible);
-    XCTAssertTrue([visible containsObject:@"com.screenshottool.toolbar.color"], @"visible: %@", visible);
 }
 
 /// Undo, Redo and Copy were drawn in a fixed dark grey, nearly invisible on a dark toolbar. As
