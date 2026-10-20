@@ -215,10 +215,26 @@ static NSImage *STRoundedMaskImage(CGFloat radius) {
 }
 #endif
 
-/// Where dragged-out and shared images are written; cleared at launch.
+/// Where dragged-out and shared images are written; exports older than STExportMaximumAge are
+/// removed at launch.
 static NSURL *STExportDirectoryURL(void) {
     return [[NSURL fileURLWithPath:NSTemporaryDirectory() isDirectory:YES]
             URLByAppendingPathComponent:@"ScreenshotTool Exports" isDirectory:YES];
+}
+
+/// How long an export is kept. A newer one may still be in use: Open With can launch another
+/// instance to open it, and another running instance may still be dragging or sharing it (#294).
+static const NSTimeInterval STExportMaximumAge = 24 * 60 * 60;
+
+void STRemoveExportsChangedBefore(NSURL *directory, NSDate *cutoff) {
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    for (NSString *name in [fileManager contentsOfDirectoryAtPath:directory.path error:NULL]) {
+        NSString *path = [directory.path stringByAppendingPathComponent:name];
+        NSDate *modified = [[fileManager attributesOfItemAtPath:path error:NULL] fileModificationDate];
+        if (!modified || [modified compare:cutoff] == NSOrderedAscending) {
+            [fileManager removeItemAtPath:path error:NULL];
+        }
+    }
 }
 
 /// YES where there's a share picker: macOS's, and on GNUstep libs-sharing's sheet
@@ -2375,7 +2391,7 @@ static AppDelegate *STFrontDocument(void) {
 
 - (void)applicationDidFinishLaunching:(NSNotification *)notification {
     ScreenshotToolAppendLog(@"ScreenshotTool launched");
-    [[NSFileManager defaultManager] removeItemAtURL:STExportDirectoryURL() error:NULL];
+    STRemoveExportsChangedBefore(STExportDirectoryURL(), [NSDate dateWithTimeIntervalSinceNow:-STExportMaximumAge]);
 #if defined(GNUSTEP)
     [[NSNotificationCenter defaultCenter] addObserver:self
                                              selector:@selector(themeDidActivate:)
