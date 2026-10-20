@@ -79,12 +79,43 @@ static NSString * const ToolbarItemCustomActionPrefix = @"com.screenshottool.too
 #if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
 static NSString * const ToolbarItemShare = @"com.screenshottool.toolbar.share";
 #endif
+
+/// Which toolbar items go into the overflow menu first when the window is too narrow: Undo and
+/// Redo (and Zoom and Preferences, customised in), which are in the menus with shortcuts; then
+/// custom actions; then Save and Share. The tools, colour and Copy never do: the window's minimum
+/// width keeps them (-resizeWindowToImageSize:). AppKit honours this; on GNUstep the theme does.
+static NSInteger STToolbarVisibilityPriorityForIdentifier(NSToolbarItemIdentifier identifier) {
+    if ([identifier isEqualToString:ToolbarItemTools] || [identifier isEqualToString:ToolbarItemColor] ||
+        [identifier isEqualToString:ToolbarItemCopy]) {
+        return NSToolbarItemVisibilityPriorityUser;
+    }
+    if ([identifier isEqualToString:ToolbarItemSave]) {
+        return NSToolbarItemVisibilityPriorityHigh;
+    }
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
+    if ([identifier isEqualToString:ToolbarItemShare]) {
+        return NSToolbarItemVisibilityPriorityHigh;
+    }
+#endif
+    if ([identifier isEqualToString:ToolbarItemUndo] || [identifier isEqualToString:ToolbarItemRedo] ||
+        [identifier isEqualToString:ToolbarItemZoom] || [identifier isEqualToString:ToolbarItemPreferences]) {
+        return NSToolbarItemVisibilityPriorityLow;
+    }
+    return NSToolbarItemVisibilityPriorityStandard;
+}
+
 // Tall enough for a 24pt slider (the zoom slider, #221): WinUITheme draws its slider from 24pt.
 static const CGFloat StatusBarHeight = 32.0f;
 // Smallest canvas area a window gets, so tiny images still leave room for the title and the
-// whole icon-only toolbar: under Adwaita the colour well and Copy overflow below about 640pt
-// (WinUI needs about 550). macOS measures its own, wider minimum (-resizeWindowToImageSize:).
+// whole icon-only toolbar: under Adwaita the colour well and Copy overflow below about 640pt.
+// macOS measures its own, wider minimum (-resizeWindowToImageSize:). On Windows 600pt, 900px at
+// 150%, so a window fits on half of a 1920px screen with room to spare; WinUITheme's minimum
+// keeps the tools, colour and Copy where it honours visibility priority.
+#if defined(_WIN32)
+static const CGFloat STMinimumCanvasWidth = 600.0f;
+#else
 static const CGFloat STMinimumCanvasWidth = 640.0f;
+#endif
 static const CGFloat STMinimumCanvasHeight = 240.0f;
 static const CGFloat STHudCornerRadius = 10.0f;
 static const CGFloat STHudHorizontalPadding = 20.0f;
@@ -100,7 +131,13 @@ static const NSInteger STEmptyStateRecentFirstCardTag = 20;
 static const NSInteger STEmptyStateRecentCount = 3;
 static NSString * const STRecentDocumentsEmptyTitle = @"No Recent Documents";
 static NSString * const STRecentDocumentsClearTitle = @"Clear Menu";
+#if defined(_WIN32)
+// WinUI's segmented icon items, so that at 150% the narrowest window (the tools, colour and Copy
+// kept) still fits on half of a 1920px screen. Each one stays a 40px touch target.
+static const CGFloat STToolbarToolSegmentWidth = 40.0f;
+#else
 static const CGFloat STToolbarToolSegmentWidth = 46.0f;
+#endif
 static const CGFloat STToolbarToolControlHeight = 32.0f;
 static const CGFloat STToolbarToolIconSize = 22.0f;
 static const CGFloat STToolbarColorControlWidth = 40.0f;
@@ -3401,16 +3438,7 @@ static id STInfoValueForKey(NSString *key) {
     (void)toolbar;
     (void)flag;
     NSToolbarItem *item = [self baselineToolbarItemForIdentifier:itemIdentifier];
-#if !defined(GNUSTEP)
-    // When the window is too narrow, Undo, Redo and Share go to the overflow menu first: they're
-    // in the menus with shortcuts too. The tools and colour stay, as they're used most.
-    if ([itemIdentifier isEqualToString:ToolbarItemTools] || [itemIdentifier isEqualToString:ToolbarItemColor]) {
-        item.visibilityPriority = NSToolbarItemVisibilityPriorityHigh;
-    } else if ([itemIdentifier isEqualToString:ToolbarItemUndo] || [itemIdentifier isEqualToString:ToolbarItemRedo] ||
-               [itemIdentifier isEqualToString:ToolbarItemShare]) {
-        item.visibilityPriority = NSToolbarItemVisibilityPriorityLow;
-    }
-#endif
+    item.visibilityPriority = STToolbarVisibilityPriorityForIdentifier(itemIdentifier);
     return item;
 }
 
@@ -6569,17 +6597,17 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
 
 #if !defined(GNUSTEP)
 /// The narrowest content width, from `from` up to `limit`, at which every toolbar item shows, or
-/// with `highPriorityOnly` every item of high visibility priority (`limit` if none does). Measured
+/// with `keptOnly` every item that must never overflow (`limit` if none does). Measured
 /// by laying the window out, as the title's width counts too; the window keeps its size. A window
 /// not yet on screen lays out all the same.
-- (CGFloat)contentWidthShowingToolbarItems:(BOOL)highPriorityOnly atMost:(CGFloat)limit from:(CGFloat)from {
+- (CGFloat)contentWidthShowingToolbarItems:(BOOL)keptOnly atMost:(CGFloat)limit from:(CGFloat)from {
     NSToolbar *toolbar = self.window.toolbar;
     if (!toolbar || !toolbar.isVisible || from >= limit) {
         return from;
     }
     NSMutableSet<NSString *> *wanted = [NSMutableSet set];
     for (NSToolbarItem *item in toolbar.items) {
-        if (!highPriorityOnly || item.visibilityPriority >= NSToolbarItemVisibilityPriorityHigh) {
+        if (!keptOnly || item.visibilityPriority >= NSToolbarItemVisibilityPriorityUser) {
             [wanted addObject:item.itemIdentifier];
         }
     }
@@ -6617,6 +6645,10 @@ static NSImage *STEmptyStateThumbnailForFile(NSString *path, CGFloat maximum) {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
 #pragma clang diagnostic ignored "-Wundeclared-selector"
+static const CGFloat STToolbarOverflowButtonWidth = 28.0f; // libs-gui's ClippedItemsViewWidth
+static const CGFloat STHeaderBarTitleRoom = 100.0f; // Adwaita's GnomeThemeHeaderBarMinimumTitleWidth
+static const CGFloat STToolbarKeptItemsSlack = 4.0f;
+
 /// What an item takes in libs-gui's test for which items fit the row (-_visibleBackViews, which
 /// WinUITheme repeats): a view item its minimum width and 10pt each side, a flexible space its
 /// minimum, any other item its back view's width.
@@ -6640,6 +6672,22 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
 /// button where WinUITheme puts the menus there). 0 when there's no toolbar to measure. Worked out
 /// from the items rather than by resizing the window, which can leave items in ">>" (#242).
 - (CGFloat)contentWidthShowingAllToolbarItems {
+    return [self contentWidthShowingToolbarItems:NO];
+}
+
+/// Whether the theme sends the toolbar's lowest-priority items into ">>" first (WinUITheme and
+/// Adwaita say so), rather than libs-gui's last items. Asked of the theme, so a theme switched
+/// away from stops answering.
+static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
+    GSTheme *theme = [GSTheme theme];
+    return [theme respondsToSelector:@selector(toolbarHonoursVisibilityPriority)] &&
+           (BOOL)(intptr_t)[theme performSelector:@selector(toolbarHonoursVisibilityPriority)];
+}
+
+/// With `keptOnly`, the content width at which the items that must never overflow show (the tools,
+/// colour and Copy) where the theme honours visibility priority: those items, the flexible spaces
+/// and the ">>" button.
+- (CGFloat)contentWidthShowingToolbarItems:(BOOL)keptOnly {
     NSToolbar *toolbar = self.window.toolbar;
     if (!toolbar || !toolbar.isVisible || ![toolbar respondsToSelector:@selector(_toolbarView)]) {
         return 0.0f;
@@ -6648,9 +6696,29 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     if (![toolbarView isKindOfClass:[NSView class]] || NSWidth(toolbarView.frame) < 1.0f) {
         return 0.0f;
     }
+    NSArray<NSToolbarItem *> *items = toolbar.items;
+    // Adwaita's header bar counts its first flexible space as room for the title.
+    NSView *bar = toolbarView.superview;
+    BOOL titleInRow = [bar respondsToSelector:@selector(holdsToolbarInBar)] &&
+                      (BOOL)(intptr_t)[bar performSelector:@selector(holdsToolbarInBar)];
+    BOOL titleCounted = NO;
+    BOOL anyOverflows = NO;
     CGFloat itemsWidth = 0.0f;
-    for (NSToolbarItem *item in toolbar.items) {
-        itemsWidth += STToolbarItemMinimumRowWidth(item);
+    for (NSToolbarItem *item in items) {
+        BOOL flexible = [item.itemIdentifier isEqualToString:NSToolbarFlexibleSpaceItemIdentifier];
+        if (keptOnly && !flexible && item.visibilityPriority < NSToolbarItemVisibilityPriorityUser) {
+            anyOverflows = YES;
+            continue;
+        }
+        CGFloat width = STToolbarItemMinimumRowWidth(item);
+        if (titleInRow && !titleCounted && flexible) {
+            width = MAX(width, STHeaderBarTitleRoom);
+            titleCounted = YES;
+        }
+        itemsWidth += width;
+    }
+    if (anyOverflows) {
+        itemsWidth += STToolbarOverflowButtonWidth;
     }
     CGFloat besideToolbar = MAX(0.0f, NSWidth([self.window.contentView frame]) - NSWidth(toolbarView.frame));
     return ceil(itemsWidth + besideToolbar);
@@ -6699,8 +6767,8 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     CGFloat minimumHeight = MIN(STMinimumCanvasHeight, maxContentHeight);
 #if !defined(GNUSTEP)
     // macOS's toolbar shares its row with the title, so the minimum is too narrow for it. The
-    // window can't be made so narrow that the tools and colour go to the overflow menu (only
-    // Undo, Redo and Share do), and opens wide enough for the whole toolbar.
+    // window can't be made so narrow that the tools, colour or Copy go to the overflow menu, and
+    // opens wide enough for the whole toolbar.
     minimumWidth = MAX(minimumWidth, [self contentWidthShowingToolbarItems:YES atMost:maxWidth from:minimumWidth]);
     CGFloat targetWidth = MAX(contentWidth, minimumWidth);
     CGFloat toolbarWidth = [self contentWidthShowingToolbarItems:NO atMost:maxWidth from:targetWidth];
@@ -6711,6 +6779,17 @@ static CGFloat STToolbarItemMinimumRowWidth(NSToolbarItem *item) {
     }
     targetWidth = MAX(targetWidth, toolbarWidth);
 #else
+    // Where the theme honours visibility priority, the window can't be made so narrow that the
+    // tools, colour or Copy go into ">>". libs-gui keeps the row's first items instead, and keeping
+    // Copy would keep everything before it (over 1100pt under Adwaita), so the canvas minimum stands.
+    // A few points to spare: at 125% and 150% the theme rounds the items to whole pixels, and at
+    // the bare sum Copy went into ">>" 2px short of it.
+    if (STToolbarThemeHonoursVisibilityPriority()) {
+        CGFloat kept = [self contentWidthShowingToolbarItems:YES];
+        if (kept > 0.0f) {
+            minimumWidth = MAX(minimumWidth, MIN(maxWidth, kept + STToolbarKeptItemsSlack));
+        }
+    }
     // Wide enough for the whole toolbar too: GNUstep moves the row's last items into the ">>"
     // menu first, and those are Save and Copy. At 125% and 150% an 860px screenshot's window
     // was narrower than the row and hid them (#221). The same few points to spare as macOS.
@@ -8475,8 +8554,6 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         ?: [NSImage imageWithSystemSymbolName:@"paperplane" accessibilityDescription:action.title];
     item.target = self;
     item.action = @selector(runCustomAction:);
-    // Into the overflow before Copy does.
-    item.visibilityPriority = NSToolbarItemVisibilityPriorityLow;
     return item;
 #endif
 }

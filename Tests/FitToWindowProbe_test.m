@@ -126,9 +126,15 @@
 
     NSSize content = [_appDelegate.window.contentView frame].size;
     CGFloat barHeight = [_appDelegate statusBarHeight];
-    XCTAssertTrue(content.width >= 640.0 - 0.5, @"A 16x16 image should still get a window wide enough for the toolbar (got %.0f)", content.width);
+    #if defined(_WIN32)
+    // 600pt on Windows, so a window fits on half of a 1920px screen at 150%.
+    const CGFloat minimumCanvasWidth = 600.0;
+#else
+    const CGFloat minimumCanvasWidth = 640.0;
+#endif
+    XCTAssertTrue(content.width >= minimumCanvasWidth - 0.5, @"A 16x16 image should still get a window wide enough for the toolbar (got %.0f)", content.width);
     XCTAssertTrue(content.height - barHeight >= 240.0 - 0.5, @"A 16x16 image should still get a usable canvas height (got %.0f)", content.height - barHeight);
-    XCTAssertTrue(_appDelegate.window.contentMinSize.width >= 640.0 - 0.5, @"Manual resizing should not go below the minimum either");
+    XCTAssertTrue(_appDelegate.window.contentMinSize.width >= minimumCanvasWidth - 0.5, @"Manual resizing should not go below the minimum either");
     XCTAssertEqualWithAccuracy(_appDelegate.canvasView.zoomScale, 1.0, 0.0001, @"The tiny image itself stays at 100%%");
 }
 
