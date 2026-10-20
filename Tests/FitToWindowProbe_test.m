@@ -17,6 +17,9 @@
 - (ScreenshotCanvasView *)canvasView;
 - (void)resizeWindowToImageSize:(NSSize)size;
 - (CGFloat)statusBarHeight;
+- (void)zoomIn:(id)sender;
+- (void)zoomOut:(id)sender;
+- (CGFloat)nextZoomScaleBelow:(CGFloat)scale;
 @end
 
 @interface FitToWindowProbeTests : XCTestCase {
@@ -73,6 +76,55 @@
 
     XCTAssertTrue(canvas.isFitToWindow, @"Loading an image should select Fit to Window");
     XCTAssertEqualWithAccuracy(canvas.zoomScale, 1.0, 0.0001, @"Fit should show a small image at 100%%, not enlarge it");
+}
+
+/// Zoom out from Fit goes to the step below the scale Fit shows. It went to a fixed 50%, so with
+/// Fit at about 33% the first press zoomed in (#307).
+- (void)testZoomOutFromAFitBelowHalfGoesLower {
+    XCTSkipIf(_shouldSkip, @"No window server");
+
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    [canvas loadImage:[self imageOfSize:NSMakeSize(2580.0, 1560.0)]];
+    [self setViewportSize:NSMakeSize(860.0, 600.0)];
+    XCTAssertTrue(canvas.isFitToWindow);
+    CGFloat fit = canvas.displayZoomScale;
+    XCTAssertLessThan(fit, 0.5, @"the viewport makes Fit smaller than 50%%");
+
+    [_appDelegate zoomOut:nil];
+    XCTAssertFalse(canvas.isFitToWindow);
+    XCTAssertLessThan(canvas.displayZoomScale, fit - 0.0001, @"zoom out from Fit at %.3f goes lower", fit);
+    XCTAssertEqualWithAccuracy(canvas.displayZoomScale, [_appDelegate nextZoomScaleBelow:fit], 0.0001);
+}
+
+/// With Fit between 50% and 100%, zoom out goes to the step just below it, which is 50%, as before.
+- (void)testZoomOutFromAFitAboveHalfGoesToTheNextStepDown {
+    XCTSkipIf(_shouldSkip, @"No window server");
+
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    [canvas loadImage:[self imageOfSize:NSMakeSize(1000.0, 700.0)]];
+    [self setViewportSize:NSMakeSize(860.0, 600.0)];
+    XCTAssertTrue(canvas.isFitToWindow);
+    CGFloat fit = canvas.displayZoomScale;
+    XCTAssertGreaterThan(fit, 0.5, @"the viewport makes Fit larger than 50%%");
+
+    [_appDelegate zoomOut:nil];
+    XCTAssertEqualWithAccuracy(canvas.displayZoomScale, [_appDelegate nextZoomScaleBelow:fit], 0.0001,
+                               @"zoom out from Fit at %.3f", fit);
+    XCTAssertEqualWithAccuracy(canvas.displayZoomScale, 0.5, 0.0001, @"50%% is the step below Fit at %.3f", fit);
+}
+
+/// Zoom in from Fit still goes to 100%.
+- (void)testZoomInFromFitGoesToActualSize {
+    XCTSkipIf(_shouldSkip, @"No window server");
+
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    [canvas loadImage:[self imageOfSize:NSMakeSize(2580.0, 1560.0)]];
+    [self setViewportSize:NSMakeSize(860.0, 600.0)];
+    XCTAssertTrue(canvas.isFitToWindow);
+
+    [_appDelegate zoomIn:nil];
+    XCTAssertFalse(canvas.isFitToWindow);
+    XCTAssertEqualWithAccuracy(canvas.displayZoomScale, 1.0, 0.0001);
 }
 
 - (void)testFitIgnoresScrollersLeftOverFromAPreviousZoom {
