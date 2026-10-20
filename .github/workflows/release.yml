@@ -51,13 +51,11 @@ jobs:
 
   package-windows:
     needs: resolve-version
-    uses: danjboyd/gnustep-packager/.github/workflows/package-gnustep-app.yml@main
+    uses: danjboyd/gnustep-packager/.github/workflows/package-gnustep-app.yml@v0.1.2
     with:
       manifest-path: packaging/package.manifest.json
       backend: msi
       package-version: ${{ needs.resolve-version.outputs.package-version }}
-      packager-repository: danjboyd/gnustep-packager
-      packager-ref: main
       msys2-packages: >-
         mingw-w64-clang-x86_64-cmark
       # danjboyd/libs-back's carry branch: GNUstep's backend with the fixes the
@@ -80,13 +78,11 @@ jobs:
 
   package-linux:
     needs: resolve-version
-    uses: danjboyd/gnustep-packager/.github/workflows/package-gnustep-app.yml@main
+    uses: danjboyd/gnustep-packager/.github/workflows/package-gnustep-app.yml@v0.1.2
     with:
       manifest-path: packaging/package.manifest.json
       backend: appimage
       package-version: ${{ needs.resolve-version.outputs.package-version }}
-      packager-repository: danjboyd/gnustep-packager
-      packager-ref: main
       # An explicit image, not ubuntu-latest (Ubuntu 26 from October 2026): the AppImage bundles
       # the runner's libraries, so its base and glibc floor change only when this does.
       runs-on-appimage: '["ubuntu-24.04"]'
