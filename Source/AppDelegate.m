@@ -3606,6 +3606,11 @@ static id STInfoValueForKey(NSString *key) {
     item.paletteLabel = label ?: @"";
 #if defined(GNUSTEP)
     item.label = @"";
+    // Folded into » the item is a menu item titled from its label, which is empty, so it needs
+    // its own: Undo and Redo overflow first and showed as blank rows.
+    NSMenuItem *menuForm = [[NSMenuItem alloc] initWithTitle:item.paletteLabel action:selector keyEquivalent:@""];
+    menuForm.target = self;
+    item.menuFormRepresentation = menuForm;
 #else
     item.label = item.paletteLabel;
 #endif
