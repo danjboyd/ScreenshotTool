@@ -141,6 +141,24 @@ static NSString * const STHeaderBarToolbarKey = @"GnomeThemeHeaderBarToolbar";
         XCTAssertEqual(menuItem.target, (id)_appDelegate, @"%@ goes to the app delegate", identifier);
     }
 }
+
+- (void)testIconItemsKeepTheirNamesInTheOverflowMenu {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    // Icon-only items have empty labels too, and Undo and Redo are the first to go into ».
+    NSToolbar *toolbar = _appDelegate.window.toolbar;
+    id<NSToolbarDelegate> delegate = (id<NSToolbarDelegate>)_appDelegate;
+    NSDictionary<NSString *, NSString *> *expected = @{@"undo": @"Undo", @"redo": @"Redo"};
+    NSDictionary<NSString *, NSString *> *actions = @{@"undo": @"undo:", @"redo": @"redo:"};
+    for (NSString *name in expected) {
+        NSString *identifier = [@"com.screenshottool.toolbar." stringByAppendingString:name];
+        NSToolbarItem *item = [delegate toolbar:toolbar itemForItemIdentifier:identifier willBeInsertedIntoToolbar:YES];
+        NSMenuItem *menuItem = item.menuFormRepresentation;
+        XCTAssertNotNil(menuItem, @"%@ has a menu form", identifier);
+        XCTAssertEqualObjects(menuItem.title, expected[name], @"%@ is named in »", identifier);
+        XCTAssertEqualObjects(NSStringFromSelector(menuItem.action), actions[name], @"%@ runs its command from »", identifier);
+        XCTAssertEqual(menuItem.target, (id)_appDelegate, @"%@ goes to the app delegate", identifier);
+    }
+}
 #endif
 
 #pragma mark - Slim toolbar (#53)
