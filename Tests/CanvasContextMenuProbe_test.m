@@ -12,6 +12,7 @@
 #import "ScreenshotCanvasView.h"
 #import "MarkupStroke.h"
 #import "MarkupText.h"
+#import "STTextRecognizer.h"
 #import "TestEnvironmentHelpers.h"
 
 @interface AppDelegate (CanvasContextMenuTesting)
@@ -158,6 +159,7 @@
     // macOS has a share picker, and Linux and Windows libs-sharing's.
     NSArray *expected = @[@"Crop to Selection", @"Copy Selection", @"Redact Selection", @"Share Selection…", @"-", @"Deselect"];
 #endif
+    expected = [self expectingCopyTextAfterIndex:1 in:expected];
     XCTAssertEqualObjects([self titlesOf:menu], expected);
     NSMenuItem *crop = [self item:@"Crop to Selection" in:menu];
     XCTAssertTrue(crop.target == _appDelegate, @"The window's command, as the Edit menu has it");
@@ -205,6 +207,16 @@
     [canvas cancelActiveTextEntry];
 }
 
+/// Copy Text follows Copy where the platform can read text (#278): tesseract on Linux.
+- (NSArray *)expectingCopyTextAfterIndex:(NSUInteger)index in:(NSArray *)titles {
+    if (![STTextRecognizer isAvailable]) {
+        return titles;
+    }
+    NSMutableArray *withCopyText = [titles mutableCopy];
+    [withCopyText insertObject:@"Copy Text" atIndex:index + 1];
+    return withCopyText;
+}
+
 - (void)testTheImageOutsideTheSelectionClearsIt {
     XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = [self canvasWithAnnotations];
@@ -217,6 +229,7 @@
     NSArray *expected = @[@"Copy Image", @"Paste as New Image", @"-", @"Fit to Window", @"Zoom to 100%", @"-", @"Save As…",
                           @"Share…"];
 #endif
+    expected = [self expectingCopyTextAfterIndex:0 in:expected];
     XCTAssertEqualObjects([self titlesOf:menu], expected, @"The test environment has no custom actions");
     XCTAssertFalse(canvas.hasSelectionRect, @"So Copy Image copies the whole image");
     XCTAssertTrue([self item:@"Copy Image" in:menu].isEnabled);

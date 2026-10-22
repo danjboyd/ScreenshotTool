@@ -87,6 +87,11 @@ GNUstep's default theme, with the menus in the window. Shortcuts use Ctrl on eve
   the project, when something must stay hidden. Pen, highlighter and
   text colours and widths are set from each tool's popover (double-click its
   toolbar button) and remembered as defaults.
+- Edit > Copy Text (`Ctrl+Shift+C`, also on the right-click menu) copies the text in the
+  selection or the whole image, and Edit > Redact Emails and Phone Numbers adds a redaction over
+  each one it finds; they're ordinary redactions, undone in one step. The text is read on your
+  computer and nothing is sent anywhere. On Linux this needs `tesseract` installed
+  (`sudo apt install tesseract-ocr`); without it the commands aren't shown.
 - Text labels with a text bar for font, size, style and alignment; turn on
   Callout to make a label a callout: a filled box with bold text and a draggable pointer.
 - Select, move and delete annotations; undo and redo every change from the

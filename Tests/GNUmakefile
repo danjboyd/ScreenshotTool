@@ -104,6 +104,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	SplitButtonProbe_test.m \
 	SymbolicToolbarIconsProbe_test.m \
 	TakeScreenshotProbe_test.m \
+	TextRecognizerProbe_test.m \
 	CanvasCursorShownRectProbe_test.m \
 	WaylandClipboardMirrorProbe_test.m \
 	WaylandPasteCheckProbe_test.m \
@@ -138,6 +139,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STCanvasContextMenu.m \
 	../Source/STSelectionActionBar.m \
 	../Source/STScreenshotCapture.m \
+	../Source/STTextRecognizer.m \
 	../Source/STWindowsIntegration.m \
 	../Source/STFontPicker.m
 
