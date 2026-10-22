@@ -46,6 +46,10 @@ FOUNDATION_EXPORT NSString *STRecognizedText(NSArray<STRecognizedLine *> *lines)
 /// block, paragraph and line. Words with no text are left out.
 FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STLinesFromTesseractTSV(NSString *tsv);
 
+/// The lines' words whose middle is in `rect` (image pixels), as lines; all of them for an empty
+/// rect. For an engine that reads the whole image, or as a check after one that crops.
+FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STLinesInsideRect(NSArray<STRecognizedLine *> *lines, NSRect rect);
+
 /// The boxes of the email addresses and phone numbers in the lines, each the union of the words
 /// it spans, a little larger: what Redact Emails and Phone Numbers covers.
 FOUNDATION_EXPORT NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines);

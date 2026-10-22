@@ -146,6 +146,25 @@ NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
     return rects;
 }
 
+NSArray<STRecognizedLine *> *STLinesInsideRect(NSArray<STRecognizedLine *> *lines, NSRect rect) {
+    if (NSIsEmptyRect(rect)) {
+        return lines;
+    }
+    NSMutableArray<STRecognizedLine *> *inside = [[NSMutableArray alloc] init];
+    for (STRecognizedLine *line in lines) {
+        NSMutableArray<STRecognizedWord *> *kept = [[NSMutableArray alloc] init];
+        for (STRecognizedWord *word in line.words) {
+            if (NSPointInRect(NSMakePoint(NSMidX(word.bounds), NSMidY(word.bounds)), rect)) {
+                [kept addObject:word];
+            }
+        }
+        if (kept.count > 0) {
+            [inside addObject:[[STRecognizedLine alloc] initWithWords:kept]];
+        }
+    }
+    return inside;
+}
+
 #if ST_TEXT_VISION
 /// Vision's box, normalised with a bottom-left origin in `region` (which is in pixels, top-left
 /// origin), in the whole image's pixels with a top-left origin.
@@ -232,24 +251,8 @@ static NSArray<STRecognizedLine *> *STLinesFromVisionObservations(NSArray<VNReco
             finish(nil, result.failureSummary);
             return;
         }
-        NSArray<STRecognizedLine *> *lines = STLinesFromTesseractTSV(result.standardOutput ?: @"");
-        if (!NSIsEmptyRect(rect)) {
-            // A line keeps the words whose middle is in the rect.
-            NSMutableArray<STRecognizedLine *> *inside = [[NSMutableArray alloc] init];
-            for (STRecognizedLine *line in lines) {
-                NSMutableArray<STRecognizedWord *> *kept = [[NSMutableArray alloc] init];
-                for (STRecognizedWord *word in line.words) {
-                    if (NSPointInRect(NSMakePoint(NSMidX(word.bounds), NSMidY(word.bounds)), rect)) {
-                        [kept addObject:word];
-                    }
-                }
-                if (kept.count > 0) {
-                    [inside addObject:[[STRecognizedLine alloc] initWithWords:kept]];
-                }
-            }
-            lines = inside;
-        }
-        finish(lines, nil);
+        // tesseract reads the whole image; the rect keeps its words.
+        finish(STLinesInsideRect(STLinesFromTesseractTSV(result.standardOutput ?: @""), rect), nil);
     }];
 #elif ST_TEXT_VISION
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
