@@ -47,6 +47,12 @@ void STWindowsStartClipboardMonitoring(void);
 /// the drop has finished. GNUstep's Windows backend takes no drops from other apps itself.
 void STWindowsAcceptFileDrops(NSWindow *window, void (^handler)(NSArray<NSString *> *paths));
 
+/// Drags the file at `path` out of `window` into other apps (#276), with the shell's own data
+/// object and drag image: a file to Explorer, mail and chat, and `pngData` (if given) as an image
+/// to apps that take one. Returns once the drop or cancel is over; NO if the drag couldn't start,
+/// so the caller can fall back. GNUstep's Windows backend starts no OLE drag itself.
+BOOL STWindowsDragFileOut(NSWindow *window, NSString *path, NSData * _Nullable pngData);
+
 /// Starts `executablePath` with `arguments`, its windows shown. NSTask starts a process hidden
 /// there, so another instance of the app never showed its window.
 BOOL STWindowsLaunchProcess(NSString *executablePath, NSArray<NSString *> *arguments);

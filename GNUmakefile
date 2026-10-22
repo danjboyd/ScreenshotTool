@@ -12,8 +12,9 @@ ifneq ($(filter CLANG64,$(MSYSTEM)),)
 FONTCONFIG_CFLAGS := -I/clang64/include/freetype2
 FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
 # Take Screenshot opens the Snipping Tool (ShellExecuteW) and watches the clipboard;
-# STWindowsIntegration copies and pastes images through it, converting bitmaps with GDI.
-CAPTURE_LDFLAGS := -lshell32 -luser32 -lgdi32
+# STWindowsIntegration copies and pastes images through it, converting bitmaps with GDI, and
+# drags the image out to other apps with OLE (#276).
+CAPTURE_LDFLAGS := -lshell32 -luser32 -lgdi32 -lole32
 # The vendored GPUpdaterCore downloads update feeds and packages through WinHTTP.
 UPDATER_LDFLAGS := -lwinhttp
 # The application manifest: declares the app DPI-aware (Source/ScreenshotTool.exe.manifest).

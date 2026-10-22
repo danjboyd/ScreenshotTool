@@ -1076,6 +1076,13 @@ static NSImage *STDragPreviewImage(NSImage *image) {
         NSBeep();
         return;
     }
+#if defined(_WIN32)
+    // An OLE drag, which the backend doesn't start: the file, and the image for apps that take
+    // a picture (#276). The classic drag below stays inside the app.
+    if (STWindowsDragFileOut(self.window, url.path, [NSData dataWithContentsOfURL:url])) {
+        return;
+    }
+#endif
     NSImage *preview = STDragPreviewImage(image);
     NSPoint at = [self convertPoint:event.locationInWindow fromView:nil];
 #if defined(GNUSTEP)
