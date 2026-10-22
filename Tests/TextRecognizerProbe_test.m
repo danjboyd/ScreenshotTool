@@ -92,8 +92,9 @@
     XCTAssertEqual(STSensitiveTextRects(lines).count, (NSUInteger)0, @"%@", STSensitiveTextRects(lines));
 }
 
-#if defined(GNUSTEP) && !defined(_WIN32)
-/// With tesseract installed, the README's sample reads, and its email address is found.
+#if !defined(_WIN32)
+/// With an engine (Vision on macOS, tesseract on Linux when it's installed), the README's sample
+/// reads, and its email address is found.
 /// The README's sample: a settings page with one email address and no phone number.
 - (NSString *)samplePath {
     // The suite runs from the repository's root.
@@ -157,6 +158,57 @@
     XCTAssertTrue(undo.canUndo);
     [undo undo];
     XCTAssertEqual(delegate.canvasView.strokes.count, (NSUInteger)0, @"one step undoes them all");
+}
+
+/// The engine's lines for `rect` of the sample (all of it for NSZeroRect).
+- (NSArray<STRecognizedLine *> *)linesOfSampleInRect:(NSRect)rect {
+    __block NSArray<STRecognizedLine *> *lines = nil;
+    __block BOOL done = NO;
+    [STTextRecognizer recognizeTextInImageAtURL:[NSURL fileURLWithPath:[self samplePath]]
+                                           rect:rect
+                                     completion:^(NSArray<STRecognizedLine *> *l, NSString *f) {
+        (void)f;
+        lines = l;
+        done = YES;
+    }];
+    NSDate *until = [NSDate dateWithTimeIntervalSinceNow:30.0];
+    while (!done && [until timeIntervalSinceNow] > 0) {
+        [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    }
+    XCTAssertTrue(done);
+    return lines;
+}
+
+/// Reading a part of the image (Copy Text on a selection) reads only what's there, with its boxes
+/// still in the whole image's pixels, where reading all of it puts them.
+- (void)testAPartReadsOnlyThatPart {
+    if (![STTextRecognizer isAvailable]) {
+        NSLog(@"tesseract isn't installed: the sample isn't read");
+        return;
+    }
+    NSArray<STRecognizedLine *> *all = [self linesOfSampleInRect:NSZeroRect];
+    STRecognizedLine *security = nil;
+    for (STRecognizedLine *line in all) {
+        if ([line.text rangeOfString:@"Security"].location != NSNotFound) {
+            security = line;
+            break;
+        }
+    }
+    XCTAssertNotNil(security, @"%@", STRecognizedText(all));
+    NSRect part = NSInsetRect(security.bounds, -6.0, -6.0);
+    NSArray<STRecognizedLine *> *lines = [self linesOfSampleInRect:part];
+    XCTAssertTrue([STRecognizedText(lines) rangeOfString:@"Security"].location != NSNotFound, @"%@", STRecognizedText(lines));
+    XCTAssertLessThan(lines.count, all.count, @"not the whole image");
+    for (STRecognizedLine *line in lines) {
+        for (STRecognizedWord *word in line.words) {
+            XCTAssertTrue(NSPointInRect(NSMakePoint(NSMidX(word.bounds), NSMidY(word.bounds)), part),
+                          @"%@ at %@ is outside %@", word.text, NSStringFromRect(word.bounds), NSStringFromRect(part));
+        }
+    }
+    NSRect again = lines.firstObject.bounds;
+    // Its middle: an engine may box a part's text a little looser than the whole image's.
+    XCTAssertTrue(fabs(NSMidX(again) - NSMidX(security.bounds)) < 4.0 && fabs(NSMidY(again) - NSMidY(security.bounds)) < 4.0,
+                  @"%@ is where %@ was", NSStringFromRect(again), NSStringFromRect(security.bounds));
 }
 
 - (void)testTesseractReadsTheSample {
