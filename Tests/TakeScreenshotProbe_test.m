@@ -159,6 +159,29 @@
 #endif
 
 #if defined(GNUSTEP) && !defined(_WIN32)
+STScreenshotCaptureResult STPortalScreenshotResult(unsigned int response, const char *uri, NSURL **url, NSString **failure);
+
+/// The portal's answers: a file, a cancel (1), and GNOME's 2 for a cancel of its UI, which isn't
+/// an error either (#314).
+- (void)testPortalAnswers {
+    NSURL *url = nil;
+    NSString *failure = nil;
+    XCTAssertEqual(STPortalScreenshotResult(0, "file:///tmp/Screenshot.png", &url, &failure), STScreenshotCaptureResultFile);
+    XCTAssertEqualObjects(url.path, @"/tmp/Screenshot.png");
+    XCTAssertNil(failure);
+
+    XCTAssertEqual(STPortalScreenshotResult(1, NULL, &url, &failure), STScreenshotCaptureResultNone);
+    XCTAssertNil(url);
+    XCTAssertNil(failure, @"a cancel says nothing");
+
+    XCTAssertEqual(STPortalScreenshotResult(2, NULL, &url, &failure), STScreenshotCaptureResultNone);
+    XCTAssertNil(failure, @"GNOME's cancel: no alert");
+
+    XCTAssertEqual(STPortalScreenshotResult(0, "https://example.com/a.png", &url, &failure), STScreenshotCaptureResultNone);
+    XCTAssertNil(url);
+    XCTAssertGreaterThan(failure.length, (NSUInteger)0, @"not a file: says so");
+}
+
 /// With no session bus to reach the portal on, the capture reports why, once, on a later turn of
 /// the run loop, and another can start after.
 - (void)testCaptureWithoutAPortalReportsAFailure {
