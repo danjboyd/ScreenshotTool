@@ -8,6 +8,10 @@
 #define ST_TEXT_VISION 1
 #import <Vision/Vision.h>
 #endif
+#if defined(_WIN32)
+#define ST_TEXT_WINDOWS 1
+#import "STWindowsIntegration.h"
+#endif
 
 @implementation STRecognizedWord
 
@@ -225,8 +229,9 @@ static NSArray<STRecognizedLine *> *STLinesFromVisionObservations(NSArray<VNReco
     return [self tesseractPath] != nil;
 #elif ST_TEXT_VISION
     return YES;
+#elif ST_TEXT_WINDOWS
+    return STWindowsTextRecognitionAvailable();
 #else
-    // The Windows engine (Windows.Media.Ocr) comes from the Windows work.
     return NO;
 #endif
 }
@@ -296,6 +301,18 @@ static NSArray<STRecognizedLine *> *STLinesFromVisionObservations(NSArray<VNReco
             finish(lines, lines ? nil : failure);
         });
     });
+#elif ST_TEXT_WINDOWS
+    // Windows.Media.Ocr reads the rect, cropped; its boxes come back in the whole image.
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        NSString *failure = nil;
+        NSArray<STRecognizedLine *> *lines = STWindowsRecognizeText(url, rect, &failure);
+        void (^call)(void) = ^{
+            finish(lines, lines ? nil : failure);
+        };
+        // GNUstep's run loop doesn't drain GCD's main queue on Windows; back as an event would be.
+        [STTextRecognizer performSelectorOnMainThread:@selector(runCompletion:) withObject:[call copy]
+                                        waitUntilDone:NO modes:@[NSDefaultRunLoopMode]];
+    });
 #else
     (void)url;
     (void)rect;
@@ -304,5 +321,11 @@ static NSArray<STRecognizedLine *> *STLinesFromVisionObservations(NSArray<VNReco
     });
 #endif
 }
+
+#if ST_TEXT_WINDOWS
++ (void)runCompletion:(void (^)(void))call {
+    call();
+}
+#endif
 
 @end

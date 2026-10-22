@@ -92,9 +92,8 @@
     XCTAssertEqual(STSensitiveTextRects(lines).count, (NSUInteger)0, @"%@", STSensitiveTextRects(lines));
 }
 
-#if !defined(_WIN32)
-/// With an engine (Vision on macOS, tesseract on Linux when it's installed), the README's sample
-/// reads, and its email address is found.
+/// With an engine (Vision on macOS, Windows.Media.Ocr on Windows, tesseract on Linux when it's
+/// installed), the README's sample reads, and its email address is found.
 /// The README's sample: a settings page with one email address and no phone number.
 - (NSString *)samplePath {
     // The suite runs from the repository's root.
@@ -241,6 +240,5 @@
     NSRect email = rects.firstObject.rectValue;
     XCTAssertTrue(NSMinX(email) > 300.0 && NSMaxY(email) < 260.0, @"%@", NSStringFromRect(email));
 }
-#endif
 
 @end

@@ -141,6 +141,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STScreenshotCapture.m \
 	../Source/STTextRecognizer.m \
 	../Source/STWindowsIntegration.m \
+	../Source/STWindowsTextRecognition.m \
 	../Source/STFontPicker.m
 
 
@@ -163,7 +164,7 @@ ifneq ($(filter CLANG64,$(MSYSTEM)),)
 # gnustep-make links a Windows bundle's LDFLAGS inside -Wl,--whole-archive, which pulls in every
 # member of these import libraries (and their duplicate __NULL_IMPORT_DESCRIPTORs); as bundle
 # libraries they come after -Wl,--no-whole-archive.
-ScreenshotToolTests_BUNDLE_LIBS += -lstdc++ -lobjc -lfontconfig -lfreetype -ldispatch -lshell32 -luser32 -lgdi32 -lwinhttp
+ScreenshotToolTests_BUNDLE_LIBS += -lstdc++ -lobjc -lfontconfig -lfreetype -ldispatch -lshell32 -luser32 -lgdi32 -lwinhttp -lruntimeobject
 ifneq ($(wildcard /clang64/include/cairo/cairo.h),)
 ScreenshotToolTests_BUNDLE_LIBS += -lcairo
 endif
