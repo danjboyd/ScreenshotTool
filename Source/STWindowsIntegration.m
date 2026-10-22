@@ -41,6 +41,20 @@ static LRESULT CALLBACK STClipboardListenerProc(HWND window, UINT message, WPARA
     return DefWindowProcW(window, message, wParam, lParam);
 }
 
+void STWindowsRegisterScaledTextDefaults(void) {
+    // The system DPI: the app is system DPI aware (its manifest), and the backend scales every
+    // window by it.
+    HDC screen = GetDC(NULL);
+    int dpi = screen ? GetDeviceCaps(screen, LOGPIXELSX) : 96;
+    if (screen) {
+        ReleaseDC(NULL, screen);
+    }
+    if (dpi != 96) {
+        // 17: metrics off, hint style none, as libs-back picks under GSScaleFactor.
+        [[NSUserDefaults standardUserDefaults] registerDefaults:@{@"GSFontHinting": @17}];
+    }
+}
+
 void STWindowsStartClipboardMonitoring(void) {
     static HWND listener = NULL;
     if (listener != NULL) {
@@ -539,6 +553,9 @@ NSData *STWindowsClipboardPNGData(void) {
 
 NSArray<NSString *> *STWindowsClipboardFilePaths(void) {
     return nil;
+}
+
+void STWindowsRegisterScaledTextDefaults(void) {
 }
 
 void STWindowsStartClipboardMonitoring(void) {

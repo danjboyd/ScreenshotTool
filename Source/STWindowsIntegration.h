@@ -33,6 +33,12 @@ NSArray<NSString *> * _Nullable STWindowsClipboardFilePaths(void);
 /// Posted on the main thread whenever the clipboard changes, once monitoring has started.
 extern NSString *const STWindowsClipboardDidChangeNotification;
 
+/// Turns cairo's hinted glyph metrics off by default when the display is scaled (125%, 150%), as
+/// the backend does itself under GSScaleFactor. Hinted advances are rounded at the font's own
+/// size, so scaled text was spaced unevenly ("px ·PNG", #306). A GSFontHinting the user set still
+/// wins. Call before the app starts.
+void STWindowsRegisterScaledTextDefaults(void);
+
 /// Starts watching the clipboard, so a change shows even while the app keeps focus: a snip or
 /// PrtScn with the app in front didn't enable Paste until it was activated again (#202).
 void STWindowsStartClipboardMonitoring(void);
