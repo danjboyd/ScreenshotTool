@@ -1,5 +1,6 @@
 #import "STScreenshotCapture.h"
 #import "STWindowsIntegration.h"
+#import "AppDelegate.h"
 
 #if defined(GNUSTEP) && !defined(_WIN32)
 #define ST_CAPTURE_PORTAL 1
@@ -83,6 +84,26 @@ static void STPortalCaptureResponse(GDBusConnection *connection, const gchar *se
         g_variant_get(parameters, "(u@a{sv})", &capture->_response, &capture->_results);
         capture->_answered = YES;
     }
+}
+
+/// What the portal's answer means. 0 with a file's URI is the screenshot; 1 is a cancel. 2 is
+/// "other": GNOME's portal (48, at least) answers 2 when the user cancels its screenshot UI, with
+/// Esc or its close button, and that can't be told from the tool failing, so it's a cancel too and
+/// only logged (#314). Not reaching the portal at all is still a failure, from the start.
+STScreenshotCaptureResult STPortalScreenshotResult(guint32 response, const char *uri, NSURL **url, NSString **failure) {
+    *url = nil;
+    *failure = nil;
+    if (response == 0 && uri != NULL) {
+        NSURL *fileURL = [NSURL URLWithString:[NSString stringWithUTF8String:uri]];
+        if (fileURL.isFileURL) {
+            *url = fileURL;
+            return STScreenshotCaptureResultFile;
+        }
+        *failure = @"The screenshot wasn't saved to a file.";
+    } else if (response == 2) {
+        ScreenshotToolAppendLog(@"Take Screenshot: the portal answered 2 (cancelled, or the tool failed); taken as a cancel");
+    }
+    return STScreenshotCaptureResultNone;
 }
 
 @implementation STPortalCapture
@@ -191,22 +212,13 @@ static NSString *STPortalParentWindow(NSWindow *window) {
     [self.timer invalidate];
     self.timer = nil;
 
-    STScreenshotCaptureResult result = STScreenshotCaptureResultNone;
     NSURL *url = nil;
     NSString *failure = nil;
     const char *uri = NULL;
-    if (_response == 0 && _results != NULL && g_variant_lookup(_results, "uri", "&s", &uri) && uri != NULL) {
-        url = [NSURL URLWithString:[NSString stringWithUTF8String:uri]];
-        if (url.isFileURL) {
-            result = STScreenshotCaptureResultFile;
-        } else {
-            url = nil;
-            failure = @"The screenshot wasn't saved to a file.";
-        }
-    } else if (_response == 2) {
-        failure = @"The screenshot couldn't be taken.";
+    if (_results == NULL || !g_variant_lookup(_results, "uri", "&s", &uri)) {
+        uri = NULL;
     }
-    // 1: cancelled.
+    STScreenshotCaptureResult result = STPortalScreenshotResult(_response, uri, &url, &failure);
     STScreenshotCaptureCompletion completion = self.completion;
     self.completion = nil;
     STCurrentCapture = nil;
