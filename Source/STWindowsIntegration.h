@@ -30,6 +30,11 @@ NSData * _Nullable STWindowsClipboardPNGData(void);
 /// The files on the clipboard, as Explorer copies them.
 NSArray<NSString *> * _Nullable STWindowsClipboardFilePaths(void);
 
+/// Whether the clipboard's image came from another app: not one this app copied. Its own copies
+/// own the clipboard; libs-sharing's Copy opens it without an owner, so an ownerless image counts
+/// as this app's while `appIsActive` (that Copy is a click in the app). NO without an image.
+BOOL STWindowsClipboardImageIsFromAnotherApp(BOOL appIsActive);
+
 /// Posted on the main thread whenever the clipboard changes, once monitoring has started.
 extern NSString *const STWindowsClipboardDidChangeNotification;
 

@@ -291,6 +291,19 @@ BOOL STWindowsClipboardHasImage(void) {
         || IsClipboardFormatAvailable(CF_BITMAP) || (png != 0 && IsClipboardFormatAvailable(png));
 }
 
+BOOL STWindowsClipboardImageIsFromAnotherApp(BOOL appIsActive) {
+    if (!STWindowsClipboardHasImage()) {
+        return NO;
+    }
+    HWND owner = GetClipboardOwner();
+    if (owner == NULL) {
+        return !appIsActive;
+    }
+    DWORD pid = 0;
+    GetWindowThreadProcessId(owner, &pid);
+    return pid != GetCurrentProcessId();
+}
+
 BOOL STWindowsClipboardWritePNGData(NSData *pngData) {
     if (pngData.length == 0) {
         return NO;
@@ -534,6 +547,11 @@ BOOL STWindowsClipboardIsNative(void) {
 }
 
 BOOL STWindowsClipboardHasImage(void) {
+    return NO;
+}
+
+BOOL STWindowsClipboardImageIsFromAnotherApp(BOOL appIsActive) {
+    (void)appIsActive;
     return NO;
 }
 

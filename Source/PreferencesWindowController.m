@@ -61,6 +61,8 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 @property (nonatomic, strong) NSButton *chooseDirectoryButton;
 @property (nonatomic, strong) NSTextField *keepVisibleLabel;
 @property (nonatomic, strong) NSSwitch *keepVisibleSwitch;
+@property (nonatomic, strong) NSTextField *offerClipboardLabel;
+@property (nonatomic, strong) NSSwitch *offerClipboardSwitch;
 
 @property (nonatomic, strong) NSTextField *interfaceHeaderLabel;
 @property (nonatomic, strong) NSTextField *statusBarLabel;
@@ -273,6 +275,14 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.keepVisibleSwitch setAction:@selector(keepVisibleToggled:)];
     [content addSubview:self.keepVisibleSwitch];
 
+    self.offerClipboardLabel = [self fieldLabelWithString:@"Offer to open screenshots copied in other apps" frame:NSZeroRect];
+    [content addSubview:self.offerClipboardLabel];
+    self.offerClipboardSwitch = [[NSSwitch alloc] initWithFrame:NSZeroRect];
+    [self.offerClipboardSwitch setEnabled:YES];
+    [self.offerClipboardSwitch setTarget:self];
+    [self.offerClipboardSwitch setAction:@selector(offerClipboardToggled:)];
+    [content addSubview:self.offerClipboardSwitch];
+
     self.interfaceHeaderLabel = [self headerLabelWithString:@"Interface"];
     [content addSubview:self.interfaceHeaderLabel];
 
@@ -402,6 +412,8 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
         self.chooseDirectoryButton,
         self.keepVisibleLabel,
         self.keepVisibleSwitch,
+        self.offerClipboardLabel,
+        self.offerClipboardSwitch,
         self.interfaceHeaderLabel,
         self.statusBarLabel,
         self.statusBarSwitch,
@@ -428,6 +440,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.statusBarLabel setTextColor:STThemePrimaryTextColor()];
     [self.selectionBarLabel setTextColor:STThemePrimaryTextColor()];
     [self.keepVisibleLabel setTextColor:STThemePrimaryTextColor()];
+    [self.offerClipboardLabel setTextColor:STThemePrimaryTextColor()];
     [self.directoryLabel setTextColor:STThemePrimaryTextColor()];
     [self.textColorLabel setTextColor:STThemePrimaryTextColor()];
     [self.textFontLabel setTextColor:STThemePrimaryTextColor()];
@@ -610,6 +623,16 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
                                     STPreferencesNaturalSize(self.keepVisibleLabel, NSZeroSize).height, y, switchRowHeight);
             STPreferencesPlaceInRow(self.keepVisibleSwitch, innerX + innerWidth - switchSize.width, switchSize.width,
                                     switchSize.height, y, switchRowHeight);
+
+            // Only where the platform reports what other apps copy (#275).
+            if ([self.delegate preferencesControllerCanOfferClipboardScreenshots:self]) {
+                [self setViews:@[self.offerClipboardLabel, self.offerClipboardSwitch] hidden:NO];
+                y -= rowGap + switchRowHeight;
+                STPreferencesPlaceInRow(self.offerClipboardLabel, innerX, innerWidth - switchSize.width - gap,
+                                        STPreferencesNaturalSize(self.offerClipboardLabel, NSZeroSize).height, y, switchRowHeight);
+                STPreferencesPlaceInRow(self.offerClipboardSwitch, innerX + innerWidth - switchSize.width, switchSize.width,
+                                        switchSize.height, y, switchRowHeight);
+            }
             break;
         }
     }
@@ -744,6 +767,8 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
     [self.selectionBarSwitch setState:showSelectionBar ? NSControlStateValueOn : NSControlStateValueOff];
     BOOL keepVisible = [delegate preferencesControllerShouldKeepWindowVisibleWhileCapturing:self];
     [self.keepVisibleSwitch setState:keepVisible ? NSControlStateValueOn : NSControlStateValueOff];
+    BOOL offerClipboard = [delegate preferencesControllerShouldOfferClipboardScreenshots:self];
+    [self.offerClipboardSwitch setState:offerClipboard ? NSControlStateValueOn : NSControlStateValueOff];
 }
 
 - (NSString *)displayStringForWidth:(CGFloat)width {
@@ -868,6 +893,10 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
 
 - (void)keepVisibleToggled:(NSSwitch *)sender {
     [self.delegate preferencesController:self didToggleKeepWindowVisibleWhileCapturing:(sender.state == NSControlStateValueOn)];
+}
+
+- (void)offerClipboardToggled:(NSSwitch *)sender {
+    [self.delegate preferencesController:self didToggleOfferClipboardScreenshots:(sender.state == NSControlStateValueOn)];
 }
 
 - (void)restoreDefaultsPressed:(id)sender {

@@ -104,6 +104,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	SplitButtonProbe_test.m \
 	SymbolicToolbarIconsProbe_test.m \
 	TakeScreenshotProbe_test.m \
+	ClipboardScreenshotOfferProbe_test.m \
 	CanvasCursorShownRectProbe_test.m \
 	WaylandClipboardMirrorProbe_test.m \
 	WaylandPasteCheckProbe_test.m \

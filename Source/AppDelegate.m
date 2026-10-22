@@ -1629,6 +1629,10 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 /// The window is out of the way of the desktop's screenshot tool.
 @property (nonatomic, assign) BOOL hiddenForScreenshot;
 @property (nonatomic, assign) NSTimeInterval clipboardCheckedAt;
+/// An image another app copied is on offer: the status bar's Open New Screenshot, and the empty
+/// state's Paste under that name (#275).
+@property (nonatomic, assign) BOOL clipboardScreenshotOffered;
+@property (nonatomic, strong) NSButton *statusOfferButton;
 - (NSData *)clipboardPNGDataForPasteAsNewImage;
 - (BOOL)clipboardHasImage;
 - (void)refreshPasteAvailability;
@@ -4539,6 +4543,15 @@ static id STInfoValueForKey(NSString *key) {
     // refreshStatusZoomControls shows them, with an image, and lays them out.
     zoomContainer.hidden = YES;
     [self refreshStatusZoomControls];
+
+    // Shown while an image another app copied is on offer (#275).
+    STHyperlinkButton *offer = [STHyperlinkButton hyperlinkButtonWithTitle:@"Open New Screenshot"
+                                                                    target:self
+                                                                    action:@selector(openOfferedClipboardScreenshot:)];
+    [offer setToolTip:@"Open the image just copied in another app"];
+    [offer setHidden:YES];
+    self.statusOfferButton = offer;
+    [self.statusBarView addSubview:offer];
 }
 
 - (NSButton *)statusZoomButtonWithTitle:(NSString *)title action:(SEL)action label:(NSString *)label {
@@ -4638,6 +4651,16 @@ static id STInfoValueForKey(NSString *key) {
                                                           verticalInset:verticalInset
                                                                  height:availableHeight];
         rightEdge -= zoomWidth + (padding * 2.0f);
+    }
+    if (self.statusOfferButton && !self.statusOfferButton.isHidden) {
+        [self.statusOfferButton sizeToFit];
+        NSSize offerSize = self.statusOfferButton.frame.size;
+        CGFloat offerHeight = MIN(availableHeight, offerSize.height);
+        self.statusOfferButton.frame = NSMakeRect(rightEdge - offerSize.width,
+                                                  verticalInset + floor((availableHeight - offerHeight) / 2.0f),
+                                                  offerSize.width,
+                                                  offerHeight);
+        rightEdge -= offerSize.width + (padding * 2.0f);
     }
 
     CGFloat textWidth = MAX(0.0f, rightEdge - padding);
@@ -5699,6 +5722,31 @@ static id STInfoValueForKey(NSString *key) {
     [[NSUserDefaults standardUserDefaults] setBool:keep forKey:STDefaultsKeepWindowVisibleWhileCapturingKey];
 }
 
+/// Whether this platform tells the app when another app copies an image: Windows, whose clipboard
+/// the app watches (#202). Elsewhere the offer and its preference don't show (#275).
+static BOOL STCanOfferClipboardScreenshots(void) {
+    return STWindowsClipboardIsNative();
+}
+
+- (BOOL)preferencesControllerCanOfferClipboardScreenshots:(PreferencesWindowController *)controller {
+    (void)controller;
+    return STCanOfferClipboardScreenshots();
+}
+
+- (BOOL)preferencesControllerShouldOfferClipboardScreenshots:(PreferencesWindowController *)controller {
+    (void)controller;
+    return [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsOfferClipboardScreenshotsKey];
+}
+
+/// Read at each clipboard change; turning it off withdraws an offer showing now.
+- (void)preferencesController:(PreferencesWindowController *)controller didToggleOfferClipboardScreenshots:(BOOL)offer {
+    (void)controller;
+    [[NSUserDefaults standardUserDefaults] setBool:offer forKey:STDefaultsOfferClipboardScreenshotsKey];
+    if (!offer) {
+        [self setClipboardScreenshotOffered:NO];
+    }
+}
+
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller {
     (void)controller;
 #if !defined(GNUSTEP)
@@ -5739,6 +5787,8 @@ static id STInfoValueForKey(NSString *key) {
     self.selectionBarPreference = [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsShowSelectionBarKey];
     [self updateSelectionActionBar];
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsKeepWindowVisibleWhileCapturingKey];
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsOfferClipboardScreenshotsKey];
+    [self setClipboardScreenshotOffered:NO];
 
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self showStatusMessage:@"Preferences restored" duration:2.0];
@@ -7215,6 +7265,42 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 - (void)clipboardDidChange:(NSNotification *)notification {
     (void)notification;
     [self refreshPasteAvailability];
+    [self updateClipboardScreenshotOffer];
+}
+
+/// Offers the clipboard's image when another app just copied it (a snip, Win+Shift+S) and the
+/// user asked for that; withdraws the offer when the clipboard changes to anything else. Never
+/// takes focus or opens anything itself (#275).
+- (void)updateClipboardScreenshotOffer {
+    BOOL offer = STCanOfferClipboardScreenshots()
+        && [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsOfferClipboardScreenshotsKey]
+        // Take Screenshot opens its own snip.
+        && ![STScreenshotCapture isCapturing]
+        && STWindowsClipboardImageIsFromAnotherApp([NSApp isActive]);
+    [self setClipboardScreenshotOffered:offer];
+}
+
+- (void)setClipboardScreenshotOffered:(BOOL)offered {
+    if (_clipboardScreenshotOffered == offered) {
+        return;
+    }
+    _clipboardScreenshotOffered = offered;
+    if (self.statusOfferButton) {
+        [self.statusOfferButton setHidden:!offered];
+        [self layoutStatusControls];
+    }
+    NSButton *paste = [self.emptyStateView viewWithTag:5];
+    if (paste) {
+        [paste setTitle:offered ? @"Open New Screenshot" : @"Paste"];
+        [paste setFrameSize:NSMakeSize(MAX(120.0, ceil([[paste cell] cellSize].width) + 8.0), NSHeight(paste.frame))];
+        if (!self.emptyStateView.isHidden) {
+            [self layoutEmptyStateViewInFrame:self.emptyStateView.frame];
+        }
+    }
+}
+
+- (void)openOfferedClipboardScreenshot:(id)sender {
+    [self pasteAsNewImage:sender];
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
@@ -7408,6 +7494,8 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 
 - (void)pasteAsNewImage:(id)sender {
     (void)sender;
+    // Taken up, or pasted another way: either ends the offer (#275).
+    [self setClipboardScreenshotOffered:NO];
     NSData *pngData = [self clipboardPNGDataForPasteAsNewImage];
     if (pngData.length == 0) {
         [self showTransientFeedbackMessage:@"Clipboard does not contain an image" duration:2.0];
