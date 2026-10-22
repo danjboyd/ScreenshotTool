@@ -22,6 +22,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)preferencesController:(PreferencesWindowController *)controller didToggleSelectionBar:(BOOL)show;
 - (BOOL)preferencesControllerShouldKeepWindowVisibleWhileCapturing:(PreferencesWindowController *)controller;
 - (void)preferencesController:(PreferencesWindowController *)controller didToggleKeepWindowVisibleWhileCapturing:(BOOL)keep;
+/// Whether the platform can offer images other apps copy; the switch shows only where it can.
+- (BOOL)preferencesControllerCanOfferClipboardScreenshots:(PreferencesWindowController *)controller;
+- (BOOL)preferencesControllerShouldOfferClipboardScreenshots:(PreferencesWindowController *)controller;
+- (void)preferencesController:(PreferencesWindowController *)controller didToggleOfferClipboardScreenshots:(BOOL)offer;
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller;
 - (void)preferencesControllerDidRequestClose:(PreferencesWindowController *)controller;
 @end
