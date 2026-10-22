@@ -20,6 +20,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)preferencesController:(PreferencesWindowController *)controller didToggleStatusBar:(BOOL)show;
 - (BOOL)preferencesControllerShouldShowSelectionBar:(PreferencesWindowController *)controller;
 - (void)preferencesController:(PreferencesWindowController *)controller didToggleSelectionBar:(BOOL)show;
+- (BOOL)preferencesControllerShouldKeepWindowVisibleWhileCapturing:(PreferencesWindowController *)controller;
+- (void)preferencesController:(PreferencesWindowController *)controller didToggleKeepWindowVisibleWhileCapturing:(BOOL)keep;
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller;
 - (void)preferencesControllerDidRequestClose:(PreferencesWindowController *)controller;
 @end

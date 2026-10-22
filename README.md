@@ -285,6 +285,9 @@ defaults are left untouched. CI runs it on each AppImage.
   Appearance turns it off.
 - Preferences hold the drawing and text defaults, the default save folder
   and whether the status bar is shown.
+- Take Screenshot hides the window while you capture, and brings it back with the screenshot or
+  when you cancel. Preferences > Workspace > Keep this window visible while capturing turns
+  that off.
 - While editing text, `Ctrl+Return` or `Esc` finishes the label and `Return`
   starts a new line.
 - Save As flattens the annotations into the image; use Save Project to keep
