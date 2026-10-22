@@ -218,17 +218,51 @@ static NSString *STPortalParentWindow(NSWindow *window) {
 #elif ST_CAPTURE_SNIPPING_TOOL
 
 /// The Snipping Tool's overlay (ms-screenclip:), whose snip goes to the clipboard. Nothing tells
-/// the app when it's done or cancelled: the clipboard is watched for a new image, for a while.
+/// the app when it's done or cancelled: the clipboard is watched for a new image, and the
+/// foreground window shows when the overlay has gone (#315).
 @interface STSnippingToolCapture : NSObject
 @property (nonatomic, copy) STScreenshotCaptureCompletion completion;
 @property (nonatomic, strong) NSTimer *timer;
 @property (nonatomic, assign) DWORD sequence;
 @property (nonatomic, strong) NSDate *deadline;
+@property (nonatomic, assign) BOOL overlaySeen;
+@property (nonatomic, assign) BOOL leftApp;
+@property (nonatomic, strong) NSDate *goneSince;
 - (BOOL)start:(NSString **)failure;
 @end
 
-/// How long a snip is waited for: Esc in the overlay can't be seen.
+/// How long a snip is waited for when the overlay is never seen to close.
 static const NSTimeInterval STSnippingToolWait = 120.0;
+
+/// How long the overlay must stay gone before the wait ends as a cancel: a snip reaches the
+/// clipboard a moment after the overlay closes.
+static const NSTimeInterval STSnippingToolGoneGrace = 1.0;
+
+/// Whether the foreground window belongs to this app; *snipping says whether it belongs to the
+/// Snipping Tool instead.
+static BOOL STForegroundIsApp(BOOL *snipping) {
+    *snipping = NO;
+    HWND window = GetForegroundWindow();
+    DWORD pid = 0;
+    if (!window || !GetWindowThreadProcessId(window, &pid) || pid == 0) {
+        return NO;
+    }
+    if (pid == GetCurrentProcessId()) {
+        return YES;
+    }
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (process) {
+        WCHAR path[MAX_PATH];
+        DWORD length = MAX_PATH;
+        if (QueryFullProcessImageNameW(process, 0, path, &length)) {
+            const WCHAR *name = wcsrchr(path, L'\\');
+            name = name ? name + 1 : path;
+            *snipping = _wcsicmp(name, L"SnippingTool.exe") == 0 || _wcsicmp(name, L"ScreenClippingHost.exe") == 0;
+        }
+        CloseHandle(process);
+    }
+    return NO;
+}
 
 @implementation STSnippingToolCapture
 
@@ -252,7 +286,7 @@ static const NSTimeInterval STSnippingToolWait = 120.0;
         if (STWindowsClipboardHasImage()) {
             result = STScreenshotCaptureResultClipboard;
         }
-    } else if ([self.deadline timeIntervalSinceNow] > 0) {
+    } else if ([self.deadline timeIntervalSinceNow] > 0 && ![self overlayGone]) {
         return;
     }
     [self.timer invalidate];
@@ -261,6 +295,29 @@ static const NSTimeInterval STSnippingToolWait = 120.0;
     self.completion = nil;
     STCurrentCapture = nil;
     completion(result, nil, nil);
+}
+
+/// Whether the overlay has closed without a snip: it was in front and now isn't, or the app was
+/// brought back (a taskbar click, Alt+Tab) after something else had been in front. Esc in the
+/// overlay hands the foreground back, so either one covers a cancel.
+- (BOOL)overlayGone {
+    BOOL snipping = NO;
+    BOOL app = STForegroundIsApp(&snipping);
+    if (snipping) {
+        self.overlaySeen = YES;
+    }
+    if (!app) {
+        self.leftApp = YES;
+    }
+    BOOL gone = (self.overlaySeen && !snipping) || (self.leftApp && app);
+    if (!gone) {
+        self.goneSince = nil;
+        return NO;
+    }
+    if (!self.goneSince) {
+        self.goneSince = [NSDate date];
+    }
+    return -[self.goneSince timeIntervalSinceNow] >= STSnippingToolGoneGrace;
 }
 
 @end
