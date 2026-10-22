@@ -59,6 +59,8 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
 @property (nonatomic, strong) NSTextField *directoryLabel;
 @property (nonatomic, strong) NSTextField *saveDirectoryField;
 @property (nonatomic, strong) NSButton *chooseDirectoryButton;
+@property (nonatomic, strong) NSTextField *keepVisibleLabel;
+@property (nonatomic, strong) NSSwitch *keepVisibleSwitch;
 
 @property (nonatomic, strong) NSTextField *interfaceHeaderLabel;
 @property (nonatomic, strong) NSTextField *statusBarLabel;
@@ -263,6 +265,14 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.chooseDirectoryButton setAction:@selector(chooseSaveDirectory:)];
     [content addSubview:self.chooseDirectoryButton];
 
+    self.keepVisibleLabel = [self fieldLabelWithString:@"Keep this window visible while capturing" frame:NSZeroRect];
+    [content addSubview:self.keepVisibleLabel];
+    self.keepVisibleSwitch = [[NSSwitch alloc] initWithFrame:NSZeroRect];
+    [self.keepVisibleSwitch setEnabled:YES];
+    [self.keepVisibleSwitch setTarget:self];
+    [self.keepVisibleSwitch setAction:@selector(keepVisibleToggled:)];
+    [content addSubview:self.keepVisibleSwitch];
+
     self.interfaceHeaderLabel = [self headerLabelWithString:@"Interface"];
     [content addSubview:self.interfaceHeaderLabel];
 
@@ -356,7 +366,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
         case STPreferencesSectionText:
             return @"Choose the default color and typeface used when you add text annotations.";
         case STPreferencesSectionWorkspace:
-            return @"Pick the folder used when saving screenshots and exports by default.";
+            return @"Pick the folder used when saving screenshots and exports by default, and whether this window stays in view while you take a screenshot.";
     }
     return @"";
 }
@@ -390,6 +400,8 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
         self.directoryLabel,
         self.saveDirectoryField,
         self.chooseDirectoryButton,
+        self.keepVisibleLabel,
+        self.keepVisibleSwitch,
         self.interfaceHeaderLabel,
         self.statusBarLabel,
         self.statusBarSwitch,
@@ -415,6 +427,7 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
     [self.highlighterWidthValueLabel setTextColor:STThemePrimaryTextColor()];
     [self.statusBarLabel setTextColor:STThemePrimaryTextColor()];
     [self.selectionBarLabel setTextColor:STThemePrimaryTextColor()];
+    [self.keepVisibleLabel setTextColor:STThemePrimaryTextColor()];
     [self.directoryLabel setTextColor:STThemePrimaryTextColor()];
     [self.textColorLabel setTextColor:STThemePrimaryTextColor()];
     [self.textFontLabel setTextColor:STThemePrimaryTextColor()];
@@ -589,6 +602,14 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
             y -= rowHeight;
             STPreferencesPlaceInRow(self.saveDirectoryField, innerX, fieldWidth, fieldHeight, y, rowHeight);
             STPreferencesPlaceInRow(self.chooseDirectoryButton, innerX + fieldWidth + gap, chooseWidth, controlHeight, y, rowHeight);
+
+            [self setViews:@[self.keepVisibleLabel, self.keepVisibleSwitch] hidden:NO];
+            CGFloat switchRowHeight = MAX(controlHeight, switchSize.height);
+            y -= groupGap + switchRowHeight;
+            STPreferencesPlaceInRow(self.keepVisibleLabel, innerX, innerWidth - switchSize.width - gap,
+                                    STPreferencesNaturalSize(self.keepVisibleLabel, NSZeroSize).height, y, switchRowHeight);
+            STPreferencesPlaceInRow(self.keepVisibleSwitch, innerX + innerWidth - switchSize.width, switchSize.width,
+                                    switchSize.height, y, switchRowHeight);
             break;
         }
     }
@@ -721,6 +742,8 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
     [self.statusBarSwitch setState:showStatusBar ? NSControlStateValueOn : NSControlStateValueOff];
     BOOL showSelectionBar = [delegate preferencesControllerShouldShowSelectionBar:self];
     [self.selectionBarSwitch setState:showSelectionBar ? NSControlStateValueOn : NSControlStateValueOff];
+    BOOL keepVisible = [delegate preferencesControllerShouldKeepWindowVisibleWhileCapturing:self];
+    [self.keepVisibleSwitch setState:keepVisible ? NSControlStateValueOn : NSControlStateValueOff];
 }
 
 - (NSString *)displayStringForWidth:(CGFloat)width {
@@ -841,6 +864,10 @@ static void STPreferencesPlaceInRow(NSView *view, CGFloat x, CGFloat width, CGFl
 
 - (void)selectionBarToggled:(NSSwitch *)sender {
     [self.delegate preferencesController:self didToggleSelectionBar:(sender.state == NSControlStateValueOn)];
+}
+
+- (void)keepVisibleToggled:(NSSwitch *)sender {
+    [self.delegate preferencesController:self didToggleKeepWindowVisibleWhileCapturing:(sender.state == NSControlStateValueOn)];
 }
 
 - (void)restoreDefaultsPressed:(id)sender {

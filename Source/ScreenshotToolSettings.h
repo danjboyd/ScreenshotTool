@@ -32,6 +32,8 @@ extern NSString * const STDefaultsRecentDocumentsKey;
 extern NSString * const STDefaultsShowStatusBarKey;
 /// Whether a region selection gets its bar of commands next to it (on unless turned off).
 extern NSString * const STDefaultsShowSelectionBarKey;
+/// Whether the window stays on screen during Take Screenshot (off unless turned on: it hides, #313).
+extern NSString * const STDefaultsKeepWindowVisibleWhileCapturingKey;
 
 FOUNDATION_EXPORT NSColor *STDefaultPenColor(void);
 FOUNDATION_EXPORT NSColor *STDefaultHighlighterColor(void);

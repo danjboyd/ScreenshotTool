@@ -5677,6 +5677,17 @@ static id STInfoValueForKey(NSString *key) {
     [self updateSelectionActionBar];
 }
 
+- (BOOL)preferencesControllerShouldKeepWindowVisibleWhileCapturing:(PreferencesWindowController *)controller {
+    (void)controller;
+    return [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsKeepWindowVisibleWhileCapturingKey];
+}
+
+/// Read when a capture starts, so there's nothing for open windows to update.
+- (void)preferencesController:(PreferencesWindowController *)controller didToggleKeepWindowVisibleWhileCapturing:(BOOL)keep {
+    (void)controller;
+    [[NSUserDefaults standardUserDefaults] setBool:keep forKey:STDefaultsKeepWindowVisibleWhileCapturingKey];
+}
+
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller {
     (void)controller;
 #if !defined(GNUSTEP)
@@ -5716,6 +5727,7 @@ static id STInfoValueForKey(NSString *key) {
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsShowSelectionBarKey];
     self.selectionBarPreference = [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsShowSelectionBarKey];
     [self updateSelectionActionBar];
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsKeepWindowVisibleWhileCapturingKey];
 
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self showStatusMessage:@"Preferences restored" duration:2.0];
@@ -7312,17 +7324,22 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     STScreenshotCaptureCompletion completion = ^(STScreenshotCaptureResult result, NSURL *url, NSString *failure) {
         [weakSelf finishScreenshotWithResult:result url:url failure:failure];
     };
-#if defined(GNUSTEP) && !defined(_WIN32)
-    // GNOME's tool freezes the screen as it opens: this window would be in the way. It comes back
-    // when the tool answers, cancelled or not. (The Snipping Tool's cancel can't be seen.)
-    if (self.window.isVisible) {
+    if ([self hidesWindowForScreenshot]) {
         self.hiddenForScreenshot = YES;
         [self.window orderOut:nil];
         [self performSelector:@selector(startScreenshotCapture:) withObject:completion afterDelay:0.3];
         return;
     }
-#endif
     [self startScreenshotCapture:completion];
+}
+
+/// This window would be in the way of what's captured (and GNOME's tool freezes the screen as it
+/// opens), so it hides unless the user keeps it, as the system tools do (#313). It comes back when
+/// the tool answers, cancelled or not; on Windows, whose Snipping Tool's cancel can't be seen, also
+/// when the app is brought back to the front (#315).
+- (BOOL)hidesWindowForScreenshot {
+    BOOL keepVisible = [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsKeepWindowVisibleWhileCapturingKey];
+    return self.window.isVisible && !keepVisible;
 }
 
 - (void)startScreenshotCapture:(STScreenshotCaptureCompletion)completion {
