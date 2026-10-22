@@ -366,6 +366,15 @@ static BOOL STPathUsesTIFFExtension(NSString *path) {
     return [extension isEqualToString:@"tif"] || [extension isEqualToString:@"tiff"];
 }
 
+static BOOL STPathUsesJPEGExtension(NSString *path) {
+    NSString *extension = [[path pathExtension] lowercaseString];
+    return [extension isEqualToString:@"jpg"] || [extension isEqualToString:@"jpeg"];
+}
+
+/// JPEG's quality for Save As: small enough for upload forms and email, with no visible loss on
+/// text and UI (#277).
+static const CGFloat STJPEGCompressionFactor = 0.85;
+
 static NSFont *STToolbarZoomFont(void) {
     return [NSFont systemFontOfSize:STToolbarZoomFontSize];
 }
@@ -6927,7 +6936,8 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     }
 
     NSSavePanel *panel = [NSSavePanel savePanel];
-    [panel setAllowedFileTypes:@[@"png", @"tif", @"tiff"]];
+    // An opened JPEG keeps its name, so Save As writes JPEG again rather than quietly PNG (#277).
+    [panel setAllowedFileTypes:@[@"png", @"jpg", @"jpeg", @"tif", @"tiff"]];
     [panel setCanCreateDirectories:YES];
 
     if (self.currentImageURL) {
@@ -6966,8 +6976,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         return NO;
     }
 
-    BOOL useTIFF = STPathUsesTIFFExtension(destination.path);
-    NSData *imageData = useTIFF ? [flattened TIFFRepresentation] : [self pngDataForImage:flattened];
+    NSData *imageData = [self imageDataForImage:flattened path:destination.path];
     if (!imageData) {
         return NO;
     }
@@ -8712,6 +8721,25 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         : (summary ?: @"");
     [alert addButtonWithTitle:@"OK"];
     [alert runModal];
+}
+
+/// The image in the format its path's extension names: TIFF, JPEG, or otherwise PNG.
+- (NSData *)imageDataForImage:(NSImage *)image path:(NSString *)path {
+    if (STPathUsesTIFFExtension(path)) {
+        return [image TIFFRepresentation];
+    }
+    if (STPathUsesJPEGExtension(path)) {
+        return [self jpegDataForImage:image];
+    }
+    return [self pngDataForImage:image];
+}
+
+/// JPEG has no alpha: the image goes onto white first, as on paper, so transparent corners (a
+/// window shot with rounded corners) aren't black.
+- (NSData *)jpegDataForImage:(NSImage *)image {
+    NSBitmapImageRep *opaque = STOpaqueBitmapOnWhite(image);
+    return [opaque representationUsingType:NSJPEGFileType
+                                properties:@{NSImageCompressionFactor: @(STJPEGCompressionFactor)}];
 }
 
 - (NSData *)pngDataForImage:(NSImage *)image {

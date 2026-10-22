@@ -98,7 +98,8 @@ GNUstep's default theme, with the menus in the window. Shortcuts use Ctrl on eve
   sheet offers Email, Copy, Save a Copy, Show in Folder and Open With…, and, if
   [rclone](https://rclone.org) is installed, each of your remotes that can make links: the image
   is uploaded and its link copied.
-- Save As writes a flattened PNG or TIFF. Save Project writes a `.screenshottool`
+- Save As writes a flattened PNG, JPEG or TIFF, by the name's extension (JPEG has
+  no transparency, so transparent areas become white). Save Project writes a `.screenshottool`
   file with the original image and editable annotations, which Open and Open
   Recent read back.
 - Crop to Selection, Fit to Window, fixed zoom levels and Zoom In/Out.

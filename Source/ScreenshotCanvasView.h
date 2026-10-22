@@ -51,6 +51,10 @@ typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
 - (BOOL)isTakingTextFocus;
 @end
 
+/// The image's pixels on white, as opaque 8-bit RGB: what a format without alpha (JPEG) gets, so
+/// transparent areas come out white, not black (#277). Nil without a bitmap.
+FOUNDATION_EXPORT NSBitmapImageRep * _Nullable STOpaqueBitmapOnWhite(NSImage *image);
+
 @interface ScreenshotCanvasView : NSView <STCanvasContextCommands>
 
 @property (nonatomic, strong, nullable) NSImage *image;
