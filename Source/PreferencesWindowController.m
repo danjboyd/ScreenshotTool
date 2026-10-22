@@ -376,6 +376,9 @@ typedef NS_ENUM(NSInteger, STPreferencesSection) {
         case STPreferencesSectionText:
             return @"Choose the default color and typeface used when you add text annotations.";
         case STPreferencesSectionWorkspace:
+            if ([self.delegate preferencesControllerCanOfferClipboardScreenshots:self]) {
+                return @"Pick the folder used when saving screenshots and exports by default, whether this window stays in view while you take a screenshot, and whether screenshots copied in other apps are offered.";
+            }
             return @"Pick the folder used when saving screenshots and exports by default, and whether this window stays in view while you take a screenshot.";
     }
     return @"";

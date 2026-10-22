@@ -127,6 +127,8 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 static const NSUInteger STRecentDocumentLimit = 10;
 /// The empty state's Recent row (#221): its label's tag, its cards' first tag and their number.
 static const NSInteger STEmptyStateRecentLabelTag = 7;
+/// The empty state's Paste button, renamed Open New Screenshot while one is on offer (#275).
+static const NSInteger STEmptyStatePasteTag = 5;
 static const NSInteger STEmptyStateRecentFirstCardTag = 20;
 static const NSInteger STEmptyStateRecentCount = 3;
 static NSString * const STRecentDocumentsEmptyTitle = @"No Recent Documents";
@@ -6272,7 +6274,7 @@ static BOOL STCanOfferClipboardScreenshots(void) {
     [view addSubview:open];
 
     NSButton *paste = [self emptyStateButton:@"Paste" action:@selector(pasteAsNewImage:)];
-    [paste setTag:5];
+    [paste setTag:STEmptyStatePasteTag];
     [view addSubview:paste];
 
     // The accent button, without being the window's default: Return stays with Open… (#103).
@@ -7257,7 +7259,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         return;
     }
     BOOL hasImage = [self clipboardHasImage];
-    NSButton *paste = [self.emptyStateView viewWithTag:5];
+    NSButton *paste = [self.emptyStateView viewWithTag:STEmptyStatePasteTag];
     [paste setEnabled:hasImage];
     [paste setToolTip:hasImage ? nil : @"The clipboard has no image"];
 }
@@ -7289,13 +7291,17 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         [self.statusOfferButton setHidden:!offered];
         [self layoutStatusControls];
     }
-    NSButton *paste = [self.emptyStateView viewWithTag:5];
+    NSButton *paste = [self.emptyStateView viewWithTag:STEmptyStatePasteTag];
     if (paste) {
         [paste setTitle:offered ? @"Open New Screenshot" : @"Paste"];
         [paste setFrameSize:NSMakeSize(MAX(120.0, ceil([[paste cell] cellSize].width) + 8.0), NSHeight(paste.frame))];
         if (!self.emptyStateView.isHidden) {
             [self layoutEmptyStateViewInFrame:self.emptyStateView.frame];
         }
+    }
+    // With an image open and the status bar off, neither shows: a passing message says where it is.
+    if (offered && !self.statusBarVisiblePreference && (!self.emptyStateView || self.emptyStateView.isHidden)) {
+        [self showTransientFeedbackMessage:@"New screenshot copied: Paste as New Image (Ctrl+Shift+V) opens it" duration:2.0];
     }
 }
 
