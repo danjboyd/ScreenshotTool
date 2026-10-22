@@ -20,11 +20,14 @@
 
 #import <AppKit/AppKit.h>
 #import "AppDelegate.h"
+#import "STWindowsIntegration.h"
 
 int main(int argc, const char *argv[]) {
     (void)argc;
     (void)argv;
     @autoreleasepool {
+        // Before the backend makes its first font.
+        STWindowsRegisterScaledTextDefaults();
         [NSApplication sharedApplication];
         [NSUserDefaults standardUserDefaults];
         AppDelegate *delegate = [[AppDelegate alloc] init];

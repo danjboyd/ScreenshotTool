@@ -41,6 +41,20 @@ static LRESULT CALLBACK STClipboardListenerProc(HWND window, UINT message, WPARA
     return DefWindowProcW(window, message, wParam, lParam);
 }
 
+void STWindowsRegisterScaledTextDefaults(void) {
+    // The system DPI: the app is system DPI aware (its manifest), and the backend scales every
+    // window by it.
+    HDC screen = GetDC(NULL);
+    int dpi = screen ? GetDeviceCaps(screen, LOGPIXELSX) : 96;
+    if (screen) {
+        ReleaseDC(NULL, screen);
+    }
+    if (dpi != 96) {
+        // 17: metrics off, hint style none, as libs-back picks under GSScaleFactor.
+        [[NSUserDefaults standardUserDefaults] registerDefaults:@{@"GSFontHinting": @17}];
+    }
+}
+
 void STWindowsStartClipboardMonitoring(void) {
     static HWND listener = NULL;
     if (listener != NULL) {
@@ -275,6 +289,19 @@ BOOL STWindowsClipboardHasImage(void) {
     UINT png = STPNGClipboardFormat();
     return IsClipboardFormatAvailable(CF_DIB) || IsClipboardFormatAvailable(CF_DIBV5)
         || IsClipboardFormatAvailable(CF_BITMAP) || (png != 0 && IsClipboardFormatAvailable(png));
+}
+
+BOOL STWindowsClipboardImageIsFromAnotherApp(BOOL appIsActive) {
+    if (!STWindowsClipboardHasImage()) {
+        return NO;
+    }
+    HWND owner = GetClipboardOwner();
+    if (owner == NULL) {
+        return !appIsActive;
+    }
+    DWORD pid = 0;
+    GetWindowThreadProcessId(owner, &pid);
+    return pid != GetCurrentProcessId();
 }
 
 BOOL STWindowsClipboardWritePNGData(NSData *pngData) {
@@ -523,6 +550,11 @@ BOOL STWindowsClipboardHasImage(void) {
     return NO;
 }
 
+BOOL STWindowsClipboardImageIsFromAnotherApp(BOOL appIsActive) {
+    (void)appIsActive;
+    return NO;
+}
+
 BOOL STWindowsClipboardWritePNGData(NSData *pngData) {
     (void)pngData;
     return NO;
@@ -539,6 +571,9 @@ NSData *STWindowsClipboardPNGData(void) {
 
 NSArray<NSString *> *STWindowsClipboardFilePaths(void) {
     return nil;
+}
+
+void STWindowsRegisterScaledTextDefaults(void) {
 }
 
 void STWindowsStartClipboardMonitoring(void) {

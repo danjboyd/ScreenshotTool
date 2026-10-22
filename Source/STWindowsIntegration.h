@@ -30,8 +30,19 @@ NSData * _Nullable STWindowsClipboardPNGData(void);
 /// The files on the clipboard, as Explorer copies them.
 NSArray<NSString *> * _Nullable STWindowsClipboardFilePaths(void);
 
+/// Whether the clipboard's image came from another app: not one this app copied. Its own copies
+/// own the clipboard; libs-sharing's Copy opens it without an owner, so an ownerless image counts
+/// as this app's while `appIsActive` (that Copy is a click in the app). NO without an image.
+BOOL STWindowsClipboardImageIsFromAnotherApp(BOOL appIsActive);
+
 /// Posted on the main thread whenever the clipboard changes, once monitoring has started.
 extern NSString *const STWindowsClipboardDidChangeNotification;
+
+/// Turns cairo's hinted glyph metrics off by default when the display is scaled (125%, 150%), as
+/// the backend does itself under GSScaleFactor. Hinted advances are rounded at the font's own
+/// size, so scaled text was spaced unevenly ("px ·PNG", #306). A GSFontHinting the user set still
+/// wins. Call before the app starts.
+void STWindowsRegisterScaledTextDefaults(void);
 
 /// Starts watching the clipboard, so a change shows even while the app keeps focus: a snip or
 /// PrtScn with the app in front didn't enable Paste until it was activated again (#202).

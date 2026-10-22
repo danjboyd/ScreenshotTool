@@ -1,5 +1,6 @@
 #import "STScreenshotCapture.h"
 #import "STWindowsIntegration.h"
+#import "AppDelegate.h"
 
 #if defined(GNUSTEP) && !defined(_WIN32)
 #define ST_CAPTURE_PORTAL 1
@@ -83,6 +84,26 @@ static void STPortalCaptureResponse(GDBusConnection *connection, const gchar *se
         g_variant_get(parameters, "(u@a{sv})", &capture->_response, &capture->_results);
         capture->_answered = YES;
     }
+}
+
+/// What the portal's answer means. 0 with a file's URI is the screenshot; 1 is a cancel. 2 is
+/// "other": GNOME's portal (48, at least) answers 2 when the user cancels its screenshot UI, with
+/// Esc or its close button, and that can't be told from the tool failing, so it's a cancel too and
+/// only logged (#314). Not reaching the portal at all is still a failure, from the start.
+STScreenshotCaptureResult STPortalScreenshotResult(guint32 response, const char *uri, NSURL **url, NSString **failure) {
+    *url = nil;
+    *failure = nil;
+    if (response == 0 && uri != NULL) {
+        NSURL *fileURL = [NSURL URLWithString:[NSString stringWithUTF8String:uri]];
+        if (fileURL.isFileURL) {
+            *url = fileURL;
+            return STScreenshotCaptureResultFile;
+        }
+        *failure = @"The screenshot wasn't saved to a file.";
+    } else if (response == 2) {
+        ScreenshotToolAppendLog(@"Take Screenshot: the portal answered 2 (cancelled, or the tool failed); taken as a cancel");
+    }
+    return STScreenshotCaptureResultNone;
 }
 
 @implementation STPortalCapture
@@ -191,22 +212,13 @@ static NSString *STPortalParentWindow(NSWindow *window) {
     [self.timer invalidate];
     self.timer = nil;
 
-    STScreenshotCaptureResult result = STScreenshotCaptureResultNone;
     NSURL *url = nil;
     NSString *failure = nil;
     const char *uri = NULL;
-    if (_response == 0 && _results != NULL && g_variant_lookup(_results, "uri", "&s", &uri) && uri != NULL) {
-        url = [NSURL URLWithString:[NSString stringWithUTF8String:uri]];
-        if (url.isFileURL) {
-            result = STScreenshotCaptureResultFile;
-        } else {
-            url = nil;
-            failure = @"The screenshot wasn't saved to a file.";
-        }
-    } else if (_response == 2) {
-        failure = @"The screenshot couldn't be taken.";
+    if (_results == NULL || !g_variant_lookup(_results, "uri", "&s", &uri)) {
+        uri = NULL;
     }
-    // 1: cancelled.
+    STScreenshotCaptureResult result = STPortalScreenshotResult(_response, uri, &url, &failure);
     STScreenshotCaptureCompletion completion = self.completion;
     self.completion = nil;
     STCurrentCapture = nil;
@@ -218,17 +230,51 @@ static NSString *STPortalParentWindow(NSWindow *window) {
 #elif ST_CAPTURE_SNIPPING_TOOL
 
 /// The Snipping Tool's overlay (ms-screenclip:), whose snip goes to the clipboard. Nothing tells
-/// the app when it's done or cancelled: the clipboard is watched for a new image, for a while.
+/// the app when it's done or cancelled: the clipboard is watched for a new image, and the
+/// foreground window shows when the overlay has gone (#315).
 @interface STSnippingToolCapture : NSObject
 @property (nonatomic, copy) STScreenshotCaptureCompletion completion;
 @property (nonatomic, strong) NSTimer *timer;
 @property (nonatomic, assign) DWORD sequence;
 @property (nonatomic, strong) NSDate *deadline;
+@property (nonatomic, assign) BOOL overlaySeen;
+@property (nonatomic, assign) BOOL leftApp;
+@property (nonatomic, strong) NSDate *goneSince;
 - (BOOL)start:(NSString **)failure;
 @end
 
-/// How long a snip is waited for: Esc in the overlay can't be seen.
+/// How long a snip is waited for when the overlay is never seen to close.
 static const NSTimeInterval STSnippingToolWait = 120.0;
+
+/// How long the overlay must stay gone before the wait ends as a cancel: a snip reaches the
+/// clipboard a moment after the overlay closes.
+static const NSTimeInterval STSnippingToolGoneGrace = 1.0;
+
+/// Whether the foreground window belongs to this app; *snipping says whether it belongs to the
+/// Snipping Tool instead.
+static BOOL STForegroundIsApp(BOOL *snipping) {
+    *snipping = NO;
+    HWND window = GetForegroundWindow();
+    DWORD pid = 0;
+    if (!window || !GetWindowThreadProcessId(window, &pid) || pid == 0) {
+        return NO;
+    }
+    if (pid == GetCurrentProcessId()) {
+        return YES;
+    }
+    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (process) {
+        WCHAR path[MAX_PATH];
+        DWORD length = MAX_PATH;
+        if (QueryFullProcessImageNameW(process, 0, path, &length)) {
+            const WCHAR *name = wcsrchr(path, L'\\');
+            name = name ? name + 1 : path;
+            *snipping = _wcsicmp(name, L"SnippingTool.exe") == 0 || _wcsicmp(name, L"ScreenClippingHost.exe") == 0;
+        }
+        CloseHandle(process);
+    }
+    return NO;
+}
 
 @implementation STSnippingToolCapture
 
@@ -252,7 +298,7 @@ static const NSTimeInterval STSnippingToolWait = 120.0;
         if (STWindowsClipboardHasImage()) {
             result = STScreenshotCaptureResultClipboard;
         }
-    } else if ([self.deadline timeIntervalSinceNow] > 0) {
+    } else if ([self.deadline timeIntervalSinceNow] > 0 && ![self overlayGone]) {
         return;
     }
     [self.timer invalidate];
@@ -261,6 +307,29 @@ static const NSTimeInterval STSnippingToolWait = 120.0;
     self.completion = nil;
     STCurrentCapture = nil;
     completion(result, nil, nil);
+}
+
+/// Whether the overlay has closed without a snip: it was in front and now isn't, or the app was
+/// brought back (a taskbar click, Alt+Tab) after something else had been in front. Esc in the
+/// overlay hands the foreground back, so either one covers a cancel.
+- (BOOL)overlayGone {
+    BOOL snipping = NO;
+    BOOL app = STForegroundIsApp(&snipping);
+    if (snipping) {
+        self.overlaySeen = YES;
+    }
+    if (!app) {
+        self.leftApp = YES;
+    }
+    BOOL gone = (self.overlaySeen && !snipping) || (self.leftApp && app);
+    if (!gone) {
+        self.goneSince = nil;
+        return NO;
+    }
+    if (!self.goneSince) {
+        self.goneSince = [NSDate date];
+    }
+    return -[self.goneSince timeIntervalSinceNow] >= STSnippingToolGoneGrace;
 }
 
 @end

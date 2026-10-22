@@ -128,6 +128,8 @@ static const CGFloat ToolbarIconDimension = 32.0f;
 static const NSUInteger STRecentDocumentLimit = 10;
 /// The empty state's Recent row (#221): its label's tag, its cards' first tag and their number.
 static const NSInteger STEmptyStateRecentLabelTag = 7;
+/// The empty state's Paste button, renamed Open New Screenshot while one is on offer (#275).
+static const NSInteger STEmptyStatePasteTag = 5;
 static const NSInteger STEmptyStateRecentFirstCardTag = 20;
 static const NSInteger STEmptyStateRecentCount = 3;
 static NSString * const STRecentDocumentsEmptyTitle = @"No Recent Documents";
@@ -366,6 +368,15 @@ static BOOL STPathUsesTIFFExtension(NSString *path) {
     NSString *extension = [[path pathExtension] lowercaseString];
     return [extension isEqualToString:@"tif"] || [extension isEqualToString:@"tiff"];
 }
+
+static BOOL STPathUsesJPEGExtension(NSString *path) {
+    NSString *extension = [[path pathExtension] lowercaseString];
+    return [extension isEqualToString:@"jpg"] || [extension isEqualToString:@"jpeg"];
+}
+
+/// JPEG's quality for Save As: small enough for upload forms and email, with no visible loss on
+/// text and UI (#277).
+static const CGFloat STJPEGCompressionFactor = 0.85;
 
 static NSFont *STToolbarZoomFont(void) {
     return [NSFont systemFontOfSize:STToolbarZoomFontSize];
@@ -1590,6 +1601,10 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 /// Where the open share picker points, when it was opened from a click inside the canvas.
 @property (nonatomic, strong, nullable) NSView *shareAnchorView;
 #endif
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
+/// The share picker presentShareFromView:rect: has open, until it closes.
+@property (nonatomic, strong, nullable) NSSharingServicePicker *openSharePicker;
+#endif
 @property (nonatomic, copy) NSString *pendingOpenPath;
 @property (nonatomic, strong) NSURL *currentImageURL;
 /// The project file this window was opened from or last saved to (#32).
@@ -1628,6 +1643,10 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 /// While Copy Text or Redact Emails and Phone Numbers reads the image (#278).
 @property (nonatomic, assign) BOOL readingText;
 @property (nonatomic, assign) NSTimeInterval clipboardCheckedAt;
+/// An image another app copied is on offer: the status bar's Open New Screenshot, and the empty
+/// state's Paste under that name (#275).
+@property (nonatomic, assign) BOOL clipboardScreenshotOffered;
+@property (nonatomic, strong) NSButton *statusOfferButton;
 - (NSData *)clipboardPNGDataForPasteAsNewImage;
 - (BOOL)clipboardHasImage;
 - (void)refreshPasteAvailability;
@@ -3547,6 +3566,13 @@ static id STInfoValueForKey(NSString *key) {
         item.paletteLabel = @"Share";
         item.toolTip = @"Share the annotated image";
         item.delegate = self;
+        // Folded into », AppKit's own menu form opens an empty picker (#298), so it's File >
+        // Share's submenu instead, filled the same way when it opens.
+        NSMenuItem *menuForm = [[NSMenuItem alloc] initWithTitle:@"Share" action:NULL keyEquivalent:@""];
+        NSMenu *shareMenu = [[NSMenu alloc] initWithTitle:@"Share"];
+        shareMenu.delegate = self;
+        menuForm.submenu = shareMenu;
+        item.menuFormRepresentation = menuForm;
         return item;
     }
     if ([identifier isEqualToString:ToolbarItemSave]) {
@@ -4548,6 +4574,15 @@ static id STInfoValueForKey(NSString *key) {
     // refreshStatusZoomControls shows them, with an image, and lays them out.
     zoomContainer.hidden = YES;
     [self refreshStatusZoomControls];
+
+    // Shown while an image another app copied is on offer (#275).
+    STHyperlinkButton *offer = [STHyperlinkButton hyperlinkButtonWithTitle:@"Open New Screenshot"
+                                                                    target:self
+                                                                    action:@selector(openOfferedClipboardScreenshot:)];
+    [offer setToolTip:@"Open the image just copied in another app"];
+    [offer setHidden:YES];
+    self.statusOfferButton = offer;
+    [self.statusBarView addSubview:offer];
 }
 
 - (NSButton *)statusZoomButtonWithTitle:(NSString *)title action:(SEL)action label:(NSString *)label {
@@ -4647,6 +4682,16 @@ static id STInfoValueForKey(NSString *key) {
                                                           verticalInset:verticalInset
                                                                  height:availableHeight];
         rightEdge -= zoomWidth + (padding * 2.0f);
+    }
+    if (self.statusOfferButton && !self.statusOfferButton.isHidden) {
+        [self.statusOfferButton sizeToFit];
+        NSSize offerSize = self.statusOfferButton.frame.size;
+        CGFloat offerHeight = MIN(availableHeight, offerSize.height);
+        self.statusOfferButton.frame = NSMakeRect(rightEdge - offerSize.width,
+                                                  verticalInset + floor((availableHeight - offerHeight) / 2.0f),
+                                                  offerSize.width,
+                                                  offerHeight);
+        rightEdge -= offerSize.width + (padding * 2.0f);
     }
 
     CGFloat textWidth = MAX(0.0f, rightEdge - padding);
@@ -5697,6 +5742,42 @@ static id STInfoValueForKey(NSString *key) {
     [self updateSelectionActionBar];
 }
 
+- (BOOL)preferencesControllerShouldKeepWindowVisibleWhileCapturing:(PreferencesWindowController *)controller {
+    (void)controller;
+    return [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsKeepWindowVisibleWhileCapturingKey];
+}
+
+/// Read when a capture starts, so there's nothing for open windows to update.
+- (void)preferencesController:(PreferencesWindowController *)controller didToggleKeepWindowVisibleWhileCapturing:(BOOL)keep {
+    (void)controller;
+    [[NSUserDefaults standardUserDefaults] setBool:keep forKey:STDefaultsKeepWindowVisibleWhileCapturingKey];
+}
+
+/// Whether this platform tells the app when another app copies an image: Windows, whose clipboard
+/// the app watches (#202). Elsewhere the offer and its preference don't show (#275).
+static BOOL STCanOfferClipboardScreenshots(void) {
+    return STWindowsClipboardIsNative();
+}
+
+- (BOOL)preferencesControllerCanOfferClipboardScreenshots:(PreferencesWindowController *)controller {
+    (void)controller;
+    return STCanOfferClipboardScreenshots();
+}
+
+- (BOOL)preferencesControllerShouldOfferClipboardScreenshots:(PreferencesWindowController *)controller {
+    (void)controller;
+    return [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsOfferClipboardScreenshotsKey];
+}
+
+/// Read at each clipboard change; turning it off withdraws an offer showing now.
+- (void)preferencesController:(PreferencesWindowController *)controller didToggleOfferClipboardScreenshots:(BOOL)offer {
+    (void)controller;
+    [[NSUserDefaults standardUserDefaults] setBool:offer forKey:STDefaultsOfferClipboardScreenshotsKey];
+    if (!offer) {
+        [self setClipboardScreenshotOffered:NO];
+    }
+}
+
 - (void)preferencesControllerRestoreDefaults:(PreferencesWindowController *)controller {
     (void)controller;
 #if !defined(GNUSTEP)
@@ -5736,6 +5817,9 @@ static id STInfoValueForKey(NSString *key) {
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsShowSelectionBarKey];
     self.selectionBarPreference = [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsShowSelectionBarKey];
     [self updateSelectionActionBar];
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsKeepWindowVisibleWhileCapturingKey];
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsOfferClipboardScreenshotsKey];
+    [self setClipboardScreenshotOffered:NO];
 
     [[NSUserDefaults standardUserDefaults] synchronize];
     [self showStatusMessage:@"Preferences restored" duration:2.0];
@@ -6219,7 +6303,7 @@ static id STInfoValueForKey(NSString *key) {
     [view addSubview:open];
 
     NSButton *paste = [self emptyStateButton:@"Paste" action:@selector(pasteAsNewImage:)];
-    [paste setTag:5];
+    [paste setTag:STEmptyStatePasteTag];
     [view addSubview:paste];
 
     // The accent button, without being the window's default: Return stays with Open… (#103).
@@ -6947,7 +7031,8 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     }
 
     NSSavePanel *panel = [NSSavePanel savePanel];
-    [panel setAllowedFileTypes:@[@"png", @"tif", @"tiff"]];
+    // An opened JPEG keeps its name, so Save As writes JPEG again rather than quietly PNG (#277).
+    [panel setAllowedFileTypes:@[@"png", @"jpg", @"jpeg", @"tif", @"tiff"]];
     [panel setCanCreateDirectories:YES];
 
     if (self.currentImageURL) {
@@ -6986,8 +7071,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         return NO;
     }
 
-    BOOL useTIFF = STPathUsesTIFFExtension(destination.path);
-    NSData *imageData = useTIFF ? [flattened TIFFRepresentation] : [self pngDataForImage:flattened];
+    NSData *imageData = [self imageDataForImage:flattened path:destination.path];
     if (!imageData) {
         return NO;
     }
@@ -7204,7 +7288,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         return;
     }
     BOOL hasImage = [self clipboardHasImage];
-    NSButton *paste = [self.emptyStateView viewWithTag:5];
+    NSButton *paste = [self.emptyStateView viewWithTag:STEmptyStatePasteTag];
     [paste setEnabled:hasImage];
     [paste setToolTip:hasImage ? nil : @"The clipboard has no image"];
 }
@@ -7212,6 +7296,46 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 - (void)clipboardDidChange:(NSNotification *)notification {
     (void)notification;
     [self refreshPasteAvailability];
+    [self updateClipboardScreenshotOffer];
+}
+
+/// Offers the clipboard's image when another app just copied it (a snip, Win+Shift+S) and the
+/// user asked for that; withdraws the offer when the clipboard changes to anything else. Never
+/// takes focus or opens anything itself (#275).
+- (void)updateClipboardScreenshotOffer {
+    BOOL offer = STCanOfferClipboardScreenshots()
+        && [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsOfferClipboardScreenshotsKey]
+        // Take Screenshot opens its own snip.
+        && ![STScreenshotCapture isCapturing]
+        && STWindowsClipboardImageIsFromAnotherApp([NSApp isActive]);
+    [self setClipboardScreenshotOffered:offer];
+}
+
+- (void)setClipboardScreenshotOffered:(BOOL)offered {
+    if (_clipboardScreenshotOffered == offered) {
+        return;
+    }
+    _clipboardScreenshotOffered = offered;
+    if (self.statusOfferButton) {
+        [self.statusOfferButton setHidden:!offered];
+        [self layoutStatusControls];
+    }
+    NSButton *paste = [self.emptyStateView viewWithTag:STEmptyStatePasteTag];
+    if (paste) {
+        [paste setTitle:offered ? @"Open New Screenshot" : @"Paste"];
+        [paste setFrameSize:NSMakeSize(MAX(120.0, ceil([[paste cell] cellSize].width) + 8.0), NSHeight(paste.frame))];
+        if (!self.emptyStateView.isHidden) {
+            [self layoutEmptyStateViewInFrame:self.emptyStateView.frame];
+        }
+    }
+    // With an image open and the status bar off, neither shows: a passing message says where it is.
+    if (offered && !self.statusBarVisiblePreference && (!self.emptyStateView || self.emptyStateView.isHidden)) {
+        [self showTransientFeedbackMessage:@"New screenshot copied: Paste as New Image (Ctrl+Shift+V) opens it" duration:2.0];
+    }
+}
+
+- (void)openOfferedClipboardScreenshot:(id)sender {
+    [self pasteAsNewImage:sender];
 }
 
 - (void)applicationDidBecomeActive:(NSNotification *)notification {
@@ -7332,17 +7456,22 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     STScreenshotCaptureCompletion completion = ^(STScreenshotCaptureResult result, NSURL *url, NSString *failure) {
         [weakSelf finishScreenshotWithResult:result url:url failure:failure];
     };
-#if defined(GNUSTEP) && !defined(_WIN32)
-    // GNOME's tool freezes the screen as it opens: this window would be in the way. It comes back
-    // when the tool answers, cancelled or not. (The Snipping Tool's cancel can't be seen.)
-    if (self.window.isVisible) {
+    if ([self hidesWindowForScreenshot]) {
         self.hiddenForScreenshot = YES;
         [self.window orderOut:nil];
         [self performSelector:@selector(startScreenshotCapture:) withObject:completion afterDelay:0.3];
         return;
     }
-#endif
     [self startScreenshotCapture:completion];
+}
+
+/// This window would be in the way of what's captured (and GNOME's tool freezes the screen as it
+/// opens), so it hides unless the user keeps it, as the system tools do (#313). It comes back when
+/// the tool answers, cancelled or not; on Windows, whose Snipping Tool's cancel can't be seen, also
+/// when the app is brought back to the front (#315).
+- (BOOL)hidesWindowForScreenshot {
+    BOOL keepVisible = [[NSUserDefaults standardUserDefaults] boolForKey:STDefaultsKeepWindowVisibleWhileCapturingKey];
+    return self.window.isVisible && !keepVisible;
 }
 
 - (void)startScreenshotCapture:(STScreenshotCaptureCompletion)completion {
@@ -7400,6 +7529,8 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 
 - (void)pasteAsNewImage:(id)sender {
     (void)sender;
+    // Taken up, or pasted another way: either ends the offer (#275).
+    [self setClipboardScreenshotOffered:NO];
     NSData *pngData = [self clipboardPNGDataForPasteAsNewImage];
     if (pngData.length == 0) {
         [self showTransientFeedbackMessage:@"Clipboard does not contain an image" duration:2.0];
@@ -8089,16 +8220,22 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 
 #pragma mark - Sharing
 
-#if !defined(GNUSTEP)
-/// The picker closed, with or without a service: the click's anchor goes, and a chosen mail gets
-/// its subject.
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
+/// The picker closed, with or without a service: another Share can open one again, the click's
+/// anchor goes, and a chosen mail gets its subject.
 - (void)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker didChooseSharingService:(nullable NSSharingService *)service {
-    (void)sharingServicePicker;
+    if (sharingServicePicker == self.openSharePicker) {
+        self.openSharePicker = nil;
+    }
+#if !defined(GNUSTEP)
     [self.shareAnchorView removeFromSuperview];
     self.shareAnchorView = nil;
     if (service) {
         [self prepareSharingService:service];
     }
+#else
+    (void)service;
+#endif
 }
 #endif
 
@@ -8128,12 +8265,17 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 /// controller, as the toolbar's picker item's is, so both list the same services.
 - (void)presentShareFromView:(NSView *)view rect:(NSRect)rect {
 #if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
+    // One picker at a time: a second Share while one is open would open a second sheet over it.
+    if (self.openSharePicker) {
+        return;
+    }
     NSArray *items = [self shareItemProviders];
     if (items.count == 0 || !view.window) {
         return;
     }
     NSSharingServicePicker *picker = [[NSSharingServicePicker alloc] initWithItems:items];
     picker.delegate = (id<NSSharingServicePickerDelegate>)self;
+    self.openSharePicker = picker;
 #if defined(GNUSTEP)
     [picker showRelativeToRect:rect ofView:view preferredEdge:NSMinYEdge];
 #else
@@ -8322,6 +8464,12 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
     if (STIsSharingService(sharingService, NSSharingServiceNameComposeEmail) ||
         STIsSharingService(sharingService, GSSharingServiceNameShowInFolder) ||
         STIsSharingService(sharingService, GSSharingServiceNameOpenWith)) {
+        return;
+    }
+#else
+    // AirDrop reports a share when its window closes, Cancel included (#299), and that window
+    // already said whether the image went.
+    if ([sharingService.title isEqualToString:[NSSharingService sharingServiceNamed:NSSharingServiceNameSendViaAirDrop].title]) {
         return;
     }
 #endif
@@ -8827,6 +8975,25 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         : (summary ?: @"");
     [alert addButtonWithTitle:@"OK"];
     [alert runModal];
+}
+
+/// The image in the format its path's extension names: TIFF, JPEG, or otherwise PNG.
+- (NSData *)imageDataForImage:(NSImage *)image path:(NSString *)path {
+    if (STPathUsesTIFFExtension(path)) {
+        return [image TIFFRepresentation];
+    }
+    if (STPathUsesJPEGExtension(path)) {
+        return [self jpegDataForImage:image];
+    }
+    return [self pngDataForImage:image];
+}
+
+/// JPEG has no alpha: the image goes onto white first, as on paper, so transparent corners (a
+/// window shot with rounded corners) aren't black.
+- (NSData *)jpegDataForImage:(NSImage *)image {
+    NSBitmapImageRep *opaque = STOpaqueBitmapOnWhite(image);
+    return [opaque representationUsingType:NSJPEGFileType
+                                properties:@{NSImageCompressionFactor: @(STJPEGCompressionFactor)}];
 }
 
 - (NSData *)pngDataForImage:(NSImage *)image {
