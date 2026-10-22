@@ -3255,6 +3255,35 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
     [self insertStroke:redaction atIndex:self.strokes.count registeringUndo:YES actionName:@"Redact"];
 }
 
+- (NSRect)selectionImageRect {
+    return [self integralSelectionRect];
+}
+
+- (NSUInteger)addRedactionsInImageRects:(NSArray<NSValue *> *)rects actionName:(NSString *)actionName {
+    if (!self.image || rects.count == 0) {
+        return 0;
+    }
+    NSDictionary *before = [self annotationSnapshot];
+    NSUInteger added = 0;
+    for (NSValue *value in rects) {
+        NSRect rect = NSIntegralRect([self clampedImageRect:value.rectValue]);
+        if (NSIsEmptyRect(rect)) {
+            continue;
+        }
+        MarkupStroke *redaction = [[MarkupStroke alloc] initWithType:MarkupStrokeTypeRedact
+                                                               color:self.penColor
+                                                           lineWidth:self.penLineWidth];
+        [redaction setStartPoint:rect.origin endPoint:NSMakePoint(NSMaxX(rect), NSMaxY(rect))];
+        [self.strokes addObject:redaction];
+        added++;
+    }
+    if (added > 0) {
+        [self registerAnnotationUndoWithSnapshot:before actionName:actionName];
+        [self setNeedsDisplay:YES];
+    }
+    return added;
+}
+
 - (IBAction)deselect:(id)sender {
     (void)sender;
     [self clearSelection];

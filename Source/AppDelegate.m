@@ -15,6 +15,7 @@
 #import "STCustomActions.h"
 #import <objc/runtime.h>
 #import "STScreenshotCapture.h"
+#import "STTextRecognizer.h"
 #import "STWindowsIntegration.h"
 #import "STHudView.h"
 #import "STTextOptionsBar.h"
@@ -1639,6 +1640,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) BOOL validatingUndoToolbarItems;
 /// The window is out of the way of the desktop's screenshot tool.
 @property (nonatomic, assign) BOOL hiddenForScreenshot;
+/// While Copy Text or Redact Emails and Phone Numbers reads the image (#278).
+@property (nonatomic, assign) BOOL readingText;
 @property (nonatomic, assign) NSTimeInterval clipboardCheckedAt;
 /// An image another app copied is on offer: the status bar's Open New Screenshot, and the empty
 /// state's Paste under that name (#275).
@@ -2606,6 +2609,9 @@ static AppDelegate *STFrontDocument(void) {
     if (action == @selector(pasteAsNewImage:)) {
         return [self clipboardHasImage];
     }
+    if (action == @selector(copyText:) || action == @selector(redactDetectedText:)) {
+        return [self.canvasView hasImage] && !self.readingText;
+    }
     if (action == @selector(takeScreenshot:)) {
         return [STScreenshotCapture isAvailable] && ![STScreenshotCapture isCapturing];
     }
@@ -2888,6 +2894,20 @@ static id STInfoValueForKey(NSString *key) {
                                                           keyEquivalent:@""];
     [redactSelectionItem setTarget:self];
     [editMenu addItem:redactSelectionItem];
+    // Read on this computer, where the platform has an engine (#278); otherwise not offered.
+    if ([STTextRecognizer isAvailable]) {
+        NSMenuItem *copyTextItem = [[NSMenuItem alloc] initWithTitle:@"Copy Text"
+                                                              action:@selector(copyText:)
+                                                       keyEquivalent:@"C"];
+        [copyTextItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
+        [copyTextItem setTarget:self];
+        [editMenu addItem:copyTextItem];
+        NSMenuItem *redactDetectedItem = [[NSMenuItem alloc] initWithTitle:@"Redact Emails and Phone Numbers"
+                                                                    action:@selector(redactDetectedText:)
+                                                             keyEquivalent:@""];
+        [redactDetectedItem setTarget:self];
+        [editMenu addItem:redactDetectedItem];
+    }
     [editMenu addItem:[NSMenuItem separatorItem]];
     // Built with @selector: validation compares selectors with ==, and on GNUstep's runtime one
     // from NSSelectorFromString isn't the same pointer.
@@ -7552,6 +7572,92 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     [self.canvasView redactSelection:sender];
 }
 
+#pragma mark - Text in the image (#278)
+
+/// The whole annotated image as a PNG for the recognizer: what's on screen, so text under a
+/// redaction stays unread. Boxes come back in the image's pixels.
+- (nullable NSURL *)exportImageForTextRecognition {
+    NSImage *image = [self.canvasView flattenedImage];
+    NSData *pngData = image ? [self pngDataForImage:image] : nil;
+    if (pngData.length == 0) {
+        return nil;
+    }
+    NSURL *directory = [STExportDirectoryURL() URLByAppendingPathComponent:[[NSUUID UUID] UUIDString] isDirectory:YES];
+    if (![[NSFileManager defaultManager] createDirectoryAtURL:directory withIntermediateDirectories:YES attributes:nil error:NULL]) {
+        return nil;
+    }
+    NSURL *url = [directory URLByAppendingPathComponent:@"text.png"];
+    return [pngData writeToURL:url options:NSDataWritingAtomic error:NULL] ? url : nil;
+}
+
+/// Reads the text in `rect` of the image (all of it for NSZeroRect), with "Reading text…" in the
+/// meantime; `completion` gets the lines, or nil after the failure has been shown.
+- (void)readTextInImageRect:(NSRect)rect completion:(void (^)(NSArray<STRecognizedLine *> *lines))completion {
+    NSURL *url = [self exportImageForTextRecognition];
+    if (!url) {
+        [self showCopyFeedbackMessage:@"The image couldn't be read" duration:2.5];
+        return;
+    }
+    self.readingText = YES;
+    [self showStatusMessage:@"Reading text…" duration:0.0];
+    __weak typeof(self) weakSelf = self;
+    [STTextRecognizer recognizeTextInImageAtURL:url rect:rect completion:^(NSArray<STRecognizedLine *> *lines, NSString *failure) {
+        [[NSFileManager defaultManager] removeItemAtURL:url.URLByDeletingLastPathComponent error:NULL];
+        typeof(self) strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
+        strongSelf.readingText = NO;
+        [strongSelf clearStatusMessage];
+        if (!lines) {
+            ScreenshotToolAppendLog([NSString stringWithFormat:@"Text recognition failed: %@", failure ?: @"unknown"]);
+            [strongSelf showCopyFeedbackMessage:@"The text couldn't be read" duration:2.5];
+            return;
+        }
+        completion(lines);
+    }];
+}
+
+/// Copies the text in the selection, or in the whole image, read on this computer.
+- (void)copyText:(id)sender {
+    (void)sender;
+    if (![self.canvasView hasImage] || self.readingText) {
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    [self readTextInImageRect:[self.canvasView selectionImageRect] completion:^(NSArray<STRecognizedLine *> *lines) {
+        NSString *text = STRecognizedText(lines);
+        if (text.length == 0) {
+            [weakSelf showCopyFeedbackMessage:@"No text found" duration:2.0];
+            return;
+        }
+        [weakSelf copyCustomActionText:text];
+        [weakSelf showCopyFeedbackMessage:@"Copied text (read on this computer)" duration:2.5];
+    }];
+}
+
+/// Redacts the email addresses and phone numbers read in the image, as ordinary redactions that
+/// can be moved, deleted or undone together.
+- (void)redactDetectedText:(id)sender {
+    (void)sender;
+    if (![self.canvasView hasImage] || self.readingText) {
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    [self readTextInImageRect:NSZeroRect completion:^(NSArray<STRecognizedLine *> *lines) {
+        NSArray<NSValue *> *rects = STSensitiveTextRects(lines);
+        NSUInteger added = [weakSelf.canvasView addRedactionsInImageRects:rects
+                                                               actionName:@"Redact Emails and Phone Numbers"];
+        if (added == 0) {
+            [weakSelf showCopyFeedbackMessage:@"No emails or phone numbers found" duration:2.5];
+        } else {
+            [weakSelf showCopyFeedbackMessage:[NSString stringWithFormat:@"Redacted %lu %@", (unsigned long)added,
+                                               added == 1 ? @"item" : @"items"]
+                                     duration:2.5];
+        }
+    }];
+}
+
 - (void)duplicateAnnotations:(id)sender {
     [self.canvasView duplicateAnnotations:sender];
 }
@@ -8437,8 +8543,17 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
             [actionItems addObject:[self menuItemForCustomAction:action]];
         }
     }
-    return STCanvasContextMenu(kind, [self.canvasView hasSingleTextSelection], STCanShareImages(), self.canvasView, self,
-                               actionItems);
+    NSMenu *menu = STCanvasContextMenu(kind, [self.canvasView hasSingleTextSelection], STCanShareImages(),
+                                       self.canvasView, self, actionItems);
+    // Copy Text after Copy, for the selection or the image, where text can be read (#278).
+    if ((kind == STCanvasContextKindSelection || kind == STCanvasContextKindImage) && [STTextRecognizer isAvailable]) {
+        NSInteger copyIndex = [menu indexOfItemWithTarget:self andAction:@selector(copy:)];
+        NSMenuItem *copyText = [[NSMenuItem alloc] initWithTitle:@"Copy Text" action:@selector(copyText:) keyEquivalent:@"C"];
+        [copyText setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
+        copyText.target = self;
+        [menu insertItem:copyText atIndex:(copyIndex >= 0 ? copyIndex + 1 : 0)];
+    }
+    return menu;
 }
 
 #pragma mark - Custom actions (#221)
