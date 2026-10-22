@@ -4,6 +4,10 @@
 #if defined(GNUSTEP) && !defined(_WIN32)
 #define ST_TEXT_TESSERACT 1
 #endif
+#if !defined(GNUSTEP)
+#define ST_TEXT_VISION 1
+#import <Vision/Vision.h>
+#endif
 
 @implementation STRecognizedWord
 
@@ -142,6 +146,51 @@ NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
     return rects;
 }
 
+#if ST_TEXT_VISION
+/// Vision's box, normalised with a bottom-left origin in `region` (which is in pixels, top-left
+/// origin), in the whole image's pixels with a top-left origin.
+static NSRect STPixelRectFromVisionBox(CGRect box, NSRect region) {
+    return NSMakeRect(NSMinX(region) + box.origin.x * NSWidth(region),
+                      NSMinY(region) + (1.0 - box.origin.y - box.size.height) * NSHeight(region),
+                      box.size.width * NSWidth(region),
+                      box.size.height * NSHeight(region));
+}
+
+/// The observations' best readings as lines of words, each word boxed by Vision: a word is what
+/// whitespace separates, as tesseract's are, so a line's text is its words joined with spaces.
+static NSArray<STRecognizedLine *> *STLinesFromVisionObservations(NSArray<VNRecognizedTextObservation *> *observations,
+                                                                 NSRect region) {
+    NSMutableArray<STRecognizedLine *> *lines = [[NSMutableArray alloc] init];
+    NSCharacterSet *spaces = [NSCharacterSet whitespaceAndNewlineCharacterSet];
+    for (VNRecognizedTextObservation *observation in observations) {
+        VNRecognizedText *candidate = [observation topCandidates:1].firstObject;
+        NSString *string = candidate.string;
+        if (string.length == 0) {
+            continue;
+        }
+        NSMutableArray<STRecognizedWord *> *words = [[NSMutableArray alloc] init];
+        NSUInteger index = 0;
+        while (index < string.length) {
+            NSRange space = [string rangeOfCharacterFromSet:spaces options:0 range:NSMakeRange(index, string.length - index)];
+            NSUInteger end = space.location == NSNotFound ? string.length : space.location;
+            if (end > index) {
+                NSRange range = NSMakeRange(index, end - index);
+                // A word Vision can't box gets the line's box, rather than being lost.
+                VNRectangleObservation *wordBox = [candidate boundingBoxForRange:range error:NULL];
+                CGRect box = wordBox ? wordBox.boundingBox : observation.boundingBox;
+                [words addObject:[[STRecognizedWord alloc] initWithText:[string substringWithRange:range]
+                                                                 bounds:STPixelRectFromVisionBox(box, region)]];
+            }
+            index = end + (space.location == NSNotFound ? 0 : space.length);
+        }
+        if (words.count > 0) {
+            [lines addObject:[[STRecognizedLine alloc] initWithWords:words]];
+        }
+    }
+    return lines;
+}
+#endif
+
 @implementation STTextRecognizer
 
 #if ST_TEXT_TESSERACT
@@ -155,8 +204,10 @@ NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
 + (BOOL)isAvailable {
 #if ST_TEXT_TESSERACT
     return [self tesseractPath] != nil;
+#elif ST_TEXT_VISION
+    return YES;
 #else
-    // macOS (Vision) and Windows (Windows.Media.Ocr) engines come from their platforms' work.
+    // The Windows engine (Windows.Media.Ocr) comes from the Windows work.
     return NO;
 #endif
 }
@@ -200,6 +251,48 @@ NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
         }
         finish(lines, nil);
     }];
+#elif ST_TEXT_VISION
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSArray<STRecognizedLine *> *lines = nil;
+        NSString *failure = nil;
+        CGImageSourceRef source = url.isFileURL ? CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL) : NULL;
+        CGImageRef image = source ? CGImageSourceCreateImageAtIndex(source, 0, NULL) : NULL;
+        if (source) {
+            CFRelease(source);
+        }
+        if (!image) {
+            failure = @"The image couldn't be opened for text recognition.";
+        } else {
+            NSRect whole = NSMakeRect(0.0, 0.0, CGImageGetWidth(image), CGImageGetHeight(image));
+            NSRect region = NSIsEmptyRect(rect) ? whole : NSIntersectionRect(NSIntegralRect(rect), whole);
+            if (NSIsEmptyRect(region)) {
+                lines = @[];
+            } else {
+                VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] init];
+                request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
+                request.usesLanguageCorrection = YES;
+                if (@available(macOS 13.0, *)) {
+                    request.automaticallyDetectsLanguage = YES;
+                }
+                // Vision's region is normalised with a bottom-left origin.
+                request.regionOfInterest = CGRectMake(NSMinX(region) / NSWidth(whole),
+                                                      1.0 - NSMaxY(region) / NSHeight(whole),
+                                                      NSWidth(region) / NSWidth(whole),
+                                                      NSHeight(region) / NSHeight(whole));
+                VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image options:@{}];
+                NSError *error = nil;
+                if ([handler performRequests:@[request] error:&error]) {
+                    lines = STLinesFromVisionObservations(request.results ?: @[], region);
+                } else {
+                    failure = error.localizedDescription ?: @"Vision couldn't read the image.";
+                }
+            }
+            CGImageRelease(image);
+        }
+        dispatch_async(dispatch_get_main_queue(), ^{
+            finish(lines, lines ? nil : failure);
+        });
+    });
 #else
     (void)url;
     (void)rect;
