@@ -1589,6 +1589,10 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 /// Where the open share picker points, when it was opened from a click inside the canvas.
 @property (nonatomic, strong, nullable) NSView *shareAnchorView;
 #endif
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
+/// The share picker presentShareFromView:rect: has open, until it closes.
+@property (nonatomic, strong, nullable) NSSharingServicePicker *openSharePicker;
+#endif
 @property (nonatomic, copy) NSString *pendingOpenPath;
 @property (nonatomic, strong) NSURL *currentImageURL;
 /// The project file this window was opened from or last saved to (#32).
@@ -3527,6 +3531,13 @@ static id STInfoValueForKey(NSString *key) {
         item.paletteLabel = @"Share";
         item.toolTip = @"Share the annotated image";
         item.delegate = self;
+        // Folded into », AppKit's own menu form opens an empty picker (#298), so it's File >
+        // Share's submenu instead, filled the same way when it opens.
+        NSMenuItem *menuForm = [[NSMenuItem alloc] initWithTitle:@"Share" action:NULL keyEquivalent:@""];
+        NSMenu *shareMenu = [[NSMenu alloc] initWithTitle:@"Share"];
+        shareMenu.delegate = self;
+        menuForm.submenu = shareMenu;
+        item.menuFormRepresentation = menuForm;
         return item;
     }
     if ([identifier isEqualToString:ToolbarItemSave]) {
@@ -7983,16 +7994,22 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 
 #pragma mark - Sharing
 
-#if !defined(GNUSTEP)
-/// The picker closed, with or without a service: the click's anchor goes, and a chosen mail gets
-/// its subject.
+#if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
+/// The picker closed, with or without a service: another Share can open one again, the click's
+/// anchor goes, and a chosen mail gets its subject.
 - (void)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker didChooseSharingService:(nullable NSSharingService *)service {
-    (void)sharingServicePicker;
+    if (sharingServicePicker == self.openSharePicker) {
+        self.openSharePicker = nil;
+    }
+#if !defined(GNUSTEP)
     [self.shareAnchorView removeFromSuperview];
     self.shareAnchorView = nil;
     if (service) {
         [self prepareSharingService:service];
     }
+#else
+    (void)service;
+#endif
 }
 #endif
 
@@ -8022,12 +8039,17 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 /// controller, as the toolbar's picker item's is, so both list the same services.
 - (void)presentShareFromView:(NSView *)view rect:(NSRect)rect {
 #if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
+    // One picker at a time: a second Share while one is open would open a second sheet over it.
+    if (self.openSharePicker) {
+        return;
+    }
     NSArray *items = [self shareItemProviders];
     if (items.count == 0 || !view.window) {
         return;
     }
     NSSharingServicePicker *picker = [[NSSharingServicePicker alloc] initWithItems:items];
     picker.delegate = (id<NSSharingServicePickerDelegate>)self;
+    self.openSharePicker = picker;
 #if defined(GNUSTEP)
     [picker showRelativeToRect:rect ofView:view preferredEdge:NSMinYEdge];
 #else
@@ -8216,6 +8238,12 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
     if (STIsSharingService(sharingService, NSSharingServiceNameComposeEmail) ||
         STIsSharingService(sharingService, GSSharingServiceNameShowInFolder) ||
         STIsSharingService(sharingService, GSSharingServiceNameOpenWith)) {
+        return;
+    }
+#else
+    // AirDrop reports a share when its window closes, Cancel included (#299), and that window
+    // already said whether the image went.
+    if ([sharingService.title isEqualToString:[NSSharingService sharingServiceNamed:NSSharingServiceNameSendViaAirDrop].title]) {
         return;
     }
 #endif
