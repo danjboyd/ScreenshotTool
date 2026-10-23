@@ -9,6 +9,19 @@ NSString *const STWindowsClipboardDidChangeNotification = @"STWindowsClipboardDi
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+// The COM headers declare with the interface macro, which GNUstep's headers undefine (it would
+// turn @interface into @struct): defined only around them, as libs-sharing does.
+#if !defined(interface)
+#define interface struct
+#define ST_UNDEF_INTERFACE
+#endif
+#include <ole2.h>
+#include <shlobj.h>
+#include <shobjidl.h>
+#if defined(ST_UNDEF_INTERFACE)
+#undef interface
+#undef ST_UNDEF_INTERFACE
+#endif
 #include <math.h>
 #include <string.h>
 
@@ -481,6 +494,52 @@ void STWindowsAcceptFileDrops(NSWindow *window, void (^handler)(NSArray<NSString
     DragAcceptFiles(hwnd, TRUE);
 }
 
+// The interfaces the drag asks for, here rather than from libuuid, whose debug data added about
+// 400 KB to the executable.
+static const IID STIIDShellItem = { 0x43826d1e, 0xe718, 0x42ee, { 0xbc, 0x55, 0xa1, 0xe2, 0x61, 0xc3, 0x7b, 0xfe } };
+static const IID STIIDDataObject = { 0x0000010e, 0x0000, 0x0000, { 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 } };
+static const GUID STBHIDDataObject = { 0xb8c0bd9f, 0xed24, 0x455c, { 0x83, 0xe6, 0xd5, 0x39, 0x0c, 0x4f, 0xe8, 0xc4 } };
+
+BOOL STWindowsDragFileOut(NSWindow *window, NSString *path) {
+    if (window == nil || path.length == 0 || [window windowNumber] == 0) {
+        return NO;
+    }
+    HWND hwnd = (HWND)[GSCurrentServer() windowDevice:[window windowNumber]];
+    // OLE's drag loop needs the thread initialised for it (single-threaded, as GNUstep's is).
+    static HRESULT ole = E_FAIL;
+    static BOOL oleTried = NO;
+    if (!oleTried) {
+        oleTried = YES;
+        ole = OleInitialize(NULL);
+    }
+    if (FAILED(ole)) {
+        return NO;
+    }
+    // The shell's data object for the file: CF_HDROP and the shell's own formats, as Explorer
+    // drags a file. Adding the image as PNG or CF_DIB to it loses the shell's drag image, and
+    // Paint and Word take the file. GNUstep paths use '/', which the shell's parser rejects.
+    path = [path stringByReplacingOccurrencesOfString:@"/" withString:@"\\"];
+    NSMutableData *pathBuffer = [NSMutableData dataWithLength:(path.length + 1) * sizeof(WCHAR)];
+    [path getCharacters:pathBuffer.mutableBytes range:NSMakeRange(0, path.length)];
+    IShellItem *item = NULL;
+    if (FAILED(SHCreateItemFromParsingName(pathBuffer.mutableBytes, NULL, &STIIDShellItem, (void **)&item))) {
+        return NO;
+    }
+    IDataObject *object = NULL;
+    HRESULT bound = item->lpVtbl->BindToHandler(item, NULL, &STBHIDDataObject, &STIIDDataObject, (void **)&object);
+    item->lpVtbl->Release(item);
+    if (FAILED(bound) || object == NULL) {
+        return NO;
+    }
+    // The shell's drop source and drag image (the file's thumbnail); returns after the drop.
+    // Move as well as copy: Paint accepts a copy-only drop and then ignores it. The file is a
+    // throwaway export, so a target that moves it takes nothing from the app.
+    DWORD effect = DROPEFFECT_NONE;
+    HRESULT dragged = SHDoDragDrop(hwnd, object, NULL, DROPEFFECT_COPY | DROPEFFECT_MOVE, &effect);
+    object->lpVtbl->Release(object);
+    return SUCCEEDED(dragged);
+}
+
 NSString *STWindowsQuotedCommandLineArgument(NSString *argument) {
     NSCharacterSet *special = [NSCharacterSet characterSetWithCharactersInString:@" \t\""];
     if (argument.length > 0 && [argument rangeOfCharacterFromSet:special].location == NSNotFound) {
@@ -582,6 +641,12 @@ void STWindowsStartClipboardMonitoring(void) {
 void STWindowsAcceptFileDrops(NSWindow *window, void (^handler)(NSArray<NSString *> *paths)) {
     (void)window;
     (void)handler;
+}
+
+BOOL STWindowsDragFileOut(NSWindow *window, NSString *path) {
+    (void)window;
+    (void)path;
+    return NO;
 }
 
 BOOL STWindowsLaunchProcess(NSString *executablePath, NSArray<NSString *> *arguments) {
