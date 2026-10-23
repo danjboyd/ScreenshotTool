@@ -193,6 +193,44 @@
     [sheet performClose:nil];
 }
 
+- (NSArray<NSWindow *> *)visibleShareSheets {
+    NSMutableArray<NSWindow *> *sheets = [NSMutableArray array];
+    for (NSWindow *window in [NSApp windows]) {
+        if ([window.title isEqualToString:@"Share"] && window.isVisible) {
+            [sheets addObject:window];
+        }
+    }
+    return sheets;
+}
+
+- (void)showNewPicker {
+    @autoreleasepool {
+        NSSharingServicePicker *picker = [[NSSharingServicePicker alloc] initWithItems:[_appDelegate shareItemProviders]];
+        picker.delegate = (id<NSSharingServicePickerDelegate>)_appDelegate;
+        [picker showRelativeToRect:NSMakeRect(10, 10, 1, 1) ofView:_appDelegate.canvasView preferredEdge:NSMinYEdge];
+    }
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
+}
+
+/// Each toolbar Share click makes a new picker. A second click while the sheet shows leaves one
+/// sheet, not two stacked (#316), and Share opens again after the sheet closes.
+- (void)testShareTwiceLeavesOneSheet {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [self loadImageOfSize:NSMakeSize(120, 80)];
+    [_appDelegate.window orderFront:nil];
+    [self showNewPicker];
+    [self showNewPicker];
+    XCTAssertEqual([self visibleShareSheets].count, (NSUInteger)1, @"One sheet after two Share clicks");
+
+    [[self visibleShareSheets].firstObject performClose:nil];
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
+    XCTAssertEqual([self visibleShareSheets].count, (NSUInteger)0);
+
+    [self showNewPicker];
+    XCTAssertEqual([self visibleShareSheets].count, (NSUInteger)1, @"Share opens again after a close");
+    [[self visibleShareSheets].firstObject performClose:nil];
+}
+
 /// An rclone upload names its remote: libs-sharing's tile says "Link on Work" and its title is a
 /// sentence, neither of which reads well after "Shared with".
 - (void)testAnRcloneShareNamesItsRemote {
