@@ -528,6 +528,8 @@ BOOL STWindowsDragFileOut(NSWindow *window, NSString *path, NSData *pngData) {
     }
     // The shell's data object for the file: CF_HDROP and the shell's own formats, as Explorer
     // drags a file; then the image itself, for apps that take a picture rather than a file.
+    // GNUstep paths use '/', which the shell's parser rejects (E_INVALIDARG).
+    path = [path stringByReplacingOccurrencesOfString:@"/" withString:@"\\"];
     NSMutableData *pathBuffer = [NSMutableData dataWithLength:(path.length + 1) * sizeof(WCHAR)];
     [path getCharacters:pathBuffer.mutableBytes range:NSMakeRange(0, path.length)];
     IShellItem *item = NULL;
