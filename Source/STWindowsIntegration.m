@@ -486,6 +486,7 @@ void STWindowsAcceptFileDrops(NSWindow *window, void (^handler)(NSArray<NSString
 static const IID STIIDShellItem = { 0x43826d1e, 0xe718, 0x42ee, { 0xbc, 0x55, 0xa1, 0xe2, 0x61, 0xc3, 0x7b, 0xfe } };
 static const IID STIIDDataObject = { 0x0000010e, 0x0000, 0x0000, { 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 } };
 static const GUID STBHIDDataObject = { 0xb8c0bd9f, 0xed24, 0x455c, { 0x83, 0xe6, 0xd5, 0x39, 0x0c, 0x4f, 0xe8, 0xc4 } };
+static const IID STIIDDataObjectAsyncCapability = { 0x3d8b0590, 0xf691, 0x11d2, { 0x8e, 0xa9, 0x00, 0x60, 0x97, 0xdf, 0x5b, 0xd4 } };
 
 /// Adds `data` to `object` in `format` as an HGLOBAL, which the data object then owns.
 static void STDataObjectAddHGlobal(IDataObject *object, UINT format, NSData *data) {
@@ -542,8 +543,20 @@ BOOL STWindowsDragFileOut(NSWindow *window, NSString *path, NSData *pngData) {
     if (FAILED(bound) || object == NULL) {
         return NO;
     }
-    STDataObjectAddHGlobal(object, STPNGClipboardFormat(), pngData);
-    STDataObjectAddHGlobal(object, CF_DIB, pngData ? STWindowsDIBDataForPNGData(pngData) : nil);
+    // TEMPORARY (#276 Paint test): ST_DRAG_NOIMAGE=1 leaves out PNG and CF_DIB; ST_DRAG_ASYNC=1
+    // keeps the shell's async extraction. Remove before merge.
+    if (getenv("ST_DRAG_NOIMAGE") == NULL) {
+        STDataObjectAddHGlobal(object, STPNGClipboardFormat(), pngData);
+        STDataObjectAddHGlobal(object, CF_DIB, pngData ? STWindowsDIBDataForPNGData(pngData) : nil);
+    }
+    // The shell's data object offers async extraction, where the target reads the data after the
+    // drop; synchronous, it reads it during the drop, inside the drag loop.
+    IDataObjectAsyncCapability *async = NULL;
+    if (getenv("ST_DRAG_ASYNC") == NULL
+        && SUCCEEDED(object->lpVtbl->QueryInterface(object, &STIIDDataObjectAsyncCapability, (void **)&async)) && async) {
+        async->lpVtbl->SetAsyncMode(async, FALSE);
+        async->lpVtbl->Release(async);
+    }
     // The shell's drop source and drag image (the file's thumbnail); returns after the drop.
     DWORD effect = DROPEFFECT_NONE;
     HRESULT dragged = SHDoDragDrop(hwnd, object, NULL, DROPEFFECT_COPY, &effect);
