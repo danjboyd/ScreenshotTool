@@ -29,6 +29,8 @@ NSString * const STDefaultsSaveDirectoryKey = @"ScreenshotToolSaveDirectory";
 NSString * const STDefaultsRecentDocumentsKey = @"ScreenshotToolRecentDocuments";
 NSString * const STDefaultsShowStatusBarKey = @"ScreenshotToolShowStatusBar";
 NSString * const STDefaultsShowSelectionBarKey = @"ScreenshotToolShowSelectionBar";
+NSString * const STDefaultsKeepWindowVisibleWhileCapturingKey = @"ScreenshotToolKeepWindowVisibleWhileCapturing";
+NSString * const STDefaultsOfferClipboardScreenshotsKey = @"ScreenshotToolOfferClipboardScreenshots";
 
 NSColor *STDefaultPenColor(void) {
     return [NSColor redColor];
