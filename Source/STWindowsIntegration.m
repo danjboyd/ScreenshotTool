@@ -486,33 +486,8 @@ void STWindowsAcceptFileDrops(NSWindow *window, void (^handler)(NSArray<NSString
 static const IID STIIDShellItem = { 0x43826d1e, 0xe718, 0x42ee, { 0xbc, 0x55, 0xa1, 0xe2, 0x61, 0xc3, 0x7b, 0xfe } };
 static const IID STIIDDataObject = { 0x0000010e, 0x0000, 0x0000, { 0xc0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46 } };
 static const GUID STBHIDDataObject = { 0xb8c0bd9f, 0xed24, 0x455c, { 0x83, 0xe6, 0xd5, 0x39, 0x0c, 0x4f, 0xe8, 0xc4 } };
-static const IID STIIDDataObjectAsyncCapability = { 0x3d8b0590, 0xf691, 0x11d2, { 0x8e, 0xa9, 0x00, 0x60, 0x97, 0xdf, 0x5b, 0xd4 } };
 
-/// Adds `data` to `object` in `format` as an HGLOBAL, which the data object then owns.
-static void STDataObjectAddHGlobal(IDataObject *object, UINT format, NSData *data) {
-    if (format == 0 || data.length == 0) {
-        return;
-    }
-    HGLOBAL global = GlobalAlloc(GMEM_MOVEABLE, data.length);
-    void *bytes = global ? GlobalLock(global) : NULL;
-    if (!bytes) {
-        if (global) {
-            GlobalFree(global);
-        }
-        return;
-    }
-    memcpy(bytes, data.bytes, data.length);
-    GlobalUnlock(global);
-    FORMATETC formatEtc = { (CLIPFORMAT)format, NULL, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
-    STGMEDIUM medium = { 0 };
-    medium.tymed = TYMED_HGLOBAL;
-    medium.hGlobal = global;
-    if (FAILED(object->lpVtbl->SetData(object, &formatEtc, &medium, TRUE))) {
-        GlobalFree(global);
-    }
-}
-
-BOOL STWindowsDragFileOut(NSWindow *window, NSString *path, NSData *pngData) {
+BOOL STWindowsDragFileOut(NSWindow *window, NSString *path) {
     if (window == nil || path.length == 0 || [window windowNumber] == 0) {
         return NO;
     }
@@ -528,8 +503,8 @@ BOOL STWindowsDragFileOut(NSWindow *window, NSString *path, NSData *pngData) {
         return NO;
     }
     // The shell's data object for the file: CF_HDROP and the shell's own formats, as Explorer
-    // drags a file; then the image itself, for apps that take a picture rather than a file.
-    // GNUstep paths use '/', which the shell's parser rejects (E_INVALIDARG).
+    // drags a file. Adding the image as PNG or CF_DIB to it loses the shell's drag image, and
+    // Paint and Word take the file. GNUstep paths use '/', which the shell's parser rejects.
     path = [path stringByReplacingOccurrencesOfString:@"/" withString:@"\\"];
     NSMutableData *pathBuffer = [NSMutableData dataWithLength:(path.length + 1) * sizeof(WCHAR)];
     [path getCharacters:pathBuffer.mutableBytes range:NSMakeRange(0, path.length)];
@@ -543,23 +518,11 @@ BOOL STWindowsDragFileOut(NSWindow *window, NSString *path, NSData *pngData) {
     if (FAILED(bound) || object == NULL) {
         return NO;
     }
-    // TEMPORARY (#276 Paint test): ST_DRAG_NOIMAGE=1 leaves out PNG and CF_DIB; ST_DRAG_ASYNC=1
-    // keeps the shell's async extraction. Remove before merge.
-    if (getenv("ST_DRAG_NOIMAGE") == NULL) {
-        STDataObjectAddHGlobal(object, STPNGClipboardFormat(), pngData);
-        STDataObjectAddHGlobal(object, CF_DIB, pngData ? STWindowsDIBDataForPNGData(pngData) : nil);
-    }
-    // The shell's data object offers async extraction, where the target reads the data after the
-    // drop; synchronous, it reads it during the drop, inside the drag loop.
-    IDataObjectAsyncCapability *async = NULL;
-    if (getenv("ST_DRAG_ASYNC") == NULL
-        && SUCCEEDED(object->lpVtbl->QueryInterface(object, &STIIDDataObjectAsyncCapability, (void **)&async)) && async) {
-        async->lpVtbl->SetAsyncMode(async, FALSE);
-        async->lpVtbl->Release(async);
-    }
     // The shell's drop source and drag image (the file's thumbnail); returns after the drop.
+    // Move as well as copy: Paint accepts a copy-only drop and then ignores it. The file is a
+    // throwaway export, so a target that moves it takes nothing from the app.
     DWORD effect = DROPEFFECT_NONE;
-    HRESULT dragged = SHDoDragDrop(hwnd, object, NULL, DROPEFFECT_COPY, &effect);
+    HRESULT dragged = SHDoDragDrop(hwnd, object, NULL, DROPEFFECT_COPY | DROPEFFECT_MOVE, &effect);
     object->lpVtbl->Release(object);
     return SUCCEEDED(dragged);
 }
@@ -662,10 +625,9 @@ void STWindowsAcceptFileDrops(NSWindow *window, void (^handler)(NSArray<NSString
     (void)handler;
 }
 
-BOOL STWindowsDragFileOut(NSWindow *window, NSString *path, NSData *pngData) {
+BOOL STWindowsDragFileOut(NSWindow *window, NSString *path) {
     (void)window;
     (void)path;
-    (void)pngData;
     return NO;
 }
 
