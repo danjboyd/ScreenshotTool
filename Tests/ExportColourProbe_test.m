@@ -2,7 +2,8 @@
  * ExportColourProbe_test.m
  * Copyright (C) 2026 Daniel Boyd
  *
- * What Copy, Save and Share write keeps the image's pixels and its colour space (#229).
+ * What Copy, Save and Share write keeps the image's pixels and its colour space (#229), and Save As
+ * writes the format its name asks for, JPEG included (#277).
  */
 
 #import <XCTest/XCTest.h>
@@ -15,6 +16,7 @@
 - (void)setupWindowAndContent;
 - (ScreenshotCanvasView *)canvasView;
 - (NSData *)pngDataForImage:(NSImage *)image;
+- (NSData *)imageDataForImage:(NSImage *)image path:(NSString *)path;
 @end
 
 @interface ScreenshotCanvasView (ExportColourTesting)
@@ -126,6 +128,68 @@
     XCTSkipIf(_appDelegate == nil, @"No window server");
     [self assertExportKeepsPixelsInColorSpace:[NSColorSpace displayP3ColorSpace]];
 #endif
+}
+
+/// A 40x30 image: transparent on the left, red on the right, as a bitmap the way the canvas
+/// flattens one.
+- (NSImage *)halfTransparentImage {
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:40 pixelsHigh:30
+                                                                 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+                                                                colorSpaceName:NSDeviceRGBColorSpace
+                                                                   bytesPerRow:40 * 4 bitsPerPixel:32];
+    unsigned char *data = rep.bitmapData;
+    for (NSInteger y = 0; y < 30; y++) {
+        for (NSInteger x = 0; x < 40; x++) {
+            unsigned char *pixel = data + y * 40 * 4 + x * 4;
+            BOOL red = x >= 20;
+            pixel[0] = red ? 255 : 0;
+            pixel[1] = 0;
+            pixel[2] = 0;
+            pixel[3] = red ? 255 : 0;
+        }
+    }
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(40.0, 30.0)];
+    [image addRepresentation:rep];
+    return image;
+}
+
+/// Save As to a .jpg writes JPEG, opaque, on white where the image was transparent (#277).
+- (void)testSaveAsJPEGIsOpaqueOnWhite {
+    XCTSkipIf(_appDelegate == nil, @"No window server");
+    for (NSString *path in @[@"/tmp/Screenshot.jpg", @"/tmp/Screenshot.JPEG"]) {
+        NSData *data = [_appDelegate imageDataForImage:[self halfTransparentImage] path:path];
+        XCTAssertGreaterThan(data.length, (NSUInteger)2, @"%@", path);
+        const unsigned char *bytes = data.bytes;
+        XCTAssertTrue(data.length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8, @"%@ is JPEG", path);
+
+        NSBitmapImageRep *read = [NSBitmapImageRep imageRepWithData:data];
+        XCTAssertEqual(read.pixelsWide, 40);
+        XCTAssertEqual(read.pixelsHigh, 30);
+        XCTAssertFalse(read.hasAlpha, @"JPEG has no alpha");
+        XCTAssertEqual(read.samplesPerPixel, 3);
+        NSUInteger left[5] = {0};
+        NSUInteger right[5] = {0};
+        [read getPixel:left atX:5 y:15];
+        [read getPixel:right atX:35 y:15];
+        XCTAssertTrue(left[0] > 240 && left[1] > 240 && left[2] > 240,
+                      @"transparent is white, not %lu,%lu,%lu", left[0], left[1], left[2]);
+        XCTAssertTrue(right[0] > 240 && right[1] < 30 && right[2] < 30,
+                      @"red stays red, not %lu,%lu,%lu", right[0], right[1], right[2]);
+    }
+}
+
+/// .png, a name with no extension and .tif keep their formats.
+- (void)testSaveAsOtherFormats {
+    XCTSkipIf(_appDelegate == nil, @"No window server");
+    NSImage *image = [self halfTransparentImage];
+    const unsigned char png[4] = {0x89, 'P', 'N', 'G'};
+    for (NSString *path in @[@"/tmp/Screenshot.png", @"/tmp/Screenshot"]) {
+        NSData *data = [_appDelegate imageDataForImage:image path:path];
+        XCTAssertTrue(data.length > 4 && memcmp(data.bytes, png, 4) == 0, @"%@ is PNG", path);
+    }
+    NSData *tiff = [_appDelegate imageDataForImage:image path:@"/tmp/Screenshot.tif"];
+    const unsigned char *bytes = tiff.bytes;
+    XCTAssertTrue(tiff.length > 2 && ((bytes[0] == 'I' && bytes[1] == 'I') || (bytes[0] == 'M' && bytes[1] == 'M')), @"TIFF");
 }
 
 @end

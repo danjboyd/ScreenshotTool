@@ -30,6 +30,11 @@ NSData * _Nullable STWindowsClipboardPNGData(void);
 /// The files on the clipboard, as Explorer copies them.
 NSArray<NSString *> * _Nullable STWindowsClipboardFilePaths(void);
 
+/// Whether the clipboard's image came from another app: not one this app copied. Its own copies
+/// own the clipboard; libs-sharing's Copy opens it without an owner, so an ownerless image counts
+/// as this app's while `appIsActive` (that Copy is a click in the app). NO without an image.
+BOOL STWindowsClipboardImageIsFromAnotherApp(BOOL appIsActive);
+
 /// Posted on the main thread whenever the clipboard changes, once monitoring has started.
 extern NSString *const STWindowsClipboardDidChangeNotification;
 
@@ -47,9 +52,27 @@ void STWindowsStartClipboardMonitoring(void);
 /// the drop has finished. GNUstep's Windows backend takes no drops from other apps itself.
 void STWindowsAcceptFileDrops(NSWindow *window, void (^handler)(NSArray<NSString *> *paths));
 
+/// Drags the file at `path` out of `window` into other apps (#276), with the shell's own data
+/// object and drag image, as Explorer drags a file. Returns once the drop or cancel is over; NO if
+/// the drag couldn't start, so the caller can fall back. GNUstep's Windows backend starts no OLE
+/// drag itself.
+BOOL STWindowsDragFileOut(NSWindow *window, NSString *path);
+
 /// Starts `executablePath` with `arguments`, its windows shown. NSTask starts a process hidden
 /// there, so another instance of the app never showed its window.
 BOOL STWindowsLaunchProcess(NSString *executablePath, NSArray<NSString *> *arguments);
+
+@class STRecognizedLine;
+
+/// Whether Windows has a text recognition engine (Windows.Media.Ocr) for the user's profile
+/// languages (#278). Asked once.
+BOOL STWindowsTextRecognitionAvailable(void);
+
+/// The text in the image file's `rect` (image pixels, top-left origin; NSZeroRect for the whole
+/// image), read with Windows.Media.Ocr in the user's profile languages, on this computer. The
+/// boxes are in the whole image's pixels. Blocks until it's read: call it off the main thread.
+/// nil, with `failure` set, when it couldn't be read; no text is an empty array.
+NSArray<STRecognizedLine *> * _Nullable STWindowsRecognizeText(NSURL *url, NSRect rect, NSString * _Nullable * _Nullable failure);
 
 /// What the above are made of, for tests.
 

@@ -354,6 +354,70 @@ static NSBitmapImageRep *STRGBABitmapFromRep(NSBitmapImageRep *source) {
     return converted;
 }
 
+NSBitmapImageRep *STOpaqueBitmapOnWhite(NSImage *image) {
+    NSBitmapImageRep *source = nil;
+    for (NSImageRep *rep in image.representations) {
+        if ([rep isKindOfClass:[NSBitmapImageRep class]]) {
+            source = (NSBitmapImageRep *)rep;
+            break;
+        }
+    }
+#if !defined(GNUSTEP)
+    NSColorSpace *space = source.colorSpace;
+#endif
+    // Byte by byte, not drawn through a graphics context, which GNUstep can't draw into a bitmap
+    // with reliably.
+    source = STRGBABitmapFromRep(source);
+    NSInteger width = source.pixelsWide;
+    NSInteger height = source.pixelsHigh;
+    if (!source.bitmapData || width <= 0 || height <= 0) {
+        return nil;
+    }
+    NSBitmapImageRep *opaque = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                                       pixelsWide:width
+                                                                       pixelsHigh:height
+                                                                    bitsPerSample:8
+                                                                  samplesPerPixel:3
+                                                                         hasAlpha:NO
+                                                                         isPlanar:NO
+                                                                   colorSpaceName:NSDeviceRGBColorSpace
+                                                                      bytesPerRow:0
+                                                                     bitsPerPixel:0];
+    if (!opaque.bitmapData) {
+        return nil;
+    }
+    [opaque setSize:image.size];
+
+    BOOL hasAlpha = source.hasAlpha;
+    BOOL alphaFirst = hasAlpha && (source.bitmapFormat & NSAlphaFirstBitmapFormat) != 0;
+    BOOL premultiplied = hasAlpha && (source.bitmapFormat & NSAlphaNonpremultipliedBitmapFormat) == 0;
+    NSInteger bytesPerPixel = source.bitsPerPixel / 8;
+    NSInteger colorStart = alphaFirst ? 1 : 0;
+    NSInteger alphaIndex = alphaFirst ? 0 : 3;
+    for (NSInteger y = 0; y < height; y++) {
+        const unsigned char *in = source.bitmapData + y * source.bytesPerRow;
+        unsigned char *out = opaque.bitmapData + y * opaque.bytesPerRow;
+        for (NSInteger x = 0; x < width; x++) {
+            const unsigned char *pixel = in + x * bytesPerPixel;
+            unsigned int alpha = hasAlpha ? pixel[alphaIndex] : 255u;
+            for (NSInteger c = 0; c < 3; c++) {
+                // Over white: colour × alpha (already so when premultiplied) + white × (1 − alpha).
+                unsigned int color = pixel[colorStart + c];
+                unsigned int covered = premultiplied ? color : (color * alpha + 127u) / 255u;
+                unsigned int value = covered + (255u - alpha);
+                out[x * 3 + c] = (unsigned char)(value > 255u ? 255u : value);
+            }
+        }
+    }
+#if !defined(GNUSTEP)
+    // In the image's own colour space, so a JPEG keeps its profile as a PNG does (#229).
+    if (space.colorSpaceModel == NSColorSpaceModelRGB) {
+        opaque = [opaque bitmapImageRepByRetaggingWithColorSpace:space] ?: opaque;
+    }
+#endif
+    return opaque;
+}
+
 static NSBitmapImageRep *STScaledCursorRep(NSBitmapImageRep *rep, CGFloat scale) {
     if (!rep || scale <= 1.01f) {
         return rep;
@@ -3189,6 +3253,35 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
     [redaction setStartPoint:rect.origin endPoint:NSMakePoint(NSMaxX(rect), NSMaxY(rect))];
     [self clearSelection];
     [self insertStroke:redaction atIndex:self.strokes.count registeringUndo:YES actionName:@"Redact"];
+}
+
+- (NSRect)selectionImageRect {
+    return [self integralSelectionRect];
+}
+
+- (NSUInteger)addRedactionsInImageRects:(NSArray<NSValue *> *)rects actionName:(NSString *)actionName {
+    if (!self.image || rects.count == 0) {
+        return 0;
+    }
+    NSDictionary *before = [self annotationSnapshot];
+    NSUInteger added = 0;
+    for (NSValue *value in rects) {
+        NSRect rect = NSIntegralRect([self clampedImageRect:value.rectValue]);
+        if (NSIsEmptyRect(rect)) {
+            continue;
+        }
+        MarkupStroke *redaction = [[MarkupStroke alloc] initWithType:MarkupStrokeTypeRedact
+                                                               color:self.penColor
+                                                           lineWidth:self.penLineWidth];
+        [redaction setStartPoint:rect.origin endPoint:NSMakePoint(NSMaxX(rect), NSMaxY(rect))];
+        [self.strokes addObject:redaction];
+        added++;
+    }
+    if (added > 0) {
+        [self registerAnnotationUndoWithSnapshot:before actionName:actionName];
+        [self setNeedsDisplay:YES];
+    }
+    return added;
 }
 
 - (IBAction)deselect:(id)sender {
