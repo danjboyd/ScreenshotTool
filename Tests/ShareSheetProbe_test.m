@@ -67,6 +67,27 @@
 @end
 #endif
 
+#if !defined(GNUSTEP)
+@interface AppDelegate (ShareInProgressTesting) <NSSharingServicePickerDelegate, NSSharingServiceDelegate>
+- (nullable NSSharingService *)sharingServiceInProgress;
+- (nullable NSSharingServicePicker *)openSharePicker;
+- (void)shareFromMenuItem:(NSMenuItem *)sender;
+@end
+
+/// A service that only counts its shares: its window, were it AirDrop's, would still be up until
+/// it reports.
+@interface STCountingSharingService : NSSharingService
+@property (nonatomic, assign) NSUInteger performCount;
+@end
+
+@implementation STCountingSharingService
+- (void)performWithItems:(NSArray *)items {
+    (void)items;
+    self.performCount += 1;
+}
+@end
+#endif
+
 @interface ScreenshotCanvasView (ShareSheetTesting)
 @property (nonatomic, assign) BOOL hasSelectionRect;
 @property (nonatomic, assign) NSRect selectionRect;
@@ -344,6 +365,70 @@
     XCTAssertTrue([(NSSharingServicePickerToolbarItem *)item delegate] == (id)_appDelegate);
     XCTAssertNotNil(item.image, @"With ScreenshotTool's Share icon");
     XCTAssertTrue([[_appDelegate toolbarAllowedItemIdentifiers:nil] containsObject:@"com.screenshottool.toolbar.share"]);
+}
+#endif
+
+#if !defined(GNUSTEP)
+- (STCountingSharingService *)countingService {
+    return [[STCountingSharingService alloc] initWithTitle:@"AirDrop" image:[[NSImage alloc] init]
+                                            alternateImage:nil handler:^{}];
+}
+
+/// File > Share > AirDrop while AirDrop's window from the last one is still up does nothing:
+/// two would stack (#335). Once the share reports, however it went, Share works again.
+- (void)testAMenuShareWaitsForTheLastOneToEnd {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STCountingSharingService *service = [self countingService];
+    NSArray *items = @[[NSURL fileURLWithPath:@"/tmp/Shot.png"]];
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:service.title action:@selector(shareFromMenuItem:) keyEquivalent:@""];
+    item.representedObject = @[service, items.firstObject];
+
+    [_appDelegate shareFromMenuItem:item];
+    XCTAssertEqual(service.performCount, (NSUInteger)1);
+    [_appDelegate shareFromMenuItem:item];
+    XCTAssertEqual(service.performCount, (NSUInteger)1, @"Not a second share while the first is going");
+
+    // The share reports to the delegate the menu gave it, as AirDrop does when its window closes,
+    // Cancel included (#299).
+    [service.delegate sharingService:service didShareItems:items];
+    [_appDelegate shareFromMenuItem:item];
+    XCTAssertEqual(service.performCount, (NSUInteger)2, @"Share again once it reported");
+
+    [service.delegate sharingService:service didFailToShareItems:items
+                               error:[NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil]];
+    [_appDelegate shareFromMenuItem:item];
+    XCTAssertEqual(service.performCount, (NSUInteger)3, @"and once it failed or was cancelled");
+    [service.delegate sharingService:service didShareItems:items];
+}
+
+/// A service chosen from the toolbar's or the canvas's picker counts too: Share opens no picker
+/// over its window until it reports (#335).
+- (void)testAPickedServiceKeepsSharePickerClosedUntilItEnds {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(120, 80)];
+    [image lockFocus];
+    [[NSColor grayColor] setFill];
+    NSRectFill(NSMakeRect(0, 0, 120, 80));
+    [image unlockFocus];
+    [_appDelegate.canvasView loadImage:image];
+    [_appDelegate.window orderFront:nil];
+
+    // The picker that offered it, as the toolbar's would have (never shown).
+    NSSharingServicePicker *picker = [[NSSharingServicePicker alloc] initWithItems:@[]];
+    STCountingSharingService *picked = [self countingService];
+    [_appDelegate sharingServicePicker:picker didChooseSharingService:picked];
+    XCTAssertEqual(_appDelegate.sharingServiceInProgress, picked);
+    [_appDelegate presentShareFromView:_appDelegate.canvasView rect:NSMakeRect(10, 10, 1, 1)];
+    XCTAssertNil(_appDelegate.openSharePicker, @"No picker over the chosen service's window");
+
+    [_appDelegate sharingService:picked didFailToShareItems:@[]
+                           error:[NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil]];
+    XCTAssertNil(_appDelegate.sharingServiceInProgress, @"Cancelled, it's over");
+
+    // Closing the picker without a choice starts nothing.
+    [_appDelegate sharingServicePicker:picker didChooseSharingService:nil];
+    XCTAssertNil(_appDelegate.sharingServiceInProgress);
+    [_appDelegate.window orderOut:nil];
 }
 #endif
 
