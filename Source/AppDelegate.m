@@ -1607,6 +1607,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 #if !defined(GNUSTEP)
 /// Where the open share picker points, when it was opened from a click inside the canvas.
 @property (nonatomic, strong, nullable) NSView *shareAnchorView;
+/// The service a share started, until it reports how it went: its window (AirDrop's, say) is up,
+/// and a second Share would open another over it (#335).
+@property (nonatomic, strong, nullable) NSSharingService *sharingServiceInProgress;
 #endif
 #if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
 /// The share picker presentShareFromView:rect: has open, until it closes.
@@ -1655,6 +1658,10 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) BOOL clipboardScreenshotOffered;
 @property (nonatomic, strong) NSButton *statusOfferButton;
 - (NSData *)clipboardPNGDataForPasteAsNewImage;
+#if !defined(GNUSTEP)
+- (BOOL)beginSharingService:(NSSharingService *)service;
+- (void)endSharingService:(NSSharingService *)service;
+#endif
 - (BOOL)clipboardHasImage;
 - (void)refreshPasteAvailability;
 - (NSURL *)temporaryClipboardImageURLForPNGData:(NSData *)pngData;
@@ -2285,6 +2292,11 @@ static AppDelegate *STFrontDocument(void) {
     NSURL *url = payload.lastObject;
     if ([service isKindOfClass:[NSSharingService class]] && [url isKindOfClass:[NSURL class]]) {
         AppDelegate *document = STFrontDocument() ?: self;
+#if !defined(GNUSTEP)
+        if (![document beginSharingService:service]) {
+            return;
+        }
+#endif
         service.delegate = document;
         [document prepareSharingService:service];
         [service performWithItems:@[url]];
@@ -8228,8 +8240,8 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 #pragma mark - Sharing
 
 #if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
-/// The picker closed, with or without a service: another Share can open one again, the click's
-/// anchor goes, and a chosen mail gets its subject.
+/// The picker closed, with or without a service: the click's anchor goes, and a chosen mail gets
+/// its subject. Another Share can open a picker again, once a chosen service's share has ended.
 - (void)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker didChooseSharingService:(nullable NSSharingService *)service {
     if (sharingServicePicker == self.openSharePicker) {
         self.openSharePicker = nil;
@@ -8238,6 +8250,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     [self.shareAnchorView removeFromSuperview];
     self.shareAnchorView = nil;
     if (service) {
+        [self beginSharingService:service];
         [self prepareSharingService:service];
     }
 #else
@@ -8276,6 +8289,12 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     if (self.openSharePicker) {
         return;
     }
+#if !defined(GNUSTEP)
+    // Nor while a chosen service's window is still up (#335).
+    if (self.sharingServiceInProgress) {
+        return;
+    }
+#endif
     NSArray *items = [self shareItemProviders];
     if (items.count == 0 || !view.window) {
         return;
@@ -8438,12 +8457,37 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
     return STIsCustomActionSharingService(sharingService) ? nil : self;
 }
 
+#if !defined(GNUSTEP)
+/// A share is starting with `service`, unless another one hasn't ended yet. A custom action
+/// isn't waited for: it opens no window of its own and never reports back.
+- (BOOL)beginSharingService:(NSSharingService *)service {
+    if (self.sharingServiceInProgress) {
+        return NO;
+    }
+    if (!STIsCustomActionSharingService(service)) {
+        self.sharingServiceInProgress = service;
+    }
+    return YES;
+}
+
+/// The share has ended, however it went (AirDrop reports Cancel too, #299). Any system service's
+/// report ends it: only one runs at a time, and a report may not come with the object that started.
+- (void)endSharingService:(NSSharingService *)service {
+    if (!STIsCustomActionSharingService(service)) {
+        self.sharingServiceInProgress = nil;
+    }
+}
+#endif
+
 // On GNUstep libs-sharing reports when a share ends (an upload, once its link is made), not when
 // it starts, and a failure or Cancel as such (libs-sharing 07289ba, its #5).
 
 /// "Shared with Mail", as Copy says "Copied".
 - (void)sharingService:(NSSharingService *)sharingService didShareItems:(NSArray *)items {
     (void)items;
+#if !defined(GNUSTEP)
+    [self endSharingService:sharingService];
+#endif
     // macOS 26 reports a custom action here as it starts, though its delegate is nil (#280).
     if (STIsCustomActionSharingService(sharingService)) {
         return;
@@ -8487,6 +8531,9 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 /// Why a share failed; a cancelled one says nothing.
 - (void)sharingService:(NSSharingService *)sharingService didFailToShareItems:(NSArray *)items error:(NSError *)error {
     (void)items;
+#if !defined(GNUSTEP)
+    [self endSharingService:sharingService];
+#endif
     if (STIsCustomActionSharingService(sharingService)) {
         return;
     }
