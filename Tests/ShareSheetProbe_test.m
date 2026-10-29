@@ -72,6 +72,9 @@
 - (nullable NSSharingService *)sharingServiceInProgress;
 - (nullable NSSharingServicePicker *)openSharePicker;
 - (void)shareFromMenuItem:(NSMenuItem *)sender;
+- (void)setupToolbar;
+- (nullable NSToolbarItem *)toolbarItemForIdentifier:(NSToolbarItemIdentifier)identifier;
+- (BOOL)validateToolbarItem:(NSToolbarItem *)toolbarItem;
 @end
 
 /// A service that only counts its shares: its window, were it AirDrop's, would still be up until
@@ -429,6 +432,53 @@
     [_appDelegate sharingServicePicker:picker didChooseSharingService:nil];
     XCTAssertNil(_appDelegate.sharingServiceInProgress);
     [_appDelegate.window orderOut:nil];
+}
+
+/// The toolbar's Share is AppKit's picker item, which opens its picker itself, so it's off while
+/// a share's window is up: File > Share > AirDrop, then toolbar Share > AirDrop stacked two
+/// (#335, rc2). Only that share's own report turns it back on.
+- (void)testTheToolbarShareIsOffUntilTheShareEnds {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(120, 80)];
+    [image lockFocus];
+    [[NSColor grayColor] setFill];
+    NSRectFill(NSMakeRect(0, 0, 120, 80));
+    [image unlockFocus];
+    [_appDelegate.canvasView loadImage:image];
+    [_appDelegate setupToolbar];
+    NSToolbarItem *share = [_appDelegate toolbarItemForIdentifier:@"com.screenshottool.toolbar.share"];
+    XCTAssertTrue([share isKindOfClass:[NSSharingServicePickerToolbarItem class]], @"The window's own item");
+    XCTAssertTrue(share.enabled);
+    XCTAssertTrue([_appDelegate validateToolbarItem:share]);
+
+    STCountingSharingService *service = [self countingService];
+    NSArray *items = @[[NSURL fileURLWithPath:@"/tmp/Shot.png"]];
+    NSMenuItem *item = [[NSMenuItem alloc] initWithTitle:service.title action:@selector(shareFromMenuItem:) keyEquivalent:@""];
+    item.representedObject = @[service, items.firstObject];
+    [_appDelegate shareFromMenuItem:item];
+    XCTAssertFalse(share.enabled, @"No toolbar picker over AirDrop's window");
+    XCTAssertFalse([_appDelegate validateToolbarItem:share]);
+    [share validate];
+    XCTAssertFalse(share.enabled, @"AppKit's validation doesn't turn it back on");
+
+    // Another service's report isn't this share's end.
+    NSSharingService *other = [[NSSharingService alloc] initWithTitle:@"Mail" image:[[NSImage alloc] init]
+                                                       alternateImage:nil handler:^{}];
+    [_appDelegate sharingService:other didShareItems:items];
+    XCTAssertFalse(share.enabled, @"Still off: AirDrop's window is up");
+    XCTAssertEqual(_appDelegate.sharingServiceInProgress, service);
+
+    [service.delegate sharingService:service didFailToShareItems:items
+                               error:[NSError errorWithDomain:NSCocoaErrorDomain code:NSUserCancelledError userInfo:nil]];
+    XCTAssertTrue(share.enabled, @"On again once AirDrop's window closed");
+    XCTAssertTrue([_appDelegate validateToolbarItem:share]);
+
+    // A service picked from the toolbar's own picker turns it off too.
+    NSSharingServicePicker *picker = [[NSSharingServicePicker alloc] initWithItems:@[]];
+    [_appDelegate sharingServicePicker:picker didChooseSharingService:service];
+    XCTAssertFalse(share.enabled);
+    [_appDelegate sharingService:service didShareItems:items];
+    XCTAssertTrue(share.enabled);
 }
 #endif
 

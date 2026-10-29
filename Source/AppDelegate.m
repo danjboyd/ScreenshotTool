@@ -1508,6 +1508,23 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 }
 
 @end
+
+/// The toolbar's Share. AppKit's item validates itself, turning itself back on without asking its
+/// delegate; this one asks too, so it can stay off while a share's window is up (#335).
+@interface STSharePickerToolbarItem : NSSharingServicePickerToolbarItem
+@end
+
+@implementation STSharePickerToolbarItem
+
+- (void)validate {
+    [super validate];
+    id delegate = self.delegate;
+    if ([delegate respondsToSelector:@selector(validateToolbarItem:)] && ![delegate validateToolbarItem:self]) {
+        self.enabled = NO;
+    }
+}
+
+@end
 #endif
 
 @interface STStatusTextField : NSTextField
@@ -1661,6 +1678,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 #if !defined(GNUSTEP)
 - (BOOL)beginSharingService:(NSSharingService *)service;
 - (void)endSharingService:(NSSharingService *)service;
+- (void)updateShareToolbarItem;
 #endif
 - (BOOL)clipboardHasImage;
 - (void)refreshPasteAvailability;
@@ -2687,6 +2705,12 @@ static AppDelegate *STFrontDocument(void) {
         STCustomAction *action = [self customActionForToolbarIdentifier:identifier];
         return [self.canvasView hasImage] && action && ![self isRunningCustomAction:action];
     }
+#if !defined(GNUSTEP)
+    // Off while a share's window is up (#335).
+    if ([identifier isEqualToString:ToolbarItemShare]) {
+        return self.sharingServiceInProgress == nil;
+    }
+#endif
     return YES;
 }
 
@@ -3580,7 +3604,7 @@ static id STInfoValueForKey(NSString *key) {
     }
     if ([identifier isEqualToString:ToolbarItemShare]) {
         NSSharingServicePickerToolbarItem *item =
-            [[NSSharingServicePickerToolbarItem alloc] initWithItemIdentifier:ToolbarItemShare];
+            [[STSharePickerToolbarItem alloc] initWithItemIdentifier:ToolbarItemShare];
         item.label = @"Share";
         item.paletteLabel = @"Share";
         item.toolTip = @"Share the annotated image";
@@ -8466,16 +8490,28 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
     }
     if (!STIsCustomActionSharingService(service)) {
         self.sharingServiceInProgress = service;
+        [self updateShareToolbarItem];
     }
     return YES;
 }
 
-/// The share has ended, however it went (AirDrop reports Cancel too, #299). Any system service's
-/// report ends it: only one runs at a time, and a report may not come with the object that started.
+/// The share has ended, however it went (AirDrop reports Cancel too, #299). Only the one that
+/// started ends it, by its name should the report come with another object for it: another
+/// share's report, with this one's window still up, leaves Share off.
 - (void)endSharingService:(NSSharingService *)service {
-    if (!STIsCustomActionSharingService(service)) {
-        self.sharingServiceInProgress = nil;
+    NSSharingService *current = self.sharingServiceInProgress;
+    if (!current || !(service == current || [service.title isEqualToString:current.title])) {
+        return;
     }
+    self.sharingServiceInProgress = nil;
+    [self updateShareToolbarItem];
+}
+
+/// The toolbar's Share is AppKit's own picker item: it opens its picker without asking
+/// -presentShareFromView:rect:, so it's turned off while a share's window is up (#335), by its
+/// validation (-validateToolbarItem:) as the toolbar's own validation would.
+- (void)updateShareToolbarItem {
+    [[self toolbarItemForIdentifier:ToolbarItemShare] validate];
 }
 #endif
 
