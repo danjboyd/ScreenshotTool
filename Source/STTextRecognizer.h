@@ -50,6 +50,10 @@ FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STLinesFromTesseractTSV(NSString 
 /// rect. For an engine that reads the whole image, or as a check after one that crops.
 FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STLinesInsideRect(NSArray<STRecognizedLine *> *lines, NSRect rect);
 
+/// A box of recognised text as a redaction covers it: a little over the glyphs, so their edges
+/// don't show around the pixelation.
+FOUNDATION_EXPORT NSRect STRedactionRectForTextBox(NSRect box);
+
 /// The boxes of the email addresses and phone numbers in the lines, each the union of the words
 /// it spans, a little larger: what Redact Emails and Phone Numbers covers.
 FOUNDATION_EXPORT NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines);

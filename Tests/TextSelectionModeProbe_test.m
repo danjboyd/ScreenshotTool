@@ -10,6 +10,7 @@
 #import <XCTest/XCTest.h>
 #import <AppKit/AppKit.h>
 #import "AppDelegate.h"
+#import "MarkupStroke.h"
 #import "ScreenshotCanvasView.h"
 #import "STTextRecognizer.h"
 #import "STTextSelection.h"
@@ -19,6 +20,7 @@
 @property (nonatomic, assign) BOOL hasSelectionRect;
 @property (nonatomic, assign) NSRect selectionRect;
 @property (nonatomic, assign) CGFloat zoomScale;
+@property (nonatomic, strong) NSMutableArray<MarkupStroke *> *strokes;
 - (void)cancelOperation:(id)sender;
 @end
 
@@ -27,6 +29,7 @@
 - (ScreenshotCanvasView *)canvasView;
 - (BOOL)openImageAtURL:(NSURL *)url;
 - (void)selectText:(id)sender;
+- (void)redactSelectedText:(id)sender;
 - (void)copy:(id)sender;
 - (void)readTextInImageRect:(NSRect)rect completion:(void (^)(NSArray<STRecognizedLine *> *lines))completion;
 - (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration;
@@ -159,6 +162,44 @@
 
     [_app copy:nil];
     XCTAssertEqualObjects(_app.copiedText, @"there world\nsecond", @"Copy copies the words, not the image");
+}
+
+- (void)testRedactSelectedTextCoversEachLineGrownAndUndoesTogether {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = _app.canvasView;
+    [_app selectText:nil];
+    NSUInteger reads = _app.reads;
+    [self dragFrom:NSMakePoint(95.0, 28.0) to:NSMakePoint(20.0, 68.0)]; // "there world", "second"
+    NSUndoManager *undo = [canvas undoManager];
+    [undo setGroupsByEvent:NO];
+    [undo beginUndoGrouping];
+    [_app redactSelectedText:nil];
+    [undo endUndoGrouping];
+
+    // A redaction per line: the words' union, 3 pixels larger, as Redact Emails and Phone Numbers does.
+    XCTAssertEqual(canvas.strokes.count, (NSUInteger)2);
+    XCTAssertTrue(NSEqualRects(canvas.strokes[0].bounds, NSMakeRect(67.0, 17.0, 116.0, 22.0)), @"%@",
+                  NSStringFromRect(canvas.strokes[0].bounds));
+    XCTAssertTrue(NSEqualRects(canvas.strokes[1].bounds, NSMakeRect(7.0, 57.0, 56.0, 22.0)), @"%@",
+                  NSStringFromRect(canvas.strokes[1].bounds));
+    XCTAssertEqualObjects(_app.messages.lastObject, @"Redacted 2 items");
+
+    // Still selecting, with nothing selected, and read again: Copy can't give back what's redacted.
+    XCTAssertTrue([canvas isSelectingText]);
+    XCTAssertEqual(canvas.textSelection.selectedRange.length, (NSUInteger)0);
+    XCTAssertEqual(_app.reads, reads + 1);
+
+    [undo undo];
+    XCTAssertEqual(canvas.strokes.count, (NSUInteger)0, @"One undo takes both");
+}
+
+- (void)testRedactSelectedTextWithNothingSelectedDoesNothing {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_app selectText:nil];
+    NSUInteger messages = _app.messages.count;
+    [_app redactSelectedText:nil];
+    XCTAssertEqual(_app.canvasView.strokes.count, (NSUInteger)0);
+    XCTAssertEqual(_app.messages.count, messages);
 }
 
 - (void)testDoubleAndTripleClickSelectAWordAndALine {

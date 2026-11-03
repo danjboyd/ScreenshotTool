@@ -7826,16 +7826,23 @@ NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted);
     }];
 }
 
-/// Redact Selected Text. TODO(#330, Windows agent): the body is Windows' (grow the rects as
-/// STSensitiveTextRects does, one undo, the DPI check); this stand-in redacts the line rects.
+/// Redacts the selected words, a redaction per line they touch, undone together. The selection
+/// goes and the words are read again: what's under a redaction can't be selected or copied after.
 - (void)redactSelectedText:(id)sender {
     (void)sender;
-    NSArray<NSValue *> *rects = self.canvasView.textSelection.selectedRects;
-    if (rects.count == 0) {
+    STTextSelection *selection = self.canvasView.textSelection;
+    NSMutableArray<NSValue *> *rects = [[NSMutableArray alloc] init];
+    for (NSValue *value in selection.selectedRects) {
+        [rects addObject:[NSValue valueWithRect:STRedactionRectForTextBox(value.rectValue)]];
+    }
+    NSUInteger added = [self.canvasView addRedactionsInImageRects:rects actionName:@"Redact Selected Text"];
+    if (added == 0) {
         NSBeep();
         return;
     }
-    NSUInteger added = [self.canvasView addRedactionsInImageRects:rects actionName:@"Redact Selected Text"];
+    [selection clearSelection];
+    [self.canvasView setNeedsDisplay:YES];
+    [self refreshTextSelectionIfStale];
     [self showCommandResultMessage:STRedactDetectedFeedback(YES, added) duration:2.5];
 }
 
