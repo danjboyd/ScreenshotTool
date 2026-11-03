@@ -27,6 +27,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class MarkupStroke;
 @class MarkupText;
+@class STTextSelection;
+@class STRecognizedLine;
 
 typedef NS_ENUM(NSInteger, ScreenshotCanvasTool) {
     ScreenshotCanvasToolHighlighter = 0,
@@ -129,6 +131,17 @@ FOUNDATION_EXPORT NSBitmapImageRep * _Nullable STOpaqueBitmapOnWhite(NSImage *im
 - (NSUInteger)addRedactionsInImageRects:(NSArray<NSValue *> *)rects actionName:(NSString *)actionName;
 /// YES while the region selection is being drawn, moved or resized.
 - (BOOL)isAdjustingSelection;
+/// Select Text (#330): the words read in the image, outlined, selectable by dragging across them
+/// in reading order. It lies over whichever tool is active, and nil while it's off.
+@property (nonatomic, strong, readonly, nullable) STTextSelection *textSelection;
+- (BOOL)isSelectingText;
+/// Turns it on with these lines (image pixels). A region selection becomes the words inside it.
+- (void)beginTextSelectionWithLines:(NSArray<STRecognizedLine *> *)lines;
+/// Turns it off: Esc, choosing a tool, opening another image, or the menu's Done.
+- (IBAction)endTextSelection:(nullable id)sender;
+/// Posted when Select Text turns on or off, or its selection changes.
+FOUNDATION_EXPORT NSNotificationName const ScreenshotCanvasViewTextSelectionDidChangeNotification;
+
 /// A view drawn over the canvas (the selection's bar): the pointer over it isn't on the canvas.
 @property (nonatomic, weak, nullable) NSView *coveringView;
 

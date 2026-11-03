@@ -46,6 +46,16 @@ NSMenu *STCanvasContextMenu(STCanvasContextKind kind, BOOL singleText, BOOL canS
             STContextItem(menu, @"Delete", @selector(deleteAnnotations:), canvas, @"", 0);
             break;
 
+        case STCanvasContextKindText:
+            // Copy and Redact Selected Text are the window's: Copy copies the words while the mode
+            // is on, and Redact Selected Text redacts them (#330).
+            STContextItem(menu, @"Copy Text", @selector(copy:), controller, @"c", command);
+            STContextItem(menu, @"Redact Selected Text", @selector(redactSelectedText:), controller, @"", 0);
+            [menu addItem:[NSMenuItem separatorItem]];
+            STContextItem(menu, @"Select All Text", @selector(selectAll:), canvas, @"a", command);
+            STContextItem(menu, @"Done Selecting Text", @selector(endTextSelection:), canvas, @"", 0);
+            break;
+
         case STCanvasContextKindImage:
             STContextItem(menu, @"Copy Image", @selector(copy:), controller, @"c", command);
             STContextItem(menu, @"Paste as New Image", @selector(pasteAsNewImage:), controller, @"V",

@@ -12,6 +12,8 @@ typedef NS_ENUM(NSInteger, STCanvasContextKind) {
     STCanvasContextKindSelection = 2,
     /// One or more selected annotations, the one under the pointer among them.
     STCanvasContextKindAnnotation = 3,
+    /// Select Text is on (#330): the recognised words, the one under the pointer selected.
+    STCanvasContextKindText = 4,
 };
 
 /// The canvas's own commands for the menu's annotation and selection items. The canvas
@@ -24,6 +26,8 @@ typedef NS_ENUM(NSInteger, STCanvasContextKind) {
 - (IBAction)bringAnnotationsToFront:(nullable id)sender;
 - (IBAction)sendAnnotationsToBack:(nullable id)sender;
 - (IBAction)deleteAnnotations:(nullable id)sender;
+- (IBAction)selectAll:(nullable id)sender;
+- (IBAction)endTextSelection:(nullable id)sender;
 @end
 
 /// The right-click menu for the canvas: only what fits what was clicked, the likely command
