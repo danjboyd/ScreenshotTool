@@ -85,6 +85,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	ObjectSelectionProbe_test.m \
 	OpenRecentProbe_test.m \
 	PasteAsNewImageProbe_test.m \
+	RedactDetectedFeedbackProbe_test.m \
 	StatusBarToggleProbe_test.m \
 	TextFontFacePopupProbe_test.m \
 	ThemePreferenceProbe_test.m \

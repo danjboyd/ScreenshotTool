@@ -7679,6 +7679,15 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     }];
 }
 
+/// What Redact Emails and Phone Numbers says when it's done, so it never finishes silently: "no
+/// text" (nothing to read, or the engine read nothing) is told apart from "nothing matched" (#333).
+NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted) {
+    if (redacted > 0) {
+        return [NSString stringWithFormat:@"Redacted %lu %@", (unsigned long)redacted, redacted == 1 ? @"item" : @"items"];
+    }
+    return foundText ? @"No email addresses or phone numbers found" : @"No text found in the image";
+}
+
 /// Redacts the email addresses and phone numbers read in the image, as ordinary redactions that
 /// can be moved, deleted or undone together.
 - (void)redactDetectedText:(id)sender {
@@ -7691,13 +7700,11 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         NSArray<NSValue *> *rects = STSensitiveTextRects(lines);
         NSUInteger added = [weakSelf.canvasView addRedactionsInImageRects:rects
                                                                actionName:@"Redact Emails and Phone Numbers"];
-        if (added == 0) {
-            [weakSelf showCopyFeedbackMessage:@"No emails or phone numbers found" duration:2.5];
-        } else {
-            [weakSelf showCopyFeedbackMessage:[NSString stringWithFormat:@"Redacted %lu %@", (unsigned long)added,
-                                               added == 1 ? @"item" : @"items"]
-                                     duration:2.5];
-        }
+        BOOL foundText = [STRecognizedText(lines) stringByTrimmingCharactersInSet:
+                             [NSCharacterSet whitespaceAndNewlineCharacterSet]].length > 0;
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Redact Emails and Phone Numbers: %lu lines, %lu redacted",
+                                 (unsigned long)lines.count, (unsigned long)added]);
+        [weakSelf showCopyFeedbackMessage:STRedactDetectedFeedback(foundText, added) duration:2.5];
     }];
 }
 
