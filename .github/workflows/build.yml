@@ -281,6 +281,17 @@ jobs:
           "MSYS2_LOCATION=${{ steps.msys2.outputs.msys2-location }}" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Build ScreenshotTool
         run: ./scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json
+      - name: Warm the font cache
+        # The first text the app lays out builds fontconfig's cache of the runner's fonts. That took
+        # up to ~100 s on a cold runner, so the suite's first test timed out (testArrowExportsWithItsHead,
+        # run 41700582403). Build it here, in the tests' own shell, where its time shows.
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bash = Join-Path $env:GP_GNUSTEP_CLI_ROOT "usr\bin\bash.exe"
+          $env:MSYSTEM = "CLANG64"
+          $env:CHERE_INVOKING = "1"
+          & $bash -lc "set -eo pipefail; command -v fc-cache; time fc-cache; echo `"`$(fc-list | wc -l) fonts`""
+          if ($LASTEXITCODE -ne 0) { throw "fc-cache failed ($LASTEXITCODE)" }
       - name: Unit tests
         # Each test class runs in its own xctest process, as on Linux; the runner's desktop
         # session is the window server.
