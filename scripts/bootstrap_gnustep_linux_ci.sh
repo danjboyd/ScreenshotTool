@@ -212,6 +212,12 @@ popd >/dev/null
 
 clone_or_refresh https://github.com/gnustep/libs-back.git libs-back "${LIBS_BACK_REF}"
 pushd libs-back >/dev/null
+# The first five are the Adwaita theme's libs-back series (its Docs/upstream-patches/libs-back,
+# carried as danjboyd/ObjcMarkdown does), backported to 0.32.0: Motif hints that keep the window
+# manager's functions, GTK's window types, a 32-bit visual for borderless windows, and the shadow
+# margin with rounded corners and menu popover shadows that the theme's GSThemeDomain asks for
+# (GSBackWindowShadows, GSBackWindowCornerRadius). Without them the header bar window is a square,
+# opaque rectangle with no shadow.
 # libs-back #227 (on master since 0.32.0): with a window manager that draws the title bar (GNOME
 # Shell), 0.32.0 records no frame offsets, so a window resized after it's shown ends up 39pt short
 # and loses its toolbar (#60).
@@ -221,6 +227,11 @@ pushd libs-back >/dev/null
 # answering TARGETS and text/uri-list, and speaking XDND 3. Carried from danjboyd/ObjcMarkdown
 # (#175/#184), not yet sent upstream.
 if [[ "${LIBS_BACK_REF}" == "back-0_32_0" ]]; then
+  git apply "${SCRIPT_DIR}/patches/libs-back-0.32-motif-hints.patch"
+  git apply "${SCRIPT_DIR}/patches/libs-back-0.32-window-types.patch"
+  git apply "${SCRIPT_DIR}/patches/libs-back-0.32-borderless-alpha.patch"
+  git apply "${SCRIPT_DIR}/patches/libs-back-0.32-window-shadows.patch"
+  git apply "${SCRIPT_DIR}/patches/libs-back-0.32-popover-shadows.patch"
   git apply "${SCRIPT_DIR}/patches/libs-back-0.32-frame-extents.patch"
   git apply "${SCRIPT_DIR}/patches/libs-back-0.32-wm-delete-window.patch"
   git apply "${SCRIPT_DIR}/patches/libs-back-0.32-xdnd-uri-list.patch"
