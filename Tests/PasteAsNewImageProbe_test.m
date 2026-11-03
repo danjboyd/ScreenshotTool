@@ -228,23 +228,29 @@ extern BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString
 
 - (void)testRecentsDatesAreInTheLocalZoneNotUTC {
     NSDate *date = [NSDate dateWithTimeIntervalSince1970:1595534646]; // 2020-07-23 20:04:06 UTC
+    // ICU's no-break spaces before AM/PM: GNUstep's Recents text has plain ones, macOS's doesn't.
+    NSString *(^plain)(NSString *) = ^NSString *(NSString *text) {
+        text = [text stringByReplacingOccurrencesOfString:@" " withString:@" "];
+        return [text stringByReplacingOccurrencesOfString:@" " withString:@" "];
+    };
     NSString *(^expected)(NSInteger) = ^NSString *(NSInteger secondsFromGMT) {
         NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
         formatter.dateStyle = NSDateFormatterMediumStyle;
         formatter.timeStyle = NSDateFormatterShortStyle;
         formatter.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:secondsFromGMT];
-        NSString *text = [formatter stringFromDate:date];
-        text = [text stringByReplacingOccurrencesOfString:@" " withString:@" "];
-        return [text stringByReplacingOccurrencesOfString:@" " withString:@" "];
+#if !defined(GNUSTEP)
+        formatter.doesRelativeDateFormatting = YES; // As the Recents list does.
+#endif
+        return plain([formatter stringFromDate:date]);
     };
     NSTimeZone *original = [NSTimeZone defaultTimeZone];
     @try {
         [NSTimeZone setDefaultTimeZone:[NSTimeZone timeZoneWithName:@"Asia/Tokyo"]];
-        XCTAssertEqualObjects([_appDelegate emptyStateRecentDetailForDate:date], expected(9 * 3600));
+        XCTAssertEqualObjects(plain([_appDelegate emptyStateRecentDetailForDate:date]), expected(9 * 3600));
         NSTimeZone *windowsZone = [NSTimeZone timeZoneWithName:@"Central Standard Time"];
         if (windowsZone) {
             [NSTimeZone setDefaultTimeZone:windowsZone];
-            XCTAssertEqualObjects([_appDelegate emptyStateRecentDetailForDate:date], expected(-5 * 3600),
+            XCTAssertEqualObjects(plain([_appDelegate emptyStateRecentDetailForDate:date]), expected(-5 * 3600),
                                   @"Windows's zone name, in daylight time");
         }
     } @finally {
