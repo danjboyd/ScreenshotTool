@@ -1,6 +1,6 @@
 # #330: selecting text in the image (0.4.0), design note
 
-Status: a sketch for review, with no code yet. The split comes from the lead's plan.
+Status: reviewed by the lead, with its answers to the open questions folded in. No code yet; it merges as the first 0.4.0 PR. The split comes from the lead's plan.
 - **Linux** builds `STTextSelection`, a model that uses only Foundation.
 - **macOS** builds the canvas mode on top of it (this note).
 - **Windows** builds Redact Selection.
@@ -28,12 +28,15 @@ The probe should load an image whose `size` differs from its pixel size, and che
 ## The mode
 
 - **Entry:**
-  - Edit ▸ Select Text (⇧⌘T, or Ctrl+Shift+T on GNUstep and Windows; to be checked against the existing shortcuts).
+  - Edit ▸ Select Text, proposed shortcut ⇧⌘T (Ctrl+Shift+T on GNUstep and Windows). Before committing to it, check it against the existing bindings on all three platforms, GNUstep's key-equivalent table included.
   - The same command in the canvas context menu.
+  - No toolbar button in 0.4.0, to keep the narrow toolbar.
 - **Not a new `ScreenshotCanvasTool` value.** The mode overlays the current tool, so leaving it puts the user back where they were, and the toolbar's tool switcher doesn't need another icon.
 - **On entry:**
   - The canvas keeps a `textSelectionModel` (an `STTextSelection`) and a `textSelectionActive` flag.
-  - AppDelegate reads the whole image once with `readTextInImageRect:NSZeroRect`, then hands the lines to the canvas.
+  - AppDelegate reads the whole image once with `readTextInImageRect:NSZeroRect`, then hands the lines to the canvas. There's no second, scoped read path.
+  - With a canvas selection on entry, the words whose middle is inside it start selected (`STLinesInsideRect` already picks them).
+  - The lines are cached, keyed by the annotation fingerprint (as `savedAnnotationFingerprint` uses it). Entering the mode again with the same fingerprint doesn't read again.
   - "Reading text…" shows while the read runs.
   - No text: the canvas says "No text found in the image" (the #333 wording) and doesn't enter the mode.
 - **Drawing:**
@@ -44,8 +47,8 @@ The probe should load an image whose `size` differs from its pixel size, and che
 - **Leaving the mode:**
   - Esc (`cancelOperation:` on Cocoa, `complete:` on GNUstep, as the text box already handles it);
   - picking any tool;
-  - opening another image;
-  - undoing or redoing, since the words could move under an annotation edit.
+  - opening another image.
+- **Undo and redo don't leave the mode**, which would surprise people. Any edit invalidates the cache; if the fingerprint changed while the mode is on, the lines are read again lazily and the outlines redrawn.
 - **Cursor:** I-beam over a word, arrow elsewhere.
 
 ## Hit-testing and selection (in the `STTextSelection` model, shared)
@@ -61,7 +64,7 @@ The probe should load an image whose `size` differs from its pixel size, and che
 - With nothing selected, Copy keeps doing what it does today (copies the image).
 - The context menu on a selection offers:
   - Copy Text;
-  - Redact Selected Text, which runs `addRedactionsInImageRects:` on `selectedRects` grown as `STSensitiveTextRects` grows them, as one undoable action. Windows' Redact Selection can share this entry point.
+  - Redact Selected Text, wired to one AppDelegate method, `redactSelectedText:`. Its body (grow the rects as `STSensitiveTextRects` does, add them as one undo) is the Windows agent's, with the 125% and 150% DPI check.
   - Select All Text.
 
 ## Probe test (with a canned recognition result, as in `RedactDetectedFeedbackProbe`)
@@ -75,8 +78,14 @@ The probe should load an image whose `size` differs from its pixel size, and che
   - Redact Selected Text adds N redactions under one undo;
   - the Retina case above.
 
-## Open questions
+## Who does what
 
-1. The shortcut, and whether the mode needs a toolbar button.
-2. Whether a canvas selection rect should limit the read to that area. Reading the whole image is simpler; with a selection, the mode could select the words inside it first.
-3. Cache the lines until the next edit, so entering the mode again doesn't read again? Probably yes, invalidated by the same fingerprint that `savedAnnotationFingerprint` uses.
+- **Linux:** `STTextSelection` (hit-testing, reading-order selection, `selectedText`, `selectedRects`). It lands first.
+- **macOS (this note):** the canvas mode, the drawing, the Edit menu and context-menu entries and their validation, including the Redact Selected Text item and its wiring to `redactSelectedText:`.
+- **Windows:** the body of `redactSelectedText:`, and the DPI check.
+
+## Settled questions (lead's review of #342)
+
+1. **Shortcut and button:** Edit menu, context menu and a shortcut; no toolbar button in 0.4.0. The shortcut is checked against all three platforms' bindings first.
+2. **Selection rect:** always read the whole image once; a selection on entry preselects the words inside it.
+3. **Cache:** yes, keyed by the annotation fingerprint and invalidated by any edit; undo and redo re-read lazily instead of leaving the mode.
