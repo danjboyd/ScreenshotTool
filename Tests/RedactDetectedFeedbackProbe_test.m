@@ -120,6 +120,15 @@ extern NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted);
     XCTAssertEqualObjects(_appDelegate.feedbackMessages, @[ @"Redacted 1 item" ]);
 }
 
+- (void)testARunDuringAReadSaysItIsStillReading {
+    if (_shouldSkip) {
+        return;
+    }
+    [_appDelegate setValue:@YES forKey:@"readingText"];
+    [_appDelegate redactDetectedText:nil];
+    XCTAssertEqualObjects(_appDelegate.feedbackMessages, @[ @"Still reading text…" ]);
+}
+
 - (void)testFeedbackWording {
     XCTAssertEqualObjects(STRedactDetectedFeedback(NO, 0), @"No text found in the image");
     XCTAssertEqualObjects(STRedactDetectedFeedback(YES, 0), @"No email addresses or phone numbers found");

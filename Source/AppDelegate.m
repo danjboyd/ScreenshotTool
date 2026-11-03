@@ -7661,10 +7661,20 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     }];
 }
 
+/// Whether a read is still running, saying so: Copy Text and Redact Emails and Phone Numbers
+/// started again during one used to do nothing visible (#333).
+- (BOOL)reportReadingTextInProgress {
+    if (!self.readingText) {
+        return NO;
+    }
+    [self showCopyFeedbackMessage:@"Still reading text…" duration:2.0];
+    return YES;
+}
+
 /// Copies the text in the selection, or in the whole image, read on this computer.
 - (void)copyText:(id)sender {
     (void)sender;
-    if (![self.canvasView hasImage] || self.readingText) {
+    if (![self.canvasView hasImage] || [self reportReadingTextInProgress]) {
         return;
     }
     __weak typeof(self) weakSelf = self;
@@ -7692,7 +7702,7 @@ NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted) {
 /// can be moved, deleted or undone together.
 - (void)redactDetectedText:(id)sender {
     (void)sender;
-    if (![self.canvasView hasImage] || self.readingText) {
+    if (![self.canvasView hasImage] || [self reportReadingTextInProgress]) {
         return;
     }
     __weak typeof(self) weakSelf = self;
