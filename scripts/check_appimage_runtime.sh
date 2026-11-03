@@ -9,6 +9,11 @@
 # 2. Launched (it needs an X display: run it under xvfb-run), the app maps every GNUstep, objc and
 #    libdispatch library, its backend bundle and its theme from inside the AppImage. A host with
 #    GNUstep installed (the CI runner has /usr/GNUstep) is where a leak would show.
+# 3. A new window's process, as Paste as New Image and Take Screenshot start it, starts and runs
+#    on the AppImage's GNUstep too. 0.3.3 started it through the host's openapp, which failed.
+# 4. With a host GNUstep's gpbs already running (started here when the host has one), the app
+#    still copies through its own: 0.3.3 used the host's, and with an older one Copy offered no
+#    image/png. The app copies its image at launch for this (SCREENSHOT_TOOL_SMOKE_NEW_WINDOW).
 
 set -euo pipefail
 
@@ -20,11 +25,15 @@ APPIMAGE_PATH="$(cd "$(dirname "${APPIMAGE_PATH}")" && pwd)/$(basename "${APPIMA
 
 WORK_DIR="$(mktemp -d)"
 APP_PID=""
+SECOND_PID=""
+HOST_GPBS_PID=""
 cleanup() {
-  if [[ -n "${APP_PID}" ]]; then
-    kill -9 "${APP_PID}" 2>/dev/null || true
-  fi
-  kill -9 "${launcher:-}" 2>/dev/null || true
+  local pid
+  for pid in "${APP_PID}" "${SECOND_PID}" "${launcher:-}" "${HOST_GPBS_PID}"; do
+    if [[ -n "${pid}" ]]; then
+      kill -9 "${pid}" 2>/dev/null || true
+    fi
+  done
   rm -rf "${WORK_DIR}"
 }
 trap cleanup EXIT
@@ -53,9 +62,44 @@ for key in _setWindowType: GSBackBorderlessWindowAlpha GSBackWindowShadows GSBac
 done
 [[ "${failed}" -eq 0 ]] && echo "The bundled libs-back has the carried patches."
 
-# 2. What the running app maps.
+# 4, set up: a host gpbs, started the way a host GNUstep app starts it (no private TMP).
+host_gpbs=""
+for candidate in /usr/GNUstep/System/Tools/gpbs /usr/GNUstep/Local/Tools/gpbs /usr/bin/gpbs; do
+  if [[ -x "${candidate}" ]]; then
+    host_gpbs="${candidate}"
+    break
+  fi
+done
+# host_gpbs_running: the PID of a gpbs that isn't the AppImage's, if one runs.
+host_gpbs_running() {
+  local proc exe
+  for proc in /proc/[0-9]*; do
+    exe="$(readlink "${proc}/exe" 2>/dev/null || true)"
+    if [[ "${exe}" == */gpbs && ( -z "${app_root:-}" || "${exe}" != "${app_root}/"* ) ]]; then
+      echo "${proc#/proc/}"
+      return
+    fi
+  done
+}
+if [[ -n "${host_gpbs}" && -z "$(host_gpbs_running)" ]]; then
+  # With its own GNUstep's environment, as a host app starts it. (If one already runs, it serves.)
+  host_env="${host_gpbs%/System/Tools/gpbs}/System/Library/Makefiles/GNUstep.sh"
+  env -u TMP -u TEMP -u GNUSTEP_CONFIG_FILE -u LD_LIBRARY_PATH bash -c \
+    '[[ -f "$1" ]] && . "$1" >/dev/null 2>&1; exec "$2" --no-fork' bash "${host_env}" "${host_gpbs}" \
+    >"${WORK_DIR}/host-gpbs.log" 2>&1 &
+  HOST_GPBS_PID=$!
+  disown "${HOST_GPBS_PID}"
+  sleep 2
+fi
+host_gpbs_pid="$(host_gpbs_running)"
+
+# 2. What the running app maps. The image it opens a new window for (3) is a copy, under another
+# name, so the new window doesn't start one more.
+SECOND_IMAGE="${WORK_DIR}/second-window.png"
+cp "${IMAGE_PATH}" "${SECOND_IMAGE}"
 LOG_PATH="${WORK_DIR}/app.log"
 APPIMAGE_EXTRACT_AND_RUN="${APPIMAGE_EXTRACT_AND_RUN:-1}" SCREENSHOT_TOOL_LOG_PATH="${LOG_PATH}" \
+  SCREENSHOT_TOOL_SMOKE_NEW_WINDOW="${SECOND_IMAGE}" \
   "${APPIMAGE_PATH}" "${IMAGE_PATH}" >"${WORK_DIR}/stdout.log" 2>&1 &
 launcher=$!
 disown "${launcher}"
@@ -95,19 +139,85 @@ fi
 # scripts/package_appimage.sh's).
 app_root="${exe%/usr/*/ScreenshotTool.app/ScreenshotTool}"
 
-mapped="$(awk '{print $6}' "/proc/${APP_PID}/maps" | grep '^/' | sort -u)"
-gnustep_mapped="$(grep -E 'gnustep|objc|dispatch|BlocksRuntime|\.bundle/|\.theme/' <<<"${mapped}" || true)"
-outside="$(grep -v -F -- "${app_root}/" <<<"${gnustep_mapped}" || true)"
-if [[ -z "${gnustep_mapped}" ]]; then
-  echo "Found no GNUstep libraries in the app's mappings: the check can't tell anything." >&2
-  failed=1
-elif [[ -n "${outside}" ]]; then
-  echo "The app maps GNUstep from outside the AppImage (${app_root}):" >&2
-  sed 's/^/  /' <<<"${outside}" >&2
+# check_maps <pid> <what>: fails unless every GNUstep piece <pid> maps comes from the AppImage.
+check_maps() {
+  local mapped gnustep_mapped outside
+  mapped="$(awk '{print $6}' "/proc/$1/maps" | grep '^/' | sort -u)"
+  gnustep_mapped="$(grep -E 'gnustep|objc|dispatch|BlocksRuntime|\.bundle/|\.theme/' <<<"${mapped}" || true)"
+  outside="$(grep -v -F -- "${app_root}/" <<<"${gnustep_mapped}" || true)"
+  if [[ -z "${gnustep_mapped}" ]]; then
+    echo "Found no GNUstep libraries in $2's mappings: the check can't tell anything." >&2
+    failed=1
+  elif [[ -n "${outside}" ]]; then
+    echo "$2 maps GNUstep from outside the AppImage (${app_root}):" >&2
+    sed 's/^/  /' <<<"${outside}" >&2
+    failed=1
+  else
+    echo "$2 maps all $(wc -l <<<"${gnustep_mapped}") of its GNUstep libraries, backend and theme from the AppImage:"
+    sed "s|^${app_root}/|  |" <<<"${gnustep_mapped}"
+  fi
+}
+check_maps "${APP_PID}" "The app"
+
+# 3. The new window's process: the AppImage's executable, opening the copy.
+for _ in $(seq 1 40); do
+  for proc in /proc/[0-9]*; do
+    pid="${proc#/proc/}"
+    [[ "${pid}" == "${APP_PID}" ]] && continue
+    candidate="$(readlink "${proc}/exe" 2>/dev/null || true)"
+    if [[ "${candidate}" == "${app_root}/"*/ScreenshotTool.app/ScreenshotTool ]] &&
+       tr '\0' '\n' <"${proc}/cmdline" 2>/dev/null | grep -q -F -x -- "${SECOND_IMAGE}"; then
+      SECOND_PID="${pid}"
+      break 2
+    fi
+  done
+  sleep 0.5
+done
+if [[ -z "${SECOND_PID}" ]]; then
+  echo "No new window's process started from the AppImage (Paste as New Image would open nothing). Its log:" >&2
+  grep -E 'pasteAsNewImage' "${LOG_PATH}" >&2 2>/dev/null || true
   failed=1
 else
-  echo "The app maps all $(wc -l <<<"${gnustep_mapped}") of its GNUstep libraries, backend and theme from the AppImage:"
-  sed "s|^${app_root}/|  |" <<<"${gnustep_mapped}"
+  sleep 3
+  if [[ -d "/proc/${SECOND_PID}" ]]; then
+    check_maps "${SECOND_PID}" "The new window's process"
+  else
+    echo "The new window's process exited at once." >&2
+    failed=1
+  fi
+fi
+
+# 4. The app's own gpbs, though a host one was running.
+if [[ -n "${host_gpbs_pid}" ]]; then
+  own_gpbs=""
+  for _ in $(seq 1 20); do
+    for proc in /proc/[0-9]*; do
+      if [[ "$(readlink "${proc}/exe" 2>/dev/null || true)" == "${app_root}/"*/gpbs ]]; then
+        own_gpbs="${proc#/proc/}"
+        break 2
+      fi
+    done
+    sleep 0.5
+  done
+  if [[ -n "${own_gpbs}" ]]; then
+    echo "With a host gpbs running (pid ${host_gpbs_pid}), the app started its own (pid ${own_gpbs})."
+    if command -v xclip >/dev/null 2>&1; then
+      targets="$(timeout 10 xclip -selection clipboard -t TARGETS -o 2>/dev/null || true)"
+      if grep -q -x 'image/png' <<<"${targets}"; then
+        echo "Its Copy offers image/png."
+      else
+        echo "Its Copy offers no image/png (targets: $(tr '\n' ' ' <<<"${targets}"))." >&2
+        failed=1
+      fi
+    fi
+    kill -9 "${own_gpbs}" 2>/dev/null || true
+  else
+    echo "With a host gpbs running (pid ${host_gpbs_pid}), the app used it instead of its own." >&2
+    failed=1
+  fi
+else
+  echo "No host gpbs could be started: skipped the check that the app uses its own."
+  [[ -s "${WORK_DIR}/host-gpbs.log" ]] && sed 's/^/  /' "${WORK_DIR}/host-gpbs.log"
 fi
 
 exit "${failed}"
