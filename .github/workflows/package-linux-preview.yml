@@ -1,0 +1,69 @@
+name: package-linux-preview
+
+# The AppImage as a release builds it (gnustep-packager and packaging/package.manifest.json, as
+# release.yml's package-linux does), without publishing anything, checked next to a distribution's
+# GNUstep. build.yml's AppImage comes from scripts/package_appimage.sh instead, so a change to the
+# manifest or the packager pin is only tested here.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - packaging/**
+      - scripts/**
+      - .github/workflows/package-linux-preview.yml
+      - .github/workflows/release.yml
+
+permissions:
+  contents: read
+
+jobs:
+  package-linux:
+    # Keep the inputs in step with release.yml's package-linux.
+    uses: danjboyd/gnustep-packager/.github/workflows/package-gnustep-app.yml@v0.1.7
+    with:
+      manifest-path: packaging/package.manifest.json
+      backend: appimage
+      runs-on-appimage: '["ubuntu-24.04"]'
+      skip-default-host-setup: true
+      appimage-apt-packages: ""
+      preflight-shell: bash
+      preflight-command: >-
+        bash ./scripts/bootstrap_gnustep_linux_ci.sh &&
+        { setsid nohup Xvfb :99 -screen 0 1280x800x24 -nolisten tcp > "${RUNNER_TEMP}/xvfb.log" 2>&1 & } &&
+        echo "DISPLAY=:99" >> "${GITHUB_ENV}"
+      run-validation: true
+      run-smoke: true
+      appimage-clean-smoke-image: ubuntu:24.04
+      artifact-name: screenshottool-linux-preview
+
+  check-beside-distro-gnustep:
+    needs: package-linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: screenshottool-linux-preview-packages
+          path: preview
+      - name: The launcher AppRun writes
+        run: |
+          appimage="$(find preview -name '*.AppImage' -print -quit)"
+          chmod +x "${appimage}"
+          (cd "${RUNNER_TEMP}" && "${GITHUB_WORKSPACE}/${appimage}" --appimage-extract >/dev/null)
+          grep -n -E '^(export |GP_USER_RUNTIME_DIR|if \[ -n "\$GP_USER_RUNTIME_DIR")' "${RUNNER_TEMP}/squashfs-root/AppRun"
+      - name: The AppImage runs on its own GNUstep, next to Ubuntu's
+        # Ubuntu's gnustep-gui-runtime brings /usr/bin/openapp and an older gpbs, as on a user's
+        # system with GNUstep apps installed: the check opens a new window and copies through them.
+        run: |
+          appimage="$(find preview -name '*.AppImage' -print -quit)"
+          docker run --rm --init -v "${GITHUB_WORKSPACE}:/work" -w /work ubuntu:24.04 bash -c '
+            set -e
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get install -y -qq --no-install-recommends gnustep-gui-runtime gnustep-back0.30 \
+              xvfb xauth xclip binutils procps file fontconfig libfreetype6 libharfbuzz0b \
+              libfribidi0 libgl1 libx11-xcb1 libsm6 libice6 >/dev/null
+            useradd -m tester
+            su tester -c "cd /work && APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a -s \"-screen 0 1280x800x24\" scripts/check_appimage_runtime.sh \"$1\""
+          ' bash "${appimage}"

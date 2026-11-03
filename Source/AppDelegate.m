@@ -220,13 +220,30 @@ static NSString *const STPastedImageTitle = @"Pasted Image";
 static NSString *const STClipboardTemporaryFilePrefix = @"clipboard-";
 static NSString *const STCaptureTemporaryFilePrefix = @"capture-";
 
+/// The zone to format `date` in, for a date formatter: the default zone, which is the local one
+/// unless the app set another. On GNUstep it's that zone's offset on that date: on Windows the
+/// local zone has Windows's name ("Central Standard Time"), which the formatter doesn't know, so it
+/// printed GMT; and without an explicit zone, a formatter with date and time styles ignores the
+/// default.
+static NSTimeZone *STFormatterTimeZoneForDate(NSDate *date) {
+    NSTimeZone *zone = [NSTimeZone defaultTimeZone];
+#if defined(GNUSTEP)
+    return [NSTimeZone timeZoneForSecondsFromGMT:[zone secondsFromGMTForDate:date]];
+#else
+    (void)date;
+    return zone;
+#endif
+}
+
 /// An untitled capture's title, and the Save panel's default name: "Screenshot 2026-11-03 at 10.15.32".
 /// Periods, not colons, so it's a valid file name everywhere.
 NSString *STCaptureTitleForDate(NSDate *date) {
+    NSDate *when = date ?: [NSDate date];
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
     formatter.dateFormat = @"yyyy-MM-dd 'at' HH.mm.ss";
-    return [@"Screenshot " stringByAppendingString:[formatter stringFromDate:date ?: [NSDate date]]];
+    formatter.timeZone = STFormatterTimeZoneForDate(when);
+    return [@"Screenshot " stringByAppendingString:[formatter stringFromDate:when]];
 }
 
 static NSString *STTemporaryClipboardDirectory(void) {
@@ -2543,6 +2560,17 @@ static AppDelegate *STFrontDocument(void) {
     [self reflectZoomSelection];
     // After the window is up: reading the clipboard can wait for the pasteboard server.
     [self performSelector:@selector(refreshPasteAvailability) withObject:nil afterDelay:0.0];
+
+    // For scripts/check_appimage_runtime.sh only: open this image in a new window, as Paste as
+    // New Image does, and copy the image, to show that the new process starts on the AppImage's
+    // GNUstep and that Copy goes through the AppImage's pasteboard server. The new window opens
+    // that image itself, so it starts no other.
+    NSString *smokeNewWindow = [[NSProcessInfo processInfo] environment][@"SCREENSHOT_TOOL_SMOKE_NEW_WINDOW"];
+    if (smokeNewWindow.length > 0 && [self.canvasView hasImage] &&
+        ![self.currentImageURL.path isEqualToString:smokeNewWindow]) {
+        [self launchNewWindowForImageAtURL:[NSURL fileURLWithPath:smokeNewWindow]];
+        [self copy:nil];
+    }
 }
 
 /// The image named by application:openFile: or on the command line, if any.
@@ -4687,6 +4715,8 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 /// "1600 × 1000 px · PNG · 214 KB": the image's pixel size and, with a file, its format and size.
+/// With unsaved changes (a crop, say) the file's size isn't the image's any more, so it says
+/// "unsaved" until the next save.
 - (NSString *)idleStatusText {
     NSImage *image = self.canvasView.image;
     if (!image) {
@@ -4705,6 +4735,9 @@ static id STInfoValueForKey(NSString *key) {
         text = [text stringByAppendingFormat:@"  ·  %@", extension.uppercaseString];
     }
     NSString *fileSize = [self statusFileSizeForURL:self.currentImageURL];
+    if (fileSize.length > 0 && [self hasUnsavedChanges]) {
+        fileSize = @"unsaved";
+    }
     if (fileSize.length > 0) {
         text = [text stringByAppendingFormat:@"  ·  %@", fileSize];
     }
@@ -6449,6 +6482,7 @@ static NSTimeInterval STHUDDurationForFeedback(NSTimeInterval duration) {
         formatter.doesRelativeDateFormatting = YES;
 #endif
     }
+    formatter.timeZone = STFormatterTimeZoneForDate(date);
     NSString *text = [formatter stringFromDate:date] ?: @"";
 #if defined(GNUSTEP)
     // ICU puts a narrow no-break space before AM/PM, which GNUstep's text drawing has no glyph
@@ -7464,6 +7498,15 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     return url;
 }
 
+/// Whether GNUstep starts a new window's process through openapp, which sets up the environment
+/// of a GNUstep install. Not from an AppImage: there the host's openapp ran (the AppImage's own
+/// isn't on PATH), sourced the AppImage's GNUstep.conf, whose paths are relative, and failed, so
+/// Paste as New Image opened nothing on a host with GNUstep. AppRun has already set up the
+/// environment the executable needs, and NSTask passes it on.
+BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *environment) {
+    return [environment[@"APPDIR"] length] == 0 && [environment[@"APPIMAGE"] length] == 0;
+}
+
 - (BOOL)launchNewWindowForImageAtURL:(NSURL *)url {
     if (!url.isFileURL || url.path.length == 0) {
         return NO;
@@ -7488,10 +7531,12 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         NSTask *task = [[NSTask alloc] init];
 #if defined(GNUSTEP)
         NSString *openappPath = nil;
-        if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/GNUstep/System/Tools/openapp"]) {
-            openappPath = @"/usr/GNUstep/System/Tools/openapp";
-        } else {
-            openappPath = STExecutablePathInPATH(@"openapp");
+        if (STLaunchesNewWindowsThroughOpenapp([[NSProcessInfo processInfo] environment])) {
+            if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/GNUstep/System/Tools/openapp"]) {
+                openappPath = @"/usr/GNUstep/System/Tools/openapp";
+            } else {
+                openappPath = STExecutablePathInPATH(@"openapp");
+            }
         }
         NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
         if (openappPath.length > 0 && bundlePath.length > 0) {
@@ -7510,8 +7555,11 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         }
 
         [task launch];
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: launched new instance for %@",
-                                 url.path ?: @"<nil>"]);
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: launched new instance for %@ (%@)",
+                                 url.path ?: @"<nil>", task.launchPath]);
+        // A process that ends at once with an error opened no window (as the host's openapp did
+        // from the AppImage): say so rather than nothing.
+        [self performSelector:@selector(reportFailedNewWindowLaunch:) withObject:task afterDelay:2.0];
         return YES;
     } @catch (NSException *exception) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage launch exception for %@ (%@ - %@)",
@@ -7520,6 +7568,15 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
                                  exception.reason ?: @"<no reason>"]);
     }
     return NO;
+}
+
+- (void)reportFailedNewWindowLaunch:(NSTask *)task {
+    if (task.isRunning || task.terminationStatus == 0) {
+        return;
+    }
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: %@ exited with status %d",
+                             task.launchPath, task.terminationStatus]);
+    [self showCommandResultMessage:@"Couldn't open a new window" duration:2.5];
 }
 
 #pragma mark - Take Screenshot
@@ -7643,6 +7700,8 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         [self resizeWindowToImageSize:self.canvasView.image.size];
     }
     [self.window makeFirstResponder:self.canvasView];
+    // The result goes to the HUD now (#344), so the status bar has to be told the new size.
+    [self refreshStatusZoomControls];
     [self showCommandResultMessage:@"Cropped image" duration:2.0];
 }
 
@@ -7758,6 +7817,10 @@ NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted, NSUInteg
         NSUInteger added = [weakSelf.canvasView addRedactionsInImageRects:rects
                                                                actionName:@"Redact Emails and Phone Numbers"
                                                           alreadyRedacted:&alreadyRedacted];
+        if (added > 0) {
+            // An edit: "unsaved" in the status bar now, not when the undo manager's notice comes.
+            [weakSelf updateDocumentEditedState];
+        }
         BOOL foundText = [STRecognizedText(lines) stringByTrimmingCharactersInSet:
                              [NSCharacterSet whitespaceAndNewlineCharacterSet]].length > 0;
         ScreenshotToolAppendLog([NSString stringWithFormat:@"Redact Emails and Phone Numbers: %lu lines, %lu redacted, %lu already redacted",
@@ -9077,6 +9140,9 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
             return;
         }
         [strongSelf refreshToolButtonIcons];
+        // Its "Running…" went to the status bar; the result goes to the HUD (#344), so put the
+        // status bar back to the image's size now rather than when that message would time out.
+        [strongSelf clearStatusMessage];
         if (!result.succeeded) {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Custom action %@ failed (status %d%@): %@",
                                      action.identifier, result.status, result.timedOut ? @", timed out" : @"",
@@ -9214,10 +9280,14 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 }
 
 /// macOS marks a window with unsaved changes with a dot in its close button.
+/// It also brings the status bar's size up to date: after an edit, a crop or a save.
 - (void)updateDocumentEditedState {
 #if !defined(GNUSTEP)
     [self.window setDocumentEdited:[self hasUnsavedChanges]];
 #endif
+    if (self.statusTextField && !self.statusClearTimer) {
+        [self.statusTextField setStringValue:[self idleStatusText]];
+    }
 }
 
 - (void)undo:(id)sender {
@@ -9285,6 +9355,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 
 - (void)markAnnotationsSaved {
     self.savedAnnotationFingerprint = [self.canvasView annotationFingerprint];
+    self.statusFileSizeURL = nil; // Saved over the same file, say: read its size again.
     [self updateDocumentEditedState];
 }
 

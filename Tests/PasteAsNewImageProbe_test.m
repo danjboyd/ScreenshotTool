@@ -21,9 +21,11 @@
 - (void)setupMenus;
 - (NSURL *)temporaryCaptureImageURLForPNGData:(NSData *)pngData;
 - (NSString *)untitledDocumentTitle;
+- (NSString *)emptyStateRecentDetailForDate:(NSDate *)date;
 @end
 
 extern NSString *STCaptureTitleForDate(NSDate *date);
+extern BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *environment);
 
 @interface PasteAsNewImageProbeAppDelegate : AppDelegate
 @property (nonatomic, strong) NSData *probeClipboardPNGData;
@@ -203,6 +205,59 @@ extern NSString *STCaptureTitleForDate(NSDate *date);
                    (NSUInteger)NSNotFound, @"The title is also the Save name, so no path or colon characters");
 }
 
+- (void)testCaptureTitleIsInTheLocalZoneNotUTC {
+    NSDate *november = [NSDate dateWithTimeIntervalSince1970:1793736246]; // 2026-11-03 20:04:06 UTC
+    NSDate *july = [NSDate dateWithTimeIntervalSince1970:1784837046];     // 2026-07-23 20:04:06 UTC
+    NSTimeZone *original = [NSTimeZone defaultTimeZone];
+    @try {
+        [NSTimeZone setDefaultTimeZone:[NSTimeZone timeZoneWithName:@"Asia/Tokyo"]];
+        XCTAssertEqualObjects(STCaptureTitleForDate(november), @"Screenshot 2026-11-04 at 05.04.06");
+        // Windows's name for a zone, as GNUstep reports the local one there. The formatter doesn't
+        // know it and printed GMT. Only Windows has a zone by this name.
+        NSTimeZone *windowsZone = [NSTimeZone timeZoneWithName:@"Central Standard Time"];
+        if (windowsZone) {
+            [NSTimeZone setDefaultTimeZone:windowsZone];
+            XCTAssertEqualObjects(STCaptureTitleForDate(november), @"Screenshot 2026-11-03 at 14.04.06");
+            XCTAssertEqualObjects(STCaptureTitleForDate(july), @"Screenshot 2026-07-23 at 15.04.06",
+                                  @"Daylight time, by the date");
+        }
+    } @finally {
+        [NSTimeZone setDefaultTimeZone:original];
+    }
+}
+
+- (void)testRecentsDatesAreInTheLocalZoneNotUTC {
+    NSDate *date = [NSDate dateWithTimeIntervalSince1970:1595534646]; // 2020-07-23 20:04:06 UTC
+    // ICU's no-break spaces before AM/PM: GNUstep's Recents text has plain ones, macOS's doesn't.
+    NSString *(^plain)(NSString *) = ^NSString *(NSString *text) {
+        text = [text stringByReplacingOccurrencesOfString:@" " withString:@" "];
+        return [text stringByReplacingOccurrencesOfString:@" " withString:@" "];
+    };
+    NSString *(^expected)(NSInteger) = ^NSString *(NSInteger secondsFromGMT) {
+        NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+        formatter.dateStyle = NSDateFormatterMediumStyle;
+        formatter.timeStyle = NSDateFormatterShortStyle;
+        formatter.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:secondsFromGMT];
+#if !defined(GNUSTEP)
+        formatter.doesRelativeDateFormatting = YES; // As the Recents list does.
+#endif
+        return plain([formatter stringFromDate:date]);
+    };
+    NSTimeZone *original = [NSTimeZone defaultTimeZone];
+    @try {
+        [NSTimeZone setDefaultTimeZone:[NSTimeZone timeZoneWithName:@"Asia/Tokyo"]];
+        XCTAssertEqualObjects(plain([_appDelegate emptyStateRecentDetailForDate:date]), expected(9 * 3600));
+        NSTimeZone *windowsZone = [NSTimeZone timeZoneWithName:@"Central Standard Time"];
+        if (windowsZone) {
+            [NSTimeZone setDefaultTimeZone:windowsZone];
+            XCTAssertEqualObjects(plain([_appDelegate emptyStateRecentDetailForDate:date]), expected(-5 * 3600),
+                                  @"Windows's zone name, in daylight time");
+        }
+    } @finally {
+        [NSTimeZone setDefaultTimeZone:original];
+    }
+}
+
 - (void)testAnEmptyWindowTakesThePastedImageItself {
     NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:
                                                  [NSString stringWithFormat:@"paste-%@.png", [NSUUID UUID].UUIDString]];
@@ -243,6 +298,17 @@ extern NSString *STCaptureTitleForDate(NSDate *date);
     XCTAssertTrue((mask & NSEventModifierFlagShift) != 0, @"Shortcut should use Shift");
     XCTAssertTrue((mask & NSEventModifierFlagControl) == 0, @"A Control mask is unreachable from the Ctrl key on GNUstep");
     XCTAssertEqualObjects(pasteItem.keyEquivalent.lowercaseString, @"v");
+}
+
+- (void)testAnAppImageStartsItsNewWindowsWithoutOpenapp {
+    // From an AppImage the host's openapp sourced the AppImage's relative GNUstep.conf and failed,
+    // so Paste as New Image opened nothing on a host with GNUstep: AppRun's variables say not to.
+    XCTAssertTrue(STLaunchesNewWindowsThroughOpenapp(@{}), @"A GNUstep install starts new windows through openapp");
+    XCTAssertTrue(STLaunchesNewWindowsThroughOpenapp(@{ @"APPDIR" : @"" }), @"An empty APPDIR is no AppImage");
+    XCTAssertFalse(STLaunchesNewWindowsThroughOpenapp(@{ @"APPDIR" : @"/tmp/.mount_ScreenXYZ" }),
+                   @"Inside an AppImage the executable is started directly");
+    XCTAssertFalse(STLaunchesNewWindowsThroughOpenapp(@{ @"APPIMAGE" : @"/home/user/ScreenshotTool.AppImage" }),
+                   @"APPIMAGE alone also means an AppImage");
 }
 
 @end

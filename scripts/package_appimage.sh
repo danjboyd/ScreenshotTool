@@ -191,6 +191,13 @@ if [[ -f "${GNUSTEP_MAKEFILES}/GNUstep.sh" ]]; then
   set -u
 fi
 export GNUSTEP_SYSTEM_ROOT GNUSTEP_LOCAL_ROOT GNUSTEP_NETWORK_ROOT
+# A temporary directory of the app's own, as the release AppImage gets from gnustep-packager's
+# {@userRuntimeDir}: GNUstep registers its message ports there, so the app starts its bundled
+# gpbs and gdnc instead of using a host GNUstep's (same names, older libraries).
+APP_TMP="${CONFIG_DIR}/tmp"
+if mkdir -p -m 0700 "${APP_TMP}" 2>/dev/null && [[ -O "${APP_TMP}" && ! -L "${APP_TMP}" ]]; then
+  export TMP="${APP_TMP}" TEMP="${APP_TMP}"
+fi
 if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
   export LD_LIBRARY_PATH="${APP_LIB}:${LD_LIBRARY_PATH}"
 else
