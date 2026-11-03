@@ -28,7 +28,7 @@ The probe should load an image whose `size` differs from its pixel size, and che
 ## The mode
 
 - **Entry:**
-  - Edit ▸ Select Text, proposed shortcut ⇧⌘T (Ctrl+Shift+T on GNUstep and Windows). Before committing to it, check it against the existing bindings on all three platforms, GNUstep's key-equivalent table included.
+  - Edit ▸ Select Text, shortcut ⇧⌘E (Ctrl+Shift+E on GNUstep and Windows), to confirm. ⇧⌘T, first proposed, is already Take Screenshot.
   - The same command in the canvas context menu.
   - No toolbar button in 0.4.0, to keep the narrow toolbar.
 - **Not a new `ScreenshotCanvasTool` value.** The mode overlays the current tool, so leaving it puts the user back where they were, and the toolbar's tool switcher doesn't need another icon.
@@ -89,3 +89,7 @@ The probe should load an image whose `size` differs from its pixel size, and che
 1. **Shortcut and button:** Edit menu, context menu and a shortcut; no toolbar button in 0.4.0. The shortcut is checked against all three platforms' bindings first.
 2. **Selection rect:** always read the whole image once; a selection on entry preselects the words inside it.
 3. **Cache:** yes, keyed by the annotation fingerprint and invalidated by any edit; undo and redo re-read lazily instead of leaving the mode.
+
+## Still to confirm
+
+- **The shortcut ⇧⌘E:** the Linux and Windows agents each check it against their platform's own bindings (GNUstep's key-equivalent mapping, GNOME's, and Windows' system and WinUITheme shortcuts) as part of their #330 pieces. If either clashes, it's picked again before merge.
