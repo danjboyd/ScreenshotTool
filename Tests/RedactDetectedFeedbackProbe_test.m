@@ -22,7 +22,7 @@
 - (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration;
 @end
 
-extern NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted);
+extern NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted, NSUInteger alreadyRedacted, BOOL hadRedactions);
 
 @interface RedactDetectedFeedbackProbeAppDelegate : AppDelegate
 @property (nonatomic, copy) NSArray<STRecognizedLine *> *cannedLines;
@@ -129,11 +129,57 @@ extern NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted);
     XCTAssertEqualObjects(_appDelegate.feedbackMessages, @[ @"Still reading text…" ]);
 }
 
+/// Run twice over a reader that still sees the address: the second run adds nothing and says so.
+- (void)testASecondRunOverTheSameMatchSaysAlreadyRedacted {
+    if (_shouldSkip) {
+        return;
+    }
+    _appDelegate.cannedLines = @[ [self lineWithWords:@[ @"Mail", @"dan@example.com", @"today" ]] ];
+    [_appDelegate redactDetectedText:nil];
+    [_appDelegate redactDetectedText:nil];
+    XCTAssertEqualObjects(_appDelegate.feedbackMessages, (@[ @"Redacted 1 item", @"Already redacted" ]));
+    NSUInteger again = 0;
+    XCTAssertEqual([_appDelegate.canvasView addRedactionsInImageRects:STSensitiveTextRects(_appDelegate.cannedLines)
+                                                           actionName:@"Redact"
+                                                      alreadyRedacted:&again],
+                   (NSUInteger)0, @"No second redaction on top of the first");
+    XCTAssertEqual(again, (NSUInteger)1);
+}
+
+/// The usual second run: the redaction hides the address from the reader, so nothing matches.
+- (void)testASecondRunThatFindsNothingMoreSaysNoOther {
+    if (_shouldSkip) {
+        return;
+    }
+    _appDelegate.cannedLines = @[ [self lineWithWords:@[ @"Mail", @"dan@example.com", @"today" ]] ];
+    [_appDelegate redactDetectedText:nil];
+    _appDelegate.cannedLines = @[ [self lineWithWords:@[ @"Mail", @"today" ]] ];
+    [_appDelegate redactDetectedText:nil];
+    XCTAssertEqualObjects(_appDelegate.feedbackMessages,
+                          (@[ @"Redacted 1 item", @"No other email addresses or phone numbers found" ]));
+}
+
+/// A new match beside a redacted one is redacted; the covered one isn't counted twice.
+- (void)testANewMatchBesideARedactedOneIsStillRedacted {
+    if (_shouldSkip) {
+        return;
+    }
+    STRecognizedLine *email = [self lineWithWords:@[ @"Mail", @"dan@example.com", @"today" ]];
+    _appDelegate.cannedLines = @[ email ];
+    [_appDelegate redactDetectedText:nil];
+    STRecognizedWord *phone = [[STRecognizedWord alloc] initWithText:@"555-867-5309" bounds:NSMakeRect(10.0, 80.0, 96.0, 14.0)];
+    _appDelegate.cannedLines = @[ email, [[STRecognizedLine alloc] initWithWords:@[ phone ]] ];
+    [_appDelegate redactDetectedText:nil];
+    XCTAssertEqualObjects(_appDelegate.feedbackMessages.lastObject, @"Redacted 1 item");
+}
+
 - (void)testFeedbackWording {
-    XCTAssertEqualObjects(STRedactDetectedFeedback(NO, 0), @"No text found in the image");
-    XCTAssertEqualObjects(STRedactDetectedFeedback(YES, 0), @"No email addresses or phone numbers found");
-    XCTAssertEqualObjects(STRedactDetectedFeedback(YES, 1), @"Redacted 1 item");
-    XCTAssertEqualObjects(STRedactDetectedFeedback(YES, 3), @"Redacted 3 items");
+    XCTAssertEqualObjects(STRedactDetectedFeedback(NO, 0, 0, NO), @"No text found in the image");
+    XCTAssertEqualObjects(STRedactDetectedFeedback(YES, 0, 0, NO), @"No email addresses or phone numbers found");
+    XCTAssertEqualObjects(STRedactDetectedFeedback(YES, 0, 0, YES), @"No other email addresses or phone numbers found");
+    XCTAssertEqualObjects(STRedactDetectedFeedback(YES, 0, 2, YES), @"Already redacted");
+    XCTAssertEqualObjects(STRedactDetectedFeedback(YES, 1, 0, NO), @"Redacted 1 item");
+    XCTAssertEqualObjects(STRedactDetectedFeedback(YES, 3, 1, YES), @"Redacted 3 items");
 }
 
 @end

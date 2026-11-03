@@ -3260,6 +3260,34 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
 }
 
 - (NSUInteger)addRedactionsInImageRects:(NSArray<NSValue *> *)rects actionName:(NSString *)actionName {
+    return [self addRedactionsInImageRects:rects actionName:actionName alreadyRedacted:NULL];
+}
+
+- (BOOL)hasRedactions {
+    for (MarkupStroke *stroke in self.strokes) {
+        if (stroke.type == MarkupStrokeTypeRedact) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+/// Whether a redaction covers `rect`, give or take a pixel's rounding.
+- (BOOL)isImageRectRedacted:(NSRect)rect {
+    for (MarkupStroke *stroke in self.strokes) {
+        if (stroke.type == MarkupStrokeTypeRedact && NSContainsRect(NSInsetRect(stroke.bounds, -1.0, -1.0), rect)) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (NSUInteger)addRedactionsInImageRects:(NSArray<NSValue *> *)rects
+                             actionName:(NSString *)actionName
+                        alreadyRedacted:(NSUInteger *)alreadyRedacted {
+    if (alreadyRedacted) {
+        *alreadyRedacted = 0;
+    }
     if (!self.image || rects.count == 0) {
         return 0;
     }
@@ -3268,6 +3296,14 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
     for (NSValue *value in rects) {
         NSRect rect = NSIntegralRect([self clampedImageRect:value.rectValue]);
         if (NSIsEmptyRect(rect)) {
+            continue;
+        }
+        // Run again, Redact would stack a second redaction on the first (an engine that still
+        // reads text through the pixelation, say).
+        if ([self isImageRectRedacted:rect]) {
+            if (alreadyRedacted) {
+                (*alreadyRedacted)++;
+            }
             continue;
         }
         MarkupStroke *redaction = [[MarkupStroke alloc] initWithType:MarkupStrokeTypeRedact
