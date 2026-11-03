@@ -214,6 +214,20 @@ static NSString *STDefaultLogFilePath(void) {
 }
 
 static NSString *const STPastedImageTitle = @"Pasted Image";
+/// Temp files for Paste as New Image (and dropped image data) start with this; captures with
+/// STCaptureTemporaryFilePrefix. The prefix tells the opening window, maybe in another process on
+/// GNUstep, which untitled title to use (#332).
+static NSString *const STClipboardTemporaryFilePrefix = @"clipboard-";
+static NSString *const STCaptureTemporaryFilePrefix = @"capture-";
+
+/// An untitled capture's title, and the Save panel's default name: "Screenshot 2026-11-03 at 10.15.32".
+/// Periods, not colons, so it's a valid file name everywhere.
+NSString *STCaptureTitleForDate(NSDate *date) {
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    formatter.dateFormat = @"yyyy-MM-dd 'at' HH.mm.ss";
+    return [@"Screenshot " stringByAppendingString:[formatter stringFromDate:date ?: [NSDate date]]];
+}
 
 static NSString *STTemporaryClipboardDirectory(void) {
     return [NSTemporaryDirectory() stringByAppendingPathComponent:@"ScreenshotToolClipboard"];
@@ -1636,6 +1650,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSURL *currentImageURL;
 /// The project file this window was opened from or last saved to (#32).
 @property (nonatomic, strong, nullable) NSURL *currentProjectURL;
+/// An untitled window's title ("Pasted Image", or a capture's "Screenshot …"), which the Save
+/// panels also offer as the name (#332). Nil once the window shows a file.
+@property (nonatomic, copy, nullable) NSString *untitledDocumentTitle;
 /// The canvas's fingerprint when it was last opened or saved; a different one means unsaved changes.
 @property (nonatomic, strong, nullable) NSData *savedAnnotationFingerprint;
 /// The annotations as they were when closing the window settled them (saved or discarded), so the
@@ -1683,6 +1700,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 - (BOOL)clipboardHasImage;
 - (void)refreshPasteAvailability;
 - (NSURL *)temporaryClipboardImageURLForPNGData:(NSData *)pngData;
+- (NSURL *)temporaryCaptureImageURLForPNGData:(NSData *)pngData;
 - (BOOL)isTemporaryClipboardImageURL:(NSURL *)url;
 - (BOOL)launchNewWindowForImageAtURL:(NSURL *)url;
 - (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
@@ -7092,7 +7110,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
                 [panel setDirectoryURL:dirURL];
             }
         }
-        [panel setNameFieldStringValue:[STPastedImageTitle stringByAppendingPathExtension:@"png"]];
+        [panel setNameFieldStringValue:[(self.untitledDocumentTitle ?: STPastedImageTitle) stringByAppendingPathExtension:@"png"]];
     }
 
     if ([panel runModal] != NSModalResponseOK) {
@@ -7132,6 +7150,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     }
 
     self.currentImageURL = destination;
+    self.untitledDocumentTitle = nil;
     [self addRecentDocumentURL:destination];
     [self.window setTitleWithRepresentedFilename:destination.path];
     [self markAnnotationsSaved];
@@ -7401,6 +7420,15 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 }
 
 - (NSURL *)temporaryClipboardImageURLForPNGData:(NSData *)pngData {
+    return [self temporaryImageURLForPNGData:pngData prefix:STClipboardTemporaryFilePrefix];
+}
+
+/// Like a pasted image's temp file, but the window it opens in is titled as a capture (#332).
+- (NSURL *)temporaryCaptureImageURLForPNGData:(NSData *)pngData {
+    return [self temporaryImageURLForPNGData:pngData prefix:STCaptureTemporaryFilePrefix];
+}
+
+- (NSURL *)temporaryImageURLForPNGData:(NSData *)pngData prefix:(NSString *)prefix {
     if (pngData.length == 0) {
         return nil;
     }
@@ -7417,7 +7445,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         return nil;
     }
 
-    NSString *filename = [NSString stringWithFormat:@"clipboard-%@.png", [NSUUID UUID].UUIDString];
+    NSString *filename = [NSString stringWithFormat:@"%@%@.png", prefix, [NSUUID UUID].UUIDString];
     NSURL *url = [NSURL fileURLWithPath:[root stringByAppendingPathComponent:filename]];
     if (![pngData writeToURL:url options:NSDataWritingAtomic error:&error]) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: failed to write temp image %@ (%@)",
@@ -7528,7 +7556,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     }
     if (result == STScreenshotCaptureResultClipboard) {
         NSData *pngData = [self clipboardPNGDataForPasteAsNewImage];
-        url = pngData.length > 0 ? [self temporaryClipboardImageURLForPNGData:pngData] : nil;
+        url = pngData.length > 0 ? [self temporaryCaptureImageURLForPNGData:pngData] : nil;
         if (!url) {
             [self showTransientFeedbackMessage:@"The snip couldn't be read from the clipboard" duration:2.5];
             return;
@@ -7539,7 +7567,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         // as they do, and goes once it's open.
         NSData *pngData = [NSData dataWithContentsOfURL:url];
         [[NSFileManager defaultManager] removeItemAtURL:url error:NULL];
-        url = pngData.length > 0 ? [self temporaryClipboardImageURLForPNGData:pngData] : nil;
+        url = pngData.length > 0 ? [self temporaryCaptureImageURLForPNGData:pngData] : nil;
         if (!url) {
             [self showTransientFeedbackMessage:@"The screenshot couldn't be read" duration:2.5];
             return;
@@ -8206,11 +8234,16 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     [self.canvasView loadImage:image];
     self.statusFileSizeURL = nil; // Read the size again, in case the file changed.
     if ([self isTemporaryClipboardImageURL:url]) {
-        // Paste as New Image hands us a temp file; present it as an untitled document instead.
+        // Paste as New Image and Take Screenshot hand us a temp file; present it as an untitled
+        // document instead, titled by which of them made it (#332).
         self.currentImageURL = nil;
-        [self.window setTitle:STPastedImageTitle];
+        self.untitledDocumentTitle = [url.lastPathComponent hasPrefix:STCaptureTemporaryFilePrefix]
+            ? STCaptureTitleForDate([NSDate date])
+            : STPastedImageTitle;
+        [self.window setTitle:self.untitledDocumentTitle];
         [[NSFileManager defaultManager] removeItemAtURL:url error:NULL];
     } else {
+        self.untitledDocumentTitle = nil;
         self.currentImageURL = url;
         [self addRecentDocumentURL:url];
         [self.window setTitleWithRepresentedFilename:url.path];
@@ -9274,7 +9307,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         if (self.defaultSaveDirectory.length > 0) {
             [panel setDirectoryURL:[NSURL fileURLWithPath:self.defaultSaveDirectory]];
         }
-        [panel setNameFieldStringValue:[STPastedImageTitle stringByAppendingPathExtension:STProjectFileExtension]];
+        [panel setNameFieldStringValue:[(self.untitledDocumentTitle ?: STPastedImageTitle) stringByAppendingPathExtension:STProjectFileExtension]];
     }
     if ([panel runModal] != NSModalResponseOK || !panel.URL) {
         return NO;
@@ -9298,6 +9331,8 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         [alert runModal];
         return NO;
     }
+    // untitledDocumentTitle is left as it is on purpose: both Save panels name from the project
+    // first now, and the image is still unsaved, so clearing it would change nothing (#332).
     self.currentProjectURL = url;
     [self addRecentDocumentURL:url];
     [self.window setTitleWithRepresentedFilename:url.path];
@@ -9317,6 +9352,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         return NO;
     }
     self.currentImageURL = nil;
+    self.untitledDocumentTitle = nil;
     self.currentProjectURL = url;
     [self addRecentDocumentURL:url];
     [self.window setTitleWithRepresentedFilename:url.path];

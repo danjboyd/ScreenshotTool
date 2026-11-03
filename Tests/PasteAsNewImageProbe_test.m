@@ -19,7 +19,11 @@
 - (NSWindow *)window;
 - (NSURL *)currentImageURL;
 - (void)setupMenus;
+- (NSURL *)temporaryCaptureImageURLForPNGData:(NSData *)pngData;
+- (NSString *)untitledDocumentTitle;
 @end
+
+extern NSString *STCaptureTitleForDate(NSDate *date);
 
 @interface PasteAsNewImageProbeAppDelegate : AppDelegate
 @property (nonatomic, strong) NSData *probeClipboardPNGData;
@@ -139,6 +143,64 @@
     NSArray *recents = [[NSUserDefaults standardUserDefaults] arrayForKey:STDefaultsRecentDocumentsKey];
     XCTAssertFalse([recents containsObject:temporaryURL.path], @"Temp file should not be added to Open Recent");
     XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:temporaryURL.path], @"Temp file should be removed once loaded");
+}
+
+- (void)testCaptureOpensWithItsOwnUntitledTitle {
+    // #332: a capture used to open as "Pasted Image", through the same temp-file route.
+    NSURL *temporaryURL = [_appDelegate temporaryCaptureImageURLForPNGData:[self onePixelPNGData]];
+    XCTAssertNotNil(temporaryURL);
+
+    AppDelegate *captureWindow = [[AppDelegate alloc] init];
+    @try {
+        [captureWindow setupWindowAndContent];
+    } @catch (NSException *exception) {
+        NSLog(@"Skipping test: failed to connect to window server (%@)", [exception reason]);
+        [[NSFileManager defaultManager] removeItemAtURL:temporaryURL error:NULL];
+        return;
+    }
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsRecentDocumentsKey];
+
+    XCTAssertTrue([captureWindow openImageAtURL:temporaryURL], @"The capture should open");
+    NSString *title = captureWindow.window.title;
+    XCTAssertTrue([title hasPrefix:@"Screenshot "], @"A capture should be titled as one, not %@", title);
+    XCTAssertNotEqualObjects(title, @"Pasted Image");
+    XCTAssertEqualObjects(captureWindow.untitledDocumentTitle, title, @"The Save panels should offer the window's title");
+    XCTAssertNil(captureWindow.currentImageURL, @"A capture should be untitled so Save As uses the save folder");
+    NSArray *recents = [[NSUserDefaults standardUserDefaults] arrayForKey:STDefaultsRecentDocumentsKey];
+    XCTAssertFalse([recents containsObject:temporaryURL.path], @"Temp file should not be added to Open Recent");
+    XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:temporaryURL.path], @"Temp file should be removed once loaded");
+}
+
+- (void)testPastedImageOffersPastedImageAsItsSaveName {
+    _appDelegate.probeClipboardPNGData = [self onePixelPNGData];
+    [_appDelegate pasteAsNewImage:nil];
+    NSURL *temporaryURL = _appDelegate.launchedImageURL;
+    XCTAssertNotNil(temporaryURL);
+
+    AppDelegate *pastedInstance = [[AppDelegate alloc] init];
+    @try {
+        [pastedInstance setupWindowAndContent];
+    } @catch (NSException *exception) {
+        NSLog(@"Skipping test: failed to connect to window server (%@)", [exception reason]);
+        return;
+    }
+    XCTAssertTrue([pastedInstance openImageAtURL:temporaryURL]);
+    XCTAssertEqualObjects(pastedInstance.untitledDocumentTitle, @"Pasted Image");
+}
+
+- (void)testCaptureTitleIsAValidFileNameWithTheTime {
+    NSDateComponents *components = [[NSDateComponents alloc] init];
+    components.year = 2026;
+    components.month = 11;
+    components.day = 3;
+    components.hour = 9;
+    components.minute = 5;
+    components.second = 7;
+    NSDate *date = [[NSCalendar currentCalendar] dateFromComponents:components];
+    NSString *title = STCaptureTitleForDate(date);
+    XCTAssertEqualObjects(title, @"Screenshot 2026-11-03 at 09.05.07");
+    XCTAssertEqual([title rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@":/\\"]].location,
+                   (NSUInteger)NSNotFound, @"The title is also the Save name, so no path or colon characters");
 }
 
 - (void)testAnEmptyWindowTakesThePastedImageItself {
