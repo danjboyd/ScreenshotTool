@@ -9331,6 +9331,8 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         [alert runModal];
         return NO;
     }
+    // untitledDocumentTitle is left as it is on purpose: both Save panels name from the project
+    // first now, and the image is still unsaved, so clearing it would change nothing (#332).
     self.currentProjectURL = url;
     [self addRecentDocumentURL:url];
     [self.window setTitleWithRepresentedFilename:url.path];
