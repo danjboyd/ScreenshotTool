@@ -9105,6 +9105,9 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
             return;
         }
         [strongSelf refreshToolButtonIcons];
+        // Its "Running…" went to the status bar; the result goes to the HUD (#344), so put the
+        // status bar back to the image's size now rather than when that message would time out.
+        [strongSelf clearStatusMessage];
         if (!result.succeeded) {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Custom action %@ failed (status %d%@): %@",
                                      action.identifier, result.status, result.timedOut ? @", timed out" : @"",

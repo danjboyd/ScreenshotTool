@@ -10,6 +10,7 @@
 #import <AppKit/AppKit.h>
 #import "AppDelegate.h"
 #import "ScreenshotCanvasView.h"
+#import "STTextRecognizer.h"
 #import "TestEnvironmentHelpers.h"
 
 @interface ScreenshotCanvasView (StatusAfterCropTesting)
@@ -24,6 +25,20 @@
 - (void)markAnnotationsSaved;
 - (ScreenshotCanvasView *)canvasView;
 - (NSTextField *)statusTextField;
+- (void)redactDetectedText:(id)sender;
+- (void)readTextInImageRect:(NSRect)rect completion:(void (^)(NSArray<STRecognizedLine *> *lines))completion;
+@end
+
+/// Reads canned lines instead of the image: one email address.
+@interface StatusAfterCropProbeAppDelegate : AppDelegate
+@end
+
+@implementation StatusAfterCropProbeAppDelegate
+- (void)readTextInImageRect:(NSRect)rect completion:(void (^)(NSArray<STRecognizedLine *> *lines))completion {
+    (void)rect;
+    STRecognizedWord *word = [[STRecognizedWord alloc] initWithText:@"dan@example.com" bounds:NSMakeRect(20.0, 20.0, 120.0, 16.0)];
+    completion(@[ [[STRecognizedLine alloc] initWithWords:@[ word ]] ]);
+}
 @end
 
 @interface StatusAfterCropProbeTests : XCTestCase {
@@ -44,7 +59,7 @@
     _shouldSkip = NO;
     @try {
         [NSApplication sharedApplication];
-        _appDelegate = [[AppDelegate alloc] init];
+        _appDelegate = [[StatusAfterCropProbeAppDelegate alloc] init];
         [_appDelegate setupWindowAndContent];
     } @catch (NSException *exception) {
         NSLog(@"Skipping test: failed to connect to window server (%@)", [exception reason]);
@@ -95,6 +110,17 @@
     NSString *saved = _appDelegate.statusTextField.stringValue;
     XCTAssertTrue([saved hasPrefix:@"120 × 80 px  ·  PNG  ·  "], @"Saved: %@", saved);
     XCTAssertFalse([saved hasSuffix:@"unsaved"], @"Saved: %@", saved);
+}
+
+/// Every command #344 moved to the HUD used to put the status bar back to idle when its message
+/// timed out. Those that change the image (Redact, here) rely on the edit's refresh now.
+- (void)testARedactionMarksTheFileSizeUnsaved {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    XCTAssertTrue([_appDelegate openImageAtURL:[NSURL fileURLWithPath:_path]]);
+    [_appDelegate redactDetectedText:nil];
+    // The undo manager's notification refreshes it on the next turn of the run loop.
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
+    XCTAssertEqualObjects(_appDelegate.statusTextField.stringValue, @"300 × 200 px  ·  PNG  ·  unsaved");
 }
 
 @end
