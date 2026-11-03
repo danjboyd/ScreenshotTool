@@ -113,13 +113,11 @@
 }
 
 /// Every command #344 moved to the HUD used to put the status bar back to idle when its message
-/// timed out. Those that change the image (Redact, here) rely on the edit's refresh now.
+/// timed out. Those that change the image (Redact, here) refresh it themselves now.
 - (void)testARedactionMarksTheFileSizeUnsaved {
     XCTSkipIf(_shouldSkip, @"No window server");
     XCTAssertTrue([_appDelegate openImageAtURL:[NSURL fileURLWithPath:_path]]);
     [_appDelegate redactDetectedText:nil];
-    // The undo manager's notification refreshes it on the next turn of the run loop.
-    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.1]];
     XCTAssertEqualObjects(_appDelegate.statusTextField.stringValue, @"300 × 200 px  ·  PNG  ·  unsaved");
 }
 

@@ -7787,6 +7787,10 @@ NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted) {
         NSArray<NSValue *> *rects = STSensitiveTextRects(lines);
         NSUInteger added = [weakSelf.canvasView addRedactionsInImageRects:rects
                                                                actionName:@"Redact Emails and Phone Numbers"];
+        if (added > 0) {
+            // An edit: "unsaved" in the status bar now, not when the undo manager's notice comes.
+            [weakSelf updateDocumentEditedState];
+        }
         BOOL foundText = [STRecognizedText(lines) stringByTrimmingCharactersInSet:
                              [NSCharacterSet whitespaceAndNewlineCharacterSet]].length > 0;
         ScreenshotToolAppendLog([NSString stringWithFormat:@"Redact Emails and Phone Numbers: %lu lines, %lu redacted",
