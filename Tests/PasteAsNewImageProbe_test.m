@@ -204,6 +204,27 @@ extern BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString
                    (NSUInteger)NSNotFound, @"The title is also the Save name, so no path or colon characters");
 }
 
+- (void)testCaptureTitleIsInTheLocalZoneNotUTC {
+    NSDate *november = [NSDate dateWithTimeIntervalSince1970:1793736246]; // 2026-11-03 20:04:06 UTC
+    NSDate *july = [NSDate dateWithTimeIntervalSince1970:1784837046];     // 2026-07-23 20:04:06 UTC
+    NSTimeZone *original = [NSTimeZone defaultTimeZone];
+    @try {
+        [NSTimeZone setDefaultTimeZone:[NSTimeZone timeZoneWithName:@"Asia/Tokyo"]];
+        XCTAssertEqualObjects(STCaptureTitleForDate(november), @"Screenshot 2026-11-04 at 05.04.06");
+        // Windows's name for a zone, as GNUstep reports the local one there. The formatter doesn't
+        // know it and printed GMT. Only Windows has a zone by this name.
+        NSTimeZone *windowsZone = [NSTimeZone timeZoneWithName:@"Central Standard Time"];
+        if (windowsZone) {
+            [NSTimeZone setDefaultTimeZone:windowsZone];
+            XCTAssertEqualObjects(STCaptureTitleForDate(november), @"Screenshot 2026-11-03 at 14.04.06");
+            XCTAssertEqualObjects(STCaptureTitleForDate(july), @"Screenshot 2026-07-23 at 15.04.06",
+                                  @"Daylight time, by the date");
+        }
+    } @finally {
+        [NSTimeZone setDefaultTimeZone:original];
+    }
+}
+
 - (void)testAnEmptyWindowTakesThePastedImageItself {
     NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:
                                                  [NSString stringWithFormat:@"paste-%@.png", [NSUUID UUID].UUIDString]];
