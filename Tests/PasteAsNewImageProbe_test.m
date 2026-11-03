@@ -13,13 +13,19 @@
 - (void)pasteAsNewImage:(id)sender;
 - (NSData *)clipboardPNGDataForPasteAsNewImage;
 - (BOOL)launchNewWindowForImageAtURL:(NSURL *)url;
-- (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration;
 - (void)setupWindowAndContent;
 - (BOOL)openImageAtURL:(NSURL *)url;
 - (NSWindow *)window;
 - (NSURL *)currentImageURL;
 - (void)setupMenus;
+- (NSURL *)temporaryCaptureImageURLForPNGData:(NSData *)pngData;
+- (NSString *)untitledDocumentTitle;
+- (NSString *)emptyStateRecentDetailForDate:(NSDate *)date;
 @end
+
+extern NSString *STCaptureTitleForDate(NSDate *date);
+extern BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *environment);
 
 @interface PasteAsNewImageProbeAppDelegate : AppDelegate
 @property (nonatomic, strong) NSData *probeClipboardPNGData;
@@ -38,7 +44,7 @@
     return YES;
 }
 
-- (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration {
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration {
     (void)duration;
     self.lastTransientFeedbackMessage = [message copy];
 }
@@ -141,6 +147,117 @@
     XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:temporaryURL.path], @"Temp file should be removed once loaded");
 }
 
+- (void)testCaptureOpensWithItsOwnUntitledTitle {
+    // #332: a capture used to open as "Pasted Image", through the same temp-file route.
+    NSURL *temporaryURL = [_appDelegate temporaryCaptureImageURLForPNGData:[self onePixelPNGData]];
+    XCTAssertNotNil(temporaryURL);
+
+    AppDelegate *captureWindow = [[AppDelegate alloc] init];
+    @try {
+        [captureWindow setupWindowAndContent];
+    } @catch (NSException *exception) {
+        NSLog(@"Skipping test: failed to connect to window server (%@)", [exception reason]);
+        [[NSFileManager defaultManager] removeItemAtURL:temporaryURL error:NULL];
+        return;
+    }
+    [[NSUserDefaults standardUserDefaults] removeObjectForKey:STDefaultsRecentDocumentsKey];
+
+    XCTAssertTrue([captureWindow openImageAtURL:temporaryURL], @"The capture should open");
+    NSString *title = captureWindow.window.title;
+    XCTAssertTrue([title hasPrefix:@"Screenshot "], @"A capture should be titled as one, not %@", title);
+    XCTAssertNotEqualObjects(title, @"Pasted Image");
+    XCTAssertEqualObjects(captureWindow.untitledDocumentTitle, title, @"The Save panels should offer the window's title");
+    XCTAssertNil(captureWindow.currentImageURL, @"A capture should be untitled so Save As uses the save folder");
+    NSArray *recents = [[NSUserDefaults standardUserDefaults] arrayForKey:STDefaultsRecentDocumentsKey];
+    XCTAssertFalse([recents containsObject:temporaryURL.path], @"Temp file should not be added to Open Recent");
+    XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:temporaryURL.path], @"Temp file should be removed once loaded");
+}
+
+- (void)testPastedImageOffersPastedImageAsItsSaveName {
+    _appDelegate.probeClipboardPNGData = [self onePixelPNGData];
+    [_appDelegate pasteAsNewImage:nil];
+    NSURL *temporaryURL = _appDelegate.launchedImageURL;
+    XCTAssertNotNil(temporaryURL);
+
+    AppDelegate *pastedInstance = [[AppDelegate alloc] init];
+    @try {
+        [pastedInstance setupWindowAndContent];
+    } @catch (NSException *exception) {
+        NSLog(@"Skipping test: failed to connect to window server (%@)", [exception reason]);
+        return;
+    }
+    XCTAssertTrue([pastedInstance openImageAtURL:temporaryURL]);
+    XCTAssertEqualObjects(pastedInstance.untitledDocumentTitle, @"Pasted Image");
+}
+
+- (void)testCaptureTitleIsAValidFileNameWithTheTime {
+    NSDateComponents *components = [[NSDateComponents alloc] init];
+    components.year = 2026;
+    components.month = 11;
+    components.day = 3;
+    components.hour = 9;
+    components.minute = 5;
+    components.second = 7;
+    NSDate *date = [[NSCalendar currentCalendar] dateFromComponents:components];
+    NSString *title = STCaptureTitleForDate(date);
+    XCTAssertEqualObjects(title, @"Screenshot 2026-11-03 at 09.05.07");
+    XCTAssertEqual([title rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@":/\\"]].location,
+                   (NSUInteger)NSNotFound, @"The title is also the Save name, so no path or colon characters");
+}
+
+- (void)testCaptureTitleIsInTheLocalZoneNotUTC {
+    NSDate *november = [NSDate dateWithTimeIntervalSince1970:1793736246]; // 2026-11-03 20:04:06 UTC
+    NSDate *july = [NSDate dateWithTimeIntervalSince1970:1784837046];     // 2026-07-23 20:04:06 UTC
+    NSTimeZone *original = [NSTimeZone defaultTimeZone];
+    @try {
+        [NSTimeZone setDefaultTimeZone:[NSTimeZone timeZoneWithName:@"Asia/Tokyo"]];
+        XCTAssertEqualObjects(STCaptureTitleForDate(november), @"Screenshot 2026-11-04 at 05.04.06");
+        // Windows's name for a zone, as GNUstep reports the local one there. The formatter doesn't
+        // know it and printed GMT. Only Windows has a zone by this name.
+        NSTimeZone *windowsZone = [NSTimeZone timeZoneWithName:@"Central Standard Time"];
+        if (windowsZone) {
+            [NSTimeZone setDefaultTimeZone:windowsZone];
+            XCTAssertEqualObjects(STCaptureTitleForDate(november), @"Screenshot 2026-11-03 at 14.04.06");
+            XCTAssertEqualObjects(STCaptureTitleForDate(july), @"Screenshot 2026-07-23 at 15.04.06",
+                                  @"Daylight time, by the date");
+        }
+    } @finally {
+        [NSTimeZone setDefaultTimeZone:original];
+    }
+}
+
+- (void)testRecentsDatesAreInTheLocalZoneNotUTC {
+    NSDate *date = [NSDate dateWithTimeIntervalSince1970:1595534646]; // 2020-07-23 20:04:06 UTC
+    // ICU's no-break spaces before AM/PM: GNUstep's Recents text has plain ones, macOS's doesn't.
+    NSString *(^plain)(NSString *) = ^NSString *(NSString *text) {
+        text = [text stringByReplacingOccurrencesOfString:@" " withString:@" "];
+        return [text stringByReplacingOccurrencesOfString:@" " withString:@" "];
+    };
+    NSString *(^expected)(NSInteger) = ^NSString *(NSInteger secondsFromGMT) {
+        NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+        formatter.dateStyle = NSDateFormatterMediumStyle;
+        formatter.timeStyle = NSDateFormatterShortStyle;
+        formatter.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:secondsFromGMT];
+#if !defined(GNUSTEP)
+        formatter.doesRelativeDateFormatting = YES; // As the Recents list does.
+#endif
+        return plain([formatter stringFromDate:date]);
+    };
+    NSTimeZone *original = [NSTimeZone defaultTimeZone];
+    @try {
+        [NSTimeZone setDefaultTimeZone:[NSTimeZone timeZoneWithName:@"Asia/Tokyo"]];
+        XCTAssertEqualObjects(plain([_appDelegate emptyStateRecentDetailForDate:date]), expected(9 * 3600));
+        NSTimeZone *windowsZone = [NSTimeZone timeZoneWithName:@"Central Standard Time"];
+        if (windowsZone) {
+            [NSTimeZone setDefaultTimeZone:windowsZone];
+            XCTAssertEqualObjects(plain([_appDelegate emptyStateRecentDetailForDate:date]), expected(-5 * 3600),
+                                  @"Windows's zone name, in daylight time");
+        }
+    } @finally {
+        [NSTimeZone setDefaultTimeZone:original];
+    }
+}
+
 - (void)testAnEmptyWindowTakesThePastedImageItself {
     NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:
                                                  [NSString stringWithFormat:@"paste-%@.png", [NSUUID UUID].UUIDString]];
@@ -181,6 +298,17 @@
     XCTAssertTrue((mask & NSEventModifierFlagShift) != 0, @"Shortcut should use Shift");
     XCTAssertTrue((mask & NSEventModifierFlagControl) == 0, @"A Control mask is unreachable from the Ctrl key on GNUstep");
     XCTAssertEqualObjects(pasteItem.keyEquivalent.lowercaseString, @"v");
+}
+
+- (void)testAnAppImageStartsItsNewWindowsWithoutOpenapp {
+    // From an AppImage the host's openapp sourced the AppImage's relative GNUstep.conf and failed,
+    // so Paste as New Image opened nothing on a host with GNUstep: AppRun's variables say not to.
+    XCTAssertTrue(STLaunchesNewWindowsThroughOpenapp(@{}), @"A GNUstep install starts new windows through openapp");
+    XCTAssertTrue(STLaunchesNewWindowsThroughOpenapp(@{ @"APPDIR" : @"" }), @"An empty APPDIR is no AppImage");
+    XCTAssertFalse(STLaunchesNewWindowsThroughOpenapp(@{ @"APPDIR" : @"/tmp/.mount_ScreenXYZ" }),
+                   @"Inside an AppImage the executable is started directly");
+    XCTAssertFalse(STLaunchesNewWindowsThroughOpenapp(@{ @"APPIMAGE" : @"/home/user/ScreenshotTool.AppImage" }),
+                   @"APPIMAGE alone also means an AppImage");
 }
 
 @end

@@ -1,7 +1,7 @@
-From b2a5b214f3134977ba73d958ca28587f0871852a Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Todd White <todd.white@thalion.global>
 Date: Thu, 6 Aug 2026 11:58:36 -0400
-Subject: [PATCH] Fix: do not take an all zero answer to
+Subject: [PATCH 6/9] Fix: do not take an all zero answer to
  _NET_REQUEST_FRAME_EXTENTS
 
 A window manager that decorates a window reports a frame extent for it.
@@ -26,10 +26,10 @@ correctly gives 0, 0, 37, 0 either way.
  1 file changed, 35 insertions(+), 1 deletion(-)
 
 diff --git a/Source/x11/XGServerWindow.m b/Source/x11/XGServerWindow.m
-index fcc4445..e7c56e1 100644
+index 25bc7d3..a9c2f0e 100644
 --- a/Source/x11/XGServerWindow.m
 +++ b/Source/x11/XGServerWindow.m
-@@ -719,6 +719,40 @@ _get_next_prop_new_event(Display *display, XEvent *event, char *arg)
+@@ -1149,6 +1149,40 @@ _get_next_prop_new_event(Display *display, XEvent *event, char *arg)
      }
  }
  
@@ -70,7 +70,7 @@ index fcc4445..e7c56e1 100644
  - (BOOL) _tryRequestFrameExtents: (gswindow_device_t *)window
  {
    XEvent xEvent;
-@@ -751,7 +785,7 @@ _get_next_prop_new_event(Display *display, XEvent *event, char *arg)
+@@ -1181,7 +1215,7 @@ _get_next_prop_new_event(Display *display, XEvent *event, char *arg)
        else if (XCheckIfEvent(dpy, &xEvent, _get_next_prop_new_event,
                               (char*)(&event_data)))
          {
@@ -79,6 +79,3 @@ index fcc4445..e7c56e1 100644
          }
        else
          {
--- 
-2.47.3
-

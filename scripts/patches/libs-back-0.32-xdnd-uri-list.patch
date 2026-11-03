@@ -1,7 +1,7 @@
-From d718f402094a0f16eb86c9980c73d965b8226c6b Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Daniel Boyd <danieljboyd@icloud.com>
 Date: Fri, 16 Oct 2026 16:19:21 -0500
-Subject: [PATCH 2/3] x11: answer TARGETS and text/uri-list for drags, refuse
+Subject: [PATCH 8/9] x11: answer TARGETS and text/uri-list for drags, refuse
  the rest
 
 A drag of file names (NSFilenamesPboardType) offers the drop target
@@ -59,7 +59,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
  1 file changed, 88 insertions(+), 3 deletions(-)
 
 diff --git a/Source/x11/XGServerEvent.m b/Source/x11/XGServerEvent.m
-index c98ecb3..c08aef0 100644
+index 4be064c..5072462 100644
 --- a/Source/x11/XGServerEvent.m
 +++ b/Source/x11/XGServerEvent.m
 @@ -44,6 +44,7 @@
@@ -70,7 +70,7 @@ index c98ecb3..c08aef0 100644
  
  #include "x11/XGServerWindow.h"
  #include "x11/XGInputServer.h"
-@@ -98,6 +99,26 @@ static KeySym _help_keysyms[2];
+@@ -97,6 +98,26 @@ static KeySym _help_keysyms[2];
  static BOOL _is_keyboard_initialized = NO;
  static BOOL _mod_ignore_shift = NO;
  
@@ -97,7 +97,7 @@ index c98ecb3..c08aef0 100644
  /*
    Mouse properties. In comments below specified defaults key and default value.
  */
-@@ -1890,7 +1911,37 @@ posixFileDescriptor: (NSPosixFileDescriptor*)fileDescriptor
+@@ -1911,7 +1932,37 @@ posixFileDescriptor: (NSPosixFileDescriptor*)fileDescriptor
            NSPasteboard *pb = [NSPasteboard pasteboardWithName: NSDragPboard];
            NSArray *types = [pb types];
            NSData *data = nil;
@@ -136,7 +136,7 @@ index c98ecb3..c08aef0 100644
  
            if (((xType == generic.UTF8_STRING_ATOM) || 
                 (xType == XA_STRING) || 
-@@ -1908,6 +1959,33 @@ posixFileDescriptor: (NSPosixFileDescriptor*)fileDescriptor
+@@ -1929,6 +1980,33 @@ posixFileDescriptor: (NSPosixFileDescriptor*)fileDescriptor
                    data = [s dataUsingEncoding: NSISOLatin1StringEncoding];
                  }
              }
@@ -170,7 +170,7 @@ index c98ecb3..c08aef0 100644
            // FIXME: Add support for more types. See: xpbs.m
  
            if (data != nil)
-@@ -1915,8 +1993,15 @@ posixFileDescriptor: (NSPosixFileDescriptor*)fileDescriptor
+@@ -1936,8 +2014,15 @@ posixFileDescriptor: (NSPosixFileDescriptor*)fileDescriptor
                DndClass dnd = xdnd();
  
                // Send the data to the other process
@@ -188,6 +188,3 @@ index c98ecb3..c08aef0 100644
              }
          }
          break;
--- 
-2.47.3
-

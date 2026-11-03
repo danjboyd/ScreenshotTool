@@ -1,6 +1,6 @@
 /*
  * HudCopyFeedbackProbe_test.m
- * Ensures copy feedback shows a HUD when the status bar is hidden.
+ * Ensures command results show in the HUD, whether the status bar is hidden or shown.
  */
 
 #import <XCTest/XCTest.h>
@@ -12,10 +12,12 @@
 @interface AppDelegate (HudCopyFeedbackTesting)
 - (void)setupWindowAndContent;
 - (void)preferencesController:(PreferencesWindowController *)controller didToggleStatusBar:(BOOL)show;
-- (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration;
 - (void)hideHUDMessage;
 - (NSWindow *)window;
 - (NSView *)hudView;
+- (NSTextField *)statusTextField;
+- (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
 @end
 
 @interface HudCopyFeedbackProbeTests : XCTestCase {
@@ -53,7 +55,7 @@
     XCTSkipIf(_shouldSkip, @"No window server");
 
     [_appDelegate preferencesController:nil didToggleStatusBar:NO];
-    [_appDelegate showCopyFeedbackMessage:@"Copied image to clipboard" duration:0.25];
+    [_appDelegate showCommandResultMessage:@"Copied image to clipboard" duration:0.25];
 
     [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
 
@@ -82,6 +84,40 @@
     // On macOS the notice is a child window, ordered out when it hides.
     XCTAssertFalse(hudView.window.isVisible, @"HUD window should hide after dismissing");
 #endif
+}
+
+- (BOOL)hudIsShowing {
+#if defined(GNUSTEP)
+    return _appDelegate.hudView && !_appDelegate.hudView.isHidden && _appDelegate.hudView.superview;
+#else
+    return _appDelegate.hudView.window.isVisible;
+#endif
+}
+
+/// A command's result goes to the HUD even with the status bar on, where it used to be small grey
+/// text for a moment (#333).
+- (void)testCommandResultsUseTheHudWithTheStatusBarShown {
+    XCTSkipIf(_shouldSkip, @"No window server");
+
+    [_appDelegate preferencesController:nil didToggleStatusBar:YES];
+    NSString *before = _appDelegate.statusTextField.stringValue ?: @"";
+    [_appDelegate showCommandResultMessage:@"No email addresses or phone numbers found" duration:2.5];
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+
+    XCTAssertTrue([self hudIsShowing], @"A command result should show in the HUD with the status bar on");
+    XCTAssertEqualObjects(_appDelegate.statusTextField.stringValue ?: @"", before,
+                          @"The status bar should keep its passive text");
+    [_appDelegate hideHUDMessage];
+}
+
+/// Passive status still goes to the status bar when it's shown.
+- (void)testPassiveStatusStaysInTheStatusBar {
+    XCTSkipIf(_shouldSkip, @"No window server");
+
+    [_appDelegate preferencesController:nil didToggleStatusBar:YES];
+    [_appDelegate showTransientFeedbackMessage:@"Echo…" duration:5.0];
+    XCTAssertEqualObjects(_appDelegate.statusTextField.stringValue, @"Echo…");
+    XCTAssertFalse([self hudIsShowing], @"Passive status shouldn't take the HUD");
 }
 
 @end

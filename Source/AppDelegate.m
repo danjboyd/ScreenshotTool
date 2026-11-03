@@ -214,6 +214,37 @@ static NSString *STDefaultLogFilePath(void) {
 }
 
 static NSString *const STPastedImageTitle = @"Pasted Image";
+/// Temp files for Paste as New Image (and dropped image data) start with this; captures with
+/// STCaptureTemporaryFilePrefix. The prefix tells the opening window, maybe in another process on
+/// GNUstep, which untitled title to use (#332).
+static NSString *const STClipboardTemporaryFilePrefix = @"clipboard-";
+static NSString *const STCaptureTemporaryFilePrefix = @"capture-";
+
+/// The zone to format `date` in, for a date formatter: the default zone, which is the local one
+/// unless the app set another. On GNUstep it's that zone's offset on that date: on Windows the
+/// local zone has Windows's name ("Central Standard Time"), which the formatter doesn't know, so it
+/// printed GMT; and without an explicit zone, a formatter with date and time styles ignores the
+/// default.
+static NSTimeZone *STFormatterTimeZoneForDate(NSDate *date) {
+    NSTimeZone *zone = [NSTimeZone defaultTimeZone];
+#if defined(GNUSTEP)
+    return [NSTimeZone timeZoneForSecondsFromGMT:[zone secondsFromGMTForDate:date]];
+#else
+    (void)date;
+    return zone;
+#endif
+}
+
+/// An untitled capture's title, and the Save panel's default name: "Screenshot 2026-11-03 at 10.15.32".
+/// Periods, not colons, so it's a valid file name everywhere.
+NSString *STCaptureTitleForDate(NSDate *date) {
+    NSDate *when = date ?: [NSDate date];
+    NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+    formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    formatter.dateFormat = @"yyyy-MM-dd 'at' HH.mm.ss";
+    formatter.timeZone = STFormatterTimeZoneForDate(when);
+    return [@"Screenshot " stringByAppendingString:[formatter stringFromDate:when]];
+}
 
 static NSString *STTemporaryClipboardDirectory(void) {
     return [NSTemporaryDirectory() stringByAppendingPathComponent:@"ScreenshotToolClipboard"];
@@ -1636,6 +1667,9 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) NSURL *currentImageURL;
 /// The project file this window was opened from or last saved to (#32).
 @property (nonatomic, strong, nullable) NSURL *currentProjectURL;
+/// An untitled window's title ("Pasted Image", or a capture's "Screenshot …"), which the Save
+/// panels also offer as the name (#332). Nil once the window shows a file.
+@property (nonatomic, copy, nullable) NSString *untitledDocumentTitle;
 /// The canvas's fingerprint when it was last opened or saved; a different one means unsaved changes.
 @property (nonatomic, strong, nullable) NSData *savedAnnotationFingerprint;
 /// The annotations as they were when closing the window settled them (saved or discarded), so the
@@ -1683,9 +1717,11 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 - (BOOL)clipboardHasImage;
 - (void)refreshPasteAvailability;
 - (NSURL *)temporaryClipboardImageURLForPNGData:(NSData *)pngData;
+- (NSURL *)temporaryCaptureImageURLForPNGData:(NSData *)pngData;
 - (BOOL)isTemporaryClipboardImageURL:(NSURL *)url;
 - (BOOL)launchNewWindowForImageAtURL:(NSURL *)url;
 - (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration;
 @end
 
 #if !defined(GNUSTEP)
@@ -2524,6 +2560,17 @@ static AppDelegate *STFrontDocument(void) {
     [self reflectZoomSelection];
     // After the window is up: reading the clipboard can wait for the pasteboard server.
     [self performSelector:@selector(refreshPasteAvailability) withObject:nil afterDelay:0.0];
+
+    // For scripts/check_appimage_runtime.sh only: open this image in a new window, as Paste as
+    // New Image does, and copy the image, to show that the new process starts on the AppImage's
+    // GNUstep and that Copy goes through the AppImage's pasteboard server. The new window opens
+    // that image itself, so it starts no other.
+    NSString *smokeNewWindow = [[NSProcessInfo processInfo] environment][@"SCREENSHOT_TOOL_SMOKE_NEW_WINDOW"];
+    if (smokeNewWindow.length > 0 && [self.canvasView hasImage] &&
+        ![self.currentImageURL.path isEqualToString:smokeNewWindow]) {
+        [self launchNewWindowForImageAtURL:[NSURL fileURLWithPath:smokeNewWindow]];
+        [self copy:nil];
+    }
 }
 
 /// The image named by application:openFile: or on the command line, if any.
@@ -4668,6 +4715,8 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 /// "1600 × 1000 px · PNG · 214 KB": the image's pixel size and, with a file, its format and size.
+/// With unsaved changes (a crop, say) the file's size isn't the image's any more, so it says
+/// "unsaved" until the next save.
 - (NSString *)idleStatusText {
     NSImage *image = self.canvasView.image;
     if (!image) {
@@ -4686,6 +4735,9 @@ static id STInfoValueForKey(NSString *key) {
         text = [text stringByAppendingFormat:@"  ·  %@", extension.uppercaseString];
     }
     NSString *fileSize = [self statusFileSizeForURL:self.currentImageURL];
+    if (fileSize.length > 0 && [self hasUnsavedChanges]) {
+        fileSize = @"unsaved";
+    }
     if (fileSize.length > 0) {
         text = [text stringByAppendingFormat:@"  ·  %@", fileSize];
     }
@@ -5902,19 +5954,21 @@ static BOOL STCanOfferClipboardScreenshots(void) {
     }
 }
 
+/// The HUD is a brief notice: 1.5s for "until replaced", at most 2s.
+static NSTimeInterval STHUDDurationForFeedback(NSTimeInterval duration) {
+    if (duration <= 0.0) {
+        return 1.5;
+    }
+    return MIN(duration, 2.0);
+}
+
 - (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration {
     if (self.statusBarVisiblePreference) {
         [self showStatusMessage:message duration:duration];
         return;
     }
 
-    NSTimeInterval hudDuration = duration;
-    if (hudDuration <= 0.0) {
-        hudDuration = 1.5;
-    } else if (hudDuration > 2.0) {
-        hudDuration = 2.0;
-    }
-    [self showHUDMessage:message duration:hudDuration];
+    [self showHUDMessage:message duration:STHUDDurationForFeedback(duration)];
 }
 
 - (void)clearStatusMessage {
@@ -5936,14 +5990,19 @@ static BOOL STCanOfferClipboardScreenshots(void) {
     }
 }
 
-- (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration {
-    ScreenshotToolAppendLog([NSString stringWithFormat:@"copy feedback message=\"%@\" duration=%.2f statusBarVisible=%@", message ?: @"", duration, self.statusBarVisiblePreference ? @"YES" : @"NO"]);
-    [self showTransientFeedbackMessage:message duration:duration];
+/// How a command the user just ran went (Copy, Copy Text, Redact, Share, Crop, a custom action…):
+/// always in the HUD, even with the status bar on, where a short result was easy to miss (#333).
+/// Passive status ("Reading text…", a running action, size and zoom) stays with
+/// showTransientFeedbackMessage: and the status bar.
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration {
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"command result message=\"%@\" duration=%.2f statusBarVisible=%@", message ?: @"", duration, self.statusBarVisiblePreference ? @"YES" : @"NO"]);
+    [self showHUDMessage:message duration:STHUDDurationForFeedback(duration)];
 }
 
 - (void)showHUDMessage:(NSString *)message duration:(NSTimeInterval)duration {
-    if (message.length == 0 || !self.window) {
-        ScreenshotToolAppendLog(@"showHUDMessage skipped (empty message or missing window)");
+    // Not for a window that isn't on screen: attaching the notice would order it in.
+    if (message.length == 0 || !self.window || !self.window.isVisible) {
+        ScreenshotToolAppendLog(@"showHUDMessage skipped (empty message, or no window on screen)");
         return;
     }
     [self.hudDismissTimer invalidate];
@@ -6423,6 +6482,7 @@ static BOOL STCanOfferClipboardScreenshots(void) {
         formatter.doesRelativeDateFormatting = YES;
 #endif
     }
+    formatter.timeZone = STFormatterTimeZoneForDate(date);
     NSString *text = [formatter stringFromDate:date] ?: @"";
 #if defined(GNUSTEP)
     // ICU puts a narrow no-break space before AM/PM, which GNUstep's text drawing has no glyph
@@ -7092,7 +7152,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
                 [panel setDirectoryURL:dirURL];
             }
         }
-        [panel setNameFieldStringValue:[STPastedImageTitle stringByAppendingPathExtension:@"png"]];
+        [panel setNameFieldStringValue:[(self.untitledDocumentTitle ?: STPastedImageTitle) stringByAppendingPathExtension:@"png"]];
     }
 
     if ([panel runModal] != NSModalResponseOK) {
@@ -7132,6 +7192,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     }
 
     self.currentImageURL = destination;
+    self.untitledDocumentTitle = nil;
     [self addRecentDocumentURL:destination];
     [self.window setTitleWithRepresentedFilename:destination.path];
     [self markAnnotationsSaved];
@@ -7141,13 +7202,13 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 - (void)copy:(id)sender {
     (void)sender;
     if (![self.canvasView hasImage]) {
-        [self showCopyFeedbackMessage:@"No image to copy" duration:2.0];
+        [self showCommandResultMessage:@"No image to copy" duration:2.0];
         return;
     }
 
     NSImage *flattened = [self.canvasView flattenedImageForSelection];
     if (!flattened) {
-        [self showCopyFeedbackMessage:@"Copy failed" duration:2.0];
+        [self showCommandResultMessage:@"Copy failed" duration:2.0];
         return;
     }
 
@@ -7162,7 +7223,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         [types addObject:NSPasteboardTypeTIFF];
     }
     if (types.count == 0) {
-        [self showCopyFeedbackMessage:@"Copy failed" duration:2.0];
+        [self showCommandResultMessage:@"Copy failed" duration:2.0];
         return;
     }
 
@@ -7190,7 +7251,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
                              mirroredWayland ? @"YES" : @"NO"]);
 
     if (!wrotePasteboard && !mirroredWayland) {
-        [self showCopyFeedbackMessage:@"Copy failed" duration:2.0];
+        [self showCommandResultMessage:@"Copy failed" duration:2.0];
         return;
     }
 
@@ -7202,7 +7263,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     } else {
         status = x11OnlyCopy ? @"Copied image to X11 clipboard" : @"Copied image to clipboard";
     }
-    [self showCopyFeedbackMessage:status duration:3.0];
+    [self showCommandResultMessage:status duration:3.0];
 }
 
 /// The pasteboard Paste as New Image reads (tests substitute a private one).
@@ -7401,6 +7462,15 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 }
 
 - (NSURL *)temporaryClipboardImageURLForPNGData:(NSData *)pngData {
+    return [self temporaryImageURLForPNGData:pngData prefix:STClipboardTemporaryFilePrefix];
+}
+
+/// Like a pasted image's temp file, but the window it opens in is titled as a capture (#332).
+- (NSURL *)temporaryCaptureImageURLForPNGData:(NSData *)pngData {
+    return [self temporaryImageURLForPNGData:pngData prefix:STCaptureTemporaryFilePrefix];
+}
+
+- (NSURL *)temporaryImageURLForPNGData:(NSData *)pngData prefix:(NSString *)prefix {
     if (pngData.length == 0) {
         return nil;
     }
@@ -7417,7 +7487,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         return nil;
     }
 
-    NSString *filename = [NSString stringWithFormat:@"clipboard-%@.png", [NSUUID UUID].UUIDString];
+    NSString *filename = [NSString stringWithFormat:@"%@%@.png", prefix, [NSUUID UUID].UUIDString];
     NSURL *url = [NSURL fileURLWithPath:[root stringByAppendingPathComponent:filename]];
     if (![pngData writeToURL:url options:NSDataWritingAtomic error:&error]) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: failed to write temp image %@ (%@)",
@@ -7426,6 +7496,15 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         return nil;
     }
     return url;
+}
+
+/// Whether GNUstep starts a new window's process through openapp, which sets up the environment
+/// of a GNUstep install. Not from an AppImage: there the host's openapp ran (the AppImage's own
+/// isn't on PATH), sourced the AppImage's GNUstep.conf, whose paths are relative, and failed, so
+/// Paste as New Image opened nothing on a host with GNUstep. AppRun has already set up the
+/// environment the executable needs, and NSTask passes it on.
+BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *environment) {
+    return [environment[@"APPDIR"] length] == 0 && [environment[@"APPIMAGE"] length] == 0;
 }
 
 - (BOOL)launchNewWindowForImageAtURL:(NSURL *)url {
@@ -7452,10 +7531,12 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         NSTask *task = [[NSTask alloc] init];
 #if defined(GNUSTEP)
         NSString *openappPath = nil;
-        if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/GNUstep/System/Tools/openapp"]) {
-            openappPath = @"/usr/GNUstep/System/Tools/openapp";
-        } else {
-            openappPath = STExecutablePathInPATH(@"openapp");
+        if (STLaunchesNewWindowsThroughOpenapp([[NSProcessInfo processInfo] environment])) {
+            if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/GNUstep/System/Tools/openapp"]) {
+                openappPath = @"/usr/GNUstep/System/Tools/openapp";
+            } else {
+                openappPath = STExecutablePathInPATH(@"openapp");
+            }
         }
         NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
         if (openappPath.length > 0 && bundlePath.length > 0) {
@@ -7474,8 +7555,11 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         }
 
         [task launch];
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: launched new instance for %@",
-                                 url.path ?: @"<nil>"]);
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: launched new instance for %@ (%@)",
+                                 url.path ?: @"<nil>", task.launchPath]);
+        // A process that ends at once with an error opened no window (as the host's openapp did
+        // from the AppImage): say so rather than nothing.
+        [self performSelector:@selector(reportFailedNewWindowLaunch:) withObject:task afterDelay:2.0];
         return YES;
     } @catch (NSException *exception) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage launch exception for %@ (%@ - %@)",
@@ -7484,6 +7568,15 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
                                  exception.reason ?: @"<no reason>"]);
     }
     return NO;
+}
+
+- (void)reportFailedNewWindowLaunch:(NSTask *)task {
+    if (task.isRunning || task.terminationStatus == 0) {
+        return;
+    }
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: %@ exited with status %d",
+                             task.launchPath, task.terminationStatus]);
+    [self showCommandResultMessage:@"Couldn't open a new window" duration:2.5];
 }
 
 #pragma mark - Take Screenshot
@@ -7528,9 +7621,9 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     }
     if (result == STScreenshotCaptureResultClipboard) {
         NSData *pngData = [self clipboardPNGDataForPasteAsNewImage];
-        url = pngData.length > 0 ? [self temporaryClipboardImageURLForPNGData:pngData] : nil;
+        url = pngData.length > 0 ? [self temporaryCaptureImageURLForPNGData:pngData] : nil;
         if (!url) {
-            [self showTransientFeedbackMessage:@"The snip couldn't be read from the clipboard" duration:2.5];
+            [self showCommandResultMessage:@"The snip couldn't be read from the clipboard" duration:2.5];
             return;
         }
 #if !defined(GNUSTEP)
@@ -7539,9 +7632,9 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         // as they do, and goes once it's open.
         NSData *pngData = [NSData dataWithContentsOfURL:url];
         [[NSFileManager defaultManager] removeItemAtURL:url error:NULL];
-        url = pngData.length > 0 ? [self temporaryClipboardImageURLForPNGData:pngData] : nil;
+        url = pngData.length > 0 ? [self temporaryCaptureImageURLForPNGData:pngData] : nil;
         if (!url) {
-            [self showTransientFeedbackMessage:@"The screenshot couldn't be read" duration:2.5];
+            [self showCommandResultMessage:@"The screenshot couldn't be read" duration:2.5];
             return;
         }
 #endif
@@ -7559,13 +7652,13 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 #if !defined(GNUSTEP)
     // The front window if it's empty, otherwise a new one.
     if (![[self applicationController] openURLInDocumentWindow:url preferring:nil]) {
-        [STFrontDocument() showTransientFeedbackMessage:@"Unable to open the screenshot" duration:2.5];
+        [STFrontDocument() showCommandResultMessage:@"Unable to open the screenshot" duration:2.5];
     }
 #else
     if (![self.canvasView hasImage]) {
         [self openImageAtURL:url];
     } else if (![self launchNewWindowForImageAtURL:url]) {
-        [self showTransientFeedbackMessage:@"Unable to open the screenshot in a new window" duration:2.5];
+        [self showCommandResultMessage:@"Unable to open the screenshot in a new window" duration:2.5];
     }
 #endif
 }
@@ -7576,30 +7669,30 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     [self setClipboardScreenshotOffered:NO];
     NSData *pngData = [self clipboardPNGDataForPasteAsNewImage];
     if (pngData.length == 0) {
-        [self showTransientFeedbackMessage:@"Clipboard does not contain an image" duration:2.0];
+        [self showCommandResultMessage:@"Clipboard does not contain an image" duration:2.0];
         return;
     }
 
     NSURL *temporaryURL = [self temporaryClipboardImageURLForPNGData:pngData];
     if (!temporaryURL) {
-        [self showTransientFeedbackMessage:@"Unable to prepare clipboard image" duration:2.0];
+        [self showCommandResultMessage:@"Unable to prepare clipboard image" duration:2.0];
         return;
     }
 
     if (![self launchNewWindowForImageAtURL:temporaryURL]) {
-        [self showTransientFeedbackMessage:@"Unable to open clipboard image in a new window" duration:2.0];
+        [self showCommandResultMessage:@"Unable to open clipboard image in a new window" duration:2.0];
     }
 }
 
 - (void)cropImage:(id)sender {
     if (![self.canvasView hasSelection]) {
         NSBeep();
-        [self showStatusMessage:@"No active selection" duration:2.0];
+        [self showCommandResultMessage:@"No active selection" duration:2.0];
         return;
     }
 
     if (![self.canvasView cropToActiveSelection]) {
-        [self showStatusMessage:@"Crop failed" duration:2.0];
+        [self showCommandResultMessage:@"Crop failed" duration:2.0];
         return;
     }
 
@@ -7607,7 +7700,9 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         [self resizeWindowToImageSize:self.canvasView.image.size];
     }
     [self.window makeFirstResponder:self.canvasView];
-    [self showStatusMessage:@"Cropped image" duration:2.0];
+    // The result goes to the HUD now (#344), so the status bar has to be told the new size.
+    [self refreshStatusZoomControls];
+    [self showCommandResultMessage:@"Cropped image" duration:2.0];
 }
 
 // The Edit menu's canvas commands, for this window's canvas.
@@ -7638,7 +7733,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 - (void)readTextInImageRect:(NSRect)rect completion:(void (^)(NSArray<STRecognizedLine *> *lines))completion {
     NSURL *url = [self exportImageForTextRecognition];
     if (!url) {
-        [self showCopyFeedbackMessage:@"The image couldn't be read" duration:2.5];
+        [self showCommandResultMessage:@"The image couldn't be read" duration:2.5];
         return;
     }
     self.readingText = YES;
@@ -7654,36 +7749,55 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         [strongSelf clearStatusMessage];
         if (!lines) {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Text recognition failed: %@", failure ?: @"unknown"]);
-            [strongSelf showCopyFeedbackMessage:@"The text couldn't be read" duration:2.5];
+            [strongSelf showCommandResultMessage:@"The text couldn't be read" duration:2.5];
             return;
         }
         completion(lines);
     }];
 }
 
+/// Whether a read is still running, saying so: Copy Text and Redact Emails and Phone Numbers
+/// started again during one used to do nothing visible (#333).
+- (BOOL)reportReadingTextInProgress {
+    if (!self.readingText) {
+        return NO;
+    }
+    [self showCommandResultMessage:@"Still reading text…" duration:2.0];
+    return YES;
+}
+
 /// Copies the text in the selection, or in the whole image, read on this computer.
 - (void)copyText:(id)sender {
     (void)sender;
-    if (![self.canvasView hasImage] || self.readingText) {
+    if (![self.canvasView hasImage] || [self reportReadingTextInProgress]) {
         return;
     }
     __weak typeof(self) weakSelf = self;
     [self readTextInImageRect:[self.canvasView selectionImageRect] completion:^(NSArray<STRecognizedLine *> *lines) {
         NSString *text = STRecognizedText(lines);
         if (text.length == 0) {
-            [weakSelf showCopyFeedbackMessage:@"No text found" duration:2.0];
+            [weakSelf showCommandResultMessage:@"No text found" duration:2.0];
             return;
         }
         [weakSelf copyCustomActionText:text];
-        [weakSelf showCopyFeedbackMessage:@"Copied text (read on this computer)" duration:2.5];
+        [weakSelf showCommandResultMessage:@"Copied text (read on this computer)" duration:2.5];
     }];
+}
+
+/// What Redact Emails and Phone Numbers says when it's done, so it never finishes silently: "no
+/// text" (nothing to read, or the engine read nothing) is told apart from "nothing matched" (#333).
+NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted) {
+    if (redacted > 0) {
+        return [NSString stringWithFormat:@"Redacted %lu %@", (unsigned long)redacted, redacted == 1 ? @"item" : @"items"];
+    }
+    return foundText ? @"No email addresses or phone numbers found" : @"No text found in the image";
 }
 
 /// Redacts the email addresses and phone numbers read in the image, as ordinary redactions that
 /// can be moved, deleted or undone together.
 - (void)redactDetectedText:(id)sender {
     (void)sender;
-    if (![self.canvasView hasImage] || self.readingText) {
+    if (![self.canvasView hasImage] || [self reportReadingTextInProgress]) {
         return;
     }
     __weak typeof(self) weakSelf = self;
@@ -7691,13 +7805,15 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         NSArray<NSValue *> *rects = STSensitiveTextRects(lines);
         NSUInteger added = [weakSelf.canvasView addRedactionsInImageRects:rects
                                                                actionName:@"Redact Emails and Phone Numbers"];
-        if (added == 0) {
-            [weakSelf showCopyFeedbackMessage:@"No emails or phone numbers found" duration:2.5];
-        } else {
-            [weakSelf showCopyFeedbackMessage:[NSString stringWithFormat:@"Redacted %lu %@", (unsigned long)added,
-                                               added == 1 ? @"item" : @"items"]
-                                     duration:2.5];
+        if (added > 0) {
+            // An edit: "unsaved" in the status bar now, not when the undo manager's notice comes.
+            [weakSelf updateDocumentEditedState];
         }
+        BOOL foundText = [STRecognizedText(lines) stringByTrimmingCharactersInSet:
+                             [NSCharacterSet whitespaceAndNewlineCharacterSet]].length > 0;
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Redact Emails and Phone Numbers: %lu lines, %lu redacted",
+                                 (unsigned long)lines.count, (unsigned long)added]);
+        [weakSelf showCommandResultMessage:STRedactDetectedFeedback(foundText, added) duration:2.5];
     }];
 }
 
@@ -8206,11 +8322,16 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     [self.canvasView loadImage:image];
     self.statusFileSizeURL = nil; // Read the size again, in case the file changed.
     if ([self isTemporaryClipboardImageURL:url]) {
-        // Paste as New Image hands us a temp file; present it as an untitled document instead.
+        // Paste as New Image and Take Screenshot hand us a temp file; present it as an untitled
+        // document instead, titled by which of them made it (#332).
         self.currentImageURL = nil;
-        [self.window setTitle:STPastedImageTitle];
+        self.untitledDocumentTitle = [url.lastPathComponent hasPrefix:STCaptureTemporaryFilePrefix]
+            ? STCaptureTitleForDate([NSDate date])
+            : STPastedImageTitle;
+        [self.window setTitle:self.untitledDocumentTitle];
         [[NSFileManager defaultManager] removeItemAtURL:url error:NULL];
     } else {
+        self.untitledDocumentTitle = nil;
         self.currentImageURL = url;
         [self addRecentDocumentURL:url];
         [self.window setTitleWithRepresentedFilename:url.path];
@@ -8534,16 +8655,16 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         // under Wayland is the X11 clipboard (the button mirrors to Wayland's too).
         NSString *what = [self.canvasView hasSelection] ? @"selection" : @"image";
         NSString *where = STScreenshotToolIsWaylandSession() ? @"X11 clipboard" : @"clipboard";
-        [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Copied %@ to %@", what, where] duration:3.0];
+        [self showCommandResultMessage:[NSString stringWithFormat:@"Copied %@ to %@", what, where] duration:3.0];
         return;
     }
     if (STIsSharingService(sharingService, GSSharingServiceNameSaveCopy)) {
-        [self showCopyFeedbackMessage:@"Saved a copy" duration:2.5];
+        [self showCommandResultMessage:@"Saved a copy" duration:2.5];
         return;
     }
     NSString *remote = STRcloneRemoteOfService(sharingService);
     if (remote) {
-        [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Uploaded to %@; link copied", remote] duration:3.0];
+        [self showCommandResultMessage:[NSString stringWithFormat:@"Uploaded to %@; link copied", remote] duration:3.0];
         return;
     }
     // These hand the image to another app, whose window is the news; libs-sharing reports them
@@ -8561,7 +8682,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
     }
 #endif
     NSString *name = sharingService.menuItemTitle.length > 0 ? sharingService.menuItemTitle : sharingService.title;
-    [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Shared with %@", name] duration:2.5];
+    [self showCommandResultMessage:[NSString stringWithFormat:@"Shared with %@", name] duration:2.5];
 }
 
 /// Why a share failed; a cancelled one says nothing.
@@ -8588,7 +8709,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
     }
 #endif
     ScreenshotToolAppendLog([NSString stringWithFormat:@"Share with %@ failed: %@", name, error]);
-    [self showCopyFeedbackMessage:[NSString stringWithFormat:@"Couldn't share with %@: %@", name, reason] duration:4.0];
+    [self showCommandResultMessage:[NSString stringWithFormat:@"Couldn't share with %@: %@", name, reason] duration:4.0];
 }
 #endif
 
@@ -8949,14 +9070,14 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
     }
     AppDelegate *owner = [self customActionsOwner];
     if ([self isRunningCustomAction:action]) {
-        [self showCopyFeedbackMessage:[NSString stringWithFormat:@"%@ is still running", action.title] duration:2.0];
+        [self showCommandResultMessage:[NSString stringWithFormat:@"%@ is still running", action.title] duration:2.0];
         return;
     }
     if (choice.length == 0 && action.choicesCommand) {
         choice = [self choicesForCustomAction:action].firstObject;
         if (choice.length == 0) {
             [self refreshChoicesForCustomAction:action];
-            [self showCopyFeedbackMessage:[NSString stringWithFormat:@"%@: its choices aren't listed yet", action.title] duration:2.5];
+            [self showCommandResultMessage:[NSString stringWithFormat:@"%@: its choices aren't listed yet", action.title] duration:2.5];
             return;
         }
     }
@@ -8976,7 +9097,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 #endif
     if (!png || ![[NSFileManager defaultManager] createDirectoryAtPath:folder withIntermediateDirectories:YES attributes:nil error:NULL] ||
         ![png writeToFile:file atomically:YES]) {
-        [self showCopyFeedbackMessage:[NSString stringWithFormat:@"%@ failed: the image couldn't be saved", action.title] duration:3.0];
+        [self showCommandResultMessage:[NSString stringWithFormat:@"%@ failed: the image couldn't be saved", action.title] duration:3.0];
         [[NSFileManager defaultManager] removeItemAtPath:folder error:NULL];
         return;
     }
@@ -8992,7 +9113,8 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
     [self refreshToolButtonIcons];
     NSString *running = choice.length > 0 ? [NSString stringWithFormat:@"%@ (%@)…", action.title, choice]
                                           : [NSString stringWithFormat:@"%@…", action.title];
-    [self showCopyFeedbackMessage:running duration:MIN(action.timeout, 30.0)];
+    // While it runs: status, not a result, so the status bar shows it for as long as it runs.
+    [self showTransientFeedbackMessage:running duration:MIN(action.timeout, 30.0)];
     ScreenshotToolAppendLog([NSString stringWithFormat:@"Custom action %@: running %@", action.identifier,
                              [arguments componentsJoinedByString:@" "]]);
 
@@ -9005,6 +9127,9 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
             return;
         }
         [strongSelf refreshToolButtonIcons];
+        // Its "Running…" went to the status bar; the result goes to the HUD (#344), so put the
+        // status bar back to the image's size now rather than when that message would time out.
+        [strongSelf clearStatusMessage];
         if (!result.succeeded) {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Custom action %@ failed (status %d%@): %@",
                                      action.identifier, result.status, result.timedOut ? @", timed out" : @"",
@@ -9015,14 +9140,14 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         if (action.output == STCustomActionOutputClipboard) {
             NSString *text = [result.standardOutput stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
             if (text.length == 0) {
-                [strongSelf showCopyFeedbackMessage:[NSString stringWithFormat:@"%@: done, nothing to copy", action.title] duration:2.5];
+                [strongSelf showCommandResultMessage:[NSString stringWithFormat:@"%@: done, nothing to copy", action.title] duration:2.5];
                 return;
             }
             [strongSelf copyCustomActionText:text];
             NSString *shown = text.length > 60 ? [[text substringToIndex:59] stringByAppendingString:@"…"] : text;
-            [strongSelf showCopyFeedbackMessage:[NSString stringWithFormat:@"Copied %@", shown] duration:3.0];
+            [strongSelf showCommandResultMessage:[NSString stringWithFormat:@"Copied %@", shown] duration:3.0];
         } else {
-            [strongSelf showCopyFeedbackMessage:[NSString stringWithFormat:@"%@: done", action.title] duration:2.0];
+            [strongSelf showCommandResultMessage:[NSString stringWithFormat:@"%@: done", action.title] duration:2.0];
         }
     }];
 }
@@ -9045,7 +9170,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 }
 
 - (void)reportCustomAction:(STCustomAction *)action failure:(NSString *)summary details:(nullable NSString *)details {
-    [self showCopyFeedbackMessage:[NSString stringWithFormat:@"%@ failed", action.title] duration:2.0];
+    [self showCommandResultMessage:[NSString stringWithFormat:@"%@ failed", action.title] duration:2.0];
     // The alert opens on a turn of the run loop of its own, not inside the completion.
     NSDictionary *report = @{ @"title": action.title ?: @"", @"summary": summary ?: @"", @"details": details ?: @"" };
     [self performSelector:@selector(showCustomActionFailure:) withObject:report afterDelay:0.0];
@@ -9142,10 +9267,14 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 }
 
 /// macOS marks a window with unsaved changes with a dot in its close button.
+/// It also brings the status bar's size up to date: after an edit, a crop or a save.
 - (void)updateDocumentEditedState {
 #if !defined(GNUSTEP)
     [self.window setDocumentEdited:[self hasUnsavedChanges]];
 #endif
+    if (self.statusTextField && !self.statusClearTimer) {
+        [self.statusTextField setStringValue:[self idleStatusText]];
+    }
 }
 
 - (void)undo:(id)sender {
@@ -9213,6 +9342,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 
 - (void)markAnnotationsSaved {
     self.savedAnnotationFingerprint = [self.canvasView annotationFingerprint];
+    self.statusFileSizeURL = nil; // Saved over the same file, say: read its size again.
     [self updateDocumentEditedState];
 }
 
@@ -9274,7 +9404,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         if (self.defaultSaveDirectory.length > 0) {
             [panel setDirectoryURL:[NSURL fileURLWithPath:self.defaultSaveDirectory]];
         }
-        [panel setNameFieldStringValue:[STPastedImageTitle stringByAppendingPathExtension:STProjectFileExtension]];
+        [panel setNameFieldStringValue:[(self.untitledDocumentTitle ?: STPastedImageTitle) stringByAppendingPathExtension:STProjectFileExtension]];
     }
     if ([panel runModal] != NSModalResponseOK || !panel.URL) {
         return NO;
@@ -9298,6 +9428,8 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         [alert runModal];
         return NO;
     }
+    // untitledDocumentTitle is left as it is on purpose: both Save panels name from the project
+    // first now, and the image is still unsaved, so clearing it would change nothing (#332).
     self.currentProjectURL = url;
     [self addRecentDocumentURL:url];
     [self.window setTitleWithRepresentedFilename:url.path];
@@ -9317,6 +9449,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         return NO;
     }
     self.currentImageURL = nil;
+    self.untitledDocumentTitle = nil;
     self.currentProjectURL = url;
     [self addRecentDocumentURL:url];
     [self.window setTitleWithRepresentedFilename:url.path];

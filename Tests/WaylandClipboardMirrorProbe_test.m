@@ -20,7 +20,7 @@
 
 @implementation WaylandClipboardMirrorProbeAppDelegate
 
-- (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration {
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration {
     (void)duration;
     self.lastCopyFeedbackMessage = [message copy];
 }
