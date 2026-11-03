@@ -23,6 +23,8 @@
 - (NSArray<STCustomAction *> *)loadedCustomActions;
 - (BOOL)isRunningCustomAction:(STCustomAction *)action;
 - (void)runCustomAction:(STCustomAction *)action choice:(NSString *)choice;
+- (void)preferencesController:(id)controller didToggleStatusBar:(BOOL)show;
+- (NSTextField *)statusTextField;
 - (NSArray<NSString *> *)choicesForCustomAction:(STCustomAction *)action;
 - (NSMenuItem *)menuItemForCustomAction:(STCustomAction *)action;
 - (NSArray<NSString *> *)toolbarDefaultItemIdentifiers:(NSToolbar *)toolbar;
@@ -413,6 +415,25 @@
 #else
     XCTAssertTrue(send < copy, @"The action, then Copy: %@", identifiers);
 #endif
+}
+
+/// The "Running…" text goes to the status bar while the action runs, and its result to the HUD
+/// (#344): once it's done, the status bar is the image's size again, not "Running…" until that
+/// message times out (Windows' rc1 testing found the like for Crop, #348).
+- (void)testTheStatusBarGoesBackOnceAnActionIsDone {
+    [self writeAction:@"quick.json" json:@"{\"title\": \"Quick\", \"command\": [\"/bin/sh\", \"-c\", \"exit 0\"]}"];
+    AppDelegate *app = [self appWithActions];
+    XCTSkipIf(app == nil, @"No window server");
+    [app preferencesController:nil didToggleStatusBar:YES];
+    STCustomAction *action = [app loadedCustomActions].firstObject;
+    XCTAssertNotNil(action);
+    NSString *idle = app.statusTextField.stringValue;
+    XCTAssertTrue([idle hasPrefix:@"120 × 80 px"], @"Idle: %@", idle);
+
+    [app runCustomAction:action choice:nil];
+    XCTAssertEqualObjects(app.statusTextField.stringValue, @"Quick…", @"While it runs");
+    XCTAssertTrue([self spinUntil:^BOOL { return ![app isRunningCustomAction:action]; } seconds:15.0]);
+    XCTAssertEqualObjects(app.statusTextField.stringValue, idle, @"Done: the image's size again");
 }
 #endif
 

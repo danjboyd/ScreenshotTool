@@ -4698,6 +4698,8 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 /// "1600 × 1000 px · PNG · 214 KB": the image's pixel size and, with a file, its format and size.
+/// With unsaved changes (a crop, say) the file's size isn't the image's any more, so it says
+/// "unsaved" until the next save.
 - (NSString *)idleStatusText {
     NSImage *image = self.canvasView.image;
     if (!image) {
@@ -4716,6 +4718,9 @@ static id STInfoValueForKey(NSString *key) {
         text = [text stringByAppendingFormat:@"  ·  %@", extension.uppercaseString];
     }
     NSString *fileSize = [self statusFileSizeForURL:self.currentImageURL];
+    if (fileSize.length > 0 && [self hasUnsavedChanges]) {
+        fileSize = @"unsaved";
+    }
     if (fileSize.length > 0) {
         text = [text stringByAppendingFormat:@"  ·  %@", fileSize];
     }
@@ -7677,6 +7682,8 @@ BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *en
         [self resizeWindowToImageSize:self.canvasView.image.size];
     }
     [self.window makeFirstResponder:self.canvasView];
+    // The result goes to the HUD now (#344), so the status bar has to be told the new size.
+    [self refreshStatusZoomControls];
     [self showCommandResultMessage:@"Cropped image" duration:2.0];
 }
 
@@ -7780,6 +7787,10 @@ NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted) {
         NSArray<NSValue *> *rects = STSensitiveTextRects(lines);
         NSUInteger added = [weakSelf.canvasView addRedactionsInImageRects:rects
                                                                actionName:@"Redact Emails and Phone Numbers"];
+        if (added > 0) {
+            // An edit: "unsaved" in the status bar now, not when the undo manager's notice comes.
+            [weakSelf updateDocumentEditedState];
+        }
         BOOL foundText = [STRecognizedText(lines) stringByTrimmingCharactersInSet:
                              [NSCharacterSet whitespaceAndNewlineCharacterSet]].length > 0;
         ScreenshotToolAppendLog([NSString stringWithFormat:@"Redact Emails and Phone Numbers: %lu lines, %lu redacted",
@@ -9098,6 +9109,9 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
             return;
         }
         [strongSelf refreshToolButtonIcons];
+        // Its "Running…" went to the status bar; the result goes to the HUD (#344), so put the
+        // status bar back to the image's size now rather than when that message would time out.
+        [strongSelf clearStatusMessage];
         if (!result.succeeded) {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Custom action %@ failed (status %d%@): %@",
                                      action.identifier, result.status, result.timedOut ? @", timed out" : @"",
@@ -9235,10 +9249,14 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 }
 
 /// macOS marks a window with unsaved changes with a dot in its close button.
+/// It also brings the status bar's size up to date: after an edit, a crop or a save.
 - (void)updateDocumentEditedState {
 #if !defined(GNUSTEP)
     [self.window setDocumentEdited:[self hasUnsavedChanges]];
 #endif
+    if (self.statusTextField && !self.statusClearTimer) {
+        [self.statusTextField setStringValue:[self idleStatusText]];
+    }
 }
 
 - (void)undo:(id)sender {
@@ -9306,6 +9324,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 
 - (void)markAnnotationsSaved {
     self.savedAnnotationFingerprint = [self.canvasView annotationFingerprint];
+    self.statusFileSizeURL = nil; // Saved over the same file, say: read its size again.
     [self updateDocumentEditedState];
 }
 
