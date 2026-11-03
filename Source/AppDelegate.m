@@ -220,16 +220,18 @@ static NSString *const STPastedImageTitle = @"Pasted Image";
 static NSString *const STClipboardTemporaryFilePrefix = @"clipboard-";
 static NSString *const STCaptureTemporaryFilePrefix = @"capture-";
 
-/// The zone to format `date` in, for a date formatter. On GNUstep it's the local zone's offset on
-/// that date: on Windows the local zone has Windows's name ("Central Standard Time"), which the
-/// formatter doesn't know, so it printed GMT; and without an explicit zone, a formatter with date
-/// and time styles ignores NSTimeZone's default.
+/// The zone to format `date` in, for a date formatter: the default zone, which is the local one
+/// unless the app set another. On GNUstep it's that zone's offset on that date: on Windows the
+/// local zone has Windows's name ("Central Standard Time"), which the formatter doesn't know, so it
+/// printed GMT; and without an explicit zone, a formatter with date and time styles ignores the
+/// default.
 static NSTimeZone *STFormatterTimeZoneForDate(NSDate *date) {
+    NSTimeZone *zone = [NSTimeZone defaultTimeZone];
 #if defined(GNUSTEP)
-    return [NSTimeZone timeZoneForSecondsFromGMT:[[NSTimeZone localTimeZone] secondsFromGMTForDate:date]];
+    return [NSTimeZone timeZoneForSecondsFromGMT:[zone secondsFromGMTForDate:date]];
 #else
     (void)date;
-    return [NSTimeZone localTimeZone];
+    return zone;
 #endif
 }
 
