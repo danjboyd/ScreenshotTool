@@ -29,7 +29,7 @@
 
 #if defined(GNUSTEP) && defined(ST_HAVE_LIBS_SHARING)
 @interface AppDelegate (ShareSheetFeedbackTesting) <NSSharingServicePickerDelegate>
-- (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration;
 - (void)sharingService:(NSSharingService *)sharingService didShareItems:(NSArray *)items;
 - (void)sharingService:(NSSharingService *)sharingService didFailToShareItems:(NSArray *)items error:(NSError *)error;
 @end
@@ -40,7 +40,7 @@
 @end
 
 @implementation STFeedbackRecordingAppDelegate
-- (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration {
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration {
     (void)duration;
     if (!self.messages) {
         self.messages = [NSMutableArray array];

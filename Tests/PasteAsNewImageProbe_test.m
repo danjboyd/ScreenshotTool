@@ -13,7 +13,7 @@
 - (void)pasteAsNewImage:(id)sender;
 - (NSData *)clipboardPNGDataForPasteAsNewImage;
 - (BOOL)launchNewWindowForImageAtURL:(NSURL *)url;
-- (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration;
 - (void)setupWindowAndContent;
 - (BOOL)openImageAtURL:(NSURL *)url;
 - (NSWindow *)window;
@@ -42,7 +42,7 @@ extern NSString *STCaptureTitleForDate(NSDate *date);
     return YES;
 }
 
-- (void)showTransientFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration {
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration {
     (void)duration;
     self.lastTransientFeedbackMessage = [message copy];
 }
