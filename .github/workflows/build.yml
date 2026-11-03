@@ -199,11 +199,15 @@ jobs:
         run: xvfb-run -a scripts/smoke_appimage.sh "${{ steps.naming.outputs.appimage_path }}"
       - name: The AppImage runs on its own GNUstep, with the carried libs-back
         # The runner has GNUstep in /usr/GNUstep, so a library or backend loaded from the host
-        # instead of the AppImage shows here. And 0.3.3's libs-back lacked the Adwaita theme's
-        # series (square windows, no shadow) with nothing failing.
+        # instead of the AppImage shows here, and so does its openapp and gpbs: 0.3.3 opened no
+        # new window (Paste as New Image) and copied through the host's gpbs. And 0.3.3's
+        # libs-back lacked the Adwaita theme's series (square windows, no shadow) with nothing
+        # failing.
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-        run: xvfb-run -a scripts/check_appimage_runtime.sh "${{ steps.naming.outputs.appimage_path }}"
+        run: |
+          sudo apt-get install -y --no-install-recommends xclip >/dev/null
+          xvfb-run -a scripts/check_appimage_runtime.sh "${{ steps.naming.outputs.appimage_path }}"
       - name: Alt+F4 under GNOME's window manager
         # Under GNOME the AppImage uses Adwaita, which decorates its own windows. Without
         # WM_DELETE_WINDOW on them, Mutter kills the app on Alt+F4. The script runs its own Xvfb
@@ -281,6 +285,17 @@ jobs:
           "MSYS2_LOCATION=${{ steps.msys2.outputs.msys2-location }}" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Build ScreenshotTool
         run: ./scripts/build_release.ps1 -ManifestPath packaging/package.manifest.json
+      - name: Warm the font cache
+        # The first text the app lays out builds fontconfig's cache of the runner's fonts. That took
+        # up to ~100 s on a cold runner, so the suite's first test timed out (testArrowExportsWithItsHead,
+        # run 41700582403). Build it here, in the tests' own shell, where its time shows.
+        run: |
+          $ErrorActionPreference = "Stop"
+          $bash = Join-Path $env:GP_GNUSTEP_CLI_ROOT "usr\bin\bash.exe"
+          $env:MSYSTEM = "CLANG64"
+          $env:CHERE_INVOKING = "1"
+          & $bash -lc "set -eo pipefail; command -v fc-cache; time fc-cache; echo `"`$(fc-list | wc -l) fonts`""
+          if ($LASTEXITCODE -ne 0) { throw "fc-cache failed ($LASTEXITCODE)" }
       - name: Unit tests
         # Each test class runs in its own xctest process, as on Linux; the runner's desktop
         # session is the window server.

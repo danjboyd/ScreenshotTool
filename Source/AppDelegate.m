@@ -2543,6 +2543,17 @@ static AppDelegate *STFrontDocument(void) {
     [self reflectZoomSelection];
     // After the window is up: reading the clipboard can wait for the pasteboard server.
     [self performSelector:@selector(refreshPasteAvailability) withObject:nil afterDelay:0.0];
+
+    // For scripts/check_appimage_runtime.sh only: open this image in a new window, as Paste as
+    // New Image does, and copy the image, to show that the new process starts on the AppImage's
+    // GNUstep and that Copy goes through the AppImage's pasteboard server. The new window opens
+    // that image itself, so it starts no other.
+    NSString *smokeNewWindow = [[NSProcessInfo processInfo] environment][@"SCREENSHOT_TOOL_SMOKE_NEW_WINDOW"];
+    if (smokeNewWindow.length > 0 && [self.canvasView hasImage] &&
+        ![self.currentImageURL.path isEqualToString:smokeNewWindow]) {
+        [self launchNewWindowForImageAtURL:[NSURL fileURLWithPath:smokeNewWindow]];
+        [self copy:nil];
+    }
 }
 
 /// The image named by application:openFile: or on the command line, if any.
@@ -7469,6 +7480,15 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     return url;
 }
 
+/// Whether GNUstep starts a new window's process through openapp, which sets up the environment
+/// of a GNUstep install. Not from an AppImage: there the host's openapp ran (the AppImage's own
+/// isn't on PATH), sourced the AppImage's GNUstep.conf, whose paths are relative, and failed, so
+/// Paste as New Image opened nothing on a host with GNUstep. AppRun has already set up the
+/// environment the executable needs, and NSTask passes it on.
+BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *environment) {
+    return [environment[@"APPDIR"] length] == 0 && [environment[@"APPIMAGE"] length] == 0;
+}
+
 - (BOOL)launchNewWindowForImageAtURL:(NSURL *)url {
     if (!url.isFileURL || url.path.length == 0) {
         return NO;
@@ -7493,10 +7513,12 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         NSTask *task = [[NSTask alloc] init];
 #if defined(GNUSTEP)
         NSString *openappPath = nil;
-        if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/GNUstep/System/Tools/openapp"]) {
-            openappPath = @"/usr/GNUstep/System/Tools/openapp";
-        } else {
-            openappPath = STExecutablePathInPATH(@"openapp");
+        if (STLaunchesNewWindowsThroughOpenapp([[NSProcessInfo processInfo] environment])) {
+            if ([[NSFileManager defaultManager] isExecutableFileAtPath:@"/usr/GNUstep/System/Tools/openapp"]) {
+                openappPath = @"/usr/GNUstep/System/Tools/openapp";
+            } else {
+                openappPath = STExecutablePathInPATH(@"openapp");
+            }
         }
         NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
         if (openappPath.length > 0 && bundlePath.length > 0) {
@@ -7515,8 +7537,11 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         }
 
         [task launch];
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: launched new instance for %@",
-                                 url.path ?: @"<nil>"]);
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: launched new instance for %@ (%@)",
+                                 url.path ?: @"<nil>", task.launchPath]);
+        // A process that ends at once with an error opened no window (as the host's openapp did
+        // from the AppImage): say so rather than nothing.
+        [self performSelector:@selector(reportFailedNewWindowLaunch:) withObject:task afterDelay:2.0];
         return YES;
     } @catch (NSException *exception) {
         ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage launch exception for %@ (%@ - %@)",
@@ -7525,6 +7550,15 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
                                  exception.reason ?: @"<no reason>"]);
     }
     return NO;
+}
+
+- (void)reportFailedNewWindowLaunch:(NSTask *)task {
+    if (task.isRunning || task.terminationStatus == 0) {
+        return;
+    }
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"pasteAsNewImage: %@ exited with status %d",
+                             task.launchPath, task.terminationStatus]);
+    [self showCommandResultMessage:@"Couldn't open a new window" duration:2.5];
 }
 
 #pragma mark - Take Screenshot
