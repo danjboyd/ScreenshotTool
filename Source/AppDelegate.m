@@ -220,13 +220,28 @@ static NSString *const STPastedImageTitle = @"Pasted Image";
 static NSString *const STClipboardTemporaryFilePrefix = @"clipboard-";
 static NSString *const STCaptureTemporaryFilePrefix = @"capture-";
 
+/// The zone to format `date` in, for a date formatter. On GNUstep it's the local zone's offset on
+/// that date: on Windows the local zone has Windows's name ("Central Standard Time"), which the
+/// formatter doesn't know, so it printed GMT; and without an explicit zone, a formatter with date
+/// and time styles ignores NSTimeZone's default.
+static NSTimeZone *STFormatterTimeZoneForDate(NSDate *date) {
+#if defined(GNUSTEP)
+    return [NSTimeZone timeZoneForSecondsFromGMT:[[NSTimeZone localTimeZone] secondsFromGMTForDate:date]];
+#else
+    (void)date;
+    return [NSTimeZone localTimeZone];
+#endif
+}
+
 /// An untitled capture's title, and the Save panel's default name: "Screenshot 2026-11-03 at 10.15.32".
 /// Periods, not colons, so it's a valid file name everywhere.
 NSString *STCaptureTitleForDate(NSDate *date) {
+    NSDate *when = date ?: [NSDate date];
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
     formatter.dateFormat = @"yyyy-MM-dd 'at' HH.mm.ss";
-    return [@"Screenshot " stringByAppendingString:[formatter stringFromDate:date ?: [NSDate date]]];
+    formatter.timeZone = STFormatterTimeZoneForDate(when);
+    return [@"Screenshot " stringByAppendingString:[formatter stringFromDate:when]];
 }
 
 static NSString *STTemporaryClipboardDirectory(void) {
@@ -6460,6 +6475,7 @@ static NSTimeInterval STHUDDurationForFeedback(NSTimeInterval duration) {
         formatter.doesRelativeDateFormatting = YES;
 #endif
     }
+    formatter.timeZone = STFormatterTimeZoneForDate(date);
     NSString *text = [formatter stringFromDate:date] ?: @"";
 #if defined(GNUSTEP)
     // ICU puts a narrow no-break space before AM/PM, which GNUstep's text drawing has no glyph
