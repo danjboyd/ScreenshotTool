@@ -107,6 +107,12 @@
       "toolchain": {
         "provenanceFile": "/opt/screenshottool-gnustep/GNUstep/gnustep-toolchain-provenance.json",
         "lockFile": "../scripts/gnustep-toolchain.lock.json"
+      },
+      "launch": {
+        "env": {
+          "TEMP": "{@userRuntimeDir}",
+          "TMP": "{@userRuntimeDir}"
+        }
       }
     }
   },

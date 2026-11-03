@@ -24,6 +24,7 @@
 @end
 
 extern NSString *STCaptureTitleForDate(NSDate *date);
+extern BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *environment);
 
 @interface PasteAsNewImageProbeAppDelegate : AppDelegate
 @property (nonatomic, strong) NSData *probeClipboardPNGData;
@@ -243,6 +244,17 @@ extern NSString *STCaptureTitleForDate(NSDate *date);
     XCTAssertTrue((mask & NSEventModifierFlagShift) != 0, @"Shortcut should use Shift");
     XCTAssertTrue((mask & NSEventModifierFlagControl) == 0, @"A Control mask is unreachable from the Ctrl key on GNUstep");
     XCTAssertEqualObjects(pasteItem.keyEquivalent.lowercaseString, @"v");
+}
+
+- (void)testAnAppImageStartsItsNewWindowsWithoutOpenapp {
+    // From an AppImage the host's openapp sourced the AppImage's relative GNUstep.conf and failed,
+    // so Paste as New Image opened nothing on a host with GNUstep: AppRun's variables say not to.
+    XCTAssertTrue(STLaunchesNewWindowsThroughOpenapp(@{}), @"A GNUstep install starts new windows through openapp");
+    XCTAssertTrue(STLaunchesNewWindowsThroughOpenapp(@{ @"APPDIR" : @"" }), @"An empty APPDIR is no AppImage");
+    XCTAssertFalse(STLaunchesNewWindowsThroughOpenapp(@{ @"APPDIR" : @"/tmp/.mount_ScreenXYZ" }),
+                   @"Inside an AppImage the executable is started directly");
+    XCTAssertFalse(STLaunchesNewWindowsThroughOpenapp(@{ @"APPIMAGE" : @"/home/user/ScreenshotTool.AppImage" }),
+                   @"APPIMAGE alone also means an AppImage");
 }
 
 @end
