@@ -2676,6 +2676,12 @@ static AppDelegate *STFrontDocument(void) {
 
 - (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
     SEL action = menuItem.action;
+    if (action == @selector(pasteAsNewImage:) || action == @selector(copyText:) ||
+        action == @selector(redactDetectedText:) || action == @selector(copy:)) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"#354 validate '%@' item=%p enabledNow=%d hasImage=%d readingText=%d clipboardHasImage=%d",
+                                 menuItem.title, (void *)menuItem, menuItem.isEnabled, [self.canvasView hasImage],
+                                 self.readingText, [self clipboardHasImage]]);
+    }
     if (action == @selector(saveDocumentAs:) || action == @selector(saveProject:) || action == @selector(copy:) ||
         action == @selector(zoomIn:) || action == @selector(zoomOut:)) {
         return [self.canvasView hasImage];
