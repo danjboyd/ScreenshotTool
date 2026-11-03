@@ -21,6 +21,7 @@
 - (void)setupMenus;
 - (NSURL *)temporaryCaptureImageURLForPNGData:(NSData *)pngData;
 - (NSString *)untitledDocumentTitle;
+- (NSString *)emptyStateRecentDetailForDate:(NSDate *)date;
 @end
 
 extern NSString *STCaptureTitleForDate(NSDate *date);
@@ -219,6 +220,32 @@ extern BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString
             XCTAssertEqualObjects(STCaptureTitleForDate(november), @"Screenshot 2026-11-03 at 14.04.06");
             XCTAssertEqualObjects(STCaptureTitleForDate(july), @"Screenshot 2026-07-23 at 15.04.06",
                                   @"Daylight time, by the date");
+        }
+    } @finally {
+        [NSTimeZone setDefaultTimeZone:original];
+    }
+}
+
+- (void)testRecentsDatesAreInTheLocalZoneNotUTC {
+    NSDate *date = [NSDate dateWithTimeIntervalSince1970:1595534646]; // 2020-07-23 20:04:06 UTC
+    NSString *(^expected)(NSInteger) = ^NSString *(NSInteger secondsFromGMT) {
+        NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
+        formatter.dateStyle = NSDateFormatterMediumStyle;
+        formatter.timeStyle = NSDateFormatterShortStyle;
+        formatter.timeZone = [NSTimeZone timeZoneForSecondsFromGMT:secondsFromGMT];
+        NSString *text = [formatter stringFromDate:date];
+        text = [text stringByReplacingOccurrencesOfString:@" " withString:@" "];
+        return [text stringByReplacingOccurrencesOfString:@" " withString:@" "];
+    };
+    NSTimeZone *original = [NSTimeZone defaultTimeZone];
+    @try {
+        [NSTimeZone setDefaultTimeZone:[NSTimeZone timeZoneWithName:@"Asia/Tokyo"]];
+        XCTAssertEqualObjects([_appDelegate emptyStateRecentDetailForDate:date], expected(9 * 3600));
+        NSTimeZone *windowsZone = [NSTimeZone timeZoneWithName:@"Central Standard Time"];
+        if (windowsZone) {
+            [NSTimeZone setDefaultTimeZone:windowsZone];
+            XCTAssertEqualObjects([_appDelegate emptyStateRecentDetailForDate:date], expected(-5 * 3600),
+                                  @"Windows's zone name, in daylight time");
         }
     } @finally {
         [NSTimeZone setDefaultTimeZone:original];
