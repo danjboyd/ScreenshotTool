@@ -4687,6 +4687,8 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 /// "1600 × 1000 px · PNG · 214 KB": the image's pixel size and, with a file, its format and size.
+/// With unsaved changes (a crop, say) the file's size isn't the image's any more, so it says
+/// "unsaved" until the next save.
 - (NSString *)idleStatusText {
     NSImage *image = self.canvasView.image;
     if (!image) {
@@ -4705,6 +4707,9 @@ static id STInfoValueForKey(NSString *key) {
         text = [text stringByAppendingFormat:@"  ·  %@", extension.uppercaseString];
     }
     NSString *fileSize = [self statusFileSizeForURL:self.currentImageURL];
+    if (fileSize.length > 0 && [self hasUnsavedChanges]) {
+        fileSize = @"unsaved";
+    }
     if (fileSize.length > 0) {
         text = [text stringByAppendingFormat:@"  ·  %@", fileSize];
     }
@@ -7643,6 +7648,8 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         [self resizeWindowToImageSize:self.canvasView.image.size];
     }
     [self.window makeFirstResponder:self.canvasView];
+    // The result goes to the HUD now (#344), so the status bar has to be told the new size.
+    [self refreshStatusZoomControls];
     [self showCommandResultMessage:@"Cropped image" duration:2.0];
 }
 
@@ -9201,10 +9208,14 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 }
 
 /// macOS marks a window with unsaved changes with a dot in its close button.
+/// It also brings the status bar's size up to date: after an edit, a crop or a save.
 - (void)updateDocumentEditedState {
 #if !defined(GNUSTEP)
     [self.window setDocumentEdited:[self hasUnsavedChanges]];
 #endif
+    if (self.statusTextField && !self.statusClearTimer) {
+        [self.statusTextField setStringValue:[self idleStatusText]];
+    }
 }
 
 - (void)undo:(id)sender {
@@ -9272,6 +9283,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 
 - (void)markAnnotationsSaved {
     self.savedAnnotationFingerprint = [self.canvasView annotationFingerprint];
+    self.statusFileSizeURL = nil; // Saved over the same file, say: read its size again.
     [self updateDocumentEditedState];
 }
 
