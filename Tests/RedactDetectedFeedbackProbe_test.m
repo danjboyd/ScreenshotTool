@@ -19,7 +19,7 @@
 - (ScreenshotCanvasView *)canvasView;
 - (void)redactDetectedText:(id)sender;
 - (void)readTextInImageRect:(NSRect)rect completion:(void (^)(NSArray<STRecognizedLine *> *lines))completion;
-- (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration;
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration;
 @end
 
 extern NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted);
@@ -36,7 +36,7 @@ extern NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted);
     completion(self.cannedLines ?: @[]);
 }
 
-- (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration {
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration {
     (void)duration;
     if (!self.feedbackMessages) {
         self.feedbackMessages = [NSMutableArray array];

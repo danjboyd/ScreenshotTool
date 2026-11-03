@@ -48,7 +48,7 @@
 @end
 
 @implementation STActionFeedbackAppDelegate
-- (void)showCopyFeedbackMessage:(NSString *)message duration:(NSTimeInterval)duration {
+- (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration {
     (void)duration;
     if (!self.messages) {
         self.messages = [NSMutableArray array];
