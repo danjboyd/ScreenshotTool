@@ -7785,12 +7785,21 @@ BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *en
 }
 
 /// What Redact Emails and Phone Numbers says when it's done, so it never finishes silently: "no
-/// text" (nothing to read, or the engine read nothing) is told apart from "nothing matched" (#333).
-NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted) {
+/// text" (nothing to read, or the engine read nothing) is told apart from "nothing matched" (#333),
+/// and a run after an earlier one from "nothing there": matches that existing
+/// redactions cover are "Already redacted", and with redactions on the image (which hide their
+/// text from the reader) a run that finds nothing more says "No other…".
+NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted, NSUInteger alreadyRedacted, BOOL hadRedactions) {
     if (redacted > 0) {
         return [NSString stringWithFormat:@"Redacted %lu %@", (unsigned long)redacted, redacted == 1 ? @"item" : @"items"];
     }
-    return foundText ? @"No email addresses or phone numbers found" : @"No text found in the image";
+    if (alreadyRedacted > 0) {
+        return @"Already redacted";
+    }
+    if (!foundText) {
+        return @"No text found in the image";
+    }
+    return hadRedactions ? @"No other email addresses or phone numbers found" : @"No email addresses or phone numbers found";
 }
 
 /// Redacts the email addresses and phone numbers read in the image, as ordinary redactions that
@@ -7803,17 +7812,21 @@ NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted) {
     __weak typeof(self) weakSelf = self;
     [self readTextInImageRect:NSZeroRect completion:^(NSArray<STRecognizedLine *> *lines) {
         NSArray<NSValue *> *rects = STSensitiveTextRects(lines);
+        BOOL hadRedactions = [weakSelf.canvasView hasRedactions];
+        NSUInteger alreadyRedacted = 0;
         NSUInteger added = [weakSelf.canvasView addRedactionsInImageRects:rects
-                                                               actionName:@"Redact Emails and Phone Numbers"];
+                                                               actionName:@"Redact Emails and Phone Numbers"
+                                                          alreadyRedacted:&alreadyRedacted];
         if (added > 0) {
             // An edit: "unsaved" in the status bar now, not when the undo manager's notice comes.
             [weakSelf updateDocumentEditedState];
         }
         BOOL foundText = [STRecognizedText(lines) stringByTrimmingCharactersInSet:
                              [NSCharacterSet whitespaceAndNewlineCharacterSet]].length > 0;
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"Redact Emails and Phone Numbers: %lu lines, %lu redacted",
-                                 (unsigned long)lines.count, (unsigned long)added]);
-        [weakSelf showCommandResultMessage:STRedactDetectedFeedback(foundText, added) duration:2.5];
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Redact Emails and Phone Numbers: %lu lines, %lu redacted, %lu already redacted",
+                                 (unsigned long)lines.count, (unsigned long)added, (unsigned long)alreadyRedacted]);
+        [weakSelf showCommandResultMessage:STRedactDetectedFeedback(foundText, added, alreadyRedacted, hadRedactions)
+                                  duration:2.5];
     }];
 }
 
