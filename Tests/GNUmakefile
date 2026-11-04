@@ -107,6 +107,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	SymbolicToolbarIconsProbe_test.m \
 	TakeScreenshotProbe_test.m \
 	PrintLayoutProbe_test.m \
+	PrintPageProbe_test.m \
 	TextRecognizerProbe_test.m \
 	ClipboardScreenshotOfferProbe_test.m \
 	CanvasCursorShownRectProbe_test.m \
@@ -144,6 +145,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STSelectionActionBar.m \
 	../Source/STScreenshotCapture.m \
 	../Source/STPrintLayout.m \
+	../Source/STPrintPage.m \
 	../Source/STTextRecognizer.m \
 	../Source/STWindowsIntegration.m \
 	../Source/STWindowsTextRecognition.m \
