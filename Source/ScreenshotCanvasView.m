@@ -4317,12 +4317,12 @@ static NSError *STProjectError(NSString *message) {
 - (void)drawTextSelection {
     STTextSelection *selection = self.textSelection;
     NSColor *accent = STThemeAccentColor();
-    [[accent colorWithAlphaComponent:0.28] setFill];
+    [STThemeColorWithAlpha(accent, 0.28) setFill];
     for (NSValue *value in selection.selectedRects) {
         NSRect rect = NSInsetRect([self viewRectForImageRect:value.rectValue], -2.0, -1.0);
         [[NSBezierPath bezierPathWithRoundedRect:rect xRadius:3.0 yRadius:3.0] fill];
     }
-    [[accent colorWithAlphaComponent:0.45] setStroke];
+    [STThemeColorWithAlpha(accent, 0.45) setStroke];
     for (NSUInteger i = 0; i < selection.wordCount; i++) {
         NSRect rect = NSInsetRect([self viewRectForImageRect:[selection boundsOfWordAtIndex:i]], -1.5, -1.0);
         NSBezierPath *outline = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(rect, 0.5, 0.5) xRadius:2.5 yRadius:2.5];

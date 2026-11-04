@@ -13,6 +13,7 @@
 #import "ScreenshotCanvasView.h"
 #import "STTextRecognizer.h"
 #import "STTextSelection.h"
+#import "STThemeUtilities.h"
 #import "TestEnvironmentHelpers.h"
 
 @interface ScreenshotCanvasView (TextSelectionModeTesting)
@@ -233,6 +234,13 @@
     XCTAssertEqual(_app.canvasView.textSelection.selectedRange.length, (NSUInteger)0, @"Only with Control");
 }
 #endif
+
+- (void)testThemeColorsKeepAnAlpha {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    XCTAssertEqualWithAccuracy(STThemeColorWithAlpha([NSColor selectedControlColor], 0.28).alphaComponent, 0.28, 0.001,
+                               @"A system colour, as a theme's accent can be, keeps it, or the highlight hides the words");
+    XCTAssertEqualWithAccuracy(STThemeColorWithAlpha(STThemeAccentColor(), 0.45).alphaComponent, 0.45, 0.001);
+}
 
 - (void)testCopyWithNothingSelectedStillCopiesTheImage {
     XCTSkipIf(_shouldSkip, @"No window server");
