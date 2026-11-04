@@ -3391,6 +3391,18 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
     BOOL shift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
     CGFloat step = shift ? 10.0 : 1.0;
 
+#if defined(GNUSTEP)
+    // Off macOS, Select All is only on the mode's context menu, and a closed menu's shortcuts don't
+    // fire. Only while selecting text, so Ctrl+A isn't taken anywhere else.
+    NSEventModifierFlags selectAllFlags = event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl |
+                                                                 NSEventModifierFlagOption | NSEventModifierFlagShift);
+    if (self.textSelection && (key == 'a' || key == 'A') &&
+        (selectAllFlags == NSEventModifierFlagControl || selectAllFlags == NSEventModifierFlagCommand)) {
+        [self selectAll:nil];
+        return;
+    }
+#endif
+
     switch (key) {
         case NSUpArrowFunctionKey:
             if ([self nudgeSelectedAnnotationsBy:NSMakePoint(0.0, -step)]) return;

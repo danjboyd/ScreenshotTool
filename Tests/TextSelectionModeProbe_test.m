@@ -214,6 +214,26 @@
     XCTAssertFalse([_app.canvasView isSelectingText], @"Esc reaches keyDown: on GNUstep, not cancelOperation:");
 }
 
+#if defined(GNUSTEP)
+- (void)testControlASelectsAllInTheModeOnly {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_app selectText:nil];
+    [self sendKey:'a' flags:NSEventModifierFlagControl];
+    XCTAssertEqual(_app.canvasView.textSelection.selectedRange.length, (NSUInteger)5, @"All five words");
+
+    [_app.canvasView endTextSelection:nil];
+    [self sendKey:'a' flags:NSEventModifierFlagControl];
+    XCTAssertFalse([_app.canvasView isSelectingText], @"Out of the mode, it isn't taken and starts nothing");
+}
+
+- (void)testAPlainAInTheModeDoesntSelectAll {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_app selectText:nil];
+    [self sendKey:'a' flags:0];
+    XCTAssertEqual(_app.canvasView.textSelection.selectedRange.length, (NSUInteger)0, @"Only with Control");
+}
+#endif
+
 - (void)testCopyWithNothingSelectedStillCopiesTheImage {
     XCTSkipIf(_shouldSkip, @"No window server");
     [_app selectText:nil];
