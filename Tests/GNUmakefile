@@ -88,6 +88,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	TextSelectionProbe_test.m \
 	RedactDetectedFeedbackProbe_test.m \
 	TextSelectionModeProbe_test.m \
+	StatusAfterCropProbe_test.m \
 	StatusBarToggleProbe_test.m \
 	TextFontFacePopupProbe_test.m \
 	ThemePreferenceProbe_test.m \
