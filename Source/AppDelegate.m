@@ -3125,7 +3125,13 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (void)setupWindowAndContent {
+#if defined(GNUSTEP) && !defined(_WIN32)
+    // Wide enough that Adwaita's header bar keeps Undo and Redo out of » (they're the lowest
+    // priority, so they leave first) and shows the whole title.
+    NSRect frame = NSMakeRect(100.0, 100.0, 1060.0, 700.0);
+#else
     NSRect frame = NSMakeRect(100.0, 100.0, 1000.0, 700.0);
+#endif
     NSUInteger styleMask = (NSWindowStyleMaskTitled |
                             NSWindowStyleMaskClosable |
                             NSWindowStyleMaskMiniaturizable |
