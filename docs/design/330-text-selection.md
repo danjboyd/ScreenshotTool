@@ -45,7 +45,7 @@ The probe should load an image whose `size` differs from its pixel size, and che
   - It's drawn in `drawRect:` above the annotations and below the selection bar.
   - The outlines are drawn at view scale, so they stay crisp at any zoom.
 - **Leaving the mode:**
-  - Esc (`cancelOperation:` on Cocoa, `complete:` on GNUstep, as the text box already handles it);
+  - Esc (`cancelOperation:` on Cocoa; on GNUstep the canvas's `keyDown:`, because nothing on that path reaches `complete:`, as #357 found);
   - picking any tool;
   - opening another image.
 - **Undo and redo don't leave the mode**, which would surprise people. Any edit invalidates the cache; if the fingerprint changed while the mode is on, the lines are read again lazily and the outlines redrawn.
