@@ -264,6 +264,7 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/STSelectionActionBar.m \
 	Source/STScreenshotCapture.m \
 	Source/STTextRecognizer.m \
+	Source/STTextSelection.m \
 	Source/STWindowsIntegration.m \
 	Source/STWindowsTextRecognition.m \
 	Source/STFontPicker.m
