@@ -196,6 +196,24 @@
     XCTAssertFalse([_app.canvasView isSelectingText], @"Choosing the tool already on leaves it too");
 }
 
+/// A key press as the window delivers it to the canvas.
+- (void)sendKey:(unichar)key flags:(NSEventModifierFlags)flags {
+    ScreenshotCanvasView *canvas = _app.canvasView;
+    NSString *characters = [NSString stringWithCharacters:&key length:1];
+    [canvas keyDown:[NSEvent keyEventWithType:NSKeyDown location:NSZeroPoint modifierFlags:flags timestamp:0
+                                 windowNumber:[canvas.window windowNumber] context:nil
+                                   characters:characters charactersIgnoringModifiers:characters
+                                    isARepeat:NO keyCode:0]];
+}
+
+- (void)testEscAsAKeyPressLeavesTheMode {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_app selectText:nil];
+    XCTAssertTrue([_app.canvasView isSelectingText]);
+    [self sendKey:0x1b flags:0];
+    XCTAssertFalse([_app.canvasView isSelectingText], @"Esc reaches keyDown: on GNUstep, not cancelOperation:");
+}
+
 - (void)testCopyWithNothingSelectedStillCopiesTheImage {
     XCTSkipIf(_shouldSkip, @"No window server");
     [_app selectText:nil];

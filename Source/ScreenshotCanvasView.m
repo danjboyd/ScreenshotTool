@@ -3415,6 +3415,11 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
             if ([self editSelectedText]) return;
             break;
         case 0x1b:
+            // GNUstep's Esc arrives here: nothing on this path reaches complete: or cancelOperation:.
+            if (self.textSelection) {
+                [self endTextSelection:nil];
+                return;
+            }
             if ([self hasAnnotationSelection]) {
                 [self clearAnnotationSelection];
                 return;
