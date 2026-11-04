@@ -127,6 +127,13 @@ FOUNDATION_EXPORT NSBitmapImageRep * _Nullable STOpaqueBitmapOnWhite(NSImage *im
 - (NSRect)selectionImageRect;
 /// Adds a redaction over each rect (image pixels), as one step to undo; returns how many.
 - (NSUInteger)addRedactionsInImageRects:(NSArray<NSValue *> *)rects actionName:(NSString *)actionName;
+/// The same, leaving out rects an existing redaction already covers; `alreadyRedacted`, if
+/// given, gets how many were left out.
+- (NSUInteger)addRedactionsInImageRects:(NSArray<NSValue *> *)rects
+                             actionName:(NSString *)actionName
+                        alreadyRedacted:(nullable NSUInteger *)alreadyRedacted;
+/// Whether any redaction is on the image.
+- (BOOL)hasRedactions;
 /// YES while the region selection is being drawn, moved or resized.
 - (BOOL)isAdjustingSelection;
 /// A view drawn over the canvas (the selection's bar): the pointer over it isn't on the canvas.
