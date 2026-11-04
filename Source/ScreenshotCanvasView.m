@@ -3380,14 +3380,20 @@ static const CGFloat STRedactionHighlightWidth = 2.0;
     return NSInsetRect([self viewRectForImageRect:imageRect], -outset, -outset);
 }
 
-/// Through the content view, not the canvas: the result notice is a sibling above the canvas, and
-/// redrawing only the canvas paints over it on GNUstep, which merges these rects into one.
+/// On GNUstep, through the content view, not the canvas: the result notice is a sibling above the
+/// canvas, and redrawing only the canvas paints over it there, as GNUstep merges these rects into one.
 - (void)setNeedsDisplayForRedactionHighlight {
     NSView *root = self.window.contentView ?: self;
     for (NSValue *value in self.redactionHighlightRects) {
         // A pixel more, for the outline's antialiased edge.
         NSRect rect = NSInsetRect([self redactionHighlightViewRectForImageRect:value.rectValue], -1.0, -1.0);
+#if defined(GNUSTEP)
         [root setNeedsDisplayInRect:[root convertRect:rect fromView:self]];
+#else
+        // Layer-backed on macOS: marking an ancestor doesn't redraw the canvas's own layer.
+        (void)root;
+        [self setNeedsDisplayInRect:rect];
+#endif
     }
 }
 
