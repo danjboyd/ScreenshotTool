@@ -58,11 +58,48 @@ static const CGFloat STAccuracy = 0.000001;
              message:@"Full width, centred down the 540 points"];
 }
 
-- (void)testFitScalesASmallImageUp {
+- (void)testFitDoesntEnlargeASmallImage {
     STPrintLayout *layout = [self layoutWithWidth:100 height:100];
+    XCTAssertFalse(layout.enlargeToFill, @"Off by default: enlarging a screenshot blurs it");
+    XCTAssertEqual(layout.pageCount, (NSUInteger)1);
+    XCTAssertEqualWithAccuracy(layout.pointsPerPixel, 0.75, STAccuracy, @"Its real size");
+    XCTAssertEqualWithAccuracy(layout.effectiveScale, 1.0, STAccuracy);
+    [self assertRect:[layout pageRectForPage:0] equals:NSMakeRect(268.5, 358.5, 75, 75) message:@"Centred"];
+}
+
+- (void)testEnlargeToFillFillsThePage {
+    STPrintLayout *layout = [self layoutWithWidth:100 height:100];
+    layout.enlargeToFill = YES;
     XCTAssertEqual(layout.pageCount, (NSUInteger)1);
     XCTAssertEqualWithAccuracy(layout.pointsPerPixel, 5.4, STAccuracy, @"540 / 100");
+    XCTAssertEqualWithAccuracy(layout.effectiveScale, 7.2, STAccuracy);
     [self assertRect:[layout pageRectForPage:0] equals:NSMakeRect(36, 126, 540, 540) message:@"Centred"];
+}
+
+- (void)testEnlargeToFillDoesntChangeALargeImage {
+    STPrintLayout *layout = [self layoutWithWidth:1200 height:700];
+    layout.enlargeToFill = YES;
+    XCTAssertEqualWithAccuracy(layout.pointsPerPixel, 0.6, STAccuracy, @"Shrunk the same either way");
+}
+
+- (void)testEnlargeToFillOnlyAppliesToFit {
+    STPrintLayout *layout = [self layoutWithWidth:100 height:100];
+    layout.enlargeToFill = YES;
+    layout.fit = STPrintFitActualSize;
+    XCTAssertEqualWithAccuracy(layout.effectiveScale, 1.0, STAccuracy, @"Actual size ignores it");
+    layout.fit = STPrintFitCustomScale;
+    layout.customScale = 0.5;
+    XCTAssertEqualWithAccuracy(layout.effectiveScale, 0.5, STAccuracy, @"Custom scale ignores it");
+}
+
+- (void)testFitUsesTheRealSizeFromPixelsPerInch {
+    STPrintLayout *layout = [self layoutWithWidth:1000 height:500];
+    layout.pixelsPerInch = 300;
+    XCTAssertEqualWithAccuracy(layout.pointsPerPixel, 0.24, STAccuracy, @"Fits at 240 × 120 points: 72 / 300");
+    XCTAssertEqualWithAccuracy(layout.effectiveScale, 1.0, STAccuracy);
+    layout.pixelsPerInch = 72;
+    XCTAssertEqualWithAccuracy(layout.pointsPerPixel, 0.72, STAccuracy, @"1000 points doesn't fit: 720 / 1000");
+    XCTAssertEqualWithAccuracy(layout.effectiveScale, 0.72, STAccuracy);
 }
 
 - (void)testASetOrientationIsKept {
@@ -87,6 +124,14 @@ static const CGFloat STAccuracy = 0.000001;
     XCTAssertEqual([self layoutWithWidth:700 height:1200].resolvedOrientation, STPrintOrientationPortrait);
     XCTAssertEqual([self layoutWithWidth:800 height:800].resolvedOrientation, STPrintOrientationPortrait,
                    @"A square prints the same either way: portrait");
+    XCTAssertEqual([self layoutWithWidth:900 height:600].resolvedOrientation, STPrintOrientationLandscape,
+                   @"Real size in landscape, shrunk in portrait");
+}
+
+- (void)testAutomaticFollowsASmallImageSShape {
+    XCTAssertEqual([self layoutWithWidth:400 height:300].resolvedOrientation, STPrintOrientationLandscape,
+                   @"Real size either way: its shape decides");
+    XCTAssertEqual([self layoutWithWidth:300 height:400].resolvedOrientation, STPrintOrientationPortrait);
 }
 
 - (void)testAutomaticPrefersFewerPagesAtASetSize {
@@ -205,9 +250,9 @@ static const CGFloat STAccuracy = 0.000001;
 }
 
 - (void)testNoMarginsUseTheWholeSheet {
-    STPrintLayout *layout = [self layoutWithWidth:612 height:792];
+    STPrintLayout *layout = [self layoutWithWidth:1224 height:1584];
     layout.margins = STPrintMarginsMake(0, 0, 0, 0);
-    XCTAssertEqualWithAccuracy(layout.pointsPerPixel, 1.0, STAccuracy);
+    XCTAssertEqualWithAccuracy(layout.pointsPerPixel, 0.5, STAccuracy);
     [self assertRect:[layout pageRectForPage:0] equals:NSMakeRect(0, 0, 612, 792) message:@"The whole sheet"];
 }
 

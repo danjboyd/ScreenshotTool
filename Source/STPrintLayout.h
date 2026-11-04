@@ -4,7 +4,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// How the image is sized on the page (#355).
 typedef NS_ENUM(NSInteger, STPrintFit) {
-    /// As large as fits on one page, keeping its proportions, centred. Scales small images up too.
+    /// On one page, centred, keeping its proportions: shrunk to fit if it's larger than the page, and
+    /// otherwise at its real size, since enlarging a screenshot blurs it. See `enlargeToFill`.
     STPrintFitToPage = 0,
     /// At its real size, from `pixelsPerInch`, over as many pages as that takes.
     STPrintFitActualSize,
@@ -55,12 +56,15 @@ extern const CGFloat STPrintDefaultPixelsPerInch;
 @property (nonatomic) NSSize paperSize;
 @property (nonatomic) STPrintMargins margins;
 @property (nonatomic) STPrintFit fit;
+/// For STPrintFitToPage: enlarge an image smaller than the page to fill it. Off by default.
+@property (nonatomic) BOOL enlargeToFill;
 /// For STPrintFitCustomScale: 1 is the image's real size, 0.5 half of it.
 @property (nonatomic) CGFloat customScale;
 @property (nonatomic) STPrintOrientation orientation;
 
 /// Portrait or Landscape. Automatic fits the image to whichever prints it larger; at a set size,
-/// whichever takes fewer pages. A tie follows the image's shape, and a square image is portrait.
+/// whichever takes fewer pages. A tie, such as a small image that prints at its real size either
+/// way, follows the image's shape, and a square image is portrait.
 @property (nonatomic, readonly) STPrintOrientation resolvedOrientation;
 /// `paperSize`, turned to `resolvedOrientation`.
 @property (nonatomic, readonly) NSSize orientedPaperSize;

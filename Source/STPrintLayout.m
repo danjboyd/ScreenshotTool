@@ -61,6 +61,9 @@ static NSUInteger STPagesFor(CGFloat content, CGFloat page) {
         case STPrintFitToPage:
             grid.pointsPerPixel =
                 MIN(NSWidth(grid.printable) / source.width, NSHeight(grid.printable) / source.height);
+            if (!self.enlargeToFill) {
+                grid.pointsPerPixel = MIN(grid.pointsPerPixel, [self actualPointsPerPixel]);
+            }
             grid.across = 1;
             grid.down = 1;
             return grid;
