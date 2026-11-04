@@ -51,13 +51,6 @@ static BOOL STColorIsChromatic(NSColor *color) {
 /// accent), else the keyboard focus colour (Adwaita's accent) or the selected control colour,
 /// whichever has a hue. WinUI's focus ring is black, which isn't an accent (#230). A theme
 /// without any gets GNOME's blue rather than black.
-NSColor *STThemeColorWithAlpha(NSColor *color, CGFloat alpha) {
-#if defined(GNUSTEP)
-    color = [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace] ?: color;
-#endif
-    return [color colorWithAlphaComponent:alpha];
-}
-
 NSColor *STThemeAccentColor(void) {
 #if defined(GNUSTEP)
     NSColor *named = [[[GSTheme theme] colors] colorWithKey:@"accentColor"];
@@ -72,6 +65,13 @@ NSColor *STThemeAccentColor(void) {
         }
     }
     return [NSColor colorWithDeviceRed:0x35 / 255.0 green:0x84 / 255.0 blue:0xE4 / 255.0 alpha:1.0];
+}
+
+NSColor *STThemeColorWithAlpha(NSColor *color, CGFloat alpha) {
+#if defined(GNUSTEP)
+    color = [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace] ?: color;
+#endif
+    return [color colorWithAlphaComponent:alpha];
 }
 
 NSColor *STThemeLinkColor(void) {
