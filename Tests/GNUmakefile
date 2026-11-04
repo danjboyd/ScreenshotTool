@@ -85,6 +85,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	ObjectSelectionProbe_test.m \
 	OpenRecentProbe_test.m \
 	PasteAsNewImageProbe_test.m \
+	TextSelectionProbe_test.m \
 	RedactDetectedFeedbackProbe_test.m \
 	StatusAfterCropProbe_test.m \
 	StatusBarToggleProbe_test.m \
@@ -143,6 +144,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STSelectionActionBar.m \
 	../Source/STScreenshotCapture.m \
 	../Source/STTextRecognizer.m \
+	../Source/STTextSelection.m \
 	../Source/STWindowsIntegration.m \
 	../Source/STWindowsTextRecognition.m \
 	../Source/STFontPicker.m
