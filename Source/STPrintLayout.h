@@ -20,7 +20,7 @@ typedef NS_ENUM(NSInteger, STPrintOrientation) {
     STPrintOrientationLandscape,
 };
 
-/// In points, on the sheet as it's printed: `top` stays the top when the sheet turns.
+/// In points, from the sheet's edges. See `margins` and `printerMargins`.
 typedef struct {
     CGFloat top;
     CGFloat left;
@@ -44,17 +44,30 @@ extern const CGFloat STPrintDefaultPixelsPerInch;
 /// can have fractional pixel edges, so annotations stay sharp across a page break; a platform that
 /// draws bitmap pixels rounds them itself.
 ///
+/// This class doesn't save anything: the print UI keeps its inputs (fit, scale, orientation, margins)
+/// in the app's defaults.
+///
 /// Inputs that can't be laid out (an empty `sourceRect`, margins that leave no room, a `customScale`
 /// that isn't above 0) give 0 pages.
 @interface STPrintLayout : NSObject
 
 /// The part of the image to print: all of it, or a selection.
 @property (nonatomic) NSRect sourceRect;
-/// The image's resolution, which sets its real size. Not above 0 means the default.
+/// The image's resolution, which sets its real size. Not above 0 means the default. Pass the
+/// image's own when it has one: a Retina capture is 144, so it prints at its on-screen size, and a
+/// 1× capture on macOS is 72, not the default.
 @property (nonatomic) CGFloat pixelsPerInch;
 /// The paper in points. Its own orientation doesn't matter: 612 × 792 and 792 × 612 are one paper.
 @property (nonatomic) NSSize paperSize;
+/// The margins asked for, on the sheet as printed: `top` stays the top when the sheet turns.
 @property (nonatomic) STPrintMargins margins;
+/// What the printer can't reach, on the portrait sheet: it's fixed to the physical sheet, so it turns
+/// with it. In landscape, for a sheet turned 90° clockwise, its left is the top, top the right, right
+/// the bottom and bottom the left. Each side of the sheet uses the larger of this and `margins`.
+/// The caller supplies it: NSPrintInfo's imageablePageBounds on macOS and GNUstep (or its margins
+/// where that's all a backend reports), and GetDeviceCaps' PHYSICALOFFSETX/Y and PHYSICALWIDTH/HEIGHT
+/// on Windows.
+@property (nonatomic) STPrintMargins printerMargins;
 @property (nonatomic) STPrintFit fit;
 /// For STPrintFitToPage: enlarge an image smaller than the page to fill it. Off by default.
 @property (nonatomic) BOOL enlargeToFill;
@@ -80,7 +93,8 @@ extern const CGFloat STPrintDefaultPixelsPerInch;
 @property (nonatomic, readonly) NSUInteger pagesDown;
 @property (nonatomic, readonly) NSUInteger pageCount;
 
-/// The part of the image on a page. Pages run left to right, then top to bottom, from 0. Together
+/// The part of the image on a page. Pages run left to right, then top to bottom, from 0: that's the
+/// only order, with no option for another. Together
 /// they cover `sourceRect` exactly, with no overlap. NSZeroRect out of range.
 - (NSRect)sourceRectForPage:(NSUInteger)page;
 /// Where that part goes on the sheet. Along a direction with one page it's centred in the printable

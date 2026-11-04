@@ -41,14 +41,26 @@ static NSUInteger STPagesFor(CGFloat content, CGFloat page) {
                                                       : NSMakeSize(shortSide, longSide);
 }
 
+/// Each side's larger of `margins` and `printerMargins`, the latter turned with the sheet.
+- (STPrintMargins)marginsForOrientation:(STPrintOrientation)orientation {
+    STPrintMargins asked = self.margins;
+    STPrintMargins printer = self.printerMargins;
+    if (orientation == STPrintOrientationLandscape) {
+        printer = STPrintMarginsMake(printer.left, printer.bottom, printer.right, printer.top);
+    }
+    return STPrintMarginsMake(MAX(asked.top, printer.top), MAX(asked.left, printer.left),
+                              MAX(asked.bottom, printer.bottom), MAX(asked.right, printer.right));
+}
+
 - (NSRect)printableRectForOrientation:(STPrintOrientation)orientation {
     NSSize paper = [self paperSizeForOrientation:orientation];
-    CGFloat width = paper.width - self.margins.left - self.margins.right;
-    CGFloat height = paper.height - self.margins.top - self.margins.bottom;
+    STPrintMargins margins = [self marginsForOrientation:orientation];
+    CGFloat width = paper.width - margins.left - margins.right;
+    CGFloat height = paper.height - margins.top - margins.bottom;
     if (!(width > 0.0) || !(height > 0.0)) {
         return NSZeroRect;
     }
-    return NSMakeRect(self.margins.left, self.margins.top, width, height);
+    return NSMakeRect(margins.left, margins.top, width, height);
 }
 
 - (STPrintGrid)gridForOrientation:(STPrintOrientation)orientation {

@@ -214,6 +214,16 @@ static const CGFloat STAccuracy = 0.000001;
     XCTAssertEqualWithAccuracy(layout.pointsPerPixel, 0.75, STAccuracy, @"Not above 0: the default");
 }
 
+- (void)testARetinaCapturePrintsAtItsOnScreenSize {
+    STPrintLayout *layout = [self layoutWithWidth:1440 height:900];
+    layout.pixelsPerInch = 144;
+    XCTAssertEqualWithAccuracy(layout.pointsPerPixel, 0.5, STAccuracy, @"72 / 144");
+    XCTAssertEqualWithAccuracy(layout.effectiveScale, 1.0, STAccuracy, @"Fit doesn't shrink it: 720 × 450 points fit");
+    layout.fit = STPrintFitActualSize;
+    XCTAssertEqual(layout.pageCount, (NSUInteger)1);
+    [self assertRect:[layout pageRectForPage:0] equals:NSMakeRect(36, 81, 720, 450) message:@"720 × 450, centred"];
+}
+
 #pragma mark - Custom scale
 
 - (void)testCustomScaleIsRelativeToTheRealSize {
@@ -247,6 +257,38 @@ static const CGFloat STAccuracy = 0.000001;
     layout.orientation = STPrintOrientationLandscape;
     [self assertRect:layout.printableRect equals:NSMakeRect(20, 10, 732, 572)
              message:@"Landscape: top is still the top of the sheet as printed"];
+}
+
+- (void)testPrinterMarginsTurnWithTheSheet {
+    STPrintLayout *layout = [self layoutWithWidth:700 height:1200];
+    layout.margins = STPrintMarginsMake(0, 0, 0, 0);
+    layout.printerMargins = STPrintMarginsMake(10, 20, 30, 40);
+    XCTAssertEqual(layout.resolvedOrientation, STPrintOrientationPortrait);
+    [self assertRect:layout.printableRect equals:NSMakeRect(20, 10, 552, 752) message:@"Portrait: as given"];
+    layout.orientation = STPrintOrientationLandscape;
+    [self assertRect:layout.printableRect equals:NSMakeRect(30, 20, 752, 552)
+             message:@"Landscape: left is the top, top the right, right the bottom, bottom the left"];
+}
+
+- (void)testEachSideUsesTheLargerOfTheMargins {
+    STPrintLayout *layout = [self layoutWithWidth:700 height:1200];
+    layout.printerMargins = STPrintMarginsMake(0, 50, 0, 0);
+    [self assertRect:layout.printableRect equals:NSMakeRect(50, 36, 526, 720) message:@"Portrait: the printer's left"];
+    layout.orientation = STPrintOrientationLandscape;
+    [self assertRect:layout.printableRect equals:NSMakeRect(36, 50, 720, 526)
+             message:@"Landscape: the printer's left is now the top"];
+}
+
+- (void)testAutomaticWeighsThePrinterMargins {
+    STPrintLayout *layout = [self layoutWithWidth:800 height:800];
+    XCTAssertEqual(layout.resolvedOrientation, STPrintOrientationPortrait, @"A tie: a square is portrait");
+    layout.margins = STPrintMarginsMake(0, 0, 0, 0);
+    layout.printerMargins = STPrintMarginsMake(0, 0, 0, 100); // portrait 512 wide, landscape 512 tall
+    XCTAssertEqual(layout.resolvedOrientation, STPrintOrientationPortrait, @"Still a tie");
+    layout.printerMargins = STPrintMarginsMake(0, 0, 150, 0); // portrait's height only, so landscape's left
+    XCTAssertEqual(layout.resolvedOrientation, STPrintOrientationPortrait, @"612 fits either way");
+    layout.printerMargins = STPrintMarginsMake(100, 0, 0, 0); // landscape's right, portrait's top
+    XCTAssertEqual(layout.resolvedOrientation, STPrintOrientationPortrait, @"612 is still the short side");
 }
 
 - (void)testNoMarginsUseTheWholeSheet {
