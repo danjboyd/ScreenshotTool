@@ -1103,6 +1103,9 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
     return dest;
 }
 @interface ScreenshotCanvasView () <NSTextViewDelegate>
+@property (nonatomic, copy, readwrite) NSArray<NSValue *> *redactionHighlightRects;
+@property (nonatomic, strong, nullable) NSDate *redactionHighlightStart;
+@property (nonatomic, strong, nullable) NSTimer *redactionHighlightTimer;
 @property (nonatomic, strong) NSMutableArray<MarkupStroke *> *strokes;
 @property (nonatomic, strong, nullable) MarkupStroke *currentStroke;
 @property (nonatomic, strong) NSMutableArray<MarkupText *> *texts;
@@ -2777,6 +2780,7 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
 }
 
 - (void)loadImage:(NSImage *)image {
+    [self endRedactionHighlight];
     [[self undoManager] removeAllActions];
     [self cancelActiveTextEntry];
     self.editingTextSnapshot = nil;
@@ -3128,6 +3132,7 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
 }
 
 - (void)restoreAnnotationSnapshot:(NSDictionary *)snapshot {
+    [self endRedactionHighlight];
     NSDictionary *current = [self annotationSnapshot];
     [self cancelActiveTextEntry];
     self.strokes = [snapshot[@"strokes"] mutableCopy] ?: [[NSMutableArray alloc] init];
@@ -3293,6 +3298,7 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
     }
     NSDictionary *before = [self annotationSnapshot];
     NSUInteger added = 0;
+    NSMutableArray<NSValue *> *addedRects = [[NSMutableArray alloc] initWithCapacity:rects.count];
     for (NSValue *value in rects) {
         NSRect rect = NSIntegralRect([self clampedImageRect:value.rectValue]);
         if (NSIsEmptyRect(rect)) {
@@ -3311,13 +3317,97 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
                                                            lineWidth:self.penLineWidth];
         [redaction setStartPoint:rect.origin endPoint:NSMakePoint(NSMaxX(rect), NSMaxY(rect))];
         [self.strokes addObject:redaction];
+        [addedRects addObject:[NSValue valueWithRect:rect]];
         added++;
     }
     if (added > 0) {
         [self registerAnnotationUndoWithSnapshot:before actionName:actionName];
         [self setNeedsDisplay:YES];
     }
+    [self showRedactionHighlightInImageRects:addedRects];
     return added;
+}
+
+#pragma mark - The redaction highlight (#352)
+
+/// How long it holds, then how long it fades.
+static const NSTimeInterval STRedactionHighlightHold = 0.8;
+static const NSTimeInterval STRedactionHighlightFade = 0.6;
+/// How far the outline sits outside a redaction, and its width, in view points at any zoom.
+static const CGFloat STRedactionHighlightOutset = 3.0;
+static const CGFloat STRedactionHighlightWidth = 2.0;
+
+- (void)showRedactionHighlightInImageRects:(NSArray<NSValue *> *)rects {
+    [self endRedactionHighlight];
+    if (rects.count == 0) {
+        return;
+    }
+    self.redactionHighlightRects = rects;
+    self.redactionHighlightStart = [NSDate date];
+    NSTimer *timer = [NSTimer timerWithTimeInterval:1.0 / 30.0
+                                             target:self
+                                           selector:@selector(redactionHighlightTick:)
+                                           userInfo:nil
+                                            repeats:YES];
+    [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSDefaultRunLoopMode];
+    [[NSRunLoop currentRunLoop] addTimer:timer forMode:NSEventTrackingRunLoopMode];
+    self.redactionHighlightTimer = timer;
+    [self setNeedsDisplayForRedactionHighlight];
+}
+
+- (void)redactionHighlightTick:(NSTimer *)timer {
+    (void)timer;
+    NSTimeInterval elapsed = -[self.redactionHighlightStart timeIntervalSinceNow];
+    if (elapsed >= STRedactionHighlightHold + STRedactionHighlightFade) {
+        [self endRedactionHighlight];
+    } else if (elapsed > STRedactionHighlightHold) {
+        [self setNeedsDisplayForRedactionHighlight];
+    }
+}
+
+- (void)endRedactionHighlight {
+    [self.redactionHighlightTimer invalidate];
+    self.redactionHighlightTimer = nil;
+    self.redactionHighlightStart = nil;
+    if (self.redactionHighlightRects.count > 0) {
+        [self setNeedsDisplayForRedactionHighlight];
+    }
+    self.redactionHighlightRects = nil;
+}
+
+- (NSRect)redactionHighlightViewRectForImageRect:(NSRect)imageRect {
+    CGFloat outset = STRedactionHighlightOutset + STRedactionHighlightWidth;
+    return NSInsetRect([self viewRectForImageRect:imageRect], -outset, -outset);
+}
+
+- (void)setNeedsDisplayForRedactionHighlight {
+    for (NSValue *value in self.redactionHighlightRects) {
+        // A pixel more, for the outline's antialiased edge.
+        [self setNeedsDisplayInRect:NSInsetRect([self redactionHighlightViewRectForImageRect:value.rectValue], -1.0, -1.0)];
+    }
+}
+
+/// On screen only, so it can't reach a print or a cached rendering of the view; exports don't come
+/// through drawRect: at all.
+- (void)drawRedactionHighlight {
+    if (self.redactionHighlightRects.count == 0 || ![NSGraphicsContext currentContextDrawingToScreen]) {
+        return;
+    }
+    NSTimeInterval elapsed = -[self.redactionHighlightStart timeIntervalSinceNow];
+    CGFloat alpha = elapsed <= STRedactionHighlightHold
+                        ? 1.0
+                        : MAX(1.0 - (elapsed - STRedactionHighlightHold) / STRedactionHighlightFade, 0.0);
+    // Calibrated first: a system colour, as a theme's accent can be, ignores an alpha on GNUstep.
+    NSColor *accent = STThemeAccentColor();
+    accent = [accent colorUsingColorSpaceName:NSCalibratedRGBColorSpace] ?: accent;
+    [[accent colorWithAlphaComponent:alpha] setStroke];
+    for (NSValue *value in self.redactionHighlightRects) {
+        CGFloat inset = STRedactionHighlightWidth / 2.0;
+        NSRect rect = NSInsetRect([self redactionHighlightViewRectForImageRect:value.rectValue], inset, inset);
+        NSBezierPath *outline = [NSBezierPath bezierPathWithRoundedRect:rect xRadius:3.0 yRadius:3.0];
+        outline.lineWidth = STRedactionHighlightWidth;
+        [outline stroke];
+    }
 }
 
 - (IBAction)deselect:(id)sender {
@@ -4208,6 +4298,7 @@ static NSError *STProjectError(NSString *message) {
     if (self.activeTool == ScreenshotCanvasToolSelect || self.hasSelectionRect || self.isCreatingSelection) {
         [self drawSelectionOverlay];
     }
+    [self drawRedactionHighlight];
 }
 
 - (void)drawTextGuides {

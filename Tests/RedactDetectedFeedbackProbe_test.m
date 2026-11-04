@@ -173,6 +173,77 @@ extern NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted, N
     XCTAssertEqualObjects(_appDelegate.feedbackMessages.lastObject, @"Redacted 1 item");
 }
 
+#pragma mark - The highlight (#352)
+
+- (void)testNewRedactionsAreHighlightedBriefly {
+    if (_shouldSkip) {
+        return;
+    }
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    NSArray<NSValue *> *rects = @[ [NSValue valueWithRect:NSMakeRect(10, 10, 60, 20)],
+                                   [NSValue valueWithRect:NSMakeRect(10, 50, 60, 20)] ];
+    XCTAssertEqual([canvas addRedactionsInImageRects:rects actionName:@"Redact"], (NSUInteger)2);
+    XCTAssertEqual(canvas.redactionHighlightRects.count, (NSUInteger)2, @"Both new ones");
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:2.0]];
+    XCTAssertEqual(canvas.redactionHighlightRects.count, (NSUInteger)0, @"Gone on its own");
+    [canvas setNeedsDisplay:YES];
+}
+
+- (void)testOnlyTheRedactionsARunAddedAreHighlighted {
+    if (_shouldSkip) {
+        return;
+    }
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    NSValue *first = [NSValue valueWithRect:NSMakeRect(10, 10, 60, 20)];
+    NSValue *second = [NSValue valueWithRect:NSMakeRect(10, 50, 60, 20)];
+    [canvas addRedactionsInImageRects:@[ first ] actionName:@"Redact"];
+    NSUInteger already = 0;
+    NSArray<NSValue *> *both = @[ first, second ];
+    XCTAssertEqual([canvas addRedactionsInImageRects:both actionName:@"Redact" alreadyRedacted:&already], (NSUInteger)1);
+    XCTAssertEqual(already, (NSUInteger)1);
+    XCTAssertEqual(canvas.redactionHighlightRects.count, (NSUInteger)1, @"Not the one already there");
+    XCTAssertTrue(NSEqualRects(canvas.redactionHighlightRects[0].rectValue, second.rectValue));
+
+    [canvas addRedactionsInImageRects:@[ second ] actionName:@"Redact"];
+    XCTAssertEqual(canvas.redactionHighlightRects.count, (NSUInteger)0, @"A run that adds none clears it");
+}
+
+- (void)testTheHighlightStaysOutOfUndoAndExports {
+    if (_shouldSkip) {
+        return;
+    }
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    NSImage *before = [canvas flattenedImage];
+    [canvas addRedactionsInImageRects:@[ [NSValue valueWithRect:NSMakeRect(10, 10, 60, 20)] ] actionName:@"Redact"];
+    NSData *highlighted = [[canvas flattenedImage] TIFFRepresentation];
+    XCTAssertNotNil(before);
+    NSArray<NSValue *> *rects = canvas.redactionHighlightRects;
+    [canvas endRedactionHighlight];
+    XCTAssertEqual(canvas.redactionHighlightRects.count, (NSUInteger)0);
+    XCTAssertEqualObjects(highlighted, [[canvas flattenedImage] TIFFRepresentation],
+                          @"An export is the same with or without the highlight");
+    XCTAssertEqual(rects.count, (NSUInteger)1);
+
+    [canvas addRedactionsInImageRects:@[ [NSValue valueWithRect:NSMakeRect(10, 50, 60, 20)] ] actionName:@"Redact"];
+    [canvas.undoManager undo];
+    XCTAssertEqual(canvas.redactionHighlightRects.count, (NSUInteger)0, @"Undo takes the highlight with it");
+}
+
+- (void)testOpeningAnImageEndsTheHighlight {
+    if (_shouldSkip) {
+        return;
+    }
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    [canvas addRedactionsInImageRects:@[ [NSValue valueWithRect:NSMakeRect(10, 10, 60, 20)] ] actionName:@"Redact"];
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(100.0, 100.0)];
+    [image lockFocus];
+    [[NSColor whiteColor] setFill];
+    NSRectFill(NSMakeRect(0.0, 0.0, 100.0, 100.0));
+    [image unlockFocus];
+    [canvas loadImage:image];
+    XCTAssertEqual(canvas.redactionHighlightRects.count, (NSUInteger)0);
+}
+
 - (void)testFeedbackWording {
     XCTAssertEqualObjects(STRedactDetectedFeedback(NO, 0, 0, NO), @"No text found in the image");
     XCTAssertEqualObjects(STRedactDetectedFeedback(YES, 0, 0, NO), @"No email addresses or phone numbers found");
