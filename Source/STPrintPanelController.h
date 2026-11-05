@@ -46,11 +46,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 @end
 
-/// The print margins we ask for, on every side, in points.
-extern const CGFloat STPrintDefaultMargin;
-/// Sets the layout's content for an image: `options`' source (all of it or `selection`), the image's
-/// resolution, and the fit options. Paper and margins are the caller's.
-FOUNDATION_EXPORT void STConfigurePrintLayout(STPrintLayout *layout, STPrintOptions *options, NSImage *image, NSRect selection);
 /// The paper last printed on, or NSPrintInfo's, or US Letter.
 FOUNDATION_EXPORT NSSize STPrintLastPaperSize(NSUserDefaults *defaults);
 FOUNDATION_EXPORT void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper);

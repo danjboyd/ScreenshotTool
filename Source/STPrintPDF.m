@@ -4,6 +4,8 @@
 
 #import <GNUstepGUI/GSPDFPrintOperation.h>
 #import "STPrintPage.h"
+#import "STPrintPanelController.h"
+#import "ScreenshotCanvasView.h"
 
 /// One sheet-sized page at a time: the operation asks for a page's rect, then draws the view in it.
 @interface STPrintPDFView : NSView
@@ -93,6 +95,35 @@ BOOL STWritePrintPDF(STPrintLayout *layout, NSImage *image, NSString *path) {
         return NO;
     }
     return [files fileExistsAtPath:path];
+}
+
+BOOL STWriteCanvasPrintPDF(ScreenshotCanvasView *canvas, STPrintOptions *options, NSSize paper,
+                           STPrintMargins printerMargins, NSString *path) {
+    NSImage *flattened = [canvas flattenedImage];
+    if (!flattened) {
+        return NO;
+    }
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    layout.paperSize = paper;
+    layout.margins = STPrintMarginsMake(STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin);
+    layout.printerMargins = printerMargins;
+    STConfigurePrintLayout(layout, options, flattened, [canvas selectionImageRect]);
+
+    // The scale comes from this layout; only the bitmap and its pixel counts change after it.
+    NSUInteger scale = [layout flattenScaleForImagePixelSize:STPrintImagePixelSize(flattened)];
+    NSRect keep = options.selectionOnly ? layout.sourceRect : NSZeroRect;
+    NSImage *printed = [canvas flattenedImageForPrintAtScale:scale withinRect:keep];
+    if (!printed) {
+        scale = 1;
+        printed = options.selectionOnly ? [canvas flattenedImageForSelection] : flattened;
+    }
+    if (!printed) {
+        return NO;
+    }
+    NSSize pixels = STPrintImagePixelSize(printed);
+    layout.sourceRect = NSMakeRect(0.0, 0.0, pixels.width, pixels.height);
+    layout.pixelsPerInch = layout.pixelsPerInch * scale;
+    return STWritePrintPDF(layout, printed, path);
 }
 
 #endif

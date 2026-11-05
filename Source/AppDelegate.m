@@ -7177,24 +7177,13 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         return;
     }
     STPrintOptions *options = [panel.options copy];
-    // Only what's printed goes in the PDF: a selection's clip would still carry the whole image.
-    NSImage *image = options.selectionOnly ? [self.canvasView flattenedImageForSelection] : flattened;
-    NSRect printedSelection = NSZeroRect;
-    if (!image) {
-        return;
-    }
-    options.selectionOnly = NO;
     NSString *title = self.window.title.length > 0 ? self.window.title : @"Screenshot";
+    ScreenshotCanvasView *canvas = self.canvasView;
     [STPrintPortal printForWindow:self.window
                             title:title
                            writer:^BOOL(STPrintPortalPageSetup setup, NSString *path) {
         STPrintSavePaperSize(defaults, setup.paper);
-        STPrintLayout *layout = [[STPrintLayout alloc] init];
-        layout.paperSize = setup.paper;
-        layout.margins = STPrintMarginsMake(STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin);
-        layout.printerMargins = setup.printerMargins;
-        STConfigurePrintLayout(layout, options, image, printedSelection);
-        return STWritePrintPDF(layout, image, path);
+        return STWriteCanvasPrintPDF(canvas, options, setup.paper, setup.printerMargins, path);
     }
                        completion:^(BOOL printed, NSString *failure) {
         (void)printed;

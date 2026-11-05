@@ -14,10 +14,12 @@
 #if defined(__linux__)
 
 #import "AppDelegate.h"
+#import "MarkupStroke.h"
 #import "ScreenshotCanvasView.h"
 #import "STPrintLayout.h"
 #import "STPrintOptions.h"
 #import "STPrintPDF.h"
+#import "STPrintPage.h"
 #import "STPrintPanelController.h"
 #import "TestEnvironmentHelpers.h"
 
@@ -27,6 +29,7 @@
 @end
 
 @interface ScreenshotCanvasView (PrintRedactionProbe)
+@property (nonatomic, strong) NSMutableArray<MarkupStroke *> *strokes;
 @property (nonatomic, assign) BOOL hasSelectionRect;
 @property (nonatomic, assign) NSRect selectionRect;
 @end
@@ -172,6 +175,113 @@ static const unsigned char STSecretOther[3] = { 0, 255, 0 };
     [self run:@"pdfimages" arguments:@[ pdf, [_directory stringByAppendingPathComponent:@"image"] ]];
     *rendered = [self secretPixelsInFilesWithPrefix:@"page" sizes:[NSMutableArray array]];
     *embedded = [self secretPixelsInFilesWithPrefix:@"image" sizes:sizes];
+}
+
+/// The whole path, as the Print command takes it.
+- (NSString *)writeCanvasPDFWithOptions:(STPrintOptions *)options {
+    NSString *pdf = [_directory stringByAppendingPathComponent:@"print.pdf"];
+    XCTAssertTrue(STWriteCanvasPrintPDF(_appDelegate.canvasView, options, NSMakeSize(612, 792),
+                                        STPrintMarginsMake(0, 0, 0, 0), pdf));
+    return pdf;
+}
+
+/// Enlarged for printing, a redaction still leaves nothing of what it hides.
+- (void)testARedactionHoldsAtPrintResolution {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    [canvas addRedactionsInImageRects:@[ [NSValue valueWithRect:NSMakeRect(50, 40, 100, 50)] ] actionName:@"Redact"];
+    STPrintOptions *options = [[STPrintOptions alloc] init];
+    options.fit = STPrintFitActualSize;
+    NSUInteger rendered = 0, embedded = 0;
+    NSMutableArray<NSString *> *sizes = [NSMutableArray array];
+    [self countSecretInPDF:[self writeCanvasPDFWithOptions:options] rendered:&rendered embedded:&embedded embeddedSizes:sizes];
+    XCTAssertEqual(rendered, (NSUInteger)0, @"on the page");
+    XCTAssertEqual(embedded, (NSUInteger)0, @"anywhere in the file");
+    XCTAssertEqualObjects(sizes, @[ @"1200x600" ], @"three times the capture, for 300 dpi");
+}
+
+/// The same check shows the secret when it isn't redacted, at print resolution too.
+- (void)testAtPrintResolutionTheSecretIsFound {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STPrintOptions *options = [[STPrintOptions alloc] init];
+    options.fit = STPrintFitActualSize;
+    NSUInteger rendered = 0, embedded = 0;
+    [self countSecretInPDF:[self writeCanvasPDFWithOptions:options]
+                  rendered:&rendered
+                  embedded:&embedded
+             embeddedSizes:[NSMutableArray array]];
+    XCTAssertEqual(embedded, (NSUInteger)(2500 * 9));
+}
+
+/// Print Selection, by the real path: only the selection's pixels, enlarged.
+- (void)testAPrintedSelectionHoldsOnlyTheSelection {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    canvas.hasSelectionRect = YES;
+    canvas.selectionRect = NSMakeRect(200, 100, 100, 60);
+    STPrintOptions *options = [[STPrintOptions alloc] init];
+    options.fit = STPrintFitActualSize;
+    options.selectionOnly = YES;
+    NSUInteger rendered = 0, embedded = 0;
+    NSMutableArray<NSString *> *sizes = [NSMutableArray array];
+    [self countSecretInPDF:[self writeCanvasPDFWithOptions:options] rendered:&rendered embedded:&embedded embeddedSizes:sizes];
+    XCTAssertEqual(embedded, (NSUInteger)0);
+    // Cairo can pad an embedded image by a few pixels of its own edge, so the size isn't exact. What
+    // shows nothing else got in is its colour: the selection is solid blue.
+    XCTAssertEqual(sizes.count, (NSUInteger)1);
+    int width = 0, height = 0;
+    XCTAssertEqual(sscanf(sizes.firstObject.UTF8String, "%dx%d", &width, &height), 2);
+    XCTAssertEqualWithAccuracy((double)width, 300.0, 8.0);
+    XCTAssertEqualWithAccuracy((double)height, 180.0, 8.0);
+    NSData *ppm = nil;
+    for (NSString *name in [[NSFileManager defaultManager] contentsOfDirectoryAtPath:_directory error:NULL]) {
+        if ([name hasPrefix:@"image"] && [name.pathExtension isEqualToString:@"ppm"]) {
+            ppm = [NSData dataWithContentsOfFile:[_directory stringByAppendingPathComponent:name]];
+        }
+    }
+    NSUInteger pixels = (NSUInteger)width * (NSUInteger)height;
+    XCTAssertGreaterThanOrEqual(ppm.length, pixels * 3);
+    const unsigned char *data = (const unsigned char *)ppm.bytes + ppm.length - pixels * 3;
+    NSUInteger notBlue = 0;
+    for (NSUInteger i = 0; i < pixels; i++) {
+        if (data[i * 3] > 40 || data[i * 3 + 1] > 40 || data[i * 3 + 2] < 200) {
+            notBlue++;
+        }
+    }
+    XCTAssertEqual(notBlue, (NSUInteger)0, @"something from outside the selection");
+}
+
+/// An annotation is drawn at the printed size: its edge is one printer pixel, not a block of them.
+- (void)testAnArrowEdgeIsDrawnAtPrintResolution {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    MarkupStroke *arrow = [[MarkupStroke alloc] initWithType:MarkupStrokeTypeArrow
+                                                       color:[NSColor colorWithCalibratedRed:0 green:0 blue:0 alpha:1]
+                                                   lineWidth:4.0];
+    [arrow setStartPoint:NSMakePoint(170, 120) endPoint:NSMakePoint(380, 185)];
+    [canvas.strokes addObject:arrow];
+    NSImage *image = [canvas flattenedImageForPrintAtScale:3 withinRect:NSZeroRect];
+    NSBitmapImageRep *rep = (NSBitmapImageRep *)image.representations.firstObject;
+    XCTAssertEqual(rep.pixelsWide, (NSInteger)1200);
+    XCTAssertEqual(rep.pixelsHigh, (NSInteger)600);
+    NSUInteger blocks = 0, notBlocks = 0;
+    const unsigned char *data = rep.bitmapData;
+    NSInteger perPixel = rep.bitsPerPixel / 8;
+    for (NSInteger y = 300; y < 555; y += 3) {
+        const unsigned char *row = data + y * rep.bytesPerRow;
+        for (NSInteger x = 510; x < 1140; x += 3) {
+            if (row[x * perPixel] == row[(x + 3) * perPixel]) {
+                continue;
+            }
+            // Identical across a 3 × 3 block's own pixels if only the bitmap was enlarged.
+            if (row[x * perPixel] == row[(x + 1) * perPixel] && row[(x + 1) * perPixel] == row[(x + 2) * perPixel]) {
+                blocks++;
+            } else {
+                notBlocks++;
+            }
+        }
+    }
+    XCTAssertGreaterThan(notBlocks, (NSUInteger)10, @"%lu blocks", (unsigned long)blocks);
 }
 
 /// Shows the checks can see the secret, so that the others' zeroes mean something.

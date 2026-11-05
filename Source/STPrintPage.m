@@ -1,4 +1,5 @@
 #import "STPrintPage.h"
+#include <math.h>
 
 NSSize STPrintImagePixelSize(NSImage *image) {
     NSSize pixels = NSZeroSize;
@@ -8,6 +9,23 @@ NSSize STPrintImagePixelSize(NSImage *image) {
         }
     }
     return pixels.width > 0.0 ? pixels : image.size;
+}
+
+const CGFloat STPrintDefaultMargin = 36.0;
+
+void STConfigurePrintLayout(STPrintLayout *layout, STPrintOptions *options, NSImage *image, NSRect selection) {
+    NSSize pixels = STPrintImagePixelSize(image);
+    NSRect whole = NSMakeRect(0.0, 0.0, pixels.width, pixels.height);
+    NSRect source = options.selectionOnly ? NSIntersectionRect(selection, whole) : whole;
+    layout.sourceRect = NSIsEmptyRect(source) ? whole : source;
+#if defined(GNUSTEP)
+    layout.pixelsPerInch = image.size.width > 0.0 && fabs(image.size.width - pixels.width) > 0.5
+                               ? 72.0 * pixels.width / image.size.width
+                               : STPrintDefaultPixelsPerInch;
+#else
+    layout.pixelsPerInch = image.size.width > 0.0 ? 72.0 * pixels.width / image.size.width : 72.0;
+#endif
+    [options applyToLayout:layout];
 }
 
 BOOL STDrawPrintPage(STPrintLayout *layout, NSUInteger page, NSImage *image, BOOL flipped) {

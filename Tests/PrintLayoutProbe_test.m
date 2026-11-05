@@ -372,4 +372,38 @@ static const CGFloat STAccuracy = 0.000001;
     [self assertNoPages:layout message:@"Not a number"];
 }
 
+/// Annotations print at 300 dpi: 96 ppi at real size is 0.75 points a pixel, so 3.125, rounded.
+- (void)testTheFlattenScaleReachesThreeHundredDPI {
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    layout.sourceRect = NSMakeRect(0, 0, 400, 200);
+    layout.paperSize = NSMakeSize(612, 792);
+    layout.fit = STPrintFitActualSize;
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:NSMakeSize(400, 200)], (NSUInteger)3);
+    layout.fit = STPrintFitCustomScale;
+    layout.customScale = 4.0;
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:NSMakeSize(400, 200)], (NSUInteger)13);
+}
+
+/// A large image shrunk to fit is already past 300 dpi: never below its own pixels.
+- (void)testTheFlattenScaleIsAtLeastOne {
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    layout.sourceRect = NSMakeRect(0, 0, 8000, 4000);
+    layout.paperSize = NSMakeSize(612, 792);
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:NSMakeSize(8000, 4000)], (NSUInteger)1);
+    layout.sourceRect = NSZeroRect;
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:NSMakeSize(8000, 4000)], (NSUInteger)1, @"no pages");
+}
+
+/// The whole image is what's enlarged, even when only a selection prints, so the cap follows it.
+- (void)testTheFlattenScaleStaysWithinThePixelCap {
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    layout.sourceRect = NSMakeRect(0, 0, 100, 100);
+    layout.paperSize = NSMakeSize(612, 792);
+    layout.fit = STPrintFitCustomScale;
+    layout.customScale = 4.0;
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:NSMakeSize(100, 100)], (NSUInteger)13);
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:NSMakeSize(4096, 2000)], (NSUInteger)2);
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:NSMakeSize(5000, 2000)], (NSUInteger)1);
+}
+
 @end

@@ -104,6 +104,13 @@ FOUNDATION_EXPORT NSBitmapImageRep * _Nullable STOpaqueBitmapOnWhite(NSImage *im
 - (void)updateForEnclosingBoundsChange;
 - (nullable NSImage *)flattenedImage;
 - (nullable NSImage *)flattenedImageForSelection;
+#if defined(GNUSTEP)
+/// The flattened image for printing (#355), or nil if this image can't be drawn this way: the capture
+/// with its redactions, each pixel enlarged `scale` times, and the other annotations drawn at that size,
+/// so they print sharp. `clipRect` is the part to keep, in the image's pixels; NSZeroRect keeps it all.
+/// Its size in points stays the capture's, so its pixels are `scale` to a point.
+- (nullable NSImage *)flattenedImageForPrintAtScale:(NSUInteger)scale withinRect:(NSRect)clipRect;
+#endif
 - (BOOL)hasImage;
 - (BOOL)hasSelection;
 - (void)clearMarkup;

@@ -93,6 +93,10 @@ extern const CGFloat STPrintDefaultPixelsPerInch;
 @property (nonatomic, readonly) NSUInteger pagesDown;
 @property (nonatomic, readonly) NSUInteger pageCount;
 
+/// How many times to enlarge a flattened image of this many pixels so annotations print sharp: pixels
+/// to 300 dpi on the paper, rounded, at least 1, and no more than keeps it within 8192 pixels a side.
+- (NSUInteger)flattenScaleForImagePixelSize:(NSSize)imagePixels;
+
 /// The part of the image on a page. Pages run left to right, then top to bottom, from 0: that's the
 /// only order, with no option for another. Together
 /// they cover `sourceRect` exactly, with no overlap. NSZeroRect out of range.

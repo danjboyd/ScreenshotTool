@@ -1,5 +1,8 @@
 #import <AppKit/AppKit.h>
 #import "STPrintLayout.h"
+#import "STPrintOptions.h"
+
+@class ScreenshotCanvasView;
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -15,6 +18,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// private -[GSPDFPrintOperation _print], and a sheet that says portrait whatever its shape, since
 /// CairoContext would otherwise swap a landscape sheet back. Recheck them at every libs-gui bump.
 FOUNDATION_EXPORT BOOL STWritePrintPDF(STPrintLayout *layout, NSImage *image, NSString *path);
+
+/// Writes `canvas`'s image as Linux prints it, for this paper and these options: flattened at the
+/// size it's printed, with its redactions, and only the selection when that's what's printed.
+FOUNDATION_EXPORT BOOL STWriteCanvasPrintPDF(ScreenshotCanvasView *canvas, STPrintOptions *options, NSSize paper,
+                                             STPrintMargins printerMargins, NSString *path);
 #endif
 
 NS_ASSUME_NONNULL_END

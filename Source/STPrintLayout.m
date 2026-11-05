@@ -4,6 +4,8 @@
 const CGFloat STPrintDefaultPixelsPerInch = 96.0;
 
 static const CGFloat STPointsPerInch = 72.0;
+static const CGFloat STPrintFlattenDotsPerInch = 300.0;
+static const CGFloat STPrintFlattenMaximumPixels = 8192.0;
 /// Rounding in the sums must not add a page: 720.0000001 points on 720 is one page.
 static const CGFloat STPageTolerance = 1e-6;
 
@@ -148,6 +150,17 @@ static NSUInteger STPagesFor(CGFloat content, CGFloat page) {
 - (NSUInteger)pageCount {
     STPrintGrid grid = [self grid];
     return grid.across * grid.down;
+}
+
+- (NSUInteger)flattenScaleForImagePixelSize:(NSSize)imagePixels {
+    CGFloat longSide = MAX(imagePixels.width, imagePixels.height);
+    CGFloat pointsPerPixel = self.pointsPerPixel;
+    if (!(longSide > 0.0) || !(pointsPerPixel > 0.0)) {
+        return 1;
+    }
+    CGFloat wanted = round(pointsPerPixel * STPrintFlattenDotsPerInch / STPointsPerInch);
+    CGFloat allowed = floor(STPrintFlattenMaximumPixels / longSide);
+    return (NSUInteger)MAX(MIN(wanted, allowed), 1.0);
 }
 
 - (NSRect)sourceRectForPage:(NSUInteger)page {

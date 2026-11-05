@@ -11,6 +11,7 @@
 
 #if defined(__linux__)
 
+#import "STPrintPage.h"
 #import "STPrintPanelController.h"
 
 @interface PrintPanelProbeTests : XCTestCase

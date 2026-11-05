@@ -4,8 +4,6 @@
 
 #import "STPrintPage.h"
 
-const CGFloat STPrintDefaultMargin = 36.0;
-
 static NSString * const STDefaultsPrintPaperWidthKey = @"ScreenshotToolPrintPaperWidth";
 static NSString * const STDefaultsPrintPaperHeightKey = @"ScreenshotToolPrintPaperHeight";
 
@@ -15,18 +13,6 @@ static const CGFloat STPanelGutter = 20.0;
 static const CGFloat STControlsWidth = 250.0;
 static const CGFloat STRowHeight = 28.0;
 static const CGFloat STRowGap = 14.0;
-
-void STConfigurePrintLayout(STPrintLayout *layout, STPrintOptions *options, NSImage *image, NSRect selection) {
-    NSSize pixels = STPrintImagePixelSize(image);
-    NSRect whole = NSMakeRect(0.0, 0.0, pixels.width, pixels.height);
-    NSRect source = options.selectionOnly ? NSIntersectionRect(selection, whole) : whole;
-    layout.sourceRect = NSIsEmptyRect(source) ? whole : source;
-    // A size that differs from the pixels is the image's own resolution; otherwise it has none.
-    layout.pixelsPerInch = image.size.width > 0.0 && fabs(image.size.width - pixels.width) > 0.5
-                               ? 72.0 * pixels.width / image.size.width
-                               : STPrintDefaultPixelsPerInch;
-    [options applyToLayout:layout];
-}
 
 NSSize STPrintLastPaperSize(NSUserDefaults *defaults) {
     CGFloat width = (CGFloat)[defaults doubleForKey:STDefaultsPrintPaperWidthKey];

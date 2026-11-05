@@ -1,5 +1,6 @@
 #import <AppKit/AppKit.h>
 #import "STPrintLayout.h"
+#import "STPrintOptions.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -21,5 +22,14 @@ FOUNDATION_EXPORT NSSize STPrintImagePixelSize(NSImage *image);
 ///
 /// Returns NO, drawing nothing, for a page out of range or an image with no size.
 FOUNDATION_EXPORT BOOL STDrawPrintPage(STPrintLayout *layout, NSUInteger page, NSImage *image, BOOL flipped);
+
+/// The print margins we ask for, on every side, in points.
+extern const CGFloat STPrintDefaultMargin;
+
+/// Sets a layout's content for an image: `options`' source (all of it or `selection`, in pixels from the
+/// image's top left), the image's resolution, and the fit options. Paper and margins are the caller's.
+/// The resolution comes from its pixels against its size: on macOS a point is 1/72 inch, so a Retina
+/// capture is 144; on GNUstep a size equal to its pixels means the file gave none, so it's the default.
+FOUNDATION_EXPORT void STConfigurePrintLayout(STPrintLayout *layout, STPrintOptions *options, NSImage *image, NSRect selection);
 
 NS_ASSUME_NONNULL_END
