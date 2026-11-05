@@ -109,6 +109,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	PrintLayoutProbe_test.m \
 	PrintPageProbe_test.m \
 	PrintPDFProbe_test.m \
+	PrintOptionsProbe_test.m \
 	TextRecognizerProbe_test.m \
 	ClipboardScreenshotOfferProbe_test.m \
 	CanvasCursorShownRectProbe_test.m \
@@ -148,6 +149,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STPrintLayout.m \
 	../Source/STPrintPage.m \
 	../Source/STPrintPDF.m \
+	../Source/STPrintOptions.m \
 	../Source/STTextRecognizer.m \
 	../Source/STWindowsIntegration.m \
 	../Source/STWindowsTextRecognition.m \

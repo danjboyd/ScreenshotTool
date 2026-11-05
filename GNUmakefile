@@ -266,6 +266,7 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/STPrintLayout.m \
 	Source/STPrintPage.m \
 	Source/STPrintPDF.m \
+	Source/STPrintOptions.m \
 	Source/STTextRecognizer.m \
 	Source/STWindowsIntegration.m \
 	Source/STWindowsTextRecognition.m \
