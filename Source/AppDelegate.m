@@ -7181,8 +7181,10 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     ScreenshotCanvasView *canvas = self.canvasView;
     [STPrintPortal printForWindow:self.window
                             title:title
-                           writer:^BOOL(STPrintPortalPageSetup setup, NSString *path) {
+                        pageSetup:STPrintLastPageSetup(defaults)
+                           writer:^BOOL(STPrintPortalPageSetup setup, NSDictionary<NSString *, id> *pageSetup, NSString *path) {
         STPrintSavePaperSize(defaults, setup.paper);
+        STPrintSavePageSetup(defaults, pageSetup);
         return STWriteCanvasPrintPDF(canvas, options, setup.paper, setup.printerMargins, path);
     }
                        completion:^(BOOL printed, NSString *failure) {

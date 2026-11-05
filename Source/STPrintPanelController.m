@@ -6,6 +6,7 @@
 
 static NSString * const STDefaultsPrintPaperWidthKey = @"ScreenshotToolPrintPaperWidth";
 static NSString * const STDefaultsPrintPaperHeightKey = @"ScreenshotToolPrintPaperHeight";
+static NSString * const STDefaultsPrintPageSetupKey = @"ScreenshotToolPrintPageSetup";
 
 static const CGFloat STPanelWidth = 720.0;
 static const CGFloat STPanelHeight = 460.0;
@@ -22,6 +23,14 @@ NSSize STPrintLastPaperSize(NSUserDefaults *defaults) {
     }
     NSSize paper = [[NSPrintInfo sharedPrintInfo] paperSize];
     return paper.width > 0.0 && paper.height > 0.0 ? paper : NSMakeSize(612.0, 792.0);
+}
+
+NSDictionary<NSString *, id> *STPrintLastPageSetup(NSUserDefaults *defaults) {
+    return [defaults dictionaryForKey:STDefaultsPrintPageSetupKey];
+}
+
+void STPrintSavePageSetup(NSUserDefaults *defaults, NSDictionary<NSString *, id> *pageSetup) {
+    [defaults setObject:pageSetup forKey:STDefaultsPrintPageSetupKey];
 }
 
 void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper) {

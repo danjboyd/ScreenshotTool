@@ -16,8 +16,15 @@ typedef struct {
 /// the sheet's shape, and the PDF's pages have that shape.
 FOUNDATION_EXPORT STPrintPortalPageSetup STPrintPortalPageSetupFromVariant(void *pageSetup);
 
-/// Writes the PDF for the paper the dialog chose, at `path`. YES if it did.
-typedef BOOL (^STPrintPortalWriter)(STPrintPortalPageSetup setup, NSString *path);
+/// The dialog's page-setup dictionary as property-list values, to save and pass back next time, and
+/// back to a GVariant `a{sv}`. The portal refuses a partial one (the dialog answers 2 and never shows),
+/// so one without its paper name, size or margins comes back empty, which asks for the default.
+FOUNDATION_EXPORT NSDictionary<NSString *, id> *STPrintPortalPageSetupDictionaryFromVariant(void *pageSetup);
+FOUNDATION_EXPORT void *STPrintPortalPageSetupVariantFromDictionary(NSDictionary<NSString *, id> * _Nullable pageSetup);
+
+/// Writes the PDF for the paper the dialog chose, at `path`. YES if it did. `pageSetup` is the
+/// dictionary form of `setup`, to remember.
+typedef BOOL (^STPrintPortalWriter)(STPrintPortalPageSetup setup, NSDictionary<NSString *, id> *pageSetup, NSString *path);
 /// `failure` is nil if it printed or the user cancelled; `printed` says which.
 typedef void (^STPrintPortalCompletion)(BOOL printed, NSString * _Nullable failure);
 
@@ -29,6 +36,7 @@ typedef void (^STPrintPortalCompletion)(BOOL printed, NSString * _Nullable failu
 + (BOOL)isPrinting;
 + (void)printForWindow:(nullable NSWindow *)window
                  title:(NSString *)title
+             pageSetup:(nullable NSDictionary<NSString *, id> *)pageSetup
                 writer:(STPrintPortalWriter)writer
             completion:(STPrintPortalCompletion)completion;
 @end

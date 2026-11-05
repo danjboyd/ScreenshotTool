@@ -32,6 +32,57 @@ STPrintPortalPageSetup STPrintPortalPageSetupFromVariant(void *pageSetup) {
     return setup;
 }
 
+static NSArray<NSString *> *STPageSetupStringKeys(void) {
+    return @[ @"PPDName", @"Name", @"DisplayName", @"Orientation" ];
+}
+
+static NSArray<NSString *> *STPageSetupNumberKeys(void) {
+    return @[ @"Width", @"Height", @"MarginTop", @"MarginBottom", @"MarginLeft", @"MarginRight" ];
+}
+
+NSDictionary<NSString *, id> *STPrintPortalPageSetupDictionaryFromVariant(void *pageSetup) {
+    NSMutableDictionary<NSString *, id> *dictionary = [NSMutableDictionary dictionary];
+    GVariant *variant = (GVariant *)pageSetup;
+    if (variant == NULL || !g_variant_is_of_type(variant, G_VARIANT_TYPE_VARDICT)) {
+        return dictionary;
+    }
+    for (NSString *key in STPageSetupStringKeys()) {
+        const char *value = NULL;
+        if (g_variant_lookup(variant, key.UTF8String, "&s", &value) && value != NULL) {
+            dictionary[key] = [NSString stringWithUTF8String:value];
+        }
+    }
+    for (NSString *key in STPageSetupNumberKeys()) {
+        gdouble value = 0.0;
+        if (g_variant_lookup(variant, key.UTF8String, "d", &value)) {
+            dictionary[key] = @(value);
+        }
+    }
+    return dictionary;
+}
+
+void *STPrintPortalPageSetupVariantFromDictionary(NSDictionary<NSString *, id> *pageSetup) {
+    GVariantBuilder builder;
+    g_variant_builder_init(&builder, G_VARIANT_TYPE_VARDICT);
+    BOOL complete = [pageSetup[@"PPDName"] isKindOfClass:[NSString class]] &&
+                    [pageSetup[@"DisplayName"] isKindOfClass:[NSString class]];
+    for (NSString *key in STPageSetupNumberKeys()) {
+        complete = complete && [pageSetup[key] isKindOfClass:[NSNumber class]];
+    }
+    if (complete) {
+        for (NSString *key in STPageSetupStringKeys()) {
+            id value = pageSetup[key];
+            if ([value isKindOfClass:[NSString class]]) {
+                g_variant_builder_add(&builder, "{sv}", key.UTF8String, g_variant_new_string([value UTF8String]));
+            }
+        }
+        for (NSString *key in STPageSetupNumberKeys()) {
+            g_variant_builder_add(&builder, "{sv}", key.UTF8String, g_variant_new_double([pageSetup[key] doubleValue]));
+        }
+    }
+    return g_variant_builder_end(&builder);
+}
+
 static STPrintPortal *STActivePrint = nil;
 
 @interface STPrintPortal () {
@@ -45,6 +96,7 @@ static STPrintPortal *STActivePrint = nil;
 }
 @property (nonatomic, weak) NSWindow *window;
 @property (nonatomic, copy) NSString *title;
+@property (nonatomic, copy, nullable) NSDictionary<NSString *, id> *savedPageSetup;
 @property (nonatomic, copy) STPrintPortalWriter writer;
 @property (nonatomic, copy) STPrintPortalCompletion completion;
 @property (nonatomic, strong) NSTimer *timer;
@@ -70,6 +122,7 @@ static void STPrintPortalResponse(GDBusConnection *connection, const gchar *send
 
 + (void)printForWindow:(NSWindow *)window
                  title:(NSString *)title
+             pageSetup:(NSDictionary<NSString *, id> *)pageSetup
                 writer:(STPrintPortalWriter)writer
             completion:(STPrintPortalCompletion)completion {
     if (STActivePrint) {
@@ -78,6 +131,7 @@ static void STPrintPortalResponse(GDBusConnection *connection, const gchar *send
     STPrintPortal *print = [[STPrintPortal alloc] init];
     print.window = window;
     print.title = title;
+    print.savedPageSetup = pageSetup;
     print.writer = writer;
     print.completion = completion;
     STActivePrint = print;
@@ -151,17 +205,18 @@ static void STPrintPortalResponse(GDBusConnection *connection, const gchar *send
     NSString *expected = [self subscribeForNextRequest:&token];
     g_main_context_pop_thread_default(_context);
 
-    GVariantBuilder settings, pageSetup, options;
+    GVariantBuilder settings, options;
     g_variant_builder_init(&settings, G_VARIANT_TYPE_VARDICT);
-    g_variant_builder_init(&pageSetup, G_VARIANT_TYPE_VARDICT);
     g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
     g_variant_builder_add(&options, "{sv}", "handle_token", g_variant_new_string(token.UTF8String));
     g_variant_builder_add(&options, "{sv}", "modal", g_variant_new_boolean(TRUE));
     GVariant *reply = g_dbus_connection_call_sync(_bus, "org.freedesktop.portal.Desktop",
                                                   "/org/freedesktop/portal/desktop",
                                                   "org.freedesktop.portal.Print", "PreparePrint",
-                                                  g_variant_new("(ssa{sv}a{sv}a{sv})", STPortalParentWindow(self.window).UTF8String,
-                                                                self.title.UTF8String, &settings, &pageSetup, &options),
+                                                  g_variant_new("(ssa{sv}@a{sv}a{sv})", STPortalParentWindow(self.window).UTF8String,
+                                                                self.title.UTF8String, &settings,
+                                                                (GVariant *)STPrintPortalPageSetupVariantFromDictionary(self.savedPageSetup),
+                                                                &options),
                                                   G_VARIANT_TYPE("(o)"), G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
     if (reply == NULL) {
         NSString *failure = [NSString stringWithFormat:@"The desktop's print dialog isn't available (%s).",
@@ -222,6 +277,7 @@ static void STPrintPortalResponse(GDBusConnection *connection, const gchar *send
         return;
     }
     STPrintPortalPageSetup setup = STPrintPortalPageSetupFromVariant(pageSetup);
+    NSDictionary<NSString *, id> *chosen = STPrintPortalPageSetupDictionaryFromVariant(pageSetup);
     g_variant_unref(pageSetup);
     if (!setup.valid) {
         [self finishPrinted:NO failure:@"The desktop's print dialog gave no paper size."];
@@ -230,7 +286,7 @@ static void STPrintPortalResponse(GDBusConnection *connection, const gchar *send
 
     NSString *path = [NSTemporaryDirectory() stringByAppendingPathComponent:
                                                  [NSString stringWithFormat:@"ScreenshotTool-print-%@.pdf", [[NSUUID UUID] UUIDString]]];
-    BOOL wrote = self.writer(setup, path);
+    BOOL wrote = self.writer(setup, chosen, path);
     int fd = wrote ? open(path.fileSystemRepresentation, O_RDONLY | O_CLOEXEC) : -1;
     // Unlinked at once: the open file is all the portal needs, and nothing's left behind on a crash.
     unlink(path.fileSystemRepresentation);

@@ -23,7 +23,8 @@
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     for (NSString *key in @[ STDefaultsPrintFitKey, STDefaultsPrintCustomScaleKey, STDefaultsPrintEnlargeToFillKey,
                              STDefaultsPrintOrientationKey,
-                             @"ScreenshotToolPrintPaperWidth", @"ScreenshotToolPrintPaperHeight" ]) {
+                             @"ScreenshotToolPrintPaperWidth", @"ScreenshotToolPrintPaperHeight",
+                             @"ScreenshotToolPrintPageSetup" ]) {
         [defaults removeObjectForKey:key];
     }
 }

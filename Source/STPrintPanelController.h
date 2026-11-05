@@ -49,6 +49,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// The paper last printed on, or NSPrintInfo's, or US Letter.
 FOUNDATION_EXPORT NSSize STPrintLastPaperSize(NSUserDefaults *defaults);
 FOUNDATION_EXPORT void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper);
+/// What the print dialog last answered, to start it on the same paper next time.
+FOUNDATION_EXPORT NSDictionary<NSString *, id> * _Nullable STPrintLastPageSetup(NSUserDefaults *defaults);
+FOUNDATION_EXPORT void STPrintSavePageSetup(NSUserDefaults *defaults, NSDictionary<NSString *, id> *pageSetup);
 #endif
 
 NS_ASSUME_NONNULL_END
