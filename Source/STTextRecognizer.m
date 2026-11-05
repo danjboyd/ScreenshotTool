@@ -105,31 +105,102 @@ static BOOL STIsPhoneNumber(NSString *match) {
     return digits >= 7 && digits <= 15;
 }
 
+/// Whether two words, side by side, are one email address that the reader split: Vision puts a space
+/// after a dot or around the "@" ("jane. doe@example.com", "Support@Example. COM", "doe @example.com").
+/// Only where an "@" is part of it, so a sentence's full stop never joins two words.
+static BOOL STWordsJoinIntoEmail(NSString *left, NSString *right) {
+    if (left.length == 0 || right.length == 0) {
+        return NO;
+    }
+    BOOL leftHasAt = [left rangeOfString:@"@"].location != NSNotFound;
+    BOOL rightHasAt = [right rangeOfString:@"@"].location != NSNotFound;
+    if (leftHasAt && rightHasAt) {
+        return NO;
+    }
+    if ([left hasSuffix:@"@"] || [right hasPrefix:@"@"]) {
+        return YES;
+    }
+    // "rachel.o'" + "neil@example.ie".
+    if (([left hasSuffix:@"'"] || [left hasSuffix:@"’"]) && rightHasAt) {
+        return YES;
+    }
+    // "jane." + "doe@example.com", or "Support@Example." + "COM".
+    return [left hasSuffix:@"."] && left.length > 1 && (leftHasAt || rightHasAt) &&
+           [[NSCharacterSet alphanumericCharacterSet] characterIsMember:[right characterAtIndex:0]];
+}
+
+/// A word as the phone number pattern sees it: where at least half of it is digits, the letters a reader puts
+/// for digits are read as those digits ("/946" is 7946, "Ø123" is 0123, "55b-0100" is 556-0100), so
+/// a misread digit doesn't leave the rest of the number unredacted. Same length as `word`.
+static NSString *STPhoneDigitsInWord(NSString *word) {
+    static NSDictionary<NSString *, NSString *> *lookalikes = nil;
+    if (!lookalikes) {
+        lookalikes = @{ @"O": @"0", @"o": @"0", @"Ø": @"0", @"ø": @"0", @"D": @"0", @"l": @"1", @"I": @"1", @"i": @"1",
+                        @"|": @"1", @"!": @"1", @"Z": @"2", @"z": @"2", @"S": @"5", @"s": @"5", @"b": @"6", @"G": @"6",
+                        @"/": @"7", @"B": @"8", @"g": @"9", @"q": @"9" };
+    }
+    NSUInteger digits = 0, others = 0;
+    for (NSUInteger i = 0; i < word.length; i++) {
+        unichar c = [word characterAtIndex:i];
+        if (c >= '0' && c <= '9') {
+            digits++;
+        } else if (!(c == '+' || c == '(' || c == ')' || c == '-' || c == '.')) {
+            if (!lookalikes[[NSString stringWithCharacters:&c length:1]]) {
+                return word;
+            }
+            others++;
+        }
+    }
+    if (others == 0 || digits == 0 || digits < others || word.length < 2) {
+        return word;
+    }
+    NSMutableString *read = [word mutableCopy];
+    for (NSUInteger i = 0; i < read.length; i++) {
+        unichar c = [read characterAtIndex:i];
+        NSString *digit = lookalikes[[NSString stringWithCharacters:&c length:1]];
+        if (digit) {
+            [read replaceCharactersInRange:NSMakeRange(i, 1) withString:digit];
+        }
+    }
+    return read;
+}
+
 NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
     static NSRegularExpression *email = nil;
     static NSRegularExpression *phone = nil;
     if (!email) {
-        email = [NSRegularExpression regularExpressionWithPattern:@"[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}"
+        email = [NSRegularExpression regularExpressionWithPattern:@"[A-Za-z0-9._%+'/-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)*\\.[A-Za-z]{2,}"
                                                           options:0
                                                             error:NULL];
-        phone = [NSRegularExpression regularExpressionWithPattern:@"(\\+\\d{1,3}[ .-]?)?(\\(\\d{2,4}\\)|\\d{2,4})([ .-]?\\d{2,4}){1,3}"
+        // After a country code, the first group can be a single digit (+33 1 23 45 67 89, +49 30 901820);
+        // without one, it's 2 to 4 digits or a bracketed area code.
+        phone = [NSRegularExpression regularExpressionWithPattern:@"(\\+\\d{1,3}[ .-]?(\\(\\d{1,4}\\)|\\d{1,4})|\\(\\d{2,4}\\)|\\d{2,4})([ .-]?\\d{2,4}){1,4}"
                                                           options:0
                                                             error:NULL];
     }
     NSMutableArray<NSValue *> *rects = [[NSMutableArray alloc] init];
     for (STRecognizedLine *line in lines) {
-        // Where each word is in the line's text, to map a match back to the words it covers.
+        // Where each word is in the line's text, to map a match back to the words it covers. Words
+        // the reader split out of one email address are joined again, with no space between.
         NSMutableArray<NSValue *> *ranges = [[NSMutableArray alloc] initWithCapacity:line.words.count];
-        NSUInteger offset = 0;
+        NSMutableString *text = [[NSMutableString alloc] init];
+        NSMutableString *phoneText = [[NSMutableString alloc] init];
+        STRecognizedWord *previous = nil;
         for (STRecognizedWord *word in line.words) {
-            [ranges addObject:[NSValue valueWithRange:NSMakeRange(offset, word.text.length)]];
-            offset += word.text.length + 1;
+            if (previous) {
+                NSString *gap = STWordsJoinIntoEmail(previous.text, word.text) ? @"" : @" ";
+                [text appendString:gap];
+                [phoneText appendString:gap];
+            }
+            [ranges addObject:[NSValue valueWithRange:NSMakeRange(text.length, word.text.length)]];
+            [text appendString:word.text];
+            [phoneText appendString:STPhoneDigitsInWord(word.text)];
+            previous = word;
         }
-        NSString *text = line.text;
         NSMutableArray<NSTextCheckingResult *> *matches = [[NSMutableArray alloc] init];
         [matches addObjectsFromArray:[email matchesInString:text options:0 range:NSMakeRange(0, text.length)]];
-        for (NSTextCheckingResult *match in [phone matchesInString:text options:0 range:NSMakeRange(0, text.length)]) {
-            if (STIsPhoneNumber([text substringWithRange:match.range])) {
+        for (NSTextCheckingResult *match in [phone matchesInString:phoneText options:0 range:NSMakeRange(0, phoneText.length)]) {
+            if (STIsPhoneNumber([phoneText substringWithRange:match.range])) {
                 [matches addObject:match];
             }
         }
@@ -142,8 +213,10 @@ NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
                 }
             }
             if (!NSIsEmptyRect(box)) {
-                // A little over the glyphs, so their edges don't show around the pixelation.
-                [rects addObject:[NSValue valueWithRect:NSInsetRect(box, -3.0, -3.0)]];
+                // Over the glyphs with room to spare, so their edges don't show around the pixelation:
+                // a reader's word boxes can come back a little short, more so on larger text.
+                CGFloat pad = MAX(3.0, round(NSHeight(box) * 0.15));
+                [rects addObject:[NSValue valueWithRect:NSInsetRect(box, -pad, -pad)]];
             }
         }
     }
@@ -212,7 +285,145 @@ static NSArray<STRecognizedLine *> *STLinesFromVisionObservations(NSArray<VNReco
     }
     return lines;
 }
+
 #endif
+
+/// Vision reads an image scaled down to its working size, so on a large capture small text is lost
+/// (a 1x 4K screen's 11-13 pt text, half of it or all of it). Above this many pixels on the long
+/// side, the image is read in overlapping tiles instead (#278 accuracy, 2026-11-05). Foundation
+/// only, so any engine can tile the same way.
+static const CGFloat STVisionTileThreshold = 1600.0;
+static const CGFloat STVisionTileWidth = 2560.0;
+static const CGFloat STVisionTileHeight = 720.0;
+
+/// Tiles over `region`, each overlapping the next by half its width and a third of its height, so
+/// any word, and any line up to half a tile wide, is whole in at least one of them.
+NSArray<NSValue *> *STVisionTilesForRegion(NSRect region) {
+    if (MAX(NSWidth(region), NSHeight(region)) <= STVisionTileThreshold) {
+        return @[ [NSValue valueWithRect:region] ];
+    }
+    CGFloat width = MIN(NSWidth(region), STVisionTileWidth);
+    CGFloat height = MIN(NSHeight(region), STVisionTileHeight);
+    CGFloat stepX = floor(width / 2.0), stepY = floor(height * 2.0 / 3.0);
+    NSMutableArray<NSNumber *> *xs = [NSMutableArray array], *ys = [NSMutableArray array];
+    for (CGFloat x = NSMinX(region);; x += stepX) {
+        CGFloat clamped = MIN(x, NSMaxX(region) - width);
+        [xs addObject:@(clamped)];
+        if (clamped + width >= NSMaxX(region)) {
+            break;
+        }
+    }
+    for (CGFloat y = NSMinY(region);; y += stepY) {
+        CGFloat clamped = MIN(y, NSMaxY(region) - height);
+        [ys addObject:@(clamped)];
+        if (clamped + height >= NSMaxY(region)) {
+            break;
+        }
+    }
+    NSMutableArray<NSValue *> *tiles = [NSMutableArray array];
+    for (NSNumber *y in ys) {
+        for (NSNumber *x in xs) {
+            [tiles addObject:[NSValue valueWithRect:NSMakeRect(x.doubleValue, y.doubleValue, width, height)]];
+        }
+    }
+    return tiles;
+}
+
+/// One reading of the tiles: a word cut by a tile's inner edge is dropped (another tile has it
+/// whole), a word read by two tiles is kept once, and words that were on one line in any tile stay
+/// on one line, so a line longer than a tile is joined up again. Lines run top to bottom, and left
+/// to right along a row.
+NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine *> *> *tileLines,
+                                               NSArray<NSValue *> *tiles, NSRect region) {
+    if (tiles.count == 1) {
+        return tileLines.firstObject ?: @[];
+    }
+    const CGFloat edge = 2.0;
+    NSMutableArray<STRecognizedWord *> *words = [NSMutableArray array];
+    NSMutableArray<NSNumber *> *lineOfWord = [NSMutableArray array];
+    NSUInteger lineCount = 0;
+    for (NSUInteger t = 0; t < tileLines.count; t++) {
+        NSRect tile = tiles[t].rectValue;
+        BOOL innerLeft = NSMinX(tile) > NSMinX(region) + 0.5, innerRight = NSMaxX(tile) < NSMaxX(region) - 0.5;
+        BOOL innerTop = NSMinY(tile) > NSMinY(region) + 0.5, innerBottom = NSMaxY(tile) < NSMaxY(region) - 0.5;
+        for (STRecognizedLine *line in tileLines[t]) {
+            for (STRecognizedWord *word in line.words) {
+                NSRect b = word.bounds;
+                BOOL cut = (innerLeft && NSMinX(b) <= NSMinX(tile) + edge) || (innerRight && NSMaxX(b) >= NSMaxX(tile) - edge) ||
+                           (innerTop && NSMinY(b) <= NSMinY(tile) + edge) || (innerBottom && NSMaxY(b) >= NSMaxY(tile) - edge);
+                if (!cut) {
+                    [words addObject:word];
+                    [lineOfWord addObject:@(lineCount)];
+                }
+            }
+            lineCount++;
+        }
+    }
+    // Lines joined through words read twice: a union-find over the tiles' lines.
+    NSMutableArray<NSNumber *> *parent = [NSMutableArray arrayWithCapacity:lineCount];
+    for (NSUInteger i = 0; i < lineCount; i++) {
+        [parent addObject:@(i)];
+    }
+    NSUInteger (^find)(NSUInteger) = ^NSUInteger(NSUInteger i) {
+        while (parent[i].unsignedIntegerValue != i) {
+            i = parent[i].unsignedIntegerValue;
+        }
+        return i;
+    };
+    // Longer readings first, so a duplicate keeps the fuller text.
+    NSMutableArray<NSNumber *> *indices = [NSMutableArray arrayWithCapacity:words.count];
+    for (NSUInteger i = 0; i < words.count; i++) {
+        [indices addObject:@(i)];
+    }
+    NSArray<NSNumber *> *order = [indices sortedArrayUsingComparator:^NSComparisonResult(NSNumber *a, NSNumber *b) {
+        NSUInteger la = words[a.unsignedIntegerValue].text.length, lb = words[b.unsignedIntegerValue].text.length;
+        return la > lb ? NSOrderedAscending : (la < lb ? NSOrderedDescending : [a compare:b]);
+    }];
+    NSMutableArray<NSNumber *> *kept = [NSMutableArray array];
+    for (NSNumber *index in order) {
+        NSRect b = words[index.unsignedIntegerValue].bounds;
+        NSNumber *same = nil;
+        for (NSNumber *other in kept) {
+            NSRect o = words[other.unsignedIntegerValue].bounds;
+            NSRect overlap = NSIntersectionRect(b, o);
+            CGFloat smaller = MIN(NSWidth(b) * NSHeight(b), NSWidth(o) * NSHeight(o));
+            if (smaller > 0 && NSWidth(overlap) * NSHeight(overlap) > 0.6 * smaller) {
+                same = other;
+                break;
+            }
+        }
+        if (same) {
+            NSUInteger a = find(lineOfWord[index.unsignedIntegerValue].unsignedIntegerValue);
+            NSUInteger c = find(lineOfWord[same.unsignedIntegerValue].unsignedIntegerValue);
+            if (a != c) {
+                parent[a] = @(c);
+            }
+        } else {
+            [kept addObject:index];
+        }
+    }
+    NSMutableDictionary<NSNumber *, NSMutableArray<STRecognizedWord *> *> *groups = [NSMutableDictionary dictionary];
+    for (NSNumber *index in kept) {
+        NSNumber *root = @(find(lineOfWord[index.unsignedIntegerValue].unsignedIntegerValue));
+        NSMutableArray *group = groups[root] ?: (groups[root] = [NSMutableArray array]);
+        [group addObject:words[index.unsignedIntegerValue]];
+    }
+    NSMutableArray<STRecognizedLine *> *lines = [NSMutableArray array];
+    for (NSMutableArray<STRecognizedWord *> *group in groups.allValues) {
+        [group sortUsingComparator:^NSComparisonResult(STRecognizedWord *a, STRecognizedWord *b) {
+            return NSMinX(a.bounds) < NSMinX(b.bounds) ? NSOrderedAscending : (NSMinX(a.bounds) > NSMinX(b.bounds) ? NSOrderedDescending : NSOrderedSame);
+        }];
+        [lines addObject:[[STRecognizedLine alloc] initWithWords:group]];
+    }
+    [lines sortUsingComparator:^NSComparisonResult(STRecognizedLine *a, STRecognizedLine *b) {
+        CGFloat tolerance = MIN(NSHeight(a.bounds), NSHeight(b.bounds)) / 2.0;
+        if (fabs(NSMidY(a.bounds) - NSMidY(b.bounds)) > tolerance) {
+            return NSMidY(a.bounds) < NSMidY(b.bounds) ? NSOrderedAscending : NSOrderedDescending;
+        }
+        return NSMinX(a.bounds) < NSMinX(b.bounds) ? NSOrderedAscending : (NSMinX(a.bounds) > NSMinX(b.bounds) ? NSOrderedDescending : NSOrderedSame);
+    }];
+    return lines;
+}
 
 @implementation STTextRecognizer
 
@@ -276,23 +487,34 @@ static NSArray<STRecognizedLine *> *STLinesFromVisionObservations(NSArray<VNReco
             if (NSIsEmptyRect(region)) {
                 lines = @[];
             } else {
-                VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] init];
-                request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
-                request.usesLanguageCorrection = YES;
-                if (@available(macOS 13.0, *)) {
-                    request.automaticallyDetectsLanguage = YES;
+                // Accurate, without language correction: it "corrects" email addresses into words and
+                // doubles the time (the Redact A/B, 2026-11-05). A large region is read in tiles.
+                NSArray<NSValue *> *tiles = STVisionTilesForRegion(region);
+                NSMutableArray<NSArray<STRecognizedLine *> *> *tileLines = [NSMutableArray array];
+                for (NSValue *tileValue in tiles) {
+                    NSRect tile = tileValue.rectValue;
+                    VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] init];
+                    request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
+                    request.usesLanguageCorrection = NO;
+                    if (@available(macOS 13.0, *)) {
+                        request.automaticallyDetectsLanguage = YES;
+                    }
+                    // Vision's region is normalised with a bottom-left origin.
+                    request.regionOfInterest = CGRectMake(NSMinX(tile) / NSWidth(whole),
+                                                          1.0 - NSMaxY(tile) / NSHeight(whole),
+                                                          NSWidth(tile) / NSWidth(whole),
+                                                          NSHeight(tile) / NSHeight(whole));
+                    VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image options:@{}];
+                    NSError *error = nil;
+                    if (![handler performRequests:@[request] error:&error]) {
+                        failure = error.localizedDescription ?: @"Vision couldn't read the image.";
+                        tileLines = nil;
+                        break;
+                    }
+                    [tileLines addObject:STLinesFromVisionObservations(request.results ?: @[], tile)];
                 }
-                // Vision's region is normalised with a bottom-left origin.
-                request.regionOfInterest = CGRectMake(NSMinX(region) / NSWidth(whole),
-                                                      1.0 - NSMaxY(region) / NSHeight(whole),
-                                                      NSWidth(region) / NSWidth(whole),
-                                                      NSHeight(region) / NSHeight(whole));
-                VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image options:@{}];
-                NSError *error = nil;
-                if ([handler performRequests:@[request] error:&error]) {
-                    lines = STLinesFromVisionObservations(request.results ?: @[], region);
-                } else {
-                    failure = error.localizedDescription ?: @"Vision couldn't read the image.";
+                if (tileLines) {
+                    lines = STMergeTiledLines(tileLines, tiles, region);
                 }
             }
             CGImageRelease(image);
