@@ -34,6 +34,13 @@
 @property (nonatomic, assign) NSRect selectionRect;
 @end
 
+@interface AppDelegate (PrintRedactionProbeCommands)
+- (void)setupMenus;
+- (void)printDocument:(id)sender;
+- (void)printSelection:(id)sender;
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem;
+@end
+
 @interface PrintRedactionProbeAppDelegate : AppDelegate
 @end
 @implementation PrintRedactionProbeAppDelegate
@@ -282,6 +289,38 @@ static const unsigned char STSecretOther[3] = { 0, 255, 0 };
         }
     }
     XCTAssertGreaterThan(notBlocks, (NSUInteger)10, @"%lu blocks", (unsigned long)blocks);
+}
+
+/// Print needs an image, and Print Selection a selection.
+- (void)testThePrintCommandsFollowTheImageAndSelection {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = _appDelegate.canvasView;
+    NSMenuItem *print = [[NSMenuItem alloc] initWithTitle:@"Print…" action:@selector(printDocument:) keyEquivalent:@"p"];
+    NSMenuItem *selection = [[NSMenuItem alloc] initWithTitle:@"Print Selection…" action:@selector(printSelection:) keyEquivalent:@""];
+    XCTAssertTrue([_appDelegate validateMenuItem:print]);
+    XCTAssertFalse([_appDelegate validateMenuItem:selection]);
+    canvas.hasSelectionRect = YES;
+    canvas.selectionRect = NSMakeRect(10, 10, 50, 50);
+    XCTAssertTrue([_appDelegate validateMenuItem:selection]);
+    canvas.hasSelectionRect = NO;
+    [canvas loadImage:nil];
+    XCTAssertFalse([_appDelegate validateMenuItem:print]);
+}
+
+/// The main menu has Print with its shortcut, so Ctrl+P reaches it.
+- (void)testTheFileMenuHasPrint {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_appDelegate setupMenus];
+    NSMenuItem *found = nil;
+    for (NSMenuItem *top in [NSApp mainMenu].itemArray) {
+        for (NSMenuItem *item in top.submenu.itemArray) {
+            if (item.action == @selector(printDocument:)) {
+                found = item;
+            }
+        }
+    }
+    XCTAssertNotNil(found);
+    XCTAssertEqualObjects(found.keyEquivalent, @"p");
 }
 
 /// Shows the checks can see the secret, so that the others' zeroes mean something.
