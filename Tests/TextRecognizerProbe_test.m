@@ -92,6 +92,135 @@
     XCTAssertEqual(STSensitiveTextRects(lines).count, (NSUInteger)0, @"%@", STSensitiveTextRects(lines));
 }
 
+/// The redaction for one line of `words`, each 10 px wide and `height` high with a 4 px gap.
+- (NSArray<NSValue *> *)rectsForWords:(NSArray<NSString *> *)texts height:(CGFloat)height {
+    NSMutableArray<STRecognizedWord *> *words = [[NSMutableArray alloc] init];
+    CGFloat x = 10.0;
+    for (NSString *text in texts) {
+        [words addObject:[[STRecognizedWord alloc] initWithText:text bounds:NSMakeRect(x, 0.0, 10.0, height)]];
+        x += 14.0;
+    }
+    return STSensitiveTextRects(@[ [[STRecognizedLine alloc] initWithWords:words] ]);
+}
+
+/// The x-range of a redaction, in words of the line `rectsForWords:` laid out (word 0 starts at 10).
+- (NSRange)wordsCoveredBy:(NSValue *)rect {
+    NSRect r = rect.rectValue;
+    NSUInteger first = (NSUInteger)lround((NSMinX(r) + 3.0 - 10.0) / 14.0);
+    NSUInteger last = (NSUInteger)lround((NSMaxX(r) - 3.0 - 20.0) / 14.0);
+    return NSMakeRange(first, last - first + 1);
+}
+
+/// International numbers: a single-digit area code after the country code, and longer groups.
+- (void)testInternationalPhoneNumbers {
+    NSArray *france = [self rectsForWords:@[@"Paris", @"+33", @"1", @"23", @"45", @"67", @"89", @"office"] height:12.0];
+    XCTAssertEqual(france.count, (NSUInteger)1, @"%@", france);
+    XCTAssertTrue(NSEqualRanges([self wordsCoveredBy:france.firstObject], NSMakeRange(1, 6)), @"%@", france);
+    NSArray *berlin = [self rectsForWords:@[@"Berlin", @"+49", @"30", @"901820"] height:12.0];
+    XCTAssertTrue(berlin.count == 1 && NSEqualRanges([self wordsCoveredBy:berlin.firstObject], NSMakeRange(1, 3)), @"%@", berlin);
+    NSArray *mobile = [self rectsForWords:@[@"Mobile", @"07700", @"900123"] height:12.0];
+    XCTAssertTrue(mobile.count == 1 && NSEqualRanges([self wordsCoveredBy:mobile.firstObject], NSMakeRange(1, 2)), @"%@", mobile);
+}
+
+/// A reader puts spaces into email addresses, after a dot or around the "@": the address is still
+/// found, all of it.
+- (void)testEmailsTheReaderSplitAreFound {
+    NSArray<NSArray<NSString *> *> *cases = @[
+        @[ @"Mail", @"jane.", @"doe@example.com", @"today" ],
+        @[ @"Mail", @"Support@Example.", @"COM", @"today" ],
+        @[ @"Mail", @"doe", @"@example.com", @"today" ],
+        @[ @"Mail", @"doe@", @"example.com", @"today" ],
+        @[ @"Mail", @"rachel.o'", @"neil@example.ie", @"today" ],
+    ];
+    for (NSArray<NSString *> *words in cases) {
+        NSArray *rects = [self rectsForWords:words height:12.0];
+        XCTAssertEqual(rects.count, (NSUInteger)1, @"%@: %@", words, rects);
+        XCTAssertTrue(NSEqualRanges([self wordsCoveredBy:rects.firstObject], NSMakeRange(1, 2)), @"%@: %@", words, rects);
+    }
+}
+
+/// Sentences aren't joined into addresses: a full stop, or an "@" alone, finds nothing.
+- (void)testSentencesAreNotJoinedIntoEmails {
+    NSArray *thanks = [self rectsForWords:@[@"Thanks.", @"See", @"you", @"at", @"example.com"] height:12.0];
+    XCTAssertEqual(thanks.count, (NSUInteger)0, @"%@", thanks);
+    NSArray *reply = [self rectsForWords:@[@"Reply", @"@", @"noon.", @"Bring", @"notes"] height:12.0];
+    XCTAssertEqual(reply.count, (NSUInteger)0, @"%@", reply);
+}
+
+/// A digit the reader took for a letter ("/" for 7, "Ø" for 0, "6/" for 67) doesn't leave the rest of
+/// the number unredacted; words that merely look like digits aren't numbers.
+- (void)testMisreadDigitsInPhoneNumbers {
+    NSArray *london = [self rectsForWords:@[@"Call", @"+44", @"20", @"/946", @"0958", @"now"] height:12.0];
+    XCTAssertTrue(london.count == 1 && NSEqualRanges([self wordsCoveredBy:london.firstObject], NSMakeRange(1, 4)), @"%@", london);
+    NSArray *austin = [self rectsForWords:@[@"Call", @"(512)", @"555", @"Ø123"] height:12.0];
+    XCTAssertTrue(austin.count == 1 && NSEqualRanges([self wordsCoveredBy:austin.firstObject], NSMakeRange(1, 3)), @"%@", austin);
+    NSArray *paris = [self rectsForWords:@[@"+33", @"1", @"23", @"45", @"6/", @"89"] height:12.0];
+    XCTAssertTrue(paris.count == 1 && NSEqualRanges([self wordsCoveredBy:paris.firstObject], NSMakeRange(0, 6)), @"%@", paris);
+    NSArray *lookalikes = [self rectsForWords:@[@"Room", @"4B;", @"Is", @"it", @"lO", @"or", @"Il?"] height:12.0];
+    XCTAssertEqual(lookalikes.count, (NSUInteger)0, @"%@", lookalikes);
+}
+
+/// The padding grows with the text: 15% of its height, and never under 3 px.
+- (void)testPaddingFollowsTheTextHeight {
+    NSRect small = [self rectsForWords:@[@"alex@example.com"] height:12.0].firstObject.rectValue;
+    XCTAssertTrue(NSEqualRects(small, NSMakeRect(7.0, -3.0, 16.0, 18.0)), @"%@", NSStringFromRect(small));
+    NSRect large = [self rectsForWords:@[@"alex@example.com"] height:40.0].firstObject.rectValue;
+    XCTAssertTrue(NSEqualRects(large, NSMakeRect(4.0, -6.0, 22.0, 52.0)), @"%@", NSStringFromRect(large));
+}
+
+/// A large image is read in tiles that overlap and cover it; a small one in one piece.
+- (void)testTilesCoverALargeImage {
+    NSArray<NSValue *> *small = STVisionTilesForRegion(NSMakeRect(0, 0, 1600, 900));
+    XCTAssertEqual(small.count, (NSUInteger)1);
+    NSRect region = NSMakeRect(0, 0, 3840, 2160);
+    NSArray<NSValue *> *tiles = STVisionTilesForRegion(region);
+    XCTAssertEqual(tiles.count, (NSUInteger)8, @"2 across, 4 down: %@", tiles);
+    for (CGFloat y = 1; y < 2160; y += 37) {
+        for (CGFloat x = 1; x < 3840; x += 53) {
+            BOOL covered = NO;
+            for (NSValue *tile in tiles) {
+                covered = covered || NSPointInRect(NSMakePoint(x, y), tile.rectValue);
+            }
+            XCTAssertTrue(covered, @"%.0f,%.0f", x, y);
+        }
+    }
+    for (NSValue *tile in tiles) {
+        XCTAssertTrue(NSContainsRect(region, tile.rectValue), @"%@", tile);
+        XCTAssertLessThanOrEqual(NSWidth(tile.rectValue), 2560.0);
+    }
+    // A part of the image is tiled within the part.
+    NSRect part = NSMakeRect(500, 300, 2000, 400);
+    for (NSValue *tile in STVisionTilesForRegion(part)) {
+        XCTAssertTrue(NSContainsRect(part, tile.rectValue), @"%@", tile);
+    }
+}
+
+/// Two tiles' readings of one line longer than either: the word cut by a tile's edge is dropped, the
+/// word both read is kept once, and the line is joined up, in order.
+- (void)testTiledReadingsJoinIntoOneLine {
+    NSRect region = NSMakeRect(0, 0, 3000, 100);
+    NSArray<NSValue *> *tiles = @[ [NSValue valueWithRect:NSMakeRect(0, 0, 2000, 100)], [NSValue valueWithRect:NSMakeRect(1000, 0, 2000, 100)] ];
+    STRecognizedWord *(^word)(NSString *, CGFloat) = ^STRecognizedWord *(NSString *text, CGFloat x) {
+        return [[STRecognizedWord alloc] initWithText:text bounds:NSMakeRect(x, 40, 300, 20)];
+    };
+    // The left tile reads "one two thr" (cut at its right edge, 2000); the right "ee four five" (cut at 1000).
+    STRecognizedLine *left = [[STRecognizedLine alloc] initWithWords:@[ word(@"one", 100), word(@"two", 1200), word(@"thr", 1700) ]];
+    STRecognizedWord *cutRight = [[STRecognizedWord alloc] initWithText:@"thr" bounds:NSMakeRect(1700, 40, 300, 20)];
+    left = [[STRecognizedLine alloc] initWithWords:@[ word(@"one", 100), word(@"two", 1200), cutRight ]];
+    STRecognizedWord *cutLeft = [[STRecognizedWord alloc] initWithText:@"o" bounds:NSMakeRect(1000, 40, 150, 20)];
+    STRecognizedLine *right = [[STRecognizedLine alloc] initWithWords:@[ cutLeft, word(@"two", 1201), word(@"three", 1700), word(@"four", 2400) ]];
+    NSArray<STRecognizedLine *> *lines = STMergeTiledLines(@[ @[ left ], @[ right ] ], tiles, region);
+    XCTAssertEqual(lines.count, (NSUInteger)1, @"%@", STRecognizedText(lines));
+    XCTAssertEqualObjects(lines.firstObject.text, @"one two three four");
+    // Two lines, one under the other, come out top first, whatever order a tile read them in.
+    NSArray<NSValue *> *rows = @[ [NSValue valueWithRect:NSMakeRect(0, 0, 3000, 720)], [NSValue valueWithRect:NSMakeRect(0, 480, 3000, 720)] ];
+    STRecognizedLine *upper = [[STRecognizedLine alloc] initWithWords:@[ [[STRecognizedWord alloc] initWithText:@"upper" bounds:NSMakeRect(10, 600, 200, 20)] ]];
+    STRecognizedLine *lower = [[STRecognizedLine alloc] initWithWords:@[ [[STRecognizedWord alloc] initWithText:@"lower" bounds:NSMakeRect(10, 900, 200, 20)] ]];
+    // The second tile read both, the lower first.
+    NSArray<STRecognizedLine *> *ordered = STMergeTiledLines(@[ @[], @[ lower, upper ] ], rows, NSMakeRect(0, 0, 3000, 1200));
+    XCTAssertEqualObjects(STRecognizedText(ordered), @"upper\nlower");
+}
+
 /// With an engine (Vision on macOS, Windows.Media.Ocr on Windows, tesseract on Linux when it's
 /// installed), the README's sample reads, and its email address is found.
 /// The README's sample: a settings page with one email address and no phone number.

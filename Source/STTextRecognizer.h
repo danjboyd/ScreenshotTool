@@ -54,4 +54,15 @@ FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STLinesInsideRect(NSArray<STRecog
 /// it spans, a little larger: what Redact Emails and Phone Numbers covers.
 FOUNDATION_EXPORT NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines);
 
+/// Tiles to read `region` (image pixels, top-left origin) in: just `region` up to 1600 px on its long
+/// side, otherwise 2560 x 720 tiles overlapping by half their width and a third of their height.
+/// An engine that scales a large image down (Vision) loses small text without them.
+FOUNDATION_EXPORT NSArray<NSValue *> *STVisionTilesForRegion(NSRect region);
+
+/// The lines read in each of `tiles` (boxes in the whole image's pixels) as one reading of `region`:
+/// words cut by an inner tile edge dropped, words read twice kept once, a line split by tiles joined
+/// again, and lines in reading order, top to bottom and left to right along a row.
+FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine *> *> *tileLines,
+                                                                 NSArray<NSValue *> *tiles, NSRect region);
+
 NS_ASSUME_NONNULL_END
