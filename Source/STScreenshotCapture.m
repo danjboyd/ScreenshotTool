@@ -145,7 +145,7 @@ STScreenshotCaptureResult STPortalScreenshotResult(guint32 response, const char 
 }
 
 /// "x11:<id>" for a window on X11 (or XWayland), with which the portal attaches its tool to it.
-static NSString *STPortalParentWindow(NSWindow *window) {
+NSString *STPortalParentWindow(NSWindow *_Nullable window) {
     if (window == nil || [window windowNumber] <= 0) {
         return @"";
     }

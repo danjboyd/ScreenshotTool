@@ -37,7 +37,7 @@ else
 FONTCONFIG_CFLAGS := -I/usr/include/freetype2
 FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
 # Take Screenshot asks the desktop portal over D-Bus. GNUstep's backend already loads GIO.
-CAPTURE_CFLAGS := $(shell pkg-config --cflags gio-2.0)
+CAPTURE_CFLAGS := $(shell pkg-config --cflags gio-2.0 gio-unix-2.0)
 CAPTURE_LDFLAGS := $(shell pkg-config --libs gio-2.0)
 # Share on Linux: libs-sharing gives NSSharingServicePicker its sheet (danjboyd/libs-sharing).
 ST_LIBS_SHARING := yes
@@ -268,6 +268,7 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/STPrintPDF.m \
 	Source/STPrintOptions.m \
 	Source/STPrintPanelController.m \
+	Source/STPrintPortal.m \
 	Source/STTextRecognizer.m \
 	Source/STWindowsIntegration.m \
 	Source/STWindowsTextRecognition.m \

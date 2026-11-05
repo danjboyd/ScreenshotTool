@@ -12,6 +12,11 @@
 #import "STSegmentToolTips.h"
 #import "STSplitButton.h"
 #import "STEmptyStateView.h"
+#if defined(__linux__)
+#import "STPrintPDF.h"
+#import "STPrintPanelController.h"
+#import "STPrintPortal.h"
+#endif
 #import "STCustomActions.h"
 #import <objc/runtime.h>
 #import "STScreenshotCapture.h"
@@ -2118,7 +2123,7 @@ static AppDelegate *STFrontDocument(void) {
                                                  @"cropImage:", @"zoomFitToWindow:", @"zoomPreset25:",
                                                  @"zoomPreset50:", @"zoomPreset100:", @"zoomPreset200:",
                                                  @"zoomIn:", @"zoomOut:", @"runCustomAction:",
-                                                 @"redactSelection:", @"duplicateAnnotations:",
+                                                 @"printDocument:", @"redactSelection:", @"duplicateAnnotations:",
                                                  @"bringAnnotationsToFront:", @"sendAnnotationsToBack:"]];
     }
     for (NSMenuItem *item in menu.itemArray) {
@@ -2683,6 +2688,14 @@ static AppDelegate *STFrontDocument(void) {
     if (action == @selector(cropImage:)) {
         return [self.canvasView hasSelection];
     }
+#if defined(__linux__)
+    if (action == @selector(printDocument:)) {
+        return [self.canvasView hasImage] && ![STPrintPortal isPrinting];
+    }
+    if (action == @selector(printSelection:)) {
+        return [self.canvasView hasSelection] && ![STPrintPortal isPrinting];
+    }
+#endif
     if (action == @selector(shareImage:) || action == @selector(shareFromFileMenu:)) {
         return STCanShareImages() && [self.canvasView hasImage];
     }
@@ -2904,6 +2917,15 @@ static id STInfoValueForKey(NSString *key) {
             [fileMenu addItem:[self menuItemForCustomAction:customAction]];
         }
     }
+
+#if defined(__linux__)
+    NSMenuItem *printItem = [[NSMenuItem alloc] initWithTitle:@"Print…"
+                                                       action:@selector(printDocument:)
+                                                keyEquivalent:@"p"];
+    [printItem setTarget:self];
+    [printItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
+    [fileMenu addItem:printItem];
+#endif
 
 #if !defined(GNUSTEP)
     [fileMenu addItem:[NSMenuItem separatorItem]];
@@ -7127,6 +7149,61 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     (void)sender;
     [self saveImageWithPanel];
 }
+
+#if defined(__linux__)
+- (void)printDocument:(id)sender {
+    (void)sender;
+    [self printWithSelectionOnly:NO];
+}
+
+- (void)printSelection:(id)sender {
+    (void)sender;
+    [self printWithSelectionOnly:YES];
+}
+
+/// Our Print panel, then the desktop's print dialog, then the PDF for the paper it chose (#355).
+- (void)printWithSelectionOnly:(BOOL)selectionOnly {
+    NSImage *flattened = [self.canvasView flattenedImage];
+    NSImage *bare = self.canvasView.image;
+    if (!flattened || !bare || [STPrintPortal isPrinting]) {
+        return;
+    }
+    NSRect selection = [self.canvasView selectionImageRect];
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    STPrintPanelController *panel = [[STPrintPanelController alloc] initWithFlattenedImage:flattened
+                                                                                 bareImage:bare
+                                                                                 selection:selection
+                                                                             selectionOnly:selectionOnly
+                                                                                  defaults:defaults];
+    if (![panel runModal]) {
+        return;
+    }
+    STPrintOptions *options = [panel.options copy];
+    NSImage *image = panel.currentImage;
+    NSString *title = self.window.title.length > 0 ? self.window.title : @"Screenshot";
+    [STPrintPortal printForWindow:self.window
+                            title:title
+                           writer:^BOOL(STPrintPortalPageSetup setup, NSString *path) {
+        STPrintSavePaperSize(defaults, setup.paper);
+        STPrintLayout *layout = [[STPrintLayout alloc] init];
+        layout.paperSize = setup.paper;
+        layout.margins = STPrintMarginsMake(STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin);
+        layout.printerMargins = setup.printerMargins;
+        STConfigurePrintLayout(layout, options, image, selection);
+        return STWritePrintPDF(layout, image, path);
+    }
+                       completion:^(BOOL printed, NSString *failure) {
+        (void)printed;
+        if (failure) {
+            NSAlert *alert = [[NSAlert alloc] init];
+            alert.messageText = @"Unable to Print";
+            alert.informativeText = failure;
+            [alert addButtonWithTitle:@"OK"];
+            [alert runModal];
+        }
+    }];
+}
+#endif
 
 - (BOOL)saveImageWithPanel {
     if (![self.canvasView hasImage]) {

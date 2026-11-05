@@ -28,6 +28,9 @@ NSMenu *STCanvasContextMenu(STCanvasContextKind kind, BOOL singleText, BOOL canS
             if (canShare) {
                 STContextItem(menu, @"Share Selection…", @selector(shareImage:), controller, @"", 0);
             }
+#if defined(__linux__)
+            STContextItem(menu, @"Print Selection…", @selector(printSelection:), controller, @"", 0);
+#endif
             [menu addItem:[NSMenuItem separatorItem]];
             STContextItem(menu, @"Deselect", @selector(deselect:), canvas, @"", 0);
             break;

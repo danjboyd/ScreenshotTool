@@ -20,7 +20,7 @@ endif
 else
 FONTCONFIG_CFLAGS := -I/usr/include/freetype2
 # Take Screenshot asks the desktop portal over D-Bus (STScreenshotCapture).
-CAPTURE_CFLAGS := $(shell pkg-config --cflags gio-2.0)
+CAPTURE_CFLAGS := $(shell pkg-config --cflags gio-2.0 gio-unix-2.0)
 CAPTURE_LDFLAGS := $(shell pkg-config --libs gio-2.0)
 # Share on Linux: libs-sharing, as the app compiles it in.
 ST_LIBS_SHARING := yes
@@ -111,6 +111,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	PrintPDFProbe_test.m \
 	PrintOptionsProbe_test.m \
 	PrintPanelProbe_test.m \
+	PrintPortalProbe_test.m \
 	TextRecognizerProbe_test.m \
 	ClipboardScreenshotOfferProbe_test.m \
 	CanvasCursorShownRectProbe_test.m \
@@ -152,6 +153,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STPrintPDF.m \
 	../Source/STPrintOptions.m \
 	../Source/STPrintPanelController.m \
+	../Source/STPrintPortal.m \
 	../Source/STTextRecognizer.m \
 	../Source/STWindowsIntegration.m \
 	../Source/STWindowsTextRecognition.m \
