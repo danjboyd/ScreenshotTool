@@ -37,6 +37,17 @@
 }
 @end
 
+/// The selection's menu, with Print Selection where Linux has it: last before the separator (#355).
+static NSArray *STWithPrintSelection(NSArray *titles) {
+#if defined(__linux__)
+    NSMutableArray *withPrint = [titles mutableCopy];
+    [withPrint insertObject:@"Print Selection…" atIndex:[withPrint indexOfObject:@"-"]];
+    return withPrint;
+#else
+    return titles;
+#endif
+}
+
 @implementation CanvasContextMenuProbeTests
 
 + (void)load {
@@ -159,7 +170,7 @@
     // macOS has a share picker, and Linux and Windows libs-sharing's.
     NSArray *expected = @[@"Crop to Selection", @"Copy Selection", @"Redact Selection", @"Share Selection…", @"-", @"Deselect"];
 #endif
-    expected = [self expectingCopyTextAfterIndex:1 in:expected];
+    expected = [self expectingCopyTextAfterIndex:1 in:STWithPrintSelection(expected)];
     XCTAssertEqualObjects([self titlesOf:menu], expected);
     NSMenuItem *crop = [self item:@"Crop to Selection" in:menu];
     XCTAssertTrue(crop.target == _appDelegate, @"The window's command, as the Edit menu has it");
@@ -240,7 +251,7 @@
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;
     NSMenu *selection = STCanvasContextMenu(STCanvasContextKindSelection, NO, YES, canvas, _appDelegate, nil);
     XCTAssertEqualObjects([self titlesOf:selection],
-                          (@[@"Crop to Selection", @"Copy Selection", @"Redact Selection", @"Share Selection…", @"-", @"Deselect"]));
+                          STWithPrintSelection(@[@"Crop to Selection", @"Copy Selection", @"Redact Selection", @"Share Selection…", @"-", @"Deselect"]));
     NSMenu *image = STCanvasContextMenu(STCanvasContextKindImage, NO, YES, canvas, _appDelegate, nil);
     NSMenuItem *share = [self item:@"Share…" in:image];
     XCTAssertNotNil(share, @"After Save As…");
