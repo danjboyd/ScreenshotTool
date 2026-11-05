@@ -82,7 +82,7 @@
 - (void)testTheControlsDoNotOverlap {
     STPrintPanelController *panel = [self panelWithSelection:NSZeroRect selectionOnly:NO];
     NSArray<NSView *> *rows = @[ panel.contentPopUp, panel.fitPopUp, panel.enlargeCheckbox, panel.orientationPopUp ];
-    NSRect content = panel.panel.contentView.bounds;
+    NSRect content = [(NSView *)panel.panel.contentView bounds];
     for (NSUInteger i = 0; i < rows.count; i++) {
         XCTAssertTrue(NSContainsRect(content, rows[i].frame), @"row %lu is outside", (unsigned long)i);
         for (NSUInteger j = i + 1; j < rows.count; j++) {
