@@ -7,7 +7,6 @@ NSString * const STDefaultsPrintFitKey = @"ScreenshotToolPrintFit";
 NSString * const STDefaultsPrintCustomScaleKey = @"ScreenshotToolPrintCustomScale";
 NSString * const STDefaultsPrintEnlargeToFillKey = @"ScreenshotToolPrintEnlargeToFill";
 NSString * const STDefaultsPrintOrientationKey = @"ScreenshotToolPrintOrientation";
-NSString * const STDefaultsPrintAnnotationsKey = @"ScreenshotToolPrintAnnotations";
 
 static NSString * const STPrintFitPage = @"page";
 static NSString * const STPrintFitActual = @"actual";
@@ -24,7 +23,6 @@ static NSString * const STPrintOrientationWide = @"landscape";
         _fit = STPrintFitToPage;
         _customScale = 1.0;
         _orientation = STPrintOrientationAutomatic;
-        _includeAnnotations = YES;
     }
     return self;
 }
@@ -35,7 +33,6 @@ static NSString * const STPrintOrientationWide = @"landscape";
     copy.customScale = self.customScale;
     copy.enlargeToFill = self.enlargeToFill;
     copy.orientation = self.orientation;
-    copy.includeAnnotations = self.includeAnnotations;
     copy.selectionOnly = self.selectionOnly;
     return copy;
 }
@@ -70,9 +67,6 @@ static NSString * const STPrintOrientationWide = @"landscape";
     if ([defaults objectForKey:STDefaultsPrintEnlargeToFillKey]) {
         options.enlargeToFill = [defaults boolForKey:STDefaultsPrintEnlargeToFillKey];
     }
-    if ([defaults objectForKey:STDefaultsPrintAnnotationsKey]) {
-        options.includeAnnotations = [defaults boolForKey:STDefaultsPrintAnnotationsKey];
-    }
     return options;
 }
 
@@ -93,7 +87,6 @@ static NSString * const STPrintOrientationWide = @"landscape";
     [defaults setDouble:self.customScale forKey:STDefaultsPrintCustomScaleKey];
     [defaults setBool:self.enlargeToFill forKey:STDefaultsPrintEnlargeToFillKey];
     [defaults setObject:orientation forKey:STDefaultsPrintOrientationKey];
-    [defaults setBool:self.includeAnnotations forKey:STDefaultsPrintAnnotationsKey];
 }
 
 - (void)applyToLayout:(STPrintLayout *)layout {

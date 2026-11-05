@@ -86,7 +86,6 @@ void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper) {
 
 @interface STPrintPanelController () <NSTextFieldDelegate, NSWindowDelegate>
 @property (nonatomic, strong) NSImage *flattenedImage;
-@property (nonatomic, strong) NSImage *bareImage;
 @property (nonatomic) NSRect selection;
 @property (nonatomic, strong) NSUserDefaults *defaults;
 @property (nonatomic, readwrite, strong) NSPanel *panel;
@@ -97,7 +96,6 @@ void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper) {
 @property (nonatomic, readwrite, strong) NSTextField *scaleField;
 @property (nonatomic, strong) NSTextField *scaleLabel;
 @property (nonatomic, readwrite, strong) NSButton *enlargeCheckbox;
-@property (nonatomic, readwrite, strong) NSButton *annotationsCheckbox;
 @property (nonatomic, readwrite, strong) NSButton *previousPageButton;
 @property (nonatomic, readwrite, strong) NSButton *nextPageButton;
 @property (nonatomic, readwrite, strong) NSButton *printButton;
@@ -110,14 +108,12 @@ void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper) {
 @implementation STPrintPanelController
 
 - (instancetype)initWithFlattenedImage:(NSImage *)flattenedImage
-                             bareImage:(NSImage *)bareImage
                              selection:(NSRect)selection
                          selectionOnly:(BOOL)selectionOnly
                               defaults:(NSUserDefaults *)defaults {
     self = [super init];
     if (self) {
         _flattenedImage = flattenedImage;
-        _bareImage = bareImage;
         _selection = selection;
         _defaults = defaults;
         _options = [STPrintOptions optionsFromDefaults:defaults];
@@ -222,10 +218,6 @@ void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper) {
     self.orientationPopUp = [self popUpWithTitles:@[ @"Automatic", @"Portrait", @"Landscape" ] frame:nextRow(STRowHeight)
                                            action:@selector(optionChanged:)];
     [content addSubview:self.orientationPopUp];
-    y -= STRowHeight + STRowGap;
-
-    self.annotationsCheckbox = [self checkboxWithTitle:@"Include annotations" frame:nextRow(STRowHeight - 4.0)];
-    [content addSubview:self.annotationsCheckbox];
 
     CGFloat previewX = x + STControlsWidth + STPanelGutter;
     CGFloat previewWidth = STPanelWidth - previewX - STPanelGutter;
@@ -271,7 +263,6 @@ void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper) {
     [self.orientationPopUp selectItemAtIndex:options.orientation == STPrintOrientationAutomatic
                                                  ? 0
                                                  : (options.orientation == STPrintOrientationPortrait ? 1 : 2)];
-    [self.annotationsCheckbox setState:options.includeAnnotations ? NSOnState : NSOffState];
 }
 
 /// The options from the controls.
@@ -288,18 +279,13 @@ void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper) {
     NSInteger orientation = self.orientationPopUp.indexOfSelectedItem;
     options.orientation = orientation == 0 ? STPrintOrientationAutomatic
                                            : (orientation == 1 ? STPrintOrientationPortrait : STPrintOrientationLandscape);
-    options.includeAnnotations = self.annotationsCheckbox.state == NSOnState;
-}
-
-- (NSImage *)currentImage {
-    return self.options.includeAnnotations ? self.flattenedImage : self.bareImage;
 }
 
 - (STPrintLayout *)currentLayout {
     STPrintLayout *layout = [[STPrintLayout alloc] init];
     layout.paperSize = self.paperSize;
     layout.margins = STPrintMarginsMake(STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin);
-    STConfigurePrintLayout(layout, self.options, self.currentImage, self.selection);
+    STConfigurePrintLayout(layout, self.options, self.flattenedImage, self.selection);
     return layout;
 }
 
@@ -322,7 +308,7 @@ void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper) {
     [self.enlargeCheckbox setHidden:self.options.fit != STPrintFitToPage];
 
     self.preview.layout = layout;
-    self.preview.image = self.currentImage;
+    self.preview.image = self.flattenedImage;
     self.preview.page = self.previewPage;
     [self.preview setNeedsDisplay:YES];
 

@@ -19,7 +19,7 @@
 - (void)clearDefaults {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     for (NSString *key in @[ STDefaultsPrintFitKey, STDefaultsPrintCustomScaleKey, STDefaultsPrintEnlargeToFillKey,
-                             STDefaultsPrintOrientationKey, STDefaultsPrintAnnotationsKey ]) {
+                             STDefaultsPrintOrientationKey ]) {
         [defaults removeObjectForKey:key];
     }
 }
@@ -40,7 +40,6 @@
     XCTAssertEqualWithAccuracy(options.customScale, 1.0, 1e-9);
     XCTAssertFalse(options.enlargeToFill);
     XCTAssertEqual(options.orientation, STPrintOrientationAutomatic);
-    XCTAssertTrue(options.includeAnnotations);
     XCTAssertFalse(options.selectionOnly);
 }
 
@@ -51,7 +50,6 @@
     options.customScale = 0.5;
     options.enlargeToFill = YES;
     options.orientation = STPrintOrientationLandscape;
-    options.includeAnnotations = NO;
     [options saveToDefaults:defaults];
 
     STPrintOptions *read = [STPrintOptions optionsFromDefaults:defaults];
@@ -59,7 +57,6 @@
     XCTAssertEqualWithAccuracy(read.customScale, 0.5, 1e-9);
     XCTAssertTrue(read.enlargeToFill);
     XCTAssertEqual(read.orientation, STPrintOrientationLandscape);
-    XCTAssertFalse(read.includeAnnotations);
 
     options.fit = STPrintFitActualSize;
     options.orientation = STPrintOrientationPortrait;

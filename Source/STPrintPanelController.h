@@ -10,11 +10,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// the dialog then picks the printer and paper, and the print path re-lays out for the paper it got.
 @interface STPrintPanelController : NSObject
 
-/// `flattenedImage` has the annotations, `bareImage` doesn't. `selection` is the selection in pixels
-/// from the image's top left, or NSZeroRect. `selectionOnly` is what the panel starts on: YES for Print
-/// Selection. It's ignored without a selection.
+/// `flattenedImage` is what's printed, with its annotations: redactions are annotations, so nothing
+/// here can print without them. `selection` is the selection in pixels from the image's top left, or
+/// NSZeroRect. `selectionOnly` is what the panel starts on: YES for Print Selection. It's ignored
+/// without a selection.
 - (instancetype)initWithFlattenedImage:(NSImage *)flattenedImage
-                             bareImage:(NSImage *)bareImage
                              selection:(NSRect)selection
                          selectionOnly:(BOOL)selectionOnly
                               defaults:(NSUserDefaults *)defaults;
@@ -26,8 +26,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// A new layout of the current options and paper.
 - (STPrintLayout *)currentLayout;
-/// What's printed under the current options: with annotations or without.
-- (NSImage *)currentImage;
 
 /// Shows the panel until it's answered. YES for Print, having saved the options.
 - (BOOL)runModal;
@@ -38,7 +36,6 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly) NSPopUpButton *orientationPopUp;
 @property (nonatomic, readonly) NSTextField *scaleField;
 @property (nonatomic, readonly) NSButton *enlargeCheckbox;
-@property (nonatomic, readonly) NSButton *annotationsCheckbox;
 @property (nonatomic, readonly) NSButton *previousPageButton;
 @property (nonatomic, readonly) NSButton *nextPageButton;
 @property (nonatomic, readonly) NSButton *printButton;

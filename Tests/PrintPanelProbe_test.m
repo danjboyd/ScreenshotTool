@@ -21,7 +21,7 @@
 - (void)clearDefaults {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     for (NSString *key in @[ STDefaultsPrintFitKey, STDefaultsPrintCustomScaleKey, STDefaultsPrintEnlargeToFillKey,
-                             STDefaultsPrintOrientationKey, STDefaultsPrintAnnotationsKey,
+                             STDefaultsPrintOrientationKey,
                              @"ScreenshotToolPrintPaperWidth", @"ScreenshotToolPrintPaperHeight" ]) {
         [defaults removeObjectForKey:key];
     }
@@ -57,7 +57,6 @@
 
 - (STPrintPanelController *)panelWithSelection:(NSRect)selection selectionOnly:(BOOL)selectionOnly {
     return [[STPrintPanelController alloc] initWithFlattenedImage:[self imageWithWidth:3000 height:2000]
-                                                        bareImage:[self imageWithWidth:3000 height:2000]
                                                         selection:selection
                                                     selectionOnly:selectionOnly
                                                          defaults:[NSUserDefaults standardUserDefaults]];
@@ -72,7 +71,6 @@
     STPrintPanelController *panel = [self panelWithSelection:NSZeroRect selectionOnly:NO];
     XCTAssertEqual([panel currentLayout].pageCount, (NSUInteger)1);
     XCTAssertEqual(panel.fitPopUp.indexOfSelectedItem, (NSInteger)0);
-    XCTAssertEqual(panel.annotationsCheckbox.state, NSOnState);
     XCTAssertTrue(panel.scaleField.isHidden);
     XCTAssertFalse(panel.enlargeCheckbox.isHidden);
     XCTAssertTrue(panel.nextPageButton.isHidden);
@@ -132,16 +130,6 @@
     panel.scaleField.stringValue = @"";
     [panel.scaleField sendAction:panel.scaleField.action to:panel.scaleField.target];
     XCTAssertEqualWithAccuracy(panel.options.customScale, 0.5, 1e-9);
-}
-
-- (void)testAnnotationsChooseTheImage {
-    STPrintPanelController *panel = [self panelWithSelection:NSZeroRect selectionOnly:NO];
-    NSImage *flattened = panel.currentImage;
-    [panel.annotationsCheckbox performClick:nil];
-    XCTAssertFalse(panel.options.includeAnnotations);
-    XCTAssertNotEqual(panel.currentImage, flattened);
-    [panel.annotationsCheckbox performClick:nil];
-    XCTAssertEqual(panel.currentImage, flattened);
 }
 
 - (void)testOrientationAndPaperChangeTheLayout {

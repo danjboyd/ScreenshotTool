@@ -112,6 +112,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	PrintOptionsProbe_test.m \
 	PrintPanelProbe_test.m \
 	PrintPortalProbe_test.m \
+	PrintRedactionProbe_test.m \
 	TextRecognizerProbe_test.m \
 	ClipboardScreenshotOfferProbe_test.m \
 	CanvasCursorShownRectProbe_test.m \

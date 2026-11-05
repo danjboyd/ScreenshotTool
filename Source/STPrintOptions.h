@@ -11,12 +11,14 @@ extern NSString * const STDefaultsPrintFitKey;              // @"page", @"actual
 extern NSString * const STDefaultsPrintCustomScaleKey;      // a number; 1 is the real size
 extern NSString * const STDefaultsPrintEnlargeToFillKey;    // a bool
 extern NSString * const STDefaultsPrintOrientationKey;      // @"auto", @"portrait" or @"landscape"
-extern NSString * const STDefaultsPrintAnnotationsKey;      // a bool
 
 /// What the user chooses when printing (#355), the same on every platform: each one's print UI shows
 /// these, and they're remembered from one print to the next under the same keys.
 ///
 /// A saved value that isn't one of these (a newer version's, or a hand edit) reads as the default.
+///
+/// There's deliberately no option to leave annotations out: redactions are annotations, so the image
+/// without them shows what they hide. What's printed is always the flattened image.
 @interface STPrintOptions : NSObject <NSCopying>
 
 /// Fit to page.
@@ -27,8 +29,6 @@ extern NSString * const STDefaultsPrintAnnotationsKey;      // a bool
 @property (nonatomic) BOOL enlargeToFill;
 /// Automatic.
 @property (nonatomic) STPrintOrientation orientation;
-/// YES: print the annotations along with the image.
-@property (nonatomic) BOOL includeAnnotations;
 /// NO: print the selection, not the whole image. Not remembered: it's about this print's image, so the
 /// print UI sets it for each print.
 @property (nonatomic) BOOL selectionOnly;

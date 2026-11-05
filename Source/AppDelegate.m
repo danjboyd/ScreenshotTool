@@ -7164,14 +7164,12 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 /// Our Print panel, then the desktop's print dialog, then the PDF for the paper it chose (#355).
 - (void)printWithSelectionOnly:(BOOL)selectionOnly {
     NSImage *flattened = [self.canvasView flattenedImage];
-    NSImage *bare = self.canvasView.image;
-    if (!flattened || !bare || [STPrintPortal isPrinting]) {
+    if (!flattened || [STPrintPortal isPrinting]) {
         return;
     }
     NSRect selection = [self.canvasView selectionImageRect];
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     STPrintPanelController *panel = [[STPrintPanelController alloc] initWithFlattenedImage:flattened
-                                                                                 bareImage:bare
                                                                                  selection:selection
                                                                              selectionOnly:selectionOnly
                                                                                   defaults:defaults];
@@ -7179,7 +7177,13 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         return;
     }
     STPrintOptions *options = [panel.options copy];
-    NSImage *image = panel.currentImage;
+    // Only what's printed goes in the PDF: a selection's clip would still carry the whole image.
+    NSImage *image = options.selectionOnly ? [self.canvasView flattenedImageForSelection] : flattened;
+    NSRect printedSelection = NSZeroRect;
+    if (!image) {
+        return;
+    }
+    options.selectionOnly = NO;
     NSString *title = self.window.title.length > 0 ? self.window.title : @"Screenshot";
     [STPrintPortal printForWindow:self.window
                             title:title
@@ -7189,7 +7193,7 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         layout.paperSize = setup.paper;
         layout.margins = STPrintMarginsMake(STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin);
         layout.printerMargins = setup.printerMargins;
-        STConfigurePrintLayout(layout, options, image, selection);
+        STConfigurePrintLayout(layout, options, image, printedSelection);
         return STWritePrintPDF(layout, image, path);
     }
                        completion:^(BOOL printed, NSString *failure) {
