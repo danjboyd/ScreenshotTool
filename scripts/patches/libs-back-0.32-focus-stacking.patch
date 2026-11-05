@@ -1,0 +1,37 @@
+From: Daniel Boyd <danieljboyd@icloud.com>
+Subject: x11: don't stack a window against the focus when no window has it
+
+-orderwindow::: puts a window ordered in front (NSWindowAbove, no other
+window) just below the window that has the input focus.  When no window
+has it, XGetInputFocus answers None or PointerRoot, and the window was
+stacked against PointerRoot (1), so the X server answered BadWindow.
+This happens when the focused window closes and the focus reverts to the
+pointer root, as with a window manager that leaves it there.  Such a
+window is now stacked above the others, as when XGetInputFocus fails.
+
+Tests/x11/windowterm.m (in the next patch) shows it: under its test window
+manager each window it opens after closing one gave BadWindow on
+ConfigureWindow, 3 in 3; with this change none.
+
+AI assistance: this change and this description were written with Claude
+(Anthropic's Claude Code).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+Carried from the Adwaita libs-back series, 0004a (cfaded2), without its ChangeLog entry.
+
+diff --git a/Source/x11/XGServerWindow.m b/Source/x11/XGServerWindow.m
+index a442fb1..25c774d 100644
+--- a/Source/x11/XGServerWindow.m
++++ b/Source/x11/XGServerWindow.m
+@@ -3323,7 +3323,9 @@ swapColors(unsigned char *image_data, NSBitmapImageRep *rep)
+       int revert, status;
+       status = XGetInputFocus(dpy, &keywin, &revert);
+       other = NULL;
+-      if (status == True)
++      /* With no window focused, the focus is None or PointerRoot, which are
++         no windows to stack against. */
++      if (status == True && keywin != None && keywin != PointerRoot)
+ 	{
+ 	  /* Alloc a temporary window structure */
+ 	  other = GSAutoreleasedBuffer(sizeof(gswindow_device_t));

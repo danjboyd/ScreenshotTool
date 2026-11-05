@@ -226,6 +226,9 @@ pushd libs-back >/dev/null
 # The last two let files dragged out of the app (the Copy button's PNG) drop on GTK and Qt apps:
 # answering TARGETS and text/uri-list, and speaking XDND 3. Carried from danjboyd/ObjcMarkdown
 # (#175/#184), not yet sent upstream.
+# The final two are later fixes in the Adwaita series, kept apart so its older patches stay as they
+# were: no stacking against a focus that isn't a window, and no RenderBadPicture when a window closes
+# (#358).
 if [[ "${LIBS_BACK_REF}" == "back-0_32_0" ]]; then
   git apply "${SCRIPT_DIR}/patches/libs-back-0.32-motif-hints.patch"
   git apply "${SCRIPT_DIR}/patches/libs-back-0.32-window-types.patch"
@@ -236,6 +239,8 @@ if [[ "${LIBS_BACK_REF}" == "back-0_32_0" ]]; then
   git apply "${SCRIPT_DIR}/patches/libs-back-0.32-wm-delete-window.patch"
   git apply "${SCRIPT_DIR}/patches/libs-back-0.32-xdnd-uri-list.patch"
   git apply "${SCRIPT_DIR}/patches/libs-back-0.32-xdnd-version-3.patch"
+  git apply "${SCRIPT_DIR}/patches/libs-back-0.32-focus-stacking.patch"
+  git apply "${SCRIPT_DIR}/patches/libs-back-0.32-window-teardown.patch"
 fi
 source_gnustep_env
 PATH="${PREFIX}/System/Tools:${PREFIX}/Local/Tools:${PATH}" \

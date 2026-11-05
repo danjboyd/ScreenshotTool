@@ -1,0 +1,67 @@
+From: Daniel Boyd <danieljboyd@icloud.com>
+Subject: x11, cairo: let go of a window's Render Picture before destroying it
+
+The difference between 0004 v1, which libs-back-0.32-window-shadows.patch carries, and 0004 v2
+(7248446) in the Adwaita libs-back series; v3 (252f0b8) only rebases v2. Without it, closing an alert
+logs RenderBadPicture: XDestroyWindow frees the Picture, and cairo frees it again later (#358).
+
+diff --git a/Source/cairo/XGCairoModernSurface.m b/Source/cairo/XGCairoModernSurface.m
+index e334283..3494073 100644
+--- a/Source/cairo/XGCairoModernSurface.m
++++ b/Source/cairo/XGCairoModernSurface.m
+@@ -326,6 +326,20 @@ create_shadow(cairo_surface_t *similar, int width, int height,
+   return self;
+ }
+ 
++/* The X window is about to go.  cairo frees the Render Picture it made for
++ * the window when the surface is finished, which would otherwise happen at
++ * some later autorelease pool drain: after XDestroyWindow, which has already
++ * freed the Picture, so the X server answers with RenderBadPicture.  The back
++ * buffer and the shadow are pixmaps of their own and can wait. */
++- (void) windowWillTerminate
++{
++  if (_windowSurface != NULL)
++    {
++      cairo_surface_destroy(_windowSurface);
++      _windowSurface = NULL;
++    }
++}
++
+ - (void) dealloc
+ {
+   if (_windowSurface != NULL)
+@@ -346,7 +360,13 @@ create_shadow(cairo_surface_t *similar, int width, int height,
+ 
+ - (void) handleExposeRect: (NSRect)rect
+ {
+-  cairo_t *windowCtx = cairo_create(_windowSurface);
++  cairo_t *windowCtx;
++
++  if (_windowSurface == NULL)
++    {
++      return;
++    }
++  windowCtx = cairo_create(_windowSurface);
+ 
+   double backupOffsetX, backupOffsetY;
+ 
+diff --git a/Source/x11/XGServerWindow.m b/Source/x11/XGServerWindow.m
+index 2e1c6fc..3c9bd4a 100644
+--- a/Source/x11/XGServerWindow.m
++++ b/Source/x11/XGServerWindow.m
+@@ -2802,6 +2802,15 @@ _wmTestErrorHandler(Display *display, XErrorEvent *event)
+     }
+   if (window->ident)
+     {
++      /* A gdriver holding the window itself lets go of it first. */
++      if (window->gdriver != NULL
++	  && (window->gdriverProtocol & GDriverHandlesBacking)
++	  && [(id)window->gdriver respondsToSelector:
++			    @selector(windowWillTerminate)])
++	{
++	  [(id)window->gdriver performSelector:
++			    @selector(windowWillTerminate)];
++	}
+       XDestroyWindow(dpy, window->ident);
+       if (window->gc)
+ 	XFreeGC (dpy, window->gc);
