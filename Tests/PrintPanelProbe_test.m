@@ -78,6 +78,21 @@
     XCTAssertTrue([panel.summaryLabel.stringValue hasPrefix:@"1 page"], @"%@", panel.summaryLabel.stringValue);
 }
 
+/// Each row has its own place, inside the panel, apart from the two that share one and show in turn.
+- (void)testTheControlsDoNotOverlap {
+    STPrintPanelController *panel = [self panelWithSelection:NSZeroRect selectionOnly:NO];
+    NSArray<NSView *> *rows = @[ panel.contentPopUp, panel.fitPopUp, panel.enlargeCheckbox, panel.orientationPopUp ];
+    NSRect content = panel.panel.contentView.bounds;
+    for (NSUInteger i = 0; i < rows.count; i++) {
+        XCTAssertTrue(NSContainsRect(content, rows[i].frame), @"row %lu is outside", (unsigned long)i);
+        for (NSUInteger j = i + 1; j < rows.count; j++) {
+            XCTAssertFalse(NSIntersectsRect(rows[i].frame, rows[j].frame), @"rows %lu and %lu", (unsigned long)i, (unsigned long)j);
+        }
+    }
+    XCTAssertFalse(NSIntersectsRect(panel.scaleField.frame, panel.fitPopUp.frame));
+    XCTAssertFalse(NSIntersectsRect(panel.scaleField.frame, panel.orientationPopUp.frame));
+}
+
 - (void)testSelectionNeedsASelection {
     STPrintPanelController *none = [self panelWithSelection:NSZeroRect selectionOnly:YES];
     XCTAssertFalse(none.contentPopUp.isEnabled);

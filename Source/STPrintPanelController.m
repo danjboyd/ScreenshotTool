@@ -60,6 +60,9 @@ void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper) {
     if (!(paper.width > 0.0) || !(paper.height > 0.0) || NSIsEmptyRect(bounds)) {
         return;
     }
+    // A sheet of white paper has to show against what's behind it.
+    [[NSColor colorWithCalibratedWhite:0.87 alpha:1.0] setFill];
+    NSRectFill(self.bounds);
     CGFloat scale = MIN(NSWidth(bounds) / paper.width, NSHeight(bounds) / paper.height);
     NSRect sheet = NSMakeRect(floor(NSMidX(bounds) - paper.width * scale / 2.0),
                               floor(NSMidY(bounds) - paper.height * scale / 2.0),
@@ -176,7 +179,7 @@ void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper) {
 
     CGFloat x = STPanelGutter;
     CGFloat labelHeight = 18.0;
-    CGFloat y = STPanelHeight - STPanelGutter;
+    __block CGFloat y = STPanelHeight - STPanelGutter;
 
     NSRect (^nextRow)(CGFloat) = ^NSRect(CGFloat height) {
         NSRect row = NSMakeRect(x, y - height, STControlsWidth, height);
