@@ -25,8 +25,9 @@ FOUNDATION_EXPORT void *STPrintPortalPageSetupVariantFromDictionary(NSDictionary
 /// Writes the PDF for the paper the dialog chose, at `path`. YES if it did. `pageSetup` is the
 /// dictionary form of `setup`, to remember.
 typedef BOOL (^STPrintPortalWriter)(STPrintPortalPageSetup setup, NSDictionary<NSString *, id> *pageSetup, NSString *path);
-/// `failure` is nil if it printed or the user cancelled; `printed` says which.
-typedef void (^STPrintPortalCompletion)(BOOL printed, NSString * _Nullable failure);
+/// `failure` is nil if it printed or the user cancelled; `printed` says which. `unavailable` says the
+/// desktop has no print service to ask, so there's no dialog, as opposed to a print that went wrong.
+typedef void (^STPrintPortalCompletion)(BOOL printed, BOOL unavailable, NSString * _Nullable failure);
 
 /// Prints through org.freedesktop.portal.Print: the desktop's dialog picks the printer and paper, then
 /// `writer` builds the PDF for that paper, and the portal sends it. The app keeps running meanwhile,

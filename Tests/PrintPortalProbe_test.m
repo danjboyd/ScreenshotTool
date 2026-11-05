@@ -81,6 +81,32 @@
     g_variant_unref(none);
 }
 
+/// No portal on this bus (the tests run on a private one): told so, at once, and not asked to write.
+- (void)testNoPortalIsReportedAsUnavailable {
+    if (![[[NSProcessInfo processInfo] environment][@"DBUS_SESSION_BUS_ADDRESS"] length]) {
+        return;
+    }
+    __block BOOL called = NO, unavailable = NO, wrote = NO;
+    __block NSString *message = nil;
+    [STPrintPortal printForWindow:nil
+                            title:@"Probe"
+                        pageSetup:nil
+                           writer:^BOOL(STPrintPortalPageSetup setup, NSDictionary<NSString *, id> *pageSetup, NSString *path) {
+        wrote = YES;
+        return NO;
+    }
+                       completion:^(BOOL printed, BOOL noService, NSString *failure) {
+        called = YES;
+        unavailable = noService;
+        message = failure;
+    }];
+    XCTAssertTrue(called);
+    XCTAssertTrue(unavailable);
+    XCTAssertFalse(wrote);
+    XCTAssertTrue([message containsString:@"No print service"], @"%@", message);
+    XCTAssertFalse([STPrintPortal isPrinting], @"a next print can start");
+}
+
 - (void)testNoPaperIsNotValid {
     XCTAssertFalse([self setupFrom:"{'PPDName': <'A4'>}"].valid);
     XCTAssertFalse([self setupFrom:"{'Width': <210.0>, 'Height': <0.0>}"].valid);

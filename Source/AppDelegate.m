@@ -7187,16 +7187,41 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         STPrintSavePageSetup(defaults, pageSetup);
         return STWriteCanvasPrintPDF(canvas, options, setup.paper, setup.printerMargins, path);
     }
-                       completion:^(BOOL printed, NSString *failure) {
+                       completion:^(BOOL printed, BOOL unavailable, NSString *failure) {
         (void)printed;
-        if (failure) {
-            NSAlert *alert = [[NSAlert alloc] init];
-            alert.messageText = @"Unable to Print";
-            alert.informativeText = failure;
-            [alert addButtonWithTitle:@"OK"];
-            [alert runModal];
+        if (!failure) {
+            return;
+        }
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Unable to Print";
+        alert.informativeText = failure;
+        [alert addButtonWithTitle:unavailable ? @"Save as PDF…" : @"OK"];
+        if (unavailable) {
+            [alert addButtonWithTitle:@"Cancel"];
+        }
+        if ([alert runModal] == NSAlertFirstButtonReturn && unavailable) {
+            [self savePrintAsPDFWithOptions:options];
         }
     }];
+}
+
+/// With no print service: the same pages in a file, to print elsewhere. On the paper last printed on.
+- (void)savePrintAsPDFWithOptions:(STPrintOptions *)options {
+    NSSavePanel *panel = [NSSavePanel savePanel];
+    panel.allowedFileTypes = @[ @"pdf" ];
+    panel.nameFieldStringValue = [[self.window.title.length > 0 ? self.window.title : @"Screenshot" stringByDeletingPathExtension]
+        stringByAppendingPathExtension:@"pdf"];
+    if ([panel runModal] != NSModalResponseOK || !panel.URL.path) {
+        return;
+    }
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if (!STWriteCanvasPrintPDF(self.canvasView, options, STPrintLastPaperSize(defaults), STPrintMarginsMake(0, 0, 0, 0), panel.URL.path)) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Unable to Save PDF";
+        alert.informativeText = panel.URL.path;
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+    }
 }
 #endif
 

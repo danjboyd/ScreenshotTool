@@ -83,6 +83,8 @@ void *STPrintPortalPageSetupVariantFromDictionary(NSDictionary<NSString *, id> *
     return g_variant_builder_end(&builder);
 }
 
+static NSString * const STPrintNoServiceMessage = @"No print service is available on this desktop (xdg-desktop-portal's Print).";
+
 static STPrintPortal *STActivePrint = nil;
 
 @interface STPrintPortal () {
@@ -146,6 +148,10 @@ static void STPrintPortalResponse(GDBusConnection *connection, const gchar *send
 }
 
 - (void)finishPrinted:(BOOL)printed failure:(nullable NSString *)failure {
+    [self finishPrinted:printed unavailable:NO failure:failure];
+}
+
+- (void)finishPrinted:(BOOL)printed unavailable:(BOOL)unavailable failure:(nullable NSString *)failure {
     [self.timer invalidate];
     self.timer = nil;
     [self unsubscribe];
@@ -156,7 +162,7 @@ static void STPrintPortalResponse(GDBusConnection *connection, const gchar *send
     self.completion = nil;
     STActivePrint = nil;
     if (completion) {
-        completion(printed, failure);
+        completion(printed, unavailable, failure);
     }
 }
 
@@ -196,9 +202,9 @@ static void STPrintPortalResponse(GDBusConnection *connection, const gchar *send
     _bus = g_bus_get_sync(G_BUS_TYPE_SESSION, NULL, &error);
     if (_bus == NULL) {
         g_main_context_pop_thread_default(_context);
-        NSString *failure = [NSString stringWithFormat:@"No session bus (%s).", error ? error->message : "unknown error"];
+        NSLog(@"Print: no session bus (%s)", error ? error->message : "unknown error");
         g_clear_error(&error);
-        [self finishPrinted:NO failure:failure];
+        [self finishPrinted:NO unavailable:YES failure:STPrintNoServiceMessage];
         return;
     }
     NSString *token = nil;
@@ -219,10 +225,9 @@ static void STPrintPortalResponse(GDBusConnection *connection, const gchar *send
                                                                 &options),
                                                   G_VARIANT_TYPE("(o)"), G_DBUS_CALL_FLAGS_NONE, -1, NULL, &error);
     if (reply == NULL) {
-        NSString *failure = [NSString stringWithFormat:@"The desktop's print dialog isn't available (%s).",
-                                                       error ? error->message : "unknown error"];
+        NSLog(@"Print: PreparePrint failed (%s)", error ? error->message : "unknown error");
         g_clear_error(&error);
-        [self finishPrinted:NO failure:failure];
+        [self finishPrinted:NO unavailable:YES failure:STPrintNoServiceMessage];
         return;
     }
     [self followReply:reply expected:expected];
