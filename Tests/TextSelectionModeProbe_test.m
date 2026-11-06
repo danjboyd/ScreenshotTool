@@ -10,6 +10,7 @@
 #import <XCTest/XCTest.h>
 #import <AppKit/AppKit.h>
 #import "AppDelegate.h"
+#import "MarkupStroke.h"
 #import "ScreenshotCanvasView.h"
 #import "STTextRecognizer.h"
 #import "STTextSelection.h"
@@ -20,6 +21,7 @@
 @property (nonatomic, assign) BOOL hasSelectionRect;
 @property (nonatomic, assign) NSRect selectionRect;
 @property (nonatomic, assign) CGFloat zoomScale;
+@property (nonatomic, strong) NSMutableArray<MarkupStroke *> *strokes;
 - (void)cancelOperation:(id)sender;
 @end
 
@@ -28,10 +30,13 @@
 - (ScreenshotCanvasView *)canvasView;
 - (BOOL)openImageAtURL:(NSURL *)url;
 - (void)selectText:(id)sender;
+- (void)redactSelectedText:(id)sender;
 - (void)copy:(id)sender;
 - (void)readTextInImageRect:(NSRect)rect completion:(void (^)(NSArray<STRecognizedLine *> *lines))completion;
 - (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration;
 - (void)copyCustomActionText:(NSString *)text;
+- (void)updateDocumentEditedState;
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem;
 - (void)setupMenus;
 @end
 
@@ -40,6 +45,7 @@
 @property (nonatomic, assign) NSUInteger reads;
 @property (nonatomic, strong) NSMutableArray<NSString *> *messages;
 @property (nonatomic, copy) NSString *copiedText;
+@property (nonatomic, assign) NSUInteger editedStateUpdates;
 @end
 
 @implementation TextSelectionModeProbeAppDelegate
@@ -57,6 +63,10 @@
 }
 - (void)copyCustomActionText:(NSString *)text {
     self.copiedText = text;
+}
+- (void)updateDocumentEditedState {
+    self.editedStateUpdates++;
+    [super updateDocumentEditedState];
 }
 @end
 
@@ -160,6 +170,82 @@
 
     [_app copy:nil];
     XCTAssertEqualObjects(_app.copiedText, @"there world\nsecond", @"Copy copies the words, not the image");
+}
+
+- (void)testRedactSelectedTextCoversEachLineGrownAndUndoesTogether {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = _app.canvasView;
+    [_app selectText:nil];
+    NSUInteger reads = _app.reads;
+    [self dragFrom:NSMakePoint(95.0, 28.0) to:NSMakePoint(20.0, 68.0)]; // "there world", "second"
+    NSUndoManager *undo = [canvas undoManager];
+    [undo setGroupsByEvent:NO];
+    [undo beginUndoGrouping];
+    [_app redactSelectedText:nil];
+    [undo endUndoGrouping];
+
+    // A redaction per line: the words' union, padded (3 pixels here), as Redact Emails and Phone Numbers does.
+    XCTAssertEqual(canvas.strokes.count, (NSUInteger)2);
+    XCTAssertTrue(NSEqualRects(canvas.strokes[0].bounds, NSMakeRect(67.0, 17.0, 116.0, 22.0)), @"%@",
+                  NSStringFromRect(canvas.strokes[0].bounds));
+    XCTAssertTrue(NSEqualRects(canvas.strokes[1].bounds, NSMakeRect(7.0, 57.0, 56.0, 22.0)), @"%@",
+                  NSStringFromRect(canvas.strokes[1].bounds));
+    XCTAssertEqualObjects(_app.messages.lastObject, @"Redacted 2 items");
+
+    // Still selecting, with nothing selected, and read again: Copy can't give back what's redacted.
+    XCTAssertTrue([canvas isSelectingText]);
+    XCTAssertEqual(canvas.textSelection.selectedRange.length, (NSUInteger)0);
+    XCTAssertEqual(_app.reads, reads + 1);
+
+    [undo undo];
+    XCTAssertEqual(canvas.strokes.count, (NSUInteger)0, @"One undo takes both");
+}
+
+- (void)testRedactSelectedTextMarksTheImageEditedAtOnce {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_app selectText:nil];
+    [self dragFrom:NSMakePoint(15.0, 28.0) to:NSMakePoint(55.0, 28.0)];
+    NSUInteger updates = _app.editedStateUpdates;
+    [_app redactSelectedText:nil];
+    XCTAssertGreaterThan(_app.editedStateUpdates, updates, @"The status bar says \"unsaved\" now, not on the undo notice");
+}
+
+- (void)testRedactSelectedTextOverARedactionSaysAlreadyRedacted {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = _app.canvasView;
+    [_app selectText:nil];
+    [self dragFrom:NSMakePoint(15.0, 28.0) to:NSMakePoint(55.0, 28.0)];
+    [_app redactSelectedText:nil];
+    XCTAssertEqual(canvas.strokes.count, (NSUInteger)1);
+    XCTAssertEqualObjects(_app.messages.lastObject, @"Redacted 1 item");
+
+    // The canned reader still sees the word, as an engine can through a light redaction.
+    [self dragFrom:NSMakePoint(15.0, 28.0) to:NSMakePoint(55.0, 28.0)];
+    [_app redactSelectedText:nil];
+    XCTAssertEqual(canvas.strokes.count, (NSUInteger)1, @"Nothing added over it");
+    XCTAssertEqualObjects(_app.messages.lastObject, @"Already redacted");
+}
+
+- (void)testRedactSelectedTextPadsWithTheTextHeight {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STRecognizedWord *word = [[STRecognizedWord alloc] initWithText:@"tall" bounds:NSMakeRect(50.0, 50.0, 100.0, 40.0)];
+    _app.cannedLines = @[ [[STRecognizedLine alloc] initWithWords:@[ word ]] ];
+    [_app selectText:nil];
+    [self dragFrom:NSMakePoint(60.0, 70.0) to:NSMakePoint(140.0, 70.0)];
+    [_app redactSelectedText:nil];
+    XCTAssertEqual(_app.canvasView.strokes.count, (NSUInteger)1);
+    // 15% of 40 is 6, as STSensitiveTextRects pads.
+    XCTAssertTrue(NSEqualRects(_app.canvasView.strokes[0].bounds, NSMakeRect(44.0, 44.0, 112.0, 52.0)), @"%@",
+                  NSStringFromRect(_app.canvasView.strokes[0].bounds));
+}
+
+- (void)testRedactSelectedTextWithNothingSelectedDoesNothing {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_app selectText:nil];
+    NSUInteger messages = _app.messages.count;
+    [_app redactSelectedText:nil];
+    XCTAssertEqual(_app.canvasView.strokes.count, (NSUInteger)0);
+    XCTAssertEqual(_app.messages.count, messages);
 }
 
 - (void)testDoubleAndTripleClickSelectAWordAndALine {
@@ -272,6 +358,33 @@
     [_app selectText:nil];
     [_app.canvasView mouseDown:[self event:NSEventTypeLeftMouseDown atImagePoint:NSMakePoint(630.0, 310.0) clicks:2 flags:0]];
     XCTAssertEqualObjects(_app.canvasView.textSelection.selectedText, @"far");
+}
+
+- (void)testEditMenuRedactSelectedTextNeedsSelectedWords {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    if (![STTextRecognizer isAvailable]) {
+        return; // No engine, no text commands.
+    }
+    [_app setupMenus];
+    NSMenuItem *item = nil;
+    for (NSMenuItem *top in [[NSApp mainMenu] itemArray]) {
+        NSInteger index = [top.submenu indexOfItemWithTitle:@"Redact Selected Text"];
+        if (index >= 0) {
+            item = [top.submenu itemAtIndex:index];
+            break;
+        }
+    }
+    XCTAssertNotNil(item, @"Edit has Redact Selected Text");
+    XCTAssertEqual(item.action, @selector(redactSelectedText:));
+    XCTAssertEqual(item.keyEquivalent.length, (NSUInteger)0, @"No shortcut of its own");
+
+    XCTAssertFalse([_app validateMenuItem:item], @"Off outside Select Text");
+    [_app selectText:nil];
+    XCTAssertFalse([_app validateMenuItem:item], @"Off with nothing selected");
+    [self dragFrom:NSMakePoint(15.0, 28.0) to:NSMakePoint(55.0, 28.0)];
+    XCTAssertTrue([_app validateMenuItem:item], @"On with words selected");
+    [_app.canvasView endTextSelection:nil];
+    XCTAssertFalse([_app validateMenuItem:item], @"Off again when the mode ends");
 }
 
 /// ⇧⌘E, declared as Copy Text's is: GNUstep sends the Ctrl key as Command, so the menu shows

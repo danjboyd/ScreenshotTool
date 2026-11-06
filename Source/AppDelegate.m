@@ -3017,6 +3017,11 @@ static id STInfoValueForKey(NSString *key) {
                                                              keyEquivalent:@""];
         [redactDetectedItem setTarget:self];
         [editMenu addItem:redactDetectedItem];
+        NSMenuItem *redactSelectedTextItem = [[NSMenuItem alloc] initWithTitle:@"Redact Selected Text"
+                                                                        action:@selector(redactSelectedText:)
+                                                                 keyEquivalent:@""];
+        [redactSelectedTextItem setTarget:self];
+        [editMenu addItem:redactSelectedTextItem];
     }
     [editMenu addItem:[NSMenuItem separatorItem]];
     // Built with @selector: validation compares selectors with ==, and on GNUstep's runtime one
@@ -7857,11 +7862,17 @@ NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted, NSUInteg
     }];
 }
 
-/// Redact Selected Text. TODO(#330, Windows agent): the body is Windows' (grow the rects as
-/// STSensitiveTextRects does, one undo, the DPI check); this stand-in redacts the line rects.
+/// Redacts the selected words, a redaction per line they touch, undone together. The selection
+/// goes and the words are read again: what's under a redaction can't be selected or copied after.
 - (void)redactSelectedText:(id)sender {
     (void)sender;
-    NSArray<NSValue *> *rects = self.canvasView.textSelection.selectedRects;
+    STTextSelection *selection = self.canvasView.textSelection;
+    NSMutableArray<NSValue *> *rects = [[NSMutableArray alloc] init];
+    for (NSValue *value in selection.selectedRects) {
+        // As STSensitiveTextRects pads: a little over the glyphs, so their edges don't show.
+        CGFloat pad = MAX(3.0, round(NSHeight(value.rectValue) * 0.15));
+        [rects addObject:[NSValue valueWithRect:NSInsetRect(value.rectValue, -pad, -pad)]];
+    }
     if (rects.count == 0) {
         NSBeep();
         return;
@@ -7871,6 +7882,13 @@ NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted, NSUInteg
     NSUInteger added = [self.canvasView addRedactionsInImageRects:rects
                                                        actionName:@"Redact Selected Text"
                                                   alreadyRedacted:&alreadyRedacted];
+    if (added > 0) {
+        [selection clearSelection];
+        [self.canvasView setNeedsDisplay:YES];
+        // An edit: "unsaved" in the status bar now, not when the undo manager's notice comes. This
+        // also reads the words again.
+        [self updateDocumentEditedState];
+    }
     [self showCommandResultMessage:STRedactDetectedFeedback(YES, added, alreadyRedacted, hadRedactions) duration:2.5];
 }
 
