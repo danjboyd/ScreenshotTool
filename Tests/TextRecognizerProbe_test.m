@@ -342,6 +342,39 @@
     return lines;
 }
 
+#if !defined(GNUSTEP)
+/// macOS reads the app's image in memory (perf, 0.4.0): the same lines and boxes as from its file,
+/// for the whole image and for a part.
+- (void)testAnImageInMemoryReadsAsItsFileDoes {
+    NSImage *image = [[NSImage alloc] initWithContentsOfFile:[self samplePath]];
+    CGImageRef cgImage = [image CGImageForProposedRect:NULL context:nil hints:nil];
+    XCTAssertTrue(cgImage != NULL);
+    NSSize size = NSMakeSize(CGImageGetWidth(cgImage), CGImageGetHeight(cgImage));
+    for (NSValue *rectValue in @[ [NSValue valueWithRect:NSZeroRect],
+                                  [NSValue valueWithRect:NSMakeRect(0.0, 0.0, size.width, floor(size.height / 2.0))] ]) {
+        NSRect rect = rectValue.rectValue;
+        __block NSArray<STRecognizedLine *> *lines = nil;
+        __block BOOL done = NO;
+        [STTextRecognizer recognizeTextInCGImage:cgImage rect:rect completion:^(NSArray<STRecognizedLine *> *l, NSString *f) {
+            (void)f;
+            lines = l;
+            done = YES;
+        }];
+        NSDate *until = [NSDate dateWithTimeIntervalSinceNow:30.0];
+        while (!done && [until timeIntervalSinceNow] > 0) {
+            [[NSRunLoop currentRunLoop] runMode:NSDefaultRunLoopMode beforeDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+        }
+        NSArray<STRecognizedLine *> *fromFile = [self linesOfSampleInRect:rect];
+        XCTAssertGreaterThan(lines.count, (NSUInteger)0);
+        XCTAssertEqualObjects(STRecognizedText(lines), STRecognizedText(fromFile), @"rect %@", NSStringFromRect(rect));
+        XCTAssertEqual(lines.count, fromFile.count);
+        for (NSUInteger i = 0; i < MIN(lines.count, fromFile.count); i++) {
+            XCTAssertTrue(NSEqualRects(lines[i].bounds, fromFile[i].bounds), @"line %lu", (unsigned long)i);
+        }
+    }
+}
+#endif
+
 /// Reading a part of the image (Copy Text on a selection) reads only what's there, with its boxes
 /// still in the whole image's pixels, where reading all of it puts them.
 - (void)testAPartReadsOnlyThatPart {

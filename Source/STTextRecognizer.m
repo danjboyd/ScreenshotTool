@@ -496,6 +496,45 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
     return lines;
 }
 
+#if ST_TEXT_VISION
+/// Vision's reading of `rect` of `image` (all of it for NSZeroRect), in the image's pixels. Accurate,
+/// without language correction: it "corrects" email addresses into words and doubles the time (the
+/// Redact A/B, 2026-11-05). A large region is read in tiles. nil, with `failure`, on an error.
+static NSArray<STRecognizedLine *> *STVisionReadImage(CGImageRef image, NSRect rect, NSString **failure) {
+    NSRect whole = NSMakeRect(0.0, 0.0, CGImageGetWidth(image), CGImageGetHeight(image));
+    NSRect region = NSIsEmptyRect(rect) ? whole : NSIntersectionRect(NSIntegralRect(rect), whole);
+    if (NSIsEmptyRect(region)) {
+        return @[];
+    }
+    NSArray<NSValue *> *tiles = STVisionTilesForRegion(region);
+    NSMutableArray<NSArray<STRecognizedLine *> *> *tileLines = [NSMutableArray array];
+    VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image options:@{}];
+    for (NSValue *tileValue in tiles) {
+        NSRect tile = tileValue.rectValue;
+        VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] init];
+        request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
+        request.usesLanguageCorrection = NO;
+        if (@available(macOS 13.0, *)) {
+            request.automaticallyDetectsLanguage = YES;
+        }
+        // Vision's region is normalised with a bottom-left origin.
+        request.regionOfInterest = CGRectMake(NSMinX(tile) / NSWidth(whole),
+                                              1.0 - NSMaxY(tile) / NSHeight(whole),
+                                              NSWidth(tile) / NSWidth(whole),
+                                              NSHeight(tile) / NSHeight(whole));
+        NSError *error = nil;
+        if (![handler performRequests:@[request] error:&error]) {
+            if (failure) {
+                *failure = error.localizedDescription ?: @"Vision couldn't read the image.";
+            }
+            return nil;
+        }
+        [tileLines addObject:STLinesFromVisionObservations(request.results ?: @[], tile)];
+    }
+    return STMergeTiledLines(tileLines, tiles, region);
+}
+#endif
+
 @implementation STTextRecognizer
 
 #if ST_TEXT_TESSERACT
@@ -517,6 +556,26 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
     return NO;
 #endif
 }
+
+#if ST_TEXT_VISION
++ (void)recognizeTextInCGImage:(CGImageRef)image
+                          rect:(NSRect)rect
+                    completion:(STTextRecognitionCompletion)completion {
+    STTextRecognitionCompletion finish = [completion copy];
+    CGImageRetain(image);
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSString *failure = nil;
+        NSArray<STRecognizedLine *> *lines = image ? STVisionReadImage(image, rect, &failure) : nil;
+        if (!image) {
+            failure = @"The image couldn't be opened for text recognition.";
+        }
+        CGImageRelease(image);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            finish(lines, lines ? nil : failure);
+        });
+    });
+}
+#endif
 
 + (void)recognizeTextInImageAtURL:(NSURL *)url
                              rect:(NSRect)rect
@@ -543,8 +602,8 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
     }];
 #elif ST_TEXT_VISION
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        NSArray<STRecognizedLine *> *lines = nil;
         NSString *failure = nil;
+        NSArray<STRecognizedLine *> *lines = nil;
         CGImageSourceRef source = url.isFileURL ? CGImageSourceCreateWithURL((__bridge CFURLRef)url, NULL) : NULL;
         CGImageRef image = source ? CGImageSourceCreateImageAtIndex(source, 0, NULL) : NULL;
         if (source) {
@@ -553,41 +612,7 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
         if (!image) {
             failure = @"The image couldn't be opened for text recognition.";
         } else {
-            NSRect whole = NSMakeRect(0.0, 0.0, CGImageGetWidth(image), CGImageGetHeight(image));
-            NSRect region = NSIsEmptyRect(rect) ? whole : NSIntersectionRect(NSIntegralRect(rect), whole);
-            if (NSIsEmptyRect(region)) {
-                lines = @[];
-            } else {
-                // Accurate, without language correction: it "corrects" email addresses into words and
-                // doubles the time (the Redact A/B, 2026-11-05). A large region is read in tiles.
-                NSArray<NSValue *> *tiles = STVisionTilesForRegion(region);
-                NSMutableArray<NSArray<STRecognizedLine *> *> *tileLines = [NSMutableArray array];
-                for (NSValue *tileValue in tiles) {
-                    NSRect tile = tileValue.rectValue;
-                    VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] init];
-                    request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
-                    request.usesLanguageCorrection = NO;
-                    if (@available(macOS 13.0, *)) {
-                        request.automaticallyDetectsLanguage = YES;
-                    }
-                    // Vision's region is normalised with a bottom-left origin.
-                    request.regionOfInterest = CGRectMake(NSMinX(tile) / NSWidth(whole),
-                                                          1.0 - NSMaxY(tile) / NSHeight(whole),
-                                                          NSWidth(tile) / NSWidth(whole),
-                                                          NSHeight(tile) / NSHeight(whole));
-                    VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image options:@{}];
-                    NSError *error = nil;
-                    if (![handler performRequests:@[request] error:&error]) {
-                        failure = error.localizedDescription ?: @"Vision couldn't read the image.";
-                        tileLines = nil;
-                        break;
-                    }
-                    [tileLines addObject:STLinesFromVisionObservations(request.results ?: @[], tile)];
-                }
-                if (tileLines) {
-                    lines = STMergeTiledLines(tileLines, tiles, region);
-                }
-            }
+            lines = STVisionReadImage(image, rect, &failure);
             CGImageRelease(image);
         }
         dispatch_async(dispatch_get_main_queue(), ^{

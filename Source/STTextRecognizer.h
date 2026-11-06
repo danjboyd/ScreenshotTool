@@ -37,6 +37,14 @@ typedef void (^STTextRecognitionCompletion)(NSArray<STRecognizedLine *> * _Nulla
                              rect:(NSRect)rect
                        completion:(STTextRecognitionCompletion)completion;
 
+#if !defined(GNUSTEP)
+/// The same for an image already in memory (macOS, Vision): the app hands over its flattened image
+/// instead of writing a PNG for Vision to read back (perf, 0.4.0). The image is retained until done.
++ (void)recognizeTextInCGImage:(CGImageRef)image
+                          rect:(NSRect)rect
+                    completion:(STTextRecognitionCompletion)completion;
+#endif
+
 @end
 
 /// The lines' text, a line each, in reading order.
