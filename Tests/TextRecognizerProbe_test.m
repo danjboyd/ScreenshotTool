@@ -118,6 +118,41 @@
     XCTAssertEqual(STSensitiveTextRects(lines).count, (NSUInteger)0, @"%@", STSensitiveTextRects(lines));
 }
 
+/// Dates in other forms, a date with a time, timestamps, versions and an ISBN have a phone number's
+/// digits but aren't one: a reader's look-alikes ("/" read as 7) mustn't make them one either.
+- (void)testDatesVersionsAndISBNsInEveryFormAreLeftAlone {
+    NSArray<NSArray<NSString *> *> *cases = @[
+        @[@"2026/10/22"], @[@"22.10.2026"], @[@"10/22/2026"], @[@"22/10/2026"], @[@"10-22-2026"], @[@"10/22/26"],
+        @[@"2026", @"10", @"22"], @[@"22", @"10", @"2026"], @[@"2026-10-22", @"12:00"], @[@"2026-10-22", @"13:45:07"],
+        @[@"(2026-10-22)"], @[@"20261022-134507"], @[@"10.0.19045.3803"], @[@"978-3-16-148410-0"],
+    ];
+    for (NSArray<NSString *> *words in cases) {
+        NSMutableArray<NSString *> *line = [@[@"Invoice"] mutableCopy];
+        [line addObjectsFromArray:words];
+        [line addObjectsFromArray:@[@"was", @"paid"]];
+        NSArray<NSValue *> *rects = STSensitiveTextRects(@[ [self lineWithWords:line y:0.0] ]);
+        XCTAssertEqual(rects.count, (NSUInteger)0, @"%@ matched: %@", [words componentsJoinedByString:@" "], rects);
+    }
+}
+
+/// A phone number beside a date is still found, without the date; numbers written with dots stay
+/// phone numbers.
+- (void)testAPhoneNumberBesideADateIsStillFound {
+    NSArray<NSArray<NSString *> *> *phones = @[
+        @[@"07700", @"900123"], @[@"01.23.45.67.89"], @[@"1.512.555.0199"], @[@"512.555.0177"], @[@"+33", @"1", @"23", @"45", @"67", @"89"],
+    ];
+    for (NSArray<NSString *> *phone in phones) {
+        NSMutableArray<NSString *> *texts = [@[@"On", @"22.10.2026"] mutableCopy];
+        [texts addObjectsFromArray:phone];
+        [texts addObject:@"called"];
+        NSArray<NSValue *> *rects = [self rectsForWords:texts height:10.0];
+        XCTAssertEqual(rects.count, (NSUInteger)1, @"%@", [phone componentsJoinedByString:@" "]);
+        NSRange covered = rects.count == 1 ? [self wordsCoveredBy:rects[0]] : NSMakeRange(0, 0);
+        XCTAssertEqual(covered.location, (NSUInteger)2, @"Not the date, for %@", [phone componentsJoinedByString:@" "]);
+        XCTAssertEqual(covered.length, phone.count, @"All of %@", [phone componentsJoinedByString:@" "]);
+    }
+}
+
 /// The redaction for one line of `words`, each 10 px wide and `height` high with a 4 px gap.
 - (NSArray<NSValue *> *)rectsForWords:(NSArray<NSString *> *)texts height:(CGFloat)height {
     NSMutableArray<STRecognizedWord *> *words = [[NSMutableArray alloc] init];

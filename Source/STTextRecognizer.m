@@ -88,15 +88,85 @@ NSArray<STRecognizedLine *> *STLinesFromTesseractTSV(NSString *tsv) {
     return lines;
 }
 
-/// Phone numbers as they're written: an optional country code, then 7 to 15 digits in groups,
-/// with spaces, dots, dashes or brackets between. Counting digits keeps times and versions out
-/// (too few); a date (2026-10-22, 2026.10.22) is left out by its shape.
-static BOOL STIsPhoneNumber(NSString *match) {
-    static NSRegularExpression *date = nil;
-    if (!date) {
-        date = [NSRegularExpression regularExpressionWithPattern:@"^\\d{4}[-./]\\d{1,2}[-./]\\d{1,2}$" options:0 error:NULL];
+/// Whether `text` (a match as written, look-alike digits not yet read as digits) is a date, a date
+/// and time, or a version rather than a phone number: 2026-10-22, 2026/10/22, 22.10.2026, 10/22/26,
+/// "2026 10 22 13", 20261022-134507, 10.0.19045.3803, or an ISBN. One with a "+" country code or a
+/// bracketed area code is a phone number whatever its digits.
+static BOOL STLooksLikeDateOrVersion(NSString *text) {
+    if ([text rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"+()"]].location != NSNotFound) {
+        return NO;
     }
-    if ([date numberOfMatchesInString:match options:0 range:NSMakeRange(0, match.length)] > 0) {
+    NSMutableArray<NSString *> *groups = [[NSMutableArray alloc] init];
+    NSMutableString *separators = [[NSMutableString alloc] init];
+    NSMutableString *group = [[NSMutableString alloc] init];
+    for (NSUInteger i = 0; i < text.length; i++) {
+        unichar c = [text characterAtIndex:i];
+        if (c >= '0' && c <= '9') {
+            [group appendFormat:@"%C", c];
+        } else if (group.length > 0) {
+            [groups addObject:[group copy]];
+            [group setString:@""];
+            [separators appendFormat:@"%C", c];
+        }
+    }
+    if (group.length > 0) {
+        [groups addObject:[group copy]];
+    }
+    BOOL (^isYear)(NSString *) = ^BOOL(NSString *g) {
+        return (g.length == 4 && g.integerValue >= 1900 && g.integerValue <= 2099) || g.length == 2;
+    };
+    BOOL (^isMonth)(NSString *) = ^BOOL(NSString *g) {
+        return g.length <= 2 && g.integerValue >= 1 && g.integerValue <= 12;
+    };
+    BOOL (^isDay)(NSString *) = ^BOOL(NSString *g) {
+        return g.length <= 2 && g.integerValue >= 1 && g.integerValue <= 31;
+    };
+    // A compact date at the start: 20261022, as in a timestamp.
+    NSString *first = groups.firstObject;
+    if (first.length == 8 && isYear([first substringToIndex:4]) && isMonth([first substringWithRange:NSMakeRange(4, 2)]) &&
+        isDay([first substringFromIndex:6])) {
+        return YES;
+    }
+    if (groups.count >= 3) {
+        NSString *a = groups[0], *b = groups[1], *c = groups[2];
+        // Year first (2026-10-22), or year last: day or month first, either order (22.10.2026,
+        // 10/22/2026, 10/22/26). A time after it (2026-10-22 13:45) keeps it a date.
+        BOOL yearFirst = a.length == 4 && isYear(a) && isMonth(b) && isDay(c);
+        // A two-digit year only when the date is the whole match, with "/" or ".": "01.23.45.67.89" is
+        // a French number.
+        BOOL shortYear = c.length == 2 && groups.count == 3 && ([separators hasPrefix:@"/"] || [separators hasPrefix:@"."]);
+        BOOL yearLast = (c.length == 4 || shortYear) && isYear(c) && ((isDay(a) && isMonth(b)) || (isMonth(a) && isDay(b)));
+        if (yearFirst || yearLast) {
+            return YES;
+        }
+    }
+    // A version or build number: four or more groups split only by dots, with a one-digit group
+    // after the first or a group of five or more (10.0.19045.3803). Not 1.512.555.0199 or
+    // 01.23.45.67.89.
+    if (groups.count >= 4 && [[separators stringByReplacingOccurrencesOfString:@"." withString:@""] length] == 0) {
+        for (NSUInteger i = 0; i < groups.count; i++) {
+            if ((i > 0 && groups[i].length == 1) || groups[i].length >= 5) {
+                return YES;
+            }
+        }
+    }
+    // An ISBN: 978 or 979 and 13 digits.
+    NSString *digits = [groups componentsJoinedByString:@""];
+    return digits.length == 13 && ([digits hasPrefix:@"978"] || [digits hasPrefix:@"979"]);
+}
+
+/// Whether one word is a date, a version or an ISBN on its own ("2026-10-22,", "(22.10.2026)",
+/// "10.0.19045.3803"). The phone pattern doesn't see it, so it can't join the phone number beside it.
+static BOOL STWordIsDateOrVersion(NSString *word) {
+    NSString *trimmed = [word stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"()[],;:"]];
+    return trimmed.length >= 6 && STLooksLikeDateOrVersion(trimmed);
+}
+
+/// Whether a match of the phone pattern is a phone number as written: an optional country code, then
+/// 7 to 15 digits in groups (counting digits keeps times out), and not a date, a time after a date, or
+/// a version (`written` is the same text before look-alikes were read as digits).
+static BOOL STIsPhoneNumber(NSString *match, NSString *written) {
+    if (STLooksLikeDateOrVersion(match) || STLooksLikeDateOrVersion(written)) {
         return NO;
     }
     NSUInteger digits = 0;
@@ -198,13 +268,14 @@ NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
             }
             [ranges addObject:[NSValue valueWithRange:NSMakeRange(text.length, word.text.length)]];
             [text appendString:word.text];
-            [phoneText appendString:STPhoneDigitsInWord(word.text)];
+            [phoneText appendString:STWordIsDateOrVersion(word.text) ? [@"" stringByPaddingToLength:word.text.length withString:@"_" startingAtIndex:0]
+                                                                     : STPhoneDigitsInWord(word.text)];
             previous = word;
         }
         NSMutableArray<NSTextCheckingResult *> *matches = [[NSMutableArray alloc] init];
         [matches addObjectsFromArray:[email matchesInString:text options:0 range:NSMakeRange(0, text.length)]];
         for (NSTextCheckingResult *match in [phone matchesInString:phoneText options:0 range:NSMakeRange(0, phoneText.length)]) {
-            if (STIsPhoneNumber([phoneText substringWithRange:match.range])) {
+            if (STIsPhoneNumber([phoneText substringWithRange:match.range], [text substringWithRange:match.range])) {
                 [matches addObject:match];
             }
         }
