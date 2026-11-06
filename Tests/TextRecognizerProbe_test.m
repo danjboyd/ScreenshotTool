@@ -127,6 +127,98 @@
     }
 }
 
+#pragma mark - Reading order in columns
+
+/// A line of one word, `text`, over x..x+width at row `row` (24 px apart, 20 high).
+static STRecognizedLine *STColumnLine(NSString *text, CGFloat x, CGFloat width, NSInteger row) {
+    STRecognizedWord *word = [[STRecognizedWord alloc] initWithText:text bounds:NSMakeRect(x, 40.0 + row * 24.0, width, 20.0)];
+    return [[STRecognizedLine alloc] initWithWords:@[ word ]];
+}
+
+/// The lines' texts, joined with spaces.
+static NSString *STColumnOrder(NSArray<STRecognizedLine *> *lines) {
+    return [[lines valueForKey:@"text"] componentsJoinedByString:@" "];
+}
+
+/// `columns` side by side (each `rows` lines of the given width), in rows as a reader returns them.
+static NSArray<STRecognizedLine *> *STColumnsInRows(NSArray<NSString *> *columns, NSInteger rows, NSInteger firstRow, CGFloat width) {
+    NSMutableArray<STRecognizedLine *> *lines = [NSMutableArray array];
+    for (NSInteger row = 0; row < rows; row++) {
+        for (NSUInteger c = 0; c < columns.count; c++) {
+            [lines addObject:STColumnLine([NSString stringWithFormat:@"%@%ld", columns[c], (long)row + 1], 20.0 + c * (width + 60.0),
+                                          width, firstRow + row)];
+        }
+    }
+    return lines;
+}
+
+- (void)testTwoColumnsReadColumnByColumn {
+    NSArray<STRecognizedLine *> *rows = STColumnsInRows(@[ @"L", @"R" ], 4, 0, 600.0);
+    XCTAssertEqualObjects(STColumnOrder(rows), @"L1 R1 L2 R2 L3 R3 L4 R4");
+    XCTAssertEqualObjects(STColumnOrder(STOrderLinesInColumns(rows)), @"L1 L2 L3 L4 R1 R2 R3 R4");
+}
+
+- (void)testThreeColumnsReadColumnByColumn {
+    NSArray<STRecognizedLine *> *rows = STColumnsInRows(@[ @"A", @"B", @"C" ], 3, 0, 400.0);
+    XCTAssertEqualObjects(STColumnOrder(STOrderLinesInColumns(rows)), @"A1 A2 A3 B1 B2 B3 C1 C2 C3");
+}
+
+/// A heading across the columns comes first, the columns under it after, and a second heading
+/// starts a new run: its columns don't mix with those above.
+- (void)testAHeadingAcrossColumnsStartsANewRun {
+    NSMutableArray<STRecognizedLine *> *rows = [NSMutableArray array];
+    [rows addObject:STColumnLine(@"Title", 20.0, 1260.0, 0)];
+    [rows addObjectsFromArray:STColumnsInRows(@[ @"L", @"R" ], 3, 1, 600.0)];
+    [rows addObject:STColumnLine(@"Section", 20.0, 1260.0, 4)];
+    [rows addObjectsFromArray:STColumnsInRows(@[ @"l", @"r" ], 2, 5, 600.0)];
+    XCTAssertEqualObjects(STColumnOrder(STOrderLinesInColumns(rows)), @"Title L1 L2 L3 R1 R2 R3 Section l1 l2 r1 r2");
+}
+
+/// A form's labels and values, or text in one column with a short last line, keep their rows.
+- (void)testFormsAndOneColumnKeepTheirRows {
+    NSMutableArray<STRecognizedLine *> *form = [NSMutableArray array];
+    for (NSInteger row = 0; row < 4; row++) {
+        [form addObject:STColumnLine([NSString stringWithFormat:@"Label%ld", (long)row], 20.0, 90.0, row)];
+        [form addObject:STColumnLine([NSString stringWithFormat:@"Value%ld", (long)row], 300.0, 700.0, row)];
+    }
+    XCTAssertEqualObjects(STColumnOrder(STOrderLinesInColumns(form)), STColumnOrder(form));
+    NSArray<STRecognizedLine *> *one = @[ STColumnLine(@"a", 20.0, 900.0, 0), STColumnLine(@"b", 20.0, 880.0, 1),
+                                          STColumnLine(@"c", 60.0, 840.0, 2), STColumnLine(@"d", 20.0, 200.0, 3) ];
+    XCTAssertEqualObjects(STColumnOrder(STOrderLinesInColumns(one)), @"a b c d");
+}
+
+/// A word or two a reader split off the end of a line follows that line, and doesn't keep its
+/// columns from being read column by column.
+- (void)testAStrayPieceFollowsItsLine {
+    NSMutableArray<STRecognizedLine *> *rows = [STColumnsInRows(@[ @"L", @"R" ], 4, 0, 600.0) mutableCopy];
+    [rows insertObject:STColumnLine(@"tail", 1340.0, 40.0, 1) atIndex:4];
+    XCTAssertEqualObjects(STColumnOrder(STOrderLinesInColumns(rows)), @"L1 L2 L3 L4 R1 R2 tail R3 R4");
+}
+
+/// Two pieces of a line side by side on a row, which the tiles' edges split, are one line again.
+- (void)testPiecesOfALineSplitByTilesAreJoined {
+    STRecognizedWord *head = [[STRecognizedWord alloc] initWithText:@"all 3 regions" bounds:NSMakeRect(1900, 100, 650, 20)];
+    STRecognizedWord *tail = [[STRecognizedWord alloc] initWithText:@"report healthy" bounds:NSMakeRect(2557, 100, 140, 20)];
+    NSArray<NSValue *> *tiles = @[ [NSValue valueWithRect:NSMakeRect(0, 0, 2560, 720)], [NSValue valueWithRect:NSMakeRect(1280, 0, 2560, 720)] ];
+    NSArray<STRecognizedLine *> *merged = STMergeTiledLines(@[ @[ [[STRecognizedLine alloc] initWithWords:@[ head ]] ],
+                                                               @[ [[STRecognizedLine alloc] initWithWords:@[ tail ]] ] ],
+                                                            tiles, NSMakeRect(0, 0, 3840, 720));
+    XCTAssertEqual(merged.count, (NSUInteger)1);
+    XCTAssertEqualObjects(merged.firstObject.text, @"all 3 regions report healthy");
+}
+
+/// Tiles merged from a two-column page come back column by column.
+- (void)testTiledColumnsMergeColumnByColumn {
+    NSArray<STRecognizedLine *> *rows = STColumnsInRows(@[ @"L", @"R" ], 4, 0, 600.0);
+    NSArray<NSValue *> *tiles = @[ [NSValue valueWithRect:NSMakeRect(0, 0, 700, 200)], [NSValue valueWithRect:NSMakeRect(600, 0, 800, 200)] ];
+    NSMutableArray<STRecognizedLine *> *left = [NSMutableArray array], *right = [NSMutableArray array];
+    for (STRecognizedLine *line in rows) {
+        [([line.text hasPrefix:@"L"] ? left : right) addObject:line];
+    }
+    NSArray<STRecognizedLine *> *merged = STMergeTiledLines(@[ left, right ], tiles, NSMakeRect(0, 0, 1400, 200));
+    XCTAssertEqualObjects(STColumnOrder(merged), @"L1 L2 L3 L4 R1 R2 R3 R4");
+}
+
 /// The redaction for one line of `words`, each 10 px wide and `height` high with a 4 px gap.
 - (NSArray<NSValue *> *)rectsForWords:(NSArray<NSString *> *)texts height:(CGFloat)height {
     NSMutableArray<STRecognizedWord *> *words = [[NSMutableArray alloc] init];

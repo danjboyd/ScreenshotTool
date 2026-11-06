@@ -67,9 +67,15 @@ FOUNDATION_EXPORT NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedL
 /// An engine that scales a large image down (Vision) loses small text without them.
 FOUNDATION_EXPORT NSArray<NSValue *> *STVisionTilesForRegion(NSRect region);
 
+/// `lines`, in rows top down, in reading order for text in columns: each column top to bottom, the
+/// columns left to right, with a line across them (a heading) starting a new run. Forms and tables
+/// keep their rows; text in one column is unchanged. STMergeTiledLines orders its lines with it.
+FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STOrderLinesInColumns(NSArray<STRecognizedLine *> *lines);
+
 /// The lines read in each of `tiles` (boxes in the whole image's pixels) as one reading of `region`:
 /// words cut by an inner tile edge dropped, words read twice kept once, a line split by tiles joined
-/// again, and lines in reading order, top to bottom and left to right along a row.
+/// again, and lines in reading order: by rows, top to bottom and left to right, or column by column
+/// where the text is in columns (STOrderLinesInColumns).
 FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine *> *> *tileLines,
                                                                  NSArray<NSValue *> *tiles, NSRect region);
 

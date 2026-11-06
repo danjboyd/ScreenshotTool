@@ -404,6 +404,136 @@ NSArray<NSValue *> *STVisionTilesForRegion(NSRect region) {
 /// whole), a word read by two tiles is kept once, and words that were on one line in any tile stay
 /// on one line, so a line longer than a tile is joined up again. Lines run top to bottom, and left
 /// to right along a row.
+/// A column of text while the lines are grouped: its lines, top down, and the x-range they cover.
+@interface STTextColumn : NSObject
+@property (nonatomic) CGFloat minX;
+@property (nonatomic) CGFloat maxX;
+@property (nonatomic) CGFloat widest;
+@property (nonatomic, strong) NSMutableArray<STRecognizedLine *> *lines;
+@end
+
+@implementation STTextColumn
+@end
+
+/// `lines` (in rows, top down) in reading order when the text is in columns: each column top to
+/// bottom, the columns left to right. A line across more than one column, such as a heading over
+/// them, ends the columns above it, and the lines under it start a new run. Only columns of text are
+/// reordered: each at least two lines, with one at least eight line-heights wide; a stray line beside
+/// them (a reader's split-off word) follows the line on its row. A form's labels and values, or a
+/// table's cells, keep their rows. Text in one column comes back as it was.
+NSArray<STRecognizedLine *> *STOrderLinesInColumns(NSArray<STRecognizedLine *> *lines) {
+    if (lines.count < 4) {
+        return lines;
+    }
+    NSMutableArray<NSNumber *> *heights = [NSMutableArray arrayWithCapacity:lines.count];
+    for (STRecognizedLine *line in lines) {
+        [heights addObject:@(NSHeight(line.bounds))];
+    }
+    [heights sortUsingSelector:@selector(compare:)];
+    CGFloat lineHeight = MAX(1.0, heights[heights.count / 2].doubleValue);
+
+    // Runs of columns, top down: a line joins the one column it sits under, starts a new column
+    // beside the others, or, across several, closes the run.
+    NSMutableArray<NSMutableArray<STTextColumn *> *> *runs = [NSMutableArray arrayWithObject:[NSMutableArray array]];
+    NSMutableArray<NSMutableArray<STRecognizedLine *> *> *runLines = [NSMutableArray arrayWithObject:[NSMutableArray array]];
+    for (STRecognizedLine *line in lines) {
+        CGFloat minX = NSMinX(line.bounds), maxX = NSMaxX(line.bounds);
+        NSMutableArray<STTextColumn *> *under = [NSMutableArray array];
+        for (STTextColumn *column in runs.lastObject) {
+            CGFloat overlap = MIN(maxX, column.maxX) - MAX(minX, column.minX);
+            if (overlap > 0.5 * MIN(maxX - minX, column.maxX - column.minX)) {
+                [under addObject:column];
+            }
+        }
+        // Only columns of text count here: a line across a column and a stray beside it (a reader's
+        // split-off word) is still in that column.
+        NSMutableArray<STTextColumn *> *wide = [NSMutableArray array];
+        for (STTextColumn *column in under) {
+            if (column.widest >= 8.0 * lineHeight) {
+                [wide addObject:column];
+            }
+        }
+        if (wide.count > 0) {
+            [under setArray:wide];
+        }
+        // Under a heading, a line much narrower than it starts the run below: the heading is a run
+        // of its own, not the top of a column.
+        STTextColumn *only = under.count == 1 ? under.firstObject : nil;
+        BOOL underHeading = only && only.lines.count == 1 && only.widest > 1.6 * (maxX - minX);
+        if (under.count > 1 || underHeading) {
+            [runs addObject:[NSMutableArray array]];
+            [runLines addObject:[NSMutableArray array]];
+            [under removeAllObjects];
+        }
+        STTextColumn *column = under.firstObject;
+        if (!column) {
+            column = [[STTextColumn alloc] init];
+            column.minX = minX;
+            column.maxX = maxX;
+            column.lines = [NSMutableArray array];
+            [runs.lastObject addObject:column];
+        }
+        column.minX = MIN(column.minX, minX);
+        column.maxX = MAX(column.maxX, maxX);
+        column.widest = MAX(column.widest, maxX - minX);
+        [column.lines addObject:line];
+        [runLines.lastObject addObject:line];
+    }
+
+    NSMutableArray<STRecognizedLine *> *ordered = [NSMutableArray arrayWithCapacity:lines.count];
+    for (NSUInteger r = 0; r < runs.count; r++) {
+        // Columns of text, and the stray lines beside them: a word or two a reader split off the end
+        // of a line, a page number. Strays follow the line they sit beside on its row.
+        NSMutableArray<STTextColumn *> *textColumns = [NSMutableArray array];
+        NSMutableArray<STRecognizedLine *> *strays = [NSMutableArray array];
+        NSUInteger strayCount = 0;
+        for (STTextColumn *column in runs[r]) {
+            if (column.lines.count >= 2 && column.widest >= 8.0 * lineHeight) {
+                [textColumns addObject:column];
+            } else {
+                [strays addObjectsFromArray:column.lines];
+                strayCount += column.lines.count;
+            }
+        }
+        // Too few columns of text, or more strays than a reader's slips: a form or a table, in rows.
+        if (textColumns.count < 2 || strayCount > MAX((NSUInteger)2, runLines[r].count / 10)) {
+            [ordered addObjectsFromArray:runLines[r]];
+            continue;
+        }
+        [textColumns sortUsingComparator:^NSComparisonResult(STTextColumn *a, STTextColumn *b) {
+            return a.minX < b.minX ? NSOrderedAscending : (a.minX > b.minX ? NSOrderedDescending : NSOrderedSame);
+        }];
+        NSMutableArray<STRecognizedLine *> *sequence = [NSMutableArray array];
+        for (STTextColumn *column in textColumns) {
+            [sequence addObjectsFromArray:column.lines];
+        }
+        for (STRecognizedLine *stray in strays) {
+            // After the nearest line to its left on its row; failing that, by its row in the nearest column.
+            NSInteger after = -1;
+            CGFloat bestRight = -CGFLOAT_MAX;
+            for (NSUInteger i = 0; i < sequence.count; i++) {
+                NSRect b = sequence[i].bounds;
+                CGFloat shared = MIN(NSMaxY(b), NSMaxY(stray.bounds)) - MAX(NSMinY(b), NSMinY(stray.bounds));
+                if (shared > 0.5 * MIN(NSHeight(b), NSHeight(stray.bounds)) && NSMaxX(b) <= NSMinX(stray.bounds) + lineHeight &&
+                    NSMaxX(b) > bestRight) {
+                    bestRight = NSMaxX(b);
+                    after = (NSInteger)i;
+                }
+            }
+            if (after < 0) {
+                for (NSUInteger i = 0; i < sequence.count; i++) {
+                    if (NSMinY(sequence[i].bounds) <= NSMinY(stray.bounds)) {
+                        after = (NSInteger)i;
+                    }
+                }
+            }
+            [sequence insertObject:stray atIndex:(NSUInteger)(after + 1)];
+        }
+        [ordered addObjectsFromArray:sequence];
+    }
+    return ordered;
+}
+
 NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine *> *> *tileLines,
                                                NSArray<NSValue *> *tiles, NSRect region) {
     if (tiles.count == 1) {
@@ -486,6 +616,30 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
         }];
         [lines addObject:[[STRecognizedLine alloc] initWithWords:group]];
     }
+    // Pieces of one line the tiles' edges split with nothing read twice between them: side by side on
+    // a row, closer than a line's height. Joined, so Copy Text doesn't break the line in two.
+    BOOL joined = YES;
+    while (joined) {
+        joined = NO;
+        for (NSUInteger i = 0; i < lines.count && !joined; i++) {
+            for (NSUInteger j = 0; j < lines.count && !joined; j++) {
+                NSRect a = lines[i].bounds, b = lines[j].bounds;
+                CGFloat height = MIN(NSHeight(a), NSHeight(b));
+                CGFloat shared = MIN(NSMaxY(a), NSMaxY(b)) - MAX(NSMinY(a), NSMinY(b));
+                CGFloat gap = NSMinX(b) - NSMaxX(a);
+                if (i != j && shared > 0.5 * height && gap >= -0.5 * height && gap <= height) {
+                    NSMutableArray<STRecognizedWord *> *both = [lines[i].words mutableCopy];
+                    [both addObjectsFromArray:lines[j].words];
+                    [both sortUsingComparator:^NSComparisonResult(STRecognizedWord *x, STRecognizedWord *y) {
+                        return NSMinX(x.bounds) < NSMinX(y.bounds) ? NSOrderedAscending : (NSMinX(x.bounds) > NSMinX(y.bounds) ? NSOrderedDescending : NSOrderedSame);
+                    }];
+                    lines[i] = [[STRecognizedLine alloc] initWithWords:both];
+                    [lines removeObjectAtIndex:j];
+                    joined = YES;
+                }
+            }
+        }
+    }
     [lines sortUsingComparator:^NSComparisonResult(STRecognizedLine *a, STRecognizedLine *b) {
         CGFloat tolerance = MIN(NSHeight(a.bounds), NSHeight(b.bounds)) / 2.0;
         if (fabs(NSMidY(a.bounds) - NSMidY(b.bounds)) > tolerance) {
@@ -493,7 +647,7 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
         }
         return NSMinX(a.bounds) < NSMinX(b.bounds) ? NSOrderedAscending : (NSMinX(a.bounds) > NSMinX(b.bounds) ? NSOrderedDescending : NSOrderedSame);
     }];
-    return lines;
+    return STOrderLinesInColumns(lines);
 }
 
 #if ST_TEXT_VISION
