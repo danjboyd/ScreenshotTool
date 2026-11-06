@@ -153,6 +153,39 @@
     }
 }
 
+/// A phone number after a date written with spaces, or after other digit groups, is still covered: the
+/// pattern's match starts at the date and is rejected as one, so it's tried again inside (0.3.5 left
+/// these numbers readable). Eight digits alone and a 978 number that isn't an ISBN are phone numbers.
+- (void)testANumberAfterASpacedDateIsStillCovered {
+    NSArray<NSArray *> *cases = @[
+        @[ @"2026 10 22 07700 900123", @[ @3 ] ], // 900123 stays visible here, as in 0.3.4: 0.4.0 covers it
+
+        @[ @"22 10 2026 555 123 4567", @[ @3, @4, @5 ] ],
+        @[ @"12 10 2020 555-0199", @[ @3 ] ],
+        @[ @"Fax 01 02 2019 4567", @[ @4 ] ],
+        @[ @"Oct 22 2026 555 123 4567", @[ @3, @4, @5 ] ],
+        @[ @"Ref 2026 1234 555 123 4567", @[ @3, @4, @5 ] ],
+        @[ @"Call 20120415 now", @[ @1 ] ],
+        @[ @"Call 978 555 012 3456 now", @[ @1, @2, @3, @4 ] ],
+        @[ @"On 22.10.2026 07700 900123 called", @[ @2, @3 ] ],
+        @[ @"Call 555 123 4567 now", @[ @1, @2, @3 ] ],
+    ];
+    for (NSArray *c in cases) {
+        NSArray<NSString *> *texts = [c[0] componentsSeparatedByString:@" "];
+        NSMutableIndexSet *covered = [NSMutableIndexSet indexSet];
+        for (NSValue *rect in [self rectsForWords:texts height:10.0]) {
+            NSRect r = rect.rectValue;
+            NSUInteger first = (NSUInteger)lround((NSMinX(r) + 3.0 - 10.0) / 14.0);
+            NSUInteger last = (NSUInteger)lround((NSMaxX(r) - 3.0 - 20.0) / 14.0);
+            [covered addIndexesInRange:NSMakeRange(first, last - first + 1)];
+        }
+        for (NSNumber *word in c[1]) {
+            XCTAssertTrue([covered containsIndex:word.unsignedIntegerValue], @"\"%@\": word %@ (%@) left readable; covered %@",
+                          c[0], word, texts[word.unsignedIntegerValue], covered);
+        }
+    }
+}
+
 /// The redaction for one line of `words`, each 10 px wide and `height` high with a 4 px gap.
 - (NSArray<NSValue *> *)rectsForWords:(NSArray<NSString *> *)texts height:(CGFloat)height {
     NSMutableArray<STRecognizedWord *> *words = [[NSMutableArray alloc] init];
