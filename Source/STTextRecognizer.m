@@ -248,6 +248,66 @@ static NSString *STPhoneDigitsInWord(NSString *word) {
     return read;
 }
 
+/// `range` (a phone number in `digits`, the line with look-alikes read as digits) grown over a group of
+/// three or more digits right beside it, with at most two spaces, dots or dashes between, and on again:
+/// never half a number covered. A reader that drops a dot from a date before it ("22.102026 07700
+/// 900123") makes the pattern stop a group short. A group running into letters ("4B") isn't taken, and
+/// neither are one or two digits, so "14:32" or "3 regions" beside a number stay as they are.
+static NSRange STPhoneRangeWithNeighbourGroups(NSString *digits, NSRange range) {
+    NSCharacterSet *letters = [NSCharacterSet letterCharacterSet];
+    BOOL (^isDigit)(NSUInteger) = ^BOOL(NSUInteger i) {
+        unichar c = [digits characterAtIndex:i];
+        return c >= '0' && c <= '9';
+    };
+    BOOL (^isSeparator)(NSUInteger) = ^BOOL(NSUInteger i) {
+        unichar c = [digits characterAtIndex:i];
+        return c == ' ' || c == '.' || c == '-';
+    };
+    NSUInteger start = range.location, end = NSMaxRange(range), length = digits.length;
+    // First the rest of a group the pattern stopped inside ("0770|0").
+    while (end < length && isDigit(end)) {
+        end++;
+    }
+    while (start > 0 && isDigit(start - 1)) {
+        start--;
+    }
+    BOOL grew = YES;
+    while (grew) {
+        grew = NO;
+        NSUInteger i = end, separators = 0;
+        while (i < length && isSeparator(i) && separators < 3) {
+            i++;
+            separators++;
+        }
+        NSUInteger j = i;
+        while (j < length && isDigit(j)) {
+            j++;
+        }
+        if (separators >= 1 && separators <= 2 && j - i >= 3 && (j == length || ![letters characterIsMember:[digits characterAtIndex:j]])) {
+            end = j;
+            grew = YES;
+        }
+    }
+    grew = YES;
+    while (grew) {
+        grew = NO;
+        NSInteger i = (NSInteger)start - 1, separators = 0;
+        while (i >= 0 && isSeparator((NSUInteger)i) && separators < 3) {
+            i--;
+            separators++;
+        }
+        NSInteger k = i;
+        while (k >= 0 && isDigit((NSUInteger)k)) {
+            k--;
+        }
+        if (separators >= 1 && separators <= 2 && i - k >= 3 && (k < 0 || ![letters characterIsMember:[digits characterAtIndex:(NSUInteger)k]])) {
+            start = (NSUInteger)(k + 1);
+            grew = YES;
+        }
+    }
+    return NSMakeRange(start, end - start);
+}
+
 NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
     static NSRegularExpression *email = nil;
     static NSRegularExpression *phone = nil;
@@ -294,8 +354,10 @@ NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
                 break;
             }
             if (STIsPhoneNumber([phoneText substringWithRange:match.range], [text substringWithRange:match.range])) {
-                [matches addObject:match];
-                from = NSMaxRange(match.range);
+                NSRange whole = STPhoneRangeWithNeighbourGroups(phoneText, match.range);
+                [matches addObject:[NSTextCheckingResult regularExpressionCheckingResultWithRanges:&whole count:1
+                                                                               regularExpression:phone]];
+                from = MAX(NSMaxRange(match.range), NSMaxRange(whole));
                 continue;
             }
             // The next group: past this one's digits (and brackets or a "+"), then past the separators.

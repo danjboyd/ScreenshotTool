@@ -153,12 +153,52 @@
     }
 }
 
+/// The words of `texts` that `rectsForWords:` covers, as a set of indexes.
+- (NSIndexSet *)coveredWordsOf:(NSArray<NSString *> *)texts {
+    NSMutableIndexSet *covered = [NSMutableIndexSet indexSet];
+    for (NSValue *rect in [self rectsForWords:texts height:10.0]) {
+        [covered addIndexesInRange:[self wordsCoveredBy:rect]];
+    }
+    return covered;
+}
+
+/// A reader that drops a dot from a date before a phone number makes the pattern stop a group short:
+/// the rest of the number is covered too, never left readable (Windows OCR, 2 of 12 sizes).
+- (void)testAPhoneNumberIsNeverLeftHalfCovered {
+    for (NSString *date in @[ @"22.102026", @"2210.2026" ]) {
+        NSIndexSet *covered = [self coveredWordsOf:@[ @"On", date, @"07700", @"900123", @"called" ]];
+        XCTAssertTrue([covered containsIndex:2] && [covered containsIndex:3], @"all of 07700 900123 after %@: %@", date, covered);
+        XCTAssertFalse([covered containsIndex:0] || [covered containsIndex:4], @"not the words around it: %@", covered);
+    }
+}
+
+/// The cover grows only over digit groups right beside the number: not over a time, a short count, a
+/// word, a code running into letters ("4F"; "4B" reads as 48 through the look-alikes), or a number
+/// further along the line.
+- (void)testANumberDoesntGrowIntoUnrelatedText {
+    NSArray<NSArray<NSString *> *> *lines = @[
+        @[ @"Call", @"512-555-0199", @"at", @"14:32", @"on", @"3", @"floors" ],
+        @[ @"At", @"14:32", @"+1", @"(512)", @"555-0134", @"and", @"all", @"3", @"regions" ],
+        @[ @"Suite", @"4F", @"512.555.0177", @"4F", @"wing" ],
+        @[ @"Call", @"07700", @"900123", @"or", @"ext", @"20456", @"later" ],
+    ];
+    NSArray<NSIndexSet *> *expected = @[
+        [NSIndexSet indexSetWithIndex:1],
+        [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(2, 3)],
+        [NSIndexSet indexSetWithIndex:2],
+        [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(1, 2)],
+    ];
+    for (NSUInteger i = 0; i < lines.count; i++) {
+        XCTAssertEqualObjects([self coveredWordsOf:lines[i]], expected[i], @"%@", [lines[i] componentsJoinedByString:@" "]);
+    }
+}
+
 /// A phone number after a date written with spaces, or after other digit groups, is still covered: the
 /// pattern's match starts at the date and is rejected as one, so it's tried again inside (0.3.5 left
 /// these numbers readable). Eight digits alone and a 978 number that isn't an ISBN are phone numbers.
 - (void)testANumberAfterASpacedDateIsStillCovered {
     NSArray<NSArray *> *cases = @[
-        @[ @"2026 10 22 07700 900123", @[ @3 ] ], // 900123 stays visible here, as in 0.3.4: 0.4.0 covers it
+        @[ @"2026 10 22 07700 900123", @[ @3, @4 ] ],
 
         @[ @"22 10 2026 555 123 4567", @[ @3, @4, @5 ] ],
         @[ @"12 10 2020 555-0199", @[ @3 ] ],
