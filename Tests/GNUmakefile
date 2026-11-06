@@ -115,6 +115,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	SymbolicToolbarIconsProbe_test.m \
 	TakeScreenshotProbe_test.m \
 	PrintLayoutProbe_test.m \
+	WindowsPrintProbe_test.m \
 	PrintPageProbe_test.m \
 	PrintPDFProbe_test.m \
 	PrintOptionsProbe_test.m \
@@ -170,6 +171,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STPrintOptions.m \
 	../Source/STPrintPanelController.m \
 	../Source/STPrintPortal.m \
+	../Source/STWindowsPrint.m \
 	../Source/STTextRecognizer.m \
 	../Source/STTextSelection.m \
 	../Source/STWindowsIntegration.m \
@@ -196,7 +198,7 @@ ifneq ($(filter CLANG64,$(MSYSTEM)),)
 # gnustep-make links a Windows bundle's LDFLAGS inside -Wl,--whole-archive, which pulls in every
 # member of these import libraries (and their duplicate __NULL_IMPORT_DESCRIPTORs); as bundle
 # libraries they come after -Wl,--no-whole-archive.
-ScreenshotToolTests_BUNDLE_LIBS += -lstdc++ -lobjc -lfontconfig -lfreetype -ldispatch -lshell32 -luser32 -lgdi32 -lwinhttp -lruntimeobject
+ScreenshotToolTests_BUNDLE_LIBS += -lstdc++ -lobjc -lfontconfig -lfreetype -ldispatch -lshell32 -luser32 -lgdi32 -lwinhttp -lruntimeobject -lwinspool
 ifneq ($(wildcard /clang64/include/cairo/cairo.h),)
 ScreenshotToolTests_BUNDLE_LIBS += -lcairo
 endif
