@@ -320,7 +320,19 @@ static BOOL STIsRunnableFile(NSString *path) {
 + (void)runArguments:(NSArray<NSString *> *)arguments
              timeout:(NSTimeInterval)timeout
           completion:(void (^)(STCustomActionResult *))completion {
+    [self runArguments:arguments extraEnvironment:nil timeout:timeout completion:completion];
+}
+
++ (void)runArguments:(NSArray<NSString *> *)arguments
+    extraEnvironment:(NSDictionary<NSString *, NSString *> *)extraEnvironment
+             timeout:(NSTimeInterval)timeout
+          completion:(void (^)(STCustomActionResult *))completion {
     NSDictionary<NSString *, NSString *> *environment = [self childEnvironmentFrom:[[NSProcessInfo processInfo] environment]];
+    if (extraEnvironment.count > 0) {
+        NSMutableDictionary<NSString *, NSString *> *merged = [environment mutableCopy];
+        [merged addEntriesFromDictionary:extraEnvironment];
+        environment = merged;
+    }
     NSString *program = arguments.count > 0
         ? [self resolvedExecutable:arguments[0] searchPath:[self searchPathInEnvironment:environment]] : nil;
     NSDictionary *job = @{ @"arguments": [arguments copy], @"environment": environment, @"program": program ?: [NSNull null],

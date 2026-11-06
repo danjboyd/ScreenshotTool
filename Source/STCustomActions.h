@@ -83,6 +83,11 @@ typedef NS_ENUM(NSInteger, STCustomActionOutput) {
 + (void)runArguments:(NSArray<NSString *> *)arguments
              timeout:(NSTimeInterval)timeout
           completion:(void (^)(STCustomActionResult *result))completion;
+/// The same, with these variables added to the command's environment only.
++ (void)runArguments:(NSArray<NSString *> *)arguments
+    extraEnvironment:(nullable NSDictionary<NSString *, NSString *> *)extraEnvironment
+             timeout:(NSTimeInterval)timeout
+          completion:(void (^)(STCustomActionResult *result))completion;
 
 /// The environment for a command the app runs: the app's own, less what an AppImage adds for
 /// its bundled libraries (LD_LIBRARY_PATH, GNUstep's and fontconfig's settings, and its own
