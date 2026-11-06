@@ -54,6 +54,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	LaunchCostProbe_test.m \
 	TextMoveProbe_test.m \
 	TextLabelZoomProbe_test.m \
+	TesseractMissingProbe_test.m \
 	MultiWindowProbe_test.m \
 	PasteAvailabilityProbe_test.m \
 	PopoverFocusProbe_test.m \
