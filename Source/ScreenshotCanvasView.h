@@ -128,6 +128,10 @@ FOUNDATION_EXPORT NSBitmapImageRep * _Nullable STOpaqueBitmapOnWhite(NSImage *im
 /// The region selection in the image's pixels (top-left origin), whole pixels, or NSZeroRect.
 - (NSRect)selectionImageRect;
 /// Adds a redaction over each rect (image pixels), as one step to undo; returns how many.
+/// The redactions the last run added, in image pixels, while their brief highlight shows (#352): a
+/// fading outline on the canvas, only on screen, gone by itself. Not an annotation or part of undo.
+@property (nonatomic, copy, readonly) NSArray<NSValue *> *redactionHighlightRects;
+- (void)endRedactionHighlight;
 - (NSUInteger)addRedactionsInImageRects:(NSArray<NSValue *> *)rects actionName:(NSString *)actionName;
 /// The same, leaving out rects an existing redaction already covers; `alreadyRedacted`, if
 /// given, gets how many were left out.
