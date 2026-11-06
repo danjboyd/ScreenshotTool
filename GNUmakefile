@@ -14,8 +14,8 @@ FONTCONFIG_LDFLAGS := -lfontconfig -lfreetype -ldispatch
 # Take Screenshot opens the Snipping Tool (ShellExecuteW) and watches the clipboard;
 # STWindowsIntegration copies and pastes images through it, converting bitmaps with GDI, and
 # drags the image out to other apps with OLE (#276); STWindowsTextRecognition reads text with
-# Windows.Media.Ocr through WinRT (#278).
-CAPTURE_LDFLAGS := -lshell32 -luser32 -lgdi32 -lole32 -lruntimeobject
+# Windows.Media.Ocr through WinRT (#278), enlarging small text with WIC.
+CAPTURE_LDFLAGS := -lshell32 -luser32 -lgdi32 -lole32 -lruntimeobject -lwindowscodecs
 # The vendored GPUpdaterCore downloads update feeds and packages through WinHTTP.
 UPDATER_LDFLAGS := -lwinhttp
 # The application manifest: declares the app DPI-aware (Source/ScreenshotTool.exe.manifest).

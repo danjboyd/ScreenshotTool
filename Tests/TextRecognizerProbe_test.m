@@ -422,6 +422,33 @@ static NSArray<STRecognizedLine *> *STColumnsInRows(NSArray<NSString *> *columns
     }
 }
 
+/// Two readings of one word that spell it differently: the one Redact can recognize stays, whichever
+/// came first and even when it's shorter.
+- (void)testDuplicateKeepsTheReadingRedactRecognizes {
+    NSRect region = NSMakeRect(0, 0, 1000, 100);
+    NSValue *whole = [NSValue valueWithRect:region];
+    NSRect box = NSMakeRect(100, 40, 300, 20);
+    STRecognizedLine *misread = [[STRecognizedLine alloc] initWithWords:@[ [[STRecognizedWord alloc] initWithText:@"jane.doeoexample.com.x" bounds:box] ]];
+    STRecognizedLine *right = [[STRecognizedLine alloc] initWithWords:@[ [[STRecognizedWord alloc] initWithText:@"jane.doe@example.com" bounds:box] ]];
+    for (NSArray<STRecognizedLine *> *order in @[ @[ misread, right ], @[ right, misread ] ]) {
+        NSArray<STRecognizedLine *> *lines = STMergeTiledLines(@[ @[ order[0] ], @[ order[1] ] ], @[ whole, whole ], region);
+        XCTAssertEqual(lines.count, (NSUInteger)1, @"%@", STRecognizedText(lines));
+        XCTAssertEqualObjects(lines.firstObject.text, @"jane.doe@example.com");
+    }
+}
+
+/// Two readings of a page in two columns: the first's order stays, a column at a time, and a line only
+/// the second found goes where the second had it.
+- (void)testTwoReadingsKeepTheFirstOrder {
+    STRecognizedLine *(^line)(NSString *, CGFloat, CGFloat) = ^STRecognizedLine *(NSString *text, CGFloat x, CGFloat y) {
+        return [[STRecognizedLine alloc] initWithWords:@[ [[STRecognizedWord alloc] initWithText:text bounds:NSMakeRect(x, y, 200, 20)] ]];
+    };
+    NSArray<STRecognizedLine *> *first = @[ line(@"left1", 0, 0), line(@"left3", 0, 80), line(@"right1", 500, 0), line(@"right2", 500, 40) ];
+    NSArray<STRecognizedLine *> *second = @[ line(@"left1", 0, 0), line(@"left2", 0, 40), line(@"left3", 0, 80), line(@"right1", 500, 0), line(@"right2", 500, 40) ];
+    NSArray<STRecognizedLine *> *lines = STMergeReadings(first, second, NSMakeRect(0, 0, 1000, 200));
+    XCTAssertEqualObjects(STRecognizedText(lines), @"left1\nleft2\nleft3\nright1\nright2");
+}
+
 /// Two tiles' readings of one line longer than either: the word cut by a tile's edge is dropped, the
 /// word both read is kept once, and the line is joined up, in order.
 - (void)testTiledReadingsJoinIntoOneLine {

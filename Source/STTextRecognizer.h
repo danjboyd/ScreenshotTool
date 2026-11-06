@@ -87,4 +87,8 @@ FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STOrderLinesInColumns(NSArray<STR
 FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine *> *> *tileLines,
                                                                  NSArray<NSValue *> *tiles, NSRect region);
 
+/// Two readings of one region as one: duplicates go as in STMergeTiledLines, and the lines stay in the
+/// first reading's order, which keeps a column together, with the second's new lines where it had them.
+FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STMergeReadings(NSArray<STRecognizedLine *> *first, NSArray<STRecognizedLine *> *second, NSRect region);
+
 NS_ASSUME_NONNULL_END

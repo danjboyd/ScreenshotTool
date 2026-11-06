@@ -634,9 +634,13 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
     NSMutableArray<STRecognizedWord *> *words = [NSMutableArray array];
     NSMutableArray<NSNumber *> *lineOfWord = [NSMutableArray array];
     NSMutableArray<NSNumber *> *tileOfWord = [NSMutableArray array];
+    // Words a reading found an email or phone number in: two readings often spell one differently,
+    // and a duplicate mustn't lose the one Redact can recognize.
+    NSMutableSet<STRecognizedWord *> *sensitive = [NSMutableSet set];
     NSUInteger lineCount = 0;
     for (NSUInteger t = 0; t < tileLines.count; t++) {
         NSRect tile = tiles[t].rectValue;
+        NSArray<NSValue *> *found = STSensitiveTextRects(tileLines[t]);
         BOOL innerLeft = NSMinX(tile) > NSMinX(region) + 0.5, innerRight = NSMaxX(tile) < NSMaxX(region) - 0.5;
         BOOL innerTop = NSMinY(tile) > NSMinY(region) + 0.5, innerBottom = NSMaxY(tile) < NSMaxY(region) - 0.5;
         for (STRecognizedLine *line in tileLines[t]) {
@@ -648,6 +652,13 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
                     [words addObject:word];
                     [lineOfWord addObject:@(lineCount)];
                     [tileOfWord addObject:@(t)];
+                    NSPoint middle = NSMakePoint(NSMidX(b), NSMidY(b));
+                    for (NSValue *rect in found) {
+                        if (NSPointInRect(middle, rect.rectValue)) {
+                            [sensitive addObject:word];
+                            break;
+                        }
+                    }
                 }
             }
             lineCount++;
@@ -664,12 +675,16 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
         }
         return i;
     };
-    // Longer readings first, so a duplicate keeps the fuller text.
+    // Recognized readings first, then longer ones, so a duplicate keeps the fuller text.
     NSMutableArray<NSNumber *> *indices = [NSMutableArray arrayWithCapacity:words.count];
     for (NSUInteger i = 0; i < words.count; i++) {
         [indices addObject:@(i)];
     }
     NSArray<NSNumber *> *order = [indices sortedArrayUsingComparator:^NSComparisonResult(NSNumber *a, NSNumber *b) {
+        BOOL sa = [sensitive containsObject:words[a.unsignedIntegerValue]], sb = [sensitive containsObject:words[b.unsignedIntegerValue]];
+        if (sa != sb) {
+            return sa ? NSOrderedAscending : NSOrderedDescending;
+        }
         NSUInteger la = words[a.unsignedIntegerValue].text.length, lb = words[b.unsignedIntegerValue].text.length;
         return la > lb ? NSOrderedAscending : (la < lb ? NSOrderedDescending : [a compare:b]);
     }];
@@ -828,6 +843,53 @@ static NSArray<STRecognizedLine *> *STVisionReadImage(CGImageRef image, NSRect r
     return STMergeTiledLines(tileLines, tiles, region);
 }
 #endif
+
+/// The merged line `line` of `reading` went into: the one its box overlaps most, if any does.
+static STRecognizedLine *STMergedLineOf(STRecognizedLine *line, NSArray<STRecognizedLine *> *merged) {
+    STRecognizedLine *best = nil;
+    CGFloat bestArea = 0.0;
+    for (STRecognizedLine *candidate in merged) {
+        NSRect overlap = NSIntersectionRect(line.bounds, candidate.bounds);
+        CGFloat area = NSWidth(overlap) * NSHeight(overlap);
+        if (area > bestArea) {
+            best = candidate;
+            bestArea = area;
+        }
+    }
+    return best;
+}
+
+NSArray<STRecognizedLine *> *STMergeReadings(NSArray<STRecognizedLine *> *first, NSArray<STRecognizedLine *> *second, NSRect region) {
+    NSValue *whole = [NSValue valueWithRect:region];
+    NSArray<STRecognizedLine *> *merged = STMergeTiledLines(@[ first, second ], @[ whole, whole ], region);
+    NSMutableArray<STRecognizedLine *> *ordered = [NSMutableArray arrayWithCapacity:merged.count];
+    for (STRecognizedLine *line in first) {
+        STRecognizedLine *target = STMergedLineOf(line, merged);
+        if (target && [ordered indexOfObjectIdenticalTo:target] == NSNotFound) {
+            [ordered addObject:target];
+        }
+    }
+    // What only the second reading found goes after what comes before it in that reading.
+    NSUInteger next = 0;
+    for (STRecognizedLine *line in second) {
+        STRecognizedLine *target = STMergedLineOf(line, merged);
+        if (!target) {
+            continue;
+        }
+        NSUInteger at = [ordered indexOfObjectIdenticalTo:target];
+        if (at == NSNotFound) {
+            [ordered insertObject:target atIndex:next];
+            at = next;
+        }
+        next = at + 1;
+    }
+    for (STRecognizedLine *line in merged) {
+        if ([ordered indexOfObjectIdenticalTo:line] == NSNotFound) {
+            [ordered addObject:line];
+        }
+    }
+    return ordered;
+}
 
 @implementation STTextRecognizer
 
