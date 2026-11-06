@@ -207,13 +207,15 @@
     [canvas cancelActiveTextEntry];
 }
 
-/// Copy Text follows Copy where the platform can read text (#278): tesseract on Linux.
+/// Copy Text follows Copy where the platform can read text (#278): tesseract on Linux. Select
+/// Text (#330) follows it.
 - (NSArray *)expectingCopyTextAfterIndex:(NSUInteger)index in:(NSArray *)titles {
     if (![STTextRecognizer isAvailable]) {
         return titles;
     }
     NSMutableArray *withCopyText = [titles mutableCopy];
     [withCopyText insertObject:@"Copy Text" atIndex:index + 1];
+    [withCopyText insertObject:@"Select Text" atIndex:index + 2];
     return withCopyText;
 }
 

@@ -18,6 +18,9 @@ NSColor *STThemePrimaryTextColor(void);
 NSColor *STThemeSecondaryTextColor(void);
 NSColor *STThemeSectionHeaderColor(void);
 NSColor *STThemeAccentColor(void);
+/// `color` at `alpha`. On GNUstep it converts first: a system colour, as a theme's accent can be,
+/// ignores colorWithAlphaComponent: and stays opaque.
+NSColor *STThemeColorWithAlpha(NSColor *color, CGFloat alpha);
 NSColor *STThemeLinkColor(void);
 NSColor *STThemeStatusBarBackgroundColor(void);
 NSColor *STThemeStatusBarBorderColor(void);

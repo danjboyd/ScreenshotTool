@@ -16,6 +16,7 @@
 #import <objc/runtime.h>
 #import "STScreenshotCapture.h"
 #import "STTextRecognizer.h"
+#import "STTextSelection.h"
 #import "STWindowsIntegration.h"
 #import "STHudView.h"
 #import "STTextOptionsBar.h"
@@ -1703,6 +1704,10 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, assign) BOOL hiddenForScreenshot;
 /// While Copy Text or Redact Emails and Phone Numbers reads the image (#278).
 @property (nonatomic, assign) BOOL readingText;
+/// The lines Select Text last read, and the canvas's fingerprint then: entering it again on the
+/// same image and annotations doesn't read again, and an edit while it's on reads again (#330).
+@property (nonatomic, copy, nullable) NSArray<STRecognizedLine *> *textSelectionLines;
+@property (nonatomic, copy, nullable) NSData *textSelectionFingerprint;
 @property (nonatomic, assign) NSTimeInterval clipboardCheckedAt;
 /// An image another app copied is on offer: the status bar's Open New Screenshot, and the empty
 /// state's Paste under that name (#275).
@@ -2696,6 +2701,13 @@ static AppDelegate *STFrontDocument(void) {
     if (action == @selector(copyText:) || action == @selector(redactDetectedText:)) {
         return [self.canvasView hasImage] && !self.readingText;
     }
+    if (action == @selector(selectText:)) {
+        menuItem.state = [self.canvasView isSelectingText] ? NSControlStateValueOn : NSControlStateValueOff;
+        return [self.canvasView hasImage] && !self.readingText;
+    }
+    if (action == @selector(redactSelectedText:)) {
+        return self.canvasView.textSelection.selectedRange.length > 0;
+    }
     if (action == @selector(takeScreenshot:)) {
         return [STScreenshotCapture isAvailable] && ![STScreenshotCapture isCapturing];
     }
@@ -2992,6 +3004,14 @@ static id STInfoValueForKey(NSString *key) {
         [copyTextItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
         [copyTextItem setTarget:self];
         [editMenu addItem:copyTextItem];
+        // TODO(#330): the shortcut. ⇧⌘T, the design note's proposal, is Take Screenshot; ⇧⌘E is
+        // free on all three menus here, still to check against GNUstep's and Windows' own bindings.
+        NSMenuItem *selectTextItem = [[NSMenuItem alloc] initWithTitle:@"Select Text"
+                                                                action:@selector(selectText:)
+                                                         keyEquivalent:@"E"];
+        [selectTextItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
+        [selectTextItem setTarget:self];
+        [editMenu addItem:selectTextItem];
         NSMenuItem *redactDetectedItem = [[NSMenuItem alloc] initWithTitle:@"Redact Emails and Phone Numbers"
                                                                     action:@selector(redactDetectedText:)
                                                              keyEquivalent:@""];
@@ -7207,6 +7227,13 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 
 - (void)copy:(id)sender {
     (void)sender;
+    // With Select Text on and words selected, Copy copies them (#330).
+    NSString *selectedWords = self.canvasView.textSelection.selectedText;
+    if (selectedWords.length > 0) {
+        [self copyCustomActionText:selectedWords];
+        [self showCommandResultMessage:@"Copied text (read on this computer)" duration:2.5];
+        return;
+    }
     if (![self.canvasView hasImage]) {
         [self showCommandResultMessage:@"No image to copy" duration:2.0];
         return;
@@ -7770,6 +7797,81 @@ BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *en
     }
     [self showCommandResultMessage:@"Still reading text…" duration:2.0];
     return YES;
+}
+
+#pragma mark - Select Text (#330)
+
+NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted, NSUInteger alreadyRedacted, BOOL hadRedactions);
+
+/// Edit ▸ Select Text: reads the whole image once (or reuses the last read, if nothing changed)
+/// and outlines its words to select. Again, it turns the mode off.
+- (void)selectText:(id)sender {
+    (void)sender;
+    if ([self.canvasView isSelectingText]) {
+        [self.canvasView endTextSelection:nil];
+        return;
+    }
+    if (![self.canvasView hasImage] || [self reportReadingTextInProgress]) {
+        return;
+    }
+    NSData *fingerprint = [self.canvasView annotationFingerprint];
+    if (self.textSelectionLines && [fingerprint isEqualToData:self.textSelectionFingerprint]) {
+        [self.canvasView beginTextSelectionWithLines:self.textSelectionLines];
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    [self readTextInImageRect:NSZeroRect completion:^(NSArray<STRecognizedLine *> *lines) {
+        typeof(self) strongSelf = weakSelf;
+        if (!strongSelf) {
+            return;
+        }
+        if (STRecognizedText(lines).length == 0) {
+            [strongSelf showCommandResultMessage:@"No text found in the image" duration:2.0];
+            return;
+        }
+        strongSelf.textSelectionLines = lines;
+        strongSelf.textSelectionFingerprint = fingerprint;
+        [strongSelf.canvasView beginTextSelectionWithLines:lines];
+    }];
+}
+
+/// An edit while Select Text is on (an undo, say) can move what's on the image: read it again,
+/// lazily, instead of leaving the mode.
+- (void)refreshTextSelectionIfStale {
+    if (![self.canvasView isSelectingText] || self.readingText) {
+        return;
+    }
+    NSData *fingerprint = [self.canvasView annotationFingerprint];
+    if ([fingerprint isEqualToData:self.textSelectionFingerprint]) {
+        return;
+    }
+    __weak typeof(self) weakSelf = self;
+    [self readTextInImageRect:NSZeroRect completion:^(NSArray<STRecognizedLine *> *lines) {
+        typeof(self) strongSelf = weakSelf;
+        if (!strongSelf || ![strongSelf.canvasView isSelectingText]) {
+            return;
+        }
+        strongSelf.textSelectionLines = lines;
+        strongSelf.textSelectionFingerprint = fingerprint;
+        [strongSelf.canvasView beginTextSelectionWithLines:lines];
+    }];
+}
+
+/// Redact Selected Text. TODO(#330, Windows agent): the body is Windows' (grow the rects as
+/// STSensitiveTextRects does, one undo, the DPI check); this stand-in redacts the line rects.
+- (void)redactSelectedText:(id)sender {
+    (void)sender;
+    NSArray<NSValue *> *rects = self.canvasView.textSelection.selectedRects;
+    if (rects.count == 0) {
+        NSBeep();
+        return;
+    }
+    BOOL hadRedactions = [self.canvasView hasRedactions];
+    NSUInteger alreadyRedacted = 0;
+    NSUInteger added = [self.canvasView addRedactionsInImageRects:rects
+                                                       actionName:@"Redact Selected Text"
+                                                  alreadyRedacted:&alreadyRedacted];
+    [self showCommandResultMessage:STRedactDetectedFeedback(YES, added, alreadyRedacted, hadRedactions) duration:2.5];
 }
 
 /// Copies the text in the selection, or in the whole image, read on this computer.
@@ -8782,6 +8884,10 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         [copyText setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
         copyText.target = self;
         [menu insertItem:copyText atIndex:(copyIndex >= 0 ? copyIndex + 1 : 0)];
+        NSMenuItem *selectText = [[NSMenuItem alloc] initWithTitle:@"Select Text" action:@selector(selectText:) keyEquivalent:@"E"];
+        [selectText setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
+        selectText.target = self;
+        [menu insertItem:selectText atIndex:[menu indexOfItem:copyText] + 1];
     }
     return menu;
 }
@@ -9291,6 +9397,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 #if !defined(GNUSTEP)
     [self.window setDocumentEdited:[self hasUnsavedChanges]];
 #endif
+    [self refreshTextSelectionIfStale];
     if (self.statusTextField && !self.statusClearTimer) {
         [self.statusTextField setStringValue:[self idleStatusText]];
     }
