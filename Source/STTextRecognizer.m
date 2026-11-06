@@ -117,10 +117,12 @@ static BOOL STLooksLikeDateOrVersion(NSString *text) {
     BOOL (^isDay)(NSString *) = ^BOOL(NSString *g) {
         return g.length <= 2 && g.integerValue >= 1 && g.integerValue <= 31;
     };
-    // A compact date at the start: 20261022, as in a timestamp.
+    // A compact date at the start of a timestamp: 20261022-134507, 20261022_1345. Alone, eight digits
+    // may be a phone number (20120415), so a time has to follow.
     NSString *first = groups.firstObject;
     if (first.length == 8 && isYear([first substringToIndex:4]) && isMonth([first substringWithRange:NSMakeRange(4, 2)]) &&
-        isDay([first substringFromIndex:6])) {
+        isDay([first substringFromIndex:6]) && groups.count >= 2 && (groups[1].length == 4 || groups[1].length == 6) &&
+        separators.length >= 1 && [@"-_T" rangeOfString:[separators substringToIndex:1]].location != NSNotFound) {
         return YES;
     }
     if (groups.count >= 3) {
@@ -146,9 +148,16 @@ static BOOL STLooksLikeDateOrVersion(NSString *text) {
             }
         }
     }
-    // An ISBN: 978 or 979 and 13 digits.
+    // An ISBN: 978 or 979, 13 digits, and its check digit right ("978 555 012 3456" isn't one).
     NSString *digits = [groups componentsJoinedByString:@""];
-    return digits.length == 13 && ([digits hasPrefix:@"978"] || [digits hasPrefix:@"979"]);
+    if (digits.length != 13 || !([digits hasPrefix:@"978"] || [digits hasPrefix:@"979"])) {
+        return NO;
+    }
+    NSInteger sum = 0;
+    for (NSUInteger i = 0; i < 13; i++) {
+        sum += ([digits characterAtIndex:i] - '0') * (i % 2 == 0 ? 1 : 3);
+    }
+    return sum % 10 == 0;
 }
 
 /// Whether one word is a date, a version or an ISBN on its own ("2026-10-22,", "(22.10.2026)",
@@ -330,12 +339,32 @@ NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
         }
         NSMutableArray<NSTextCheckingResult *> *matches = [[NSMutableArray alloc] init];
         [matches addObjectsFromArray:[email matchesInString:text options:0 range:NSMakeRange(0, text.length)]];
-        for (NSTextCheckingResult *match in [phone matchesInString:phoneText options:0 range:NSMakeRange(0, phoneText.length)]) {
+        // A match the pattern finds may start with a date or other digit groups before the number (a date
+        // with spaces, "22 10 2026 555 123 4567"). Rejected, it's tried again from each group boundary
+        // inside it, so the number after it is still found.
+        NSUInteger from = 0;
+        while (from < phoneText.length) {
+            NSTextCheckingResult *match = [phone firstMatchInString:phoneText options:0
+                                                              range:NSMakeRange(from, phoneText.length - from)];
+            if (!match) {
+                break;
+            }
             if (STIsPhoneNumber([phoneText substringWithRange:match.range], [text substringWithRange:match.range])) {
                 NSRange whole = STPhoneRangeWithNeighbourGroups(phoneText, match.range);
                 [matches addObject:[NSTextCheckingResult regularExpressionCheckingResultWithRanges:&whole count:1
                                                                                regularExpression:phone]];
+                from = MAX(NSMaxRange(match.range), NSMaxRange(whole));
+                continue;
             }
+            // The next group: past this one's digits (and brackets or a "+"), then past the separators.
+            NSUInteger next = match.range.location;
+            while (next < phoneText.length && ![[NSCharacterSet decimalDigitCharacterSet] characterIsMember:[phoneText characterAtIndex:next]]) {
+                next++;
+            }
+            while (next < phoneText.length && [[NSCharacterSet decimalDigitCharacterSet] characterIsMember:[phoneText characterAtIndex:next]]) {
+                next++;
+            }
+            from = MAX(next, match.range.location + 1);
         }
         for (NSTextCheckingResult *match in matches) {
             NSRect box = NSZeroRect;

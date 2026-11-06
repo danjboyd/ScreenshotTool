@@ -146,6 +146,36 @@
     }
 }
 
+/// A phone number after a date written with spaces, or after other digit groups, is covered: the
+/// pattern's match starts at the date and is rejected as one, so it's tried again inside (0.3.5 left
+/// these numbers readable). Eight digits alone and a 978 number that isn't an ISBN are phone numbers.
+- (void)testANumberAfterASpacedDateIsStillCovered {
+    NSArray<NSArray *> *cases = @[
+        @[ @"2026 10 22 07700 900123", @[ @3, @4 ] ],
+        @[ @"22 10 2026 555 123 4567", @[ @3, @4, @5 ] ],
+        @[ @"12 10 2020 555-0199", @[ @3 ] ],
+        @[ @"Fax 01 02 2019 4567", @[ @4 ] ],
+        @[ @"Oct 22 2026 555 123 4567", @[ @3, @4, @5 ] ],
+        @[ @"Ref 2026 1234 555 123 4567", @[ @3, @4, @5 ] ],
+        @[ @"Call 20120415 now", @[ @1 ] ],
+        @[ @"Call 978 555 012 3456 now", @[ @1, @2, @3, @4 ] ],
+        @[ @"On 22.10.2026 07700 900123 called", @[ @2, @3 ] ],
+        @[ @"Call 555 123 4567 now", @[ @1, @2, @3 ] ],
+    ];
+    for (NSArray *c in cases) {
+        NSArray<NSString *> *texts = [c[0] componentsSeparatedByString:@" "];
+        NSIndexSet *covered = [self coveredWordsOf:texts];
+        for (NSNumber *word in c[1]) {
+            XCTAssertTrue([covered containsIndex:word.unsignedIntegerValue], @"\"%@\": %@ left readable; covered %@", c[0],
+                          texts[word.unsignedIntegerValue], covered);
+        }
+    }
+    // A real ISBN and a timestamp stay as they are.
+    NSArray<NSString *> *isbn = @[ @"ISBN", @"978-3-16-148410-0" ], *stamp = @[ @"Log", @"20261022-134507" ];
+    XCTAssertEqual([self coveredWordsOf:isbn].count, (NSUInteger)0);
+    XCTAssertEqual([self coveredWordsOf:stamp].count, (NSUInteger)0);
+}
+
 /// The cover grows only over digit groups right beside the number: not over a time, a short count, a
 /// word, a code running into letters ("4F"; "4B" reads as 48 through the look-alikes), or a number
 /// further along the line.
