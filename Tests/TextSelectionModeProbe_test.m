@@ -14,6 +14,7 @@
 #import "ScreenshotCanvasView.h"
 #import "STTextRecognizer.h"
 #import "STTextSelection.h"
+#import "STThemeUtilities.h"
 #import "TestEnvironmentHelpers.h"
 
 @interface ScreenshotCanvasView (TextSelectionModeTesting)
@@ -34,6 +35,7 @@
 - (void)readTextInImageRect:(NSRect)rect completion:(void (^)(NSArray<STRecognizedLine *> *lines))completion;
 - (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration;
 - (void)copyCustomActionText:(NSString *)text;
+- (void)updateDocumentEditedState;
 - (void)setupMenus;
 @end
 
@@ -42,6 +44,7 @@
 @property (nonatomic, assign) NSUInteger reads;
 @property (nonatomic, strong) NSMutableArray<NSString *> *messages;
 @property (nonatomic, copy) NSString *copiedText;
+@property (nonatomic, assign) NSUInteger editedStateUpdates;
 @end
 
 @implementation TextSelectionModeProbeAppDelegate
@@ -59,6 +62,10 @@
 }
 - (void)copyCustomActionText:(NSString *)text {
     self.copiedText = text;
+}
+- (void)updateDocumentEditedState {
+    self.editedStateUpdates++;
+    [super updateDocumentEditedState];
 }
 @end
 
@@ -176,7 +183,7 @@
     [_app redactSelectedText:nil];
     [undo endUndoGrouping];
 
-    // A redaction per line: the words' union, 3 pixels larger, as Redact Emails and Phone Numbers does.
+    // A redaction per line: the words' union, padded (3 pixels here), as Redact Emails and Phone Numbers does.
     XCTAssertEqual(canvas.strokes.count, (NSUInteger)2);
     XCTAssertTrue(NSEqualRects(canvas.strokes[0].bounds, NSMakeRect(67.0, 17.0, 116.0, 22.0)), @"%@",
                   NSStringFromRect(canvas.strokes[0].bounds));
@@ -191,6 +198,44 @@
 
     [undo undo];
     XCTAssertEqual(canvas.strokes.count, (NSUInteger)0, @"One undo takes both");
+}
+
+- (void)testRedactSelectedTextMarksTheImageEditedAtOnce {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_app selectText:nil];
+    [self dragFrom:NSMakePoint(15.0, 28.0) to:NSMakePoint(55.0, 28.0)];
+    NSUInteger updates = _app.editedStateUpdates;
+    [_app redactSelectedText:nil];
+    XCTAssertGreaterThan(_app.editedStateUpdates, updates, @"The status bar says \"unsaved\" now, not on the undo notice");
+}
+
+- (void)testRedactSelectedTextOverARedactionSaysAlreadyRedacted {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    ScreenshotCanvasView *canvas = _app.canvasView;
+    [_app selectText:nil];
+    [self dragFrom:NSMakePoint(15.0, 28.0) to:NSMakePoint(55.0, 28.0)];
+    [_app redactSelectedText:nil];
+    XCTAssertEqual(canvas.strokes.count, (NSUInteger)1);
+    XCTAssertEqualObjects(_app.messages.lastObject, @"Redacted 1 item");
+
+    // The canned reader still sees the word, as an engine can through a light redaction.
+    [self dragFrom:NSMakePoint(15.0, 28.0) to:NSMakePoint(55.0, 28.0)];
+    [_app redactSelectedText:nil];
+    XCTAssertEqual(canvas.strokes.count, (NSUInteger)1, @"Nothing added over it");
+    XCTAssertEqualObjects(_app.messages.lastObject, @"Already redacted");
+}
+
+- (void)testRedactSelectedTextPadsWithTheTextHeight {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STRecognizedWord *word = [[STRecognizedWord alloc] initWithText:@"tall" bounds:NSMakeRect(50.0, 50.0, 100.0, 40.0)];
+    _app.cannedLines = @[ [[STRecognizedLine alloc] initWithWords:@[ word ]] ];
+    [_app selectText:nil];
+    [self dragFrom:NSMakePoint(60.0, 70.0) to:NSMakePoint(140.0, 70.0)];
+    [_app redactSelectedText:nil];
+    XCTAssertEqual(_app.canvasView.strokes.count, (NSUInteger)1);
+    // 15% of 40 is 6, as STSensitiveTextRects pads.
+    XCTAssertTrue(NSEqualRects(_app.canvasView.strokes[0].bounds, NSMakeRect(44.0, 44.0, 112.0, 52.0)), @"%@",
+                  NSStringFromRect(_app.canvasView.strokes[0].bounds));
 }
 
 - (void)testRedactSelectedTextWithNothingSelectedDoesNothing {
@@ -235,6 +280,51 @@
     [_app selectText:nil];
     _app.canvasView.activeTool = ScreenshotCanvasToolPen;
     XCTAssertFalse([_app.canvasView isSelectingText], @"Choosing the tool already on leaves it too");
+}
+
+/// A key press as the window delivers it to the canvas.
+- (void)sendKey:(unichar)key flags:(NSEventModifierFlags)flags {
+    ScreenshotCanvasView *canvas = _app.canvasView;
+    NSString *characters = [NSString stringWithCharacters:&key length:1];
+    [canvas keyDown:[NSEvent keyEventWithType:NSKeyDown location:NSZeroPoint modifierFlags:flags timestamp:0
+                                 windowNumber:[canvas.window windowNumber] context:nil
+                                   characters:characters charactersIgnoringModifiers:characters
+                                    isARepeat:NO keyCode:0]];
+}
+
+- (void)testEscAsAKeyPressLeavesTheMode {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_app selectText:nil];
+    XCTAssertTrue([_app.canvasView isSelectingText]);
+    [self sendKey:0x1b flags:0];
+    XCTAssertFalse([_app.canvasView isSelectingText], @"Esc reaches keyDown: on GNUstep, not cancelOperation:");
+}
+
+#if defined(GNUSTEP)
+- (void)testControlASelectsAllInTheModeOnly {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_app selectText:nil];
+    [self sendKey:'a' flags:NSEventModifierFlagControl];
+    XCTAssertEqual(_app.canvasView.textSelection.selectedRange.length, (NSUInteger)5, @"All five words");
+
+    [_app.canvasView endTextSelection:nil];
+    [self sendKey:'a' flags:NSEventModifierFlagControl];
+    XCTAssertFalse([_app.canvasView isSelectingText], @"Out of the mode, it isn't taken and starts nothing");
+}
+
+- (void)testAPlainAInTheModeDoesntSelectAll {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_app selectText:nil];
+    [self sendKey:'a' flags:0];
+    XCTAssertEqual(_app.canvasView.textSelection.selectedRange.length, (NSUInteger)0, @"Only with Control");
+}
+#endif
+
+- (void)testThemeColorsKeepAnAlpha {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    XCTAssertEqualWithAccuracy(STThemeColorWithAlpha([NSColor selectedControlColor], 0.28).alphaComponent, 0.28, 0.001,
+                               @"A system colour, as a theme's accent can be, keeps it, or the highlight hides the words");
+    XCTAssertEqualWithAccuracy(STThemeColorWithAlpha(STThemeAccentColor(), 0.45).alphaComponent, 0.45, 0.001);
 }
 
 - (void)testCopyWithNothingSelectedStillCopiesTheImage {

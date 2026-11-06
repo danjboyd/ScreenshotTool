@@ -105,10 +105,6 @@ static BOOL STIsPhoneNumber(NSString *match) {
     return digits >= 7 && digits <= 15;
 }
 
-NSRect STRedactionRectForTextBox(NSRect box) {
-    return NSInsetRect(box, -3.0, -3.0);
-}
-
 NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
     static NSRegularExpression *email = nil;
     static NSRegularExpression *phone = nil;
@@ -146,7 +142,8 @@ NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
                 }
             }
             if (!NSIsEmptyRect(box)) {
-                [rects addObject:[NSValue valueWithRect:STRedactionRectForTextBox(box)]];
+                // A little over the glyphs, so their edges don't show around the pixelation.
+                [rects addObject:[NSValue valueWithRect:NSInsetRect(box, -3.0, -3.0)]];
             }
         }
     }

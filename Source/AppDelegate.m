@@ -221,13 +221,30 @@ static NSString *const STPastedImageTitle = @"Pasted Image";
 static NSString *const STClipboardTemporaryFilePrefix = @"clipboard-";
 static NSString *const STCaptureTemporaryFilePrefix = @"capture-";
 
+/// The zone to format `date` in, for a date formatter: the default zone, which is the local one
+/// unless the app set another. On GNUstep it's that zone's offset on that date: on Windows the
+/// local zone has Windows's name ("Central Standard Time"), which the formatter doesn't know, so it
+/// printed GMT; and without an explicit zone, a formatter with date and time styles ignores the
+/// default.
+static NSTimeZone *STFormatterTimeZoneForDate(NSDate *date) {
+    NSTimeZone *zone = [NSTimeZone defaultTimeZone];
+#if defined(GNUSTEP)
+    return [NSTimeZone timeZoneForSecondsFromGMT:[zone secondsFromGMTForDate:date]];
+#else
+    (void)date;
+    return zone;
+#endif
+}
+
 /// An untitled capture's title, and the Save panel's default name: "Screenshot 2026-11-03 at 10.15.32".
 /// Periods, not colons, so it's a valid file name everywhere.
 NSString *STCaptureTitleForDate(NSDate *date) {
+    NSDate *when = date ?: [NSDate date];
     NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
     formatter.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
     formatter.dateFormat = @"yyyy-MM-dd 'at' HH.mm.ss";
-    return [@"Screenshot " stringByAppendingString:[formatter stringFromDate:date ?: [NSDate date]]];
+    formatter.timeZone = STFormatterTimeZoneForDate(when);
+    return [@"Screenshot " stringByAppendingString:[formatter stringFromDate:when]];
 }
 
 static NSString *STTemporaryClipboardDirectory(void) {
@@ -3128,7 +3145,13 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 - (void)setupWindowAndContent {
+#if defined(GNUSTEP) && !defined(_WIN32)
+    // Wide enough that Adwaita's header bar keeps Undo and Redo out of » (they're the lowest
+    // priority, so they leave first) and shows the whole title.
+    NSRect frame = NSMakeRect(100.0, 100.0, 1060.0, 700.0);
+#else
     NSRect frame = NSMakeRect(100.0, 100.0, 1000.0, 700.0);
+#endif
     NSUInteger styleMask = (NSWindowStyleMaskTitled |
                             NSWindowStyleMaskClosable |
                             NSWindowStyleMaskMiniaturizable |
@@ -4718,6 +4741,8 @@ static id STInfoValueForKey(NSString *key) {
 }
 
 /// "1600 × 1000 px · PNG · 214 KB": the image's pixel size and, with a file, its format and size.
+/// With unsaved changes (a crop, say) the file's size isn't the image's any more, so it says
+/// "unsaved" until the next save.
 - (NSString *)idleStatusText {
     NSImage *image = self.canvasView.image;
     if (!image) {
@@ -4736,6 +4761,9 @@ static id STInfoValueForKey(NSString *key) {
         text = [text stringByAppendingFormat:@"  ·  %@", extension.uppercaseString];
     }
     NSString *fileSize = [self statusFileSizeForURL:self.currentImageURL];
+    if (fileSize.length > 0 && [self hasUnsavedChanges]) {
+        fileSize = @"unsaved";
+    }
     if (fileSize.length > 0) {
         text = [text stringByAppendingFormat:@"  ·  %@", fileSize];
     }
@@ -6480,6 +6508,7 @@ static NSTimeInterval STHUDDurationForFeedback(NSTimeInterval duration) {
         formatter.doesRelativeDateFormatting = YES;
 #endif
     }
+    formatter.timeZone = STFormatterTimeZoneForDate(date);
     NSString *text = [formatter stringFromDate:date] ?: @"";
 #if defined(GNUSTEP)
     // ICU puts a narrow no-break space before AM/PM, which GNUstep's text drawing has no glyph
@@ -7704,6 +7733,8 @@ BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *en
         [self resizeWindowToImageSize:self.canvasView.image.size];
     }
     [self.window makeFirstResponder:self.canvasView];
+    // The result goes to the HUD now (#344), so the status bar has to be told the new size.
+    [self refreshStatusZoomControls];
     [self showCommandResultMessage:@"Cropped image" duration:2.0];
 }
 
@@ -7770,7 +7801,7 @@ BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *en
 
 #pragma mark - Select Text (#330)
 
-NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted);
+NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted, NSUInteger alreadyRedacted, BOOL hadRedactions);
 
 /// Edit ▸ Select Text: reads the whole image once (or reuses the last read, if nothing changed)
 /// and outlines its words to select. Again, it turns the mode off.
@@ -7833,17 +7864,27 @@ NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted);
     STTextSelection *selection = self.canvasView.textSelection;
     NSMutableArray<NSValue *> *rects = [[NSMutableArray alloc] init];
     for (NSValue *value in selection.selectedRects) {
-        [rects addObject:[NSValue valueWithRect:STRedactionRectForTextBox(value.rectValue)]];
+        // As STSensitiveTextRects pads: a little over the glyphs, so their edges don't show.
+        CGFloat pad = MAX(3.0, round(NSHeight(value.rectValue) * 0.15));
+        [rects addObject:[NSValue valueWithRect:NSInsetRect(value.rectValue, -pad, -pad)]];
     }
-    NSUInteger added = [self.canvasView addRedactionsInImageRects:rects actionName:@"Redact Selected Text"];
-    if (added == 0) {
+    if (rects.count == 0) {
         NSBeep();
         return;
     }
-    [selection clearSelection];
-    [self.canvasView setNeedsDisplay:YES];
-    [self refreshTextSelectionIfStale];
-    [self showCommandResultMessage:STRedactDetectedFeedback(YES, added) duration:2.5];
+    BOOL hadRedactions = [self.canvasView hasRedactions];
+    NSUInteger alreadyRedacted = 0;
+    NSUInteger added = [self.canvasView addRedactionsInImageRects:rects
+                                                       actionName:@"Redact Selected Text"
+                                                  alreadyRedacted:&alreadyRedacted];
+    if (added > 0) {
+        [selection clearSelection];
+        [self.canvasView setNeedsDisplay:YES];
+        // An edit: "unsaved" in the status bar now, not when the undo manager's notice comes. This
+        // also reads the words again.
+        [self updateDocumentEditedState];
+    }
+    [self showCommandResultMessage:STRedactDetectedFeedback(YES, added, alreadyRedacted, hadRedactions) duration:2.5];
 }
 
 /// Copies the text in the selection, or in the whole image, read on this computer.
@@ -7865,12 +7906,21 @@ NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted);
 }
 
 /// What Redact Emails and Phone Numbers says when it's done, so it never finishes silently: "no
-/// text" (nothing to read, or the engine read nothing) is told apart from "nothing matched" (#333).
-NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted) {
+/// text" (nothing to read, or the engine read nothing) is told apart from "nothing matched" (#333),
+/// and a run after an earlier one from "nothing there": matches that existing
+/// redactions cover are "Already redacted", and with redactions on the image (which hide their
+/// text from the reader) a run that finds nothing more says "No other…".
+NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted, NSUInteger alreadyRedacted, BOOL hadRedactions) {
     if (redacted > 0) {
         return [NSString stringWithFormat:@"Redacted %lu %@", (unsigned long)redacted, redacted == 1 ? @"item" : @"items"];
     }
-    return foundText ? @"No email addresses or phone numbers found" : @"No text found in the image";
+    if (alreadyRedacted > 0) {
+        return @"Already redacted";
+    }
+    if (!foundText) {
+        return @"No text found in the image";
+    }
+    return hadRedactions ? @"No other email addresses or phone numbers found" : @"No email addresses or phone numbers found";
 }
 
 /// Redacts the email addresses and phone numbers read in the image, as ordinary redactions that
@@ -7883,13 +7933,21 @@ NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted) {
     __weak typeof(self) weakSelf = self;
     [self readTextInImageRect:NSZeroRect completion:^(NSArray<STRecognizedLine *> *lines) {
         NSArray<NSValue *> *rects = STSensitiveTextRects(lines);
+        BOOL hadRedactions = [weakSelf.canvasView hasRedactions];
+        NSUInteger alreadyRedacted = 0;
         NSUInteger added = [weakSelf.canvasView addRedactionsInImageRects:rects
-                                                               actionName:@"Redact Emails and Phone Numbers"];
+                                                               actionName:@"Redact Emails and Phone Numbers"
+                                                          alreadyRedacted:&alreadyRedacted];
+        if (added > 0) {
+            // An edit: "unsaved" in the status bar now, not when the undo manager's notice comes.
+            [weakSelf updateDocumentEditedState];
+        }
         BOOL foundText = [STRecognizedText(lines) stringByTrimmingCharactersInSet:
                              [NSCharacterSet whitespaceAndNewlineCharacterSet]].length > 0;
-        ScreenshotToolAppendLog([NSString stringWithFormat:@"Redact Emails and Phone Numbers: %lu lines, %lu redacted",
-                                 (unsigned long)lines.count, (unsigned long)added]);
-        [weakSelf showCommandResultMessage:STRedactDetectedFeedback(foundText, added) duration:2.5];
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"Redact Emails and Phone Numbers: %lu lines, %lu redacted, %lu already redacted",
+                                 (unsigned long)lines.count, (unsigned long)added, (unsigned long)alreadyRedacted]);
+        [weakSelf showCommandResultMessage:STRedactDetectedFeedback(foundText, added, alreadyRedacted, hadRedactions)
+                                  duration:2.5];
     }];
 }
 
@@ -9207,6 +9265,9 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
             return;
         }
         [strongSelf refreshToolButtonIcons];
+        // Its "Running…" went to the status bar; the result goes to the HUD (#344), so put the
+        // status bar back to the image's size now rather than when that message would time out.
+        [strongSelf clearStatusMessage];
         if (!result.succeeded) {
             ScreenshotToolAppendLog([NSString stringWithFormat:@"Custom action %@ failed (status %d%@): %@",
                                      action.identifier, result.status, result.timedOut ? @", timed out" : @"",
@@ -9344,11 +9405,15 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 }
 
 /// macOS marks a window with unsaved changes with a dot in its close button.
+/// It also brings the status bar's size up to date: after an edit, a crop or a save.
 - (void)updateDocumentEditedState {
 #if !defined(GNUSTEP)
     [self.window setDocumentEdited:[self hasUnsavedChanges]];
 #endif
     [self refreshTextSelectionIfStale];
+    if (self.statusTextField && !self.statusClearTimer) {
+        [self.statusTextField setStringValue:[self idleStatusText]];
+    }
 }
 
 - (void)undo:(id)sender {
@@ -9416,6 +9481,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 
 - (void)markAnnotationsSaved {
     self.savedAnnotationFingerprint = [self.canvasView annotationFingerprint];
+    self.statusFileSizeURL = nil; // Saved over the same file, say: read its size again.
     [self updateDocumentEditedState];
 }
 

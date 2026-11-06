@@ -3290,6 +3290,34 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
 }
 
 - (NSUInteger)addRedactionsInImageRects:(NSArray<NSValue *> *)rects actionName:(NSString *)actionName {
+    return [self addRedactionsInImageRects:rects actionName:actionName alreadyRedacted:NULL];
+}
+
+- (BOOL)hasRedactions {
+    for (MarkupStroke *stroke in self.strokes) {
+        if (stroke.type == MarkupStrokeTypeRedact) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+/// Whether a redaction covers `rect`, give or take a pixel's rounding.
+- (BOOL)isImageRectRedacted:(NSRect)rect {
+    for (MarkupStroke *stroke in self.strokes) {
+        if (stroke.type == MarkupStrokeTypeRedact && NSContainsRect(NSInsetRect(stroke.bounds, -1.0, -1.0), rect)) {
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (NSUInteger)addRedactionsInImageRects:(NSArray<NSValue *> *)rects
+                             actionName:(NSString *)actionName
+                        alreadyRedacted:(NSUInteger *)alreadyRedacted {
+    if (alreadyRedacted) {
+        *alreadyRedacted = 0;
+    }
     if (!self.image || rects.count == 0) {
         return 0;
     }
@@ -3298,6 +3326,14 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
     for (NSValue *value in rects) {
         NSRect rect = NSIntegralRect([self clampedImageRect:value.rectValue]);
         if (NSIsEmptyRect(rect)) {
+            continue;
+        }
+        // Run again, Redact would stack a second redaction on the first (an engine that still
+        // reads text through the pixelation, say).
+        if ([self isImageRectRedacted:rect]) {
+            if (alreadyRedacted) {
+                (*alreadyRedacted)++;
+            }
             continue;
         }
         MarkupStroke *redaction = [[MarkupStroke alloc] initWithType:MarkupStrokeTypeRedact
@@ -3391,6 +3427,18 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
     BOOL shift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
     CGFloat step = shift ? 10.0 : 1.0;
 
+#if defined(GNUSTEP)
+    // Off macOS, Select All is only on the mode's context menu, and a closed menu's shortcuts don't
+    // fire. Only while selecting text, so Ctrl+A isn't taken anywhere else.
+    NSEventModifierFlags selectAllFlags = event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl |
+                                                                 NSEventModifierFlagOption | NSEventModifierFlagShift);
+    if (self.textSelection && (key == 'a' || key == 'A') &&
+        (selectAllFlags == NSEventModifierFlagControl || selectAllFlags == NSEventModifierFlagCommand)) {
+        [self selectAll:nil];
+        return;
+    }
+#endif
+
     switch (key) {
         case NSUpArrowFunctionKey:
             if ([self nudgeSelectedAnnotationsBy:NSMakePoint(0.0, -step)]) return;
@@ -3415,6 +3463,11 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
             if ([self editSelectedText]) return;
             break;
         case 0x1b:
+            // GNUstep's Esc arrives here: nothing on this path reaches complete: or cancelOperation:.
+            if (self.textSelection) {
+                [self endTextSelection:nil];
+                return;
+            }
             if ([self hasAnnotationSelection]) {
                 [self clearAnnotationSelection];
                 return;
@@ -4300,12 +4353,12 @@ static NSError *STProjectError(NSString *message) {
 - (void)drawTextSelection {
     STTextSelection *selection = self.textSelection;
     NSColor *accent = STThemeAccentColor();
-    [[accent colorWithAlphaComponent:0.28] setFill];
+    [STThemeColorWithAlpha(accent, 0.28) setFill];
     for (NSValue *value in selection.selectedRects) {
         NSRect rect = NSInsetRect([self viewRectForImageRect:value.rectValue], -2.0, -1.0);
         [[NSBezierPath bezierPathWithRoundedRect:rect xRadius:3.0 yRadius:3.0] fill];
     }
-    [[accent colorWithAlphaComponent:0.45] setStroke];
+    [STThemeColorWithAlpha(accent, 0.45) setStroke];
     for (NSUInteger i = 0; i < selection.wordCount; i++) {
         NSRect rect = NSInsetRect([self viewRectForImageRect:[selection boundsOfWordAtIndex:i]], -1.5, -1.0);
         NSBezierPath *outline = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(rect, 0.5, 0.5) xRadius:2.5 yRadius:2.5];
