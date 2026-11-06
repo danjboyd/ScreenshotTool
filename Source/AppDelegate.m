@@ -3017,6 +3017,11 @@ static id STInfoValueForKey(NSString *key) {
                                                              keyEquivalent:@""];
         [redactDetectedItem setTarget:self];
         [editMenu addItem:redactDetectedItem];
+        NSMenuItem *redactSelectedTextItem = [[NSMenuItem alloc] initWithTitle:@"Redact Selected Text"
+                                                                        action:@selector(redactSelectedText:)
+                                                                 keyEquivalent:@""];
+        [redactSelectedTextItem setTarget:self];
+        [editMenu addItem:redactSelectedTextItem];
     }
     [editMenu addItem:[NSMenuItem separatorItem]];
     // Built with @selector: validation compares selectors with ==, and on GNUstep's runtime one

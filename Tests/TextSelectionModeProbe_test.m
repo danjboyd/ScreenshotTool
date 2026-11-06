@@ -36,6 +36,7 @@
 - (void)showCommandResultMessage:(NSString *)message duration:(NSTimeInterval)duration;
 - (void)copyCustomActionText:(NSString *)text;
 - (void)updateDocumentEditedState;
+- (BOOL)validateMenuItem:(NSMenuItem *)menuItem;
 - (void)setupMenus;
 @end
 
@@ -357,6 +358,33 @@
     [_app selectText:nil];
     [_app.canvasView mouseDown:[self event:NSEventTypeLeftMouseDown atImagePoint:NSMakePoint(630.0, 310.0) clicks:2 flags:0]];
     XCTAssertEqualObjects(_app.canvasView.textSelection.selectedText, @"far");
+}
+
+- (void)testEditMenuRedactSelectedTextNeedsSelectedWords {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    if (![STTextRecognizer isAvailable]) {
+        return; // No engine, no text commands.
+    }
+    [_app setupMenus];
+    NSMenuItem *item = nil;
+    for (NSMenuItem *top in [[NSApp mainMenu] itemArray]) {
+        NSInteger index = [top.submenu indexOfItemWithTitle:@"Redact Selected Text"];
+        if (index >= 0) {
+            item = [top.submenu itemAtIndex:index];
+            break;
+        }
+    }
+    XCTAssertNotNil(item, @"Edit has Redact Selected Text");
+    XCTAssertEqual(item.action, @selector(redactSelectedText:));
+    XCTAssertEqual(item.keyEquivalent.length, (NSUInteger)0, @"No shortcut of its own");
+
+    XCTAssertFalse([_app validateMenuItem:item], @"Off outside Select Text");
+    [_app selectText:nil];
+    XCTAssertFalse([_app validateMenuItem:item], @"Off with nothing selected");
+    [self dragFrom:NSMakePoint(15.0, 28.0) to:NSMakePoint(55.0, 28.0)];
+    XCTAssertTrue([_app validateMenuItem:item], @"On with words selected");
+    [_app.canvasView endTextSelection:nil];
+    XCTAssertFalse([_app validateMenuItem:item], @"Off again when the mode ends");
 }
 
 /// ⇧⌘E, declared as Copy Text's is: GNUstep sends the Ctrl key as Command, so the menu shows
