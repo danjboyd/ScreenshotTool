@@ -13,6 +13,10 @@
 #import "STWindowsIntegration.h"
 #endif
 
+#if ST_TEXT_TESSERACT && defined(ST_HAVE_CAIRO)
+#include <cairo.h>
+#endif
+
 @implementation STRecognizedWord
 
 - (instancetype)initWithText:(NSString *)text bounds:(NSRect)bounds {
@@ -221,6 +225,29 @@ NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedLine *> *lines) {
         }
     }
     return rects;
+}
+
+NSUInteger STTesseractUpscaleFactor(NSSize imagePixels) {
+    return MAX(imagePixels.width, imagePixels.height) * 2.0 <= 8000.0 ? 2 : 1;
+}
+
+NSArray<STRecognizedLine *> *STLinesScaledDownBy(NSArray<STRecognizedLine *> *lines, NSUInteger factor) {
+    if (factor <= 1) {
+        return lines;
+    }
+    CGFloat scale = 1.0 / (CGFloat)factor;
+    NSMutableArray<STRecognizedLine *> *scaled = [[NSMutableArray alloc] initWithCapacity:lines.count];
+    for (STRecognizedLine *line in lines) {
+        NSMutableArray<STRecognizedWord *> *words = [[NSMutableArray alloc] initWithCapacity:line.words.count];
+        for (STRecognizedWord *word in line.words) {
+            NSRect box = word.bounds;
+            [words addObject:[[STRecognizedWord alloc] initWithText:word.text
+                                                             bounds:NSMakeRect(NSMinX(box) * scale, NSMinY(box) * scale,
+                                                                               NSWidth(box) * scale, NSHeight(box) * scale)]];
+        }
+        [scaled addObject:[[STRecognizedLine alloc] initWithWords:words]];
+    }
+    return scaled;
 }
 
 NSArray<STRecognizedLine *> *STLinesInsideRect(NSArray<STRecognizedLine *> *lines, NSRect rect) {
@@ -447,6 +474,78 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
 #endif
 }
 
+#if ST_TEXT_TESSERACT
+/// A PNG of the image at `path`, enlarged as STTesseractUpscaleFactor says, in `factor`; nil, with a
+/// factor of 1, when it isn't enlarged. Cairo only, so it's safe off the main thread, where GNUstep's
+/// image classes aren't.
++ (nullable NSString *)enlargedCopyOfPNGAtPath:(NSString *)path factor:(NSUInteger *)factor {
+    *factor = 1;
+#if defined(ST_HAVE_CAIRO)
+    cairo_surface_t *source = cairo_image_surface_create_from_png(path.fileSystemRepresentation);
+    if (cairo_surface_status(source) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(source);
+        return nil;
+    }
+    int width = cairo_image_surface_get_width(source);
+    int height = cairo_image_surface_get_height(source);
+    NSUInteger scale = STTesseractUpscaleFactor(NSMakeSize(width, height));
+    NSString *copy = nil;
+    if (scale > 1) {
+        cairo_surface_t *target = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, width * (int)scale, height * (int)scale);
+        cairo_t *cr = cairo_create(target);
+        cairo_scale(cr, scale, scale);
+        cairo_set_source_surface(cr, source, 0.0, 0.0);
+        cairo_pattern_set_filter(cairo_get_source(cr), CAIRO_FILTER_BEST);
+        cairo_paint(cr);
+        BOOL drawn = cairo_status(cr) == CAIRO_STATUS_SUCCESS;
+        cairo_destroy(cr);
+        if (drawn) {
+            NSString *name = [NSString stringWithFormat:@"screenshottool-read-%@.png", [[NSUUID UUID] UUIDString]];
+            NSString *path2 = [NSTemporaryDirectory() stringByAppendingPathComponent:name];
+            if (cairo_surface_write_to_png(target, path2.fileSystemRepresentation) == CAIRO_STATUS_SUCCESS) {
+                copy = path2;
+                *factor = scale;
+            }
+        }
+        cairo_surface_destroy(target);
+    }
+    cairo_surface_destroy(source);
+    return copy;
+#else
+    (void)path;
+    return nil;
+#endif
+}
+
++ (void)runTesseractJob:(NSDictionary *)job {
+    @autoreleasepool {
+        NSString *path = job[@"path"];
+        NSRect rect = [job[@"rect"] rectValue];
+        STTextRecognitionCompletion finish = job[@"completion"];
+        NSUInteger factor = 1;
+        NSString *enlarged = [self enlargedCopyOfPNGAtPath:path factor:&factor];
+        // One thread: tesseract's OpenMP threads wait on each other, and read the same words about
+        // four times slower. For this command only; the app itself uses no OpenMP.
+        // Two minutes is far more than a screenshot takes; it only stops one that hangs.
+        [STCustomActionRunner runArguments:@[job[@"tesseract"], enlarged ?: path, @"stdout", @"tsv"]
+                          extraEnvironment:@{ @"OMP_THREAD_LIMIT": @"1" }
+                                   timeout:120.0
+                                completion:^(STCustomActionResult *result) {
+            if (enlarged) {
+                [[NSFileManager defaultManager] removeItemAtPath:enlarged error:NULL];
+            }
+            if (!result.succeeded) {
+                finish(nil, result.failureSummary);
+                return;
+            }
+            // tesseract reads the whole image; the rect keeps its words.
+            NSArray<STRecognizedLine *> *lines = STLinesScaledDownBy(STLinesFromTesseractTSV(result.standardOutput ?: @""), factor);
+            finish(STLinesInsideRect(lines, rect), nil);
+        }];
+    }
+}
+#endif
+
 + (void)recognizeTextInImageAtURL:(NSURL *)url
                              rect:(NSRect)rect
                        completion:(STTextRecognitionCompletion)completion {
@@ -459,17 +558,10 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
         });
         return;
     }
-    // Two minutes is far more than a screenshot takes; it only stops one that hangs.
-    [STCustomActionRunner runArguments:@[tesseract, url.path, @"stdout", @"tsv"]
-                               timeout:120.0
-                            completion:^(STCustomActionResult *result) {
-        if (!result.succeeded) {
-            finish(nil, result.failureSummary);
-            return;
-        }
-        // tesseract reads the whole image; the rect keeps its words.
-        finish(STLinesInsideRect(STLinesFromTesseractTSV(result.standardOutput ?: @""), rect), nil);
-    }];
+    // Enlarging takes a moment on a large image, so it's on a thread of its own, as the read is.
+    NSDictionary *job = @{ @"path": url.path, @"tesseract": tesseract, @"rect": [NSValue valueWithRect:rect],
+                           @"completion": finish };
+    [NSThread detachNewThreadSelector:@selector(runTesseractJob:) toTarget:self withObject:job];
 #elif ST_TEXT_VISION
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         NSArray<STRecognizedLine *> *lines = nil;
