@@ -61,6 +61,10 @@ typedef struct {
     STWindowsPrintDialogOutcome outcome;
     void * _Nullable dc;
     void * _Nullable devMode;
+    /// For the log: what PrintDlgEx returned, its action and any extended error.
+    long hresult;
+    unsigned long action;
+    unsigned long extendedError;
 } STWindowsPrintDialogResult;
 
 /// Windows's print dialog, for the printer, paper and copies, starting on the printer and paper last

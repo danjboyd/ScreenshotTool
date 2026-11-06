@@ -318,7 +318,7 @@ static void STTurnDevMode(HGLOBAL handle, STPrintOrientation orientation) {
 }
 
 STWindowsPrintDialogResult STWindowsRunPrintDialog(NSInteger windowNumber, STPrintOrientation orientation, NSUserDefaults *defaults) {
-    STWindowsPrintDialogResult result = { STWindowsPrintDialogFailed, NULL, NULL };
+    STWindowsPrintDialogResult result = { STWindowsPrintDialogFailed, NULL, NULL, 0, 0, 0 };
     PRINTDLGEXW dialog;
     memset(&dialog, 0, sizeof(dialog));
     dialog.lStructSize = sizeof(dialog);
@@ -360,8 +360,11 @@ STWindowsPrintDialogResult STWindowsRunPrintDialog(NSInteger windowNumber, STPri
         [defaults removeObjectForKey:STDefaultsPrintWindowsDevNamesKey];
         answer = PrintDlgExW(&dialog);
     }
+    result.hresult = answer;
+    result.action = dialog.dwResultAction;
+    result.extendedError = CommDlgExtendedError();
     if (FAILED(answer)) {
-        result.outcome = CommDlgExtendedError() == PDERR_NODEFAULTPRN ? STWindowsPrintDialogNoPrinter : STWindowsPrintDialogFailed;
+        result.outcome = result.extendedError == PDERR_NODEFAULTPRN ? STWindowsPrintDialogNoPrinter : STWindowsPrintDialogFailed;
     } else if (dialog.dwResultAction == PD_RESULT_PRINT && dialog.hDC) {
         result.outcome = STWindowsPrintDialogPrint;
         result.dc = dialog.hDC;

@@ -7387,6 +7387,8 @@ NSRect STVisibleFrameForWindow(NSWindow *window) {
     STPrintOptions *options = [panel.options copy];
     NSString *title = self.window.title.length > 0 ? self.window.title : @"Screenshot";
     STWindowsPrintDialogResult answer = STWindowsRunPrintDialog(self.window.windowNumber, [panel currentLayout].resolvedOrientation, defaults);
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Print dialog: outcome=%ld hresult=0x%lx action=%lu error=0x%lx", (long)answer.outcome,
+                             (unsigned long)answer.hresult, answer.action, answer.extendedError]);
     if (answer.outcome == STWindowsPrintDialogCancelled) {
         return;
     }
