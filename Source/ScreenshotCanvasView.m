@@ -23,6 +23,7 @@
 #import "MarkupStroke.h"
 #import "MarkupText.h"
 #import "STThemeUtilities.h"
+#import "STTextSelection.h"
 #import <AppKit/NSBitmapImageRep.h>
 #import <AppKit/NSGraphicsContext.h>
 #import <AppKit/NSColorSpace.h>
@@ -1102,7 +1103,12 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
     [dest setSize:NSMakeSize((CGFloat)clipWidth, (CGFloat)clipHeight)];
     return dest;
 }
+NSNotificationName const ScreenshotCanvasViewTextSelectionDidChangeNotification = @"ScreenshotCanvasViewTextSelectionDidChangeNotification";
+
 @interface ScreenshotCanvasView () <NSTextViewDelegate>
+@property (nonatomic, strong, readwrite, nullable) STTextSelection *textSelection;
+/// Where a drag across the words started, in image pixels (#330).
+@property (nonatomic, assign) NSPoint textSelectionDragStart;
 @property (nonatomic, strong) NSMutableArray<MarkupStroke *> *strokes;
 @property (nonatomic, strong, nullable) MarkupStroke *currentStroke;
 @property (nonatomic, strong) NSMutableArray<MarkupText *> *texts;
@@ -1188,6 +1194,12 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 
 - (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
     SEL action = menuItem.action;
+    if (action == @selector(selectAll:)) {
+        return self.textSelection.wordCount > 0;
+    }
+    if (action == @selector(endTextSelection:)) {
+        return self.textSelection != nil;
+    }
     if (action == @selector(undo:)) {
         NSUndoManager *undo = [self undoManager];
         return (undo && [undo canUndo]);
@@ -1635,6 +1647,10 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 }
 
 - (void)setActiveTool:(ScreenshotCanvasTool)activeTool {
+    // Choosing a tool, the same one included, ends Select Text (#330).
+    if (self.textSelection) {
+        [self endTextSelection:nil];
+    }
     if (_activeTool == activeTool) {
         return;
     }
@@ -1658,6 +1674,9 @@ static NSBitmapImageRep *STBitmapImageRepFromImage(NSImage *image, NSSize size) 
 }
 
 - (NSCursor *)cursorForActiveTool {
+    if (self.textSelection) {
+        return [NSCursor IBeamCursor];
+    }
     switch (self.activeTool) {
         case ScreenshotCanvasToolHighlighter:
             return [[self class] tintedCursorForToolKey:@"highlighter" color:self.highlighterColor fallback:[NSCursor crosshairCursor]];
@@ -2778,6 +2797,7 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
 
 - (void)loadImage:(NSImage *)image {
     [[self undoManager] removeAllActions];
+    [self endTextSelection:nil]; // Another image: its words aren't these (#330).
     [self cancelActiveTextEntry];
     self.editingTextSnapshot = nil;
     self.image = image;
@@ -3204,6 +3224,16 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
     if (!self.image) {
         return STCanvasContextKindNone;
     }
+    if (self.textSelection) {
+        // A right-click on a word outside the selection selects that word, as in a text view.
+        NSPoint point = NSMakePoint(viewPoint.x / self.zoomScale, viewPoint.y / self.zoomScale);
+        NSUInteger word = [self.textSelection wordIndexAtImagePoint:point slop:[self textSelectionSlop]];
+        if (word != NSNotFound && !NSLocationInRange(word, self.textSelection.selectedRange)) {
+            [self.textSelection selectWordAtIndex:word];
+            [self textSelectionDidChange];
+        }
+        return STCanvasContextKindText;
+    }
     [self commitActiveTextIfNeeded];
     NSPoint imagePoint = NSMakePoint(viewPoint.x / self.zoomScale, viewPoint.y / self.zoomScale);
     // The region selection wins inside it: right-clicking it is asking about it, not about an
@@ -3397,6 +3427,18 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
     BOOL shift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
     CGFloat step = shift ? 10.0 : 1.0;
 
+#if defined(GNUSTEP)
+    // Off macOS, Select All is only on the mode's context menu, and a closed menu's shortcuts don't
+    // fire. Only while selecting text, so Ctrl+A isn't taken anywhere else.
+    NSEventModifierFlags selectAllFlags = event.modifierFlags & (NSEventModifierFlagCommand | NSEventModifierFlagControl |
+                                                                 NSEventModifierFlagOption | NSEventModifierFlagShift);
+    if (self.textSelection && (key == 'a' || key == 'A') &&
+        (selectAllFlags == NSEventModifierFlagControl || selectAllFlags == NSEventModifierFlagCommand)) {
+        [self selectAll:nil];
+        return;
+    }
+#endif
+
     switch (key) {
         case NSUpArrowFunctionKey:
             if ([self nudgeSelectedAnnotationsBy:NSMakePoint(0.0, -step)]) return;
@@ -3421,6 +3463,11 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
             if ([self editSelectedText]) return;
             break;
         case 0x1b:
+            // GNUstep's Esc arrives here: nothing on this path reaches complete: or cancelOperation:.
+            if (self.textSelection) {
+                [self endTextSelection:nil];
+                return;
+            }
             if ([self hasAnnotationSelection]) {
                 [self clearAnnotationSelection];
                 return;
@@ -4205,8 +4252,118 @@ static NSError *STProjectError(NSString *message) {
     [self drawHoverOutline];
     [self drawAnnotationSelection];
 
-    if (self.activeTool == ScreenshotCanvasToolSelect || self.hasSelectionRect || self.isCreatingSelection) {
+    if (self.textSelection) {
+        [self drawTextSelection];
+    } else if (self.activeTool == ScreenshotCanvasToolSelect || self.hasSelectionRect || self.isCreatingSelection) {
         [self drawSelectionOverlay];
+    }
+}
+
+#pragma mark - Select Text (#330)
+
+- (BOOL)isSelectingText {
+    return self.textSelection != nil;
+}
+
+- (void)beginTextSelectionWithLines:(NSArray<STRecognizedLine *> *)lines {
+    [self commitActiveTextIfNeeded];
+    [self clearAnnotationSelection];
+    STTextSelection *selection = [[STTextSelection alloc] initWithLines:lines];
+    if (self.hasSelectionRect) {
+        [selection selectWordsInImageRect:[self clampedImageRect:self.selectionRect]];
+        [self clearSelection];
+    }
+    self.textSelection = selection;
+    [self textSelectionDidChange];
+    [self updateCursorForActiveTool];
+}
+
+- (IBAction)endTextSelection:(id)sender {
+    (void)sender;
+    if (!self.textSelection) {
+        return;
+    }
+    self.textSelection = nil;
+    [self textSelectionDidChange];
+    [self updateCursorForActiveTool];
+}
+
+- (void)textSelectionDidChange {
+    [self setNeedsDisplay:YES];
+    [[NSNotificationCenter defaultCenter] postNotificationName:ScreenshotCanvasViewTextSelectionDidChangeNotification
+                                                        object:self];
+}
+
+/// The words' hit slop: a few points on screen, whatever the zoom.
+- (CGFloat)textSelectionSlop {
+    return 4.0 / MAX(self.zoomScale, 0.01);
+}
+
+- (IBAction)selectAll:(id)sender {
+    (void)sender;
+    if (!self.textSelection) {
+        NSBeep();
+        return;
+    }
+    [self.textSelection selectAll];
+    [self textSelectionDidChange];
+}
+
+- (void)cancelOperation:(id)sender {
+    if (self.textSelection) {
+        [self endTextSelection:sender];
+        return;
+    }
+    if ([super respondsToSelector:@selector(cancelOperation:)]) {
+        [super cancelOperation:sender];
+    }
+}
+
+/// GNUstep binds Esc to complete: (DefaultKeyBindings.dict) where Cocoa sends cancelOperation:.
+- (void)complete:(id)sender {
+    [self cancelOperation:sender];
+}
+
+- (void)textSelectionMouseDown:(NSEvent *)event atImagePoint:(NSPoint)point {
+    STTextSelection *selection = self.textSelection;
+    NSUInteger word = [selection wordIndexAtImagePoint:point slop:[self textSelectionSlop]];
+    if (event.clickCount >= 3 && word != NSNotFound) {
+        [selection selectLineOfWordAtIndex:word];
+    } else if (event.clickCount == 2 && word != NSNotFound) {
+        [selection selectWordAtIndex:word];
+    } else if ((event.modifierFlags & NSEventModifierFlagShift) && selection.selectedRange.length > 0) {
+        [selection extendSelectionToImagePoint:point];
+    } else {
+        // A click selects nothing; a drag from here selects to where it ends.
+        [selection clearSelection];
+    }
+    self.textSelectionDragStart = point;
+    [self textSelectionDidChange];
+}
+
+- (void)textSelectionMouseDragged:(NSEvent *)event atImagePoint:(NSPoint)point {
+    if (event.modifierFlags & NSEventModifierFlagShift) {
+        [self.textSelection extendSelectionToImagePoint:point];
+    } else {
+        [self.textSelection selectFromImagePoint:self.textSelectionDragStart toImagePoint:point];
+    }
+    [self textSelectionDidChange];
+}
+
+- (void)drawTextSelection {
+    STTextSelection *selection = self.textSelection;
+    NSColor *accent = STThemeAccentColor();
+    [STThemeColorWithAlpha(accent, 0.28) setFill];
+    for (NSValue *value in selection.selectedRects) {
+        NSRect rect = NSInsetRect([self viewRectForImageRect:value.rectValue], -2.0, -1.0);
+        [[NSBezierPath bezierPathWithRoundedRect:rect xRadius:3.0 yRadius:3.0] fill];
+    }
+    [STThemeColorWithAlpha(accent, 0.45) setStroke];
+    for (NSUInteger i = 0; i < selection.wordCount; i++) {
+        NSRect rect = NSInsetRect([self viewRectForImageRect:[selection boundsOfWordAtIndex:i]], -1.5, -1.0);
+        NSBezierPath *outline = [NSBezierPath bezierPathWithRoundedRect:NSInsetRect(rect, 0.5, 0.5) xRadius:2.5 yRadius:2.5];
+        outline.lineWidth = 1.0;
+        [outline stroke];
     }
 }
 
@@ -4414,6 +4571,10 @@ static NSError *STProjectError(NSString *message) {
     }
 
     NSPoint imagePoint = [self imagePointForEvent:event];
+    if (self.textSelection) {
+        [self textSelectionMouseDown:event atImagePoint:imagePoint];
+        return;
+    }
     NSPoint locationInView = [self convertPoint:event.locationInWindow fromView:nil];
     if (self.activeTool == ScreenshotCanvasToolText) {
         if (self.activeTextView && self.currentTextEntry &&
@@ -4587,6 +4748,10 @@ static NSError *STProjectError(NSString *message) {
     }
 
     NSPoint imagePoint = [self imagePointForEvent:event];
+    if (self.textSelection) {
+        [self textSelectionMouseDragged:event atImagePoint:imagePoint];
+        return;
+    }
     if (self.activeTool == ScreenshotCanvasToolText) {
         if (self.textClickOnlyCommitted) {
             return;
@@ -4814,6 +4979,9 @@ static NSError *STProjectError(NSString *message) {
 
 - (void)mouseUp:(NSEvent *)event {
     if (!self.image) {
+        return;
+    }
+    if (self.textSelection) {
         return;
     }
 
