@@ -31,6 +31,9 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
 
 @interface MarkupText ()
 @property (nonatomic, assign, readwrite) NSSize measuredSize;
+/// Where the canvas last drew the text at a zoom other than 100%, relative to the origin, in image
+/// points. Empty at 100%, where the text is where it's measured to be.
+@property (nonatomic, assign) NSRect zoomedTextRect;
 @end
 
 @implementation MarkupText
@@ -75,14 +78,55 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
 }
 
 - (NSAttributedString *)attributedStringWithFont:(NSFont *)font color:(NSColor *)color {
+    return [self attributedStringWithText:self.text ?: @"" font:font color:color alignment:self.alignment];
+}
+
+- (NSAttributedString *)attributedStringWithText:(NSString *)text font:(NSFont *)font color:(NSColor *)color alignment:(NSTextAlignment)alignment {
     NSMutableDictionary<NSAttributedStringKey, id> *attributes = [[NSMutableDictionary alloc] init];
     attributes[NSFontAttributeName] = font;
     attributes[NSForegroundColorAttributeName] = color;
     NSMutableParagraphStyle *style = [[NSMutableParagraphStyle alloc] init];
     style.lineBreakMode = NSLineBreakByWordWrapping;
-    style.alignment = self.alignment;
+    style.alignment = alignment;
     attributes[NSParagraphStyleAttributeName] = style;
-    return [[NSAttributedString alloc] initWithString:self.text ?: @"" attributes:attributes];
+    return [[NSAttributedString alloc] initWithString:text attributes:attributes];
+}
+
+/// The text with a newline wherever it wraps at the label's own size, so a zoomed font, whose
+/// hinted advances differ, breaks its lines in the same places as Copy and Save.
+- (NSString *)textWithLinesBrokenAsAtFullSize {
+    NSTextStorage *storage = [[NSTextStorage alloc] initWithAttributedString:[self attributedString]];
+    NSLayoutManager *layout = [[NSLayoutManager alloc] init];
+    NSTextContainer *container = [[NSTextContainer alloc] initWithContainerSize:NSMakeSize(MAX(1.0f, self.boxSize.width), FLT_MAX)];
+    container.lineFragmentPadding = 0.0;
+    [layout addTextContainer:container];
+    [storage addLayoutManager:layout];
+    NSString *whole = storage.string;
+    NSMutableArray<NSString *> *lines = [[NSMutableArray alloc] init];
+    NSUInteger glyph = 0, glyphs = [layout numberOfGlyphs];
+    while (glyph < glyphs) {
+        NSRange lineGlyphs = NSMakeRange(0, 0);
+        [layout lineFragmentRectForGlyphAtIndex:glyph effectiveRange:&lineGlyphs];
+        if (lineGlyphs.length == 0) {
+            break;
+        }
+        NSRange lineCharacters = [layout characterRangeForGlyphRange:lineGlyphs actualGlyphRange:NULL];
+        NSString *line = [whole substringWithRange:lineCharacters];
+        if ([line hasSuffix:@"\n"]) {
+            line = [line substringToIndex:line.length - 1];
+        } else {
+            // The spaces a soft wrap leaves at the end of a line take no room when drawn.
+            NSUInteger end = line.length;
+            while (end > 0 && [line characterAtIndex:end - 1] == ' ') {
+                end--;
+            }
+            line = [line substringToIndex:end];
+        }
+        [lines addObject:line];
+        glyph = NSMaxRange(lineGlyphs);
+    }
+    NSString *broken = [lines componentsJoinedByString:@"\n"];
+    return [whole hasSuffix:@"\n"] ? [broken stringByAppendingString:@"\n"] : broken;
 }
 
 - (void)setBoxSize:(NSSize)boxSize {
@@ -90,6 +134,7 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
 }
 
 - (void)updateMeasuredSize {
+    self.zoomedTextRect = NSZeroRect;
     NSAttributedString *attr = [self attributedString];
     if (attr.length == 0) {
         CGFloat lineHeight = STTextLineHeight(self.font);
@@ -150,6 +195,7 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
 }
 
 - (BOOL)fitToTextWithinCanvasSize:(NSSize)canvasSize {
+    self.zoomedTextRect = NSZeroRect;
     CGFloat lineHeight = STTextLineHeight(self.font);
     CGFloat pointSize = self.font.pointSize > 0.0 ? self.font.pointSize : 18.0;
     NSPoint origin = self.origin;
@@ -217,8 +263,23 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
     return NSInsetRect([self textBounds], -outset, -outset);
 }
 
+- (NSRect)decoratedTextBoundsOnCanvas {
+    if (NSIsEmptyRect(self.zoomedTextRect)) {
+        return [self decoratedTextBounds];
+    }
+    CGFloat outset = [self decorationOutset];
+    return NSInsetRect(NSOffsetRect(self.zoomedTextRect, self.origin.x, self.origin.y), -outset, -outset);
+}
+
 - (NSRect)decoratedBounds {
-    NSRect bounds = [self decoratedTextBounds];
+    return [self decoratedBoundsAround:[self decoratedTextBounds]];
+}
+
+- (NSRect)decoratedBoundsOnCanvas {
+    return [self decoratedBoundsAround:[self decoratedTextBoundsOnCanvas]];
+}
+
+- (NSRect)decoratedBoundsAround:(NSRect)bounds {
     if (!self.hasPointer) {
         return bounds;
     }
@@ -344,6 +405,31 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
 
     NSRect box = [self textRectForCanvas];
     NSRect textRect = NSMakeRect(box.origin.x * scale, box.origin.y * scale, box.size.width * scale, box.size.height * scale);
+    NSRect used = NSMakeRect((box.origin.x + [self alignmentOffset]) * scale, box.origin.y * scale,
+                             self.measuredSize.width * scale, self.measuredSize.height * scale);
+    NSString *drawnText = self.text;
+    if (font != baseFont) {
+        // A zoomed font's lines aren't the label's lines times the zoom, so what's drawn fits the
+        // text as this font sets it: same line breaks, its own widths.
+        drawnText = [self textWithLinesBrokenAsAtFullSize];
+        NSRect drawn = [[self attributedStringWithText:drawnText font:font color:[NSColor blackColor] alignment:NSTextAlignmentLeft]
+            boundingRectWithSize:NSMakeSize(1000000.0, FLT_MAX)
+                         options:(NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading)];
+        used.size = NSMakeSize(ceil(MAX(drawn.size.width, 1.0)), ceil(MAX(drawn.size.height, STTextLineHeight(font))));
+        CGFloat spare = textRect.size.width - used.size.width;
+        if (spare < 0.0) {
+            textRect.origin.x += (self.alignment == NSTextAlignmentRight) ? spare : (self.alignment == NSTextAlignmentCenter) ? spare * 0.5 : 0.0;
+            textRect.size.width = used.size.width;
+            spare = 0.0;
+        }
+        used.origin.x = NSMinX(textRect) + ((self.alignment == NSTextAlignmentRight) ? spare : (self.alignment == NSTextAlignmentCenter) ? floor(spare * 0.5) : 0.0);
+        textRect.size.height = MAX(textRect.size.height, used.size.height);
+    }
+    if (unflippedHeight <= 0.0) {
+        self.zoomedTextRect = (font != baseFont) ? NSMakeRect(NSMinX(used) / scale - self.origin.x, NSMinY(used) / scale - self.origin.y,
+                                                              NSWidth(used) / scale, NSHeight(used) / scale)
+                                                 : NSZeroRect;
+    }
     // Rects are worked out top-down, as on the canvas, then mapped for unflipped contexts.
     NSRect (^map)(NSRect) = ^NSRect(NSRect rect) {
         if (unflippedHeight > 0.0) {
@@ -353,7 +439,7 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
     };
     void (^drawGlyphs)(NSColor *, CGFloat, CGFloat) = ^(NSColor *color, CGFloat dx, CGFloat dy) {
         NSRect rect = NSOffsetRect(textRect, dx, dy);
-        [[self attributedStringWithFont:font color:color] drawInRect:map(rect)];
+        [[self attributedStringWithText:drawnText font:font color:color alignment:self.alignment] drawInRect:map(rect)];
     };
 
     if (self.hasPointer) {
@@ -383,8 +469,6 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
         }
         case MarkupTextStyleBackground: {
             CGFloat padding = [self backgroundPadding] * scale;
-            NSRect used = NSMakeRect((box.origin.x + [self alignmentOffset]) * scale, box.origin.y * scale,
-                                     self.measuredSize.width * scale, self.measuredSize.height * scale);
             NSRect pill = NSInsetRect(used, -padding, -padding);
             CGFloat radius = MIN(padding * 1.2, pill.size.height * 0.5);
             [(self.color ?: [NSColor whiteColor]) setFill];
@@ -411,7 +495,7 @@ static inline CGFloat STTextLineHeight(NSFont *font) {
 
 - (BOOL)containsPoint:(NSPoint)point {
     // Hit the text itself (with a little tolerance), not empty space in a wide box.
-    if (NSPointInRect(point, NSInsetRect([self decoratedTextBounds], -4.0, -4.0))) {
+    if (NSPointInRect(point, NSInsetRect([self decoratedTextBoundsOnCanvas], -4.0, -4.0))) {
         return YES;
     }
     if (!self.hasPointer) {

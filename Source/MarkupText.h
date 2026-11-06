@@ -69,7 +69,11 @@ typedef NS_ENUM(NSInteger, MarkupTextStyle) {
 - (CGFloat)decorationOutset;
 /// The text plus its outline, shadow or background (not the pointer).
 - (NSRect)decoratedTextBounds;
-/// Everything drawn, pointer included: what export and selection outlines cover.
+/// The same, where the canvas last drew it: a zoomed font sets the text a little wider or narrower.
+/// For hit testing and selection outlines. Export uses decoratedBounds.
+- (NSRect)decoratedTextBoundsOnCanvas;
+- (NSRect)decoratedBoundsOnCanvas;
+/// Everything drawn, pointer included: what export covers.
 - (NSRect)decoratedBounds;
 /// Where the pointer leaves the label: the point on its edge nearest the target.
 - (NSPoint)pointerAnchor;
