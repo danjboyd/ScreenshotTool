@@ -188,9 +188,9 @@ static NSData *STBGRAPixels(NSBitmapImageRep *rep, NSRect crop, NSUInteger facto
     return pixels;
 }
 
-/// How the second reading enlarges the image: Fant, of the scalers tried, puts no false redactions
-/// on small text (#278, the Windows recall probe, 2026-11-06).
-static const WICBitmapInterpolationMode STOcrUpscaleMode = WICBitmapInterpolationModeFant;
+/// How the second reading enlarges the image: of the scalers tried, Cubic finds the most on small text
+/// (87% of items on 13 text-dense 4K captures, Fant 84%; #278, 2026-11-06).
+static const WICBitmapInterpolationMode STOcrUpscaleMode = WICBitmapInterpolationModeCubic;
 
 /// `pixels` (premultiplied BGRA) enlarged twice over, or nil.
 static NSData *STBGRAPixelsDoubled(NSData *pixels, NSUInteger width, NSUInteger height) {
