@@ -1,9 +1,15 @@
 #import <AppKit/AppKit.h>
 #import "STPrintLayout.h"
+#import "STPrintOptions.h"
+
+@class ScreenshotCanvasView;
 
 NS_ASSUME_NONNULL_BEGIN
 
 #if defined(_WIN32)
+/// Windows's own printer that writes PDF files.
+extern NSString * const STWindowsPDFPrinterName;
+
 /// A sheet as a printer has it, in points: the paper turned to portrait, and the printer's unprintable
 /// area on that portrait sheet, as STPrintLayout takes them.
 typedef struct {
@@ -37,6 +43,33 @@ FOUNDATION_EXPORT void STWindowsPrintPageRects(STPrintLayout *layout, NSUInteger
 FOUNDATION_EXPORT BOOL STWindowsPrintPages(void *dc, void * _Nullable devMode, STPrintLayout *layout, NSImage *image,
                                            NSString *documentName, NSString * _Nullable outputPath,
                                            NSString * _Nullable * _Nullable failure);
+
+/// `canvas`'s image as Windows prints it, for these options: flattened at the size it's printed, up to
+/// 300 dpi, with its redactions and annotations, and only the selection when that's what's printed.
+FOUNDATION_EXPORT BOOL STWindowsPrintCanvas(ScreenshotCanvasView *canvas, STPrintOptions *options, void *dc, void * _Nullable devMode,
+                                            NSString *documentName, NSString * _Nullable outputPath,
+                                            NSString * _Nullable * _Nullable failure);
+
+typedef NS_ENUM(NSInteger, STWindowsPrintDialogOutcome) {
+    STWindowsPrintDialogPrint = 0,
+    STWindowsPrintDialogCancelled,
+    STWindowsPrintDialogNoPrinter,
+    STWindowsPrintDialogFailed,
+};
+
+typedef struct {
+    STWindowsPrintDialogOutcome outcome;
+    void * _Nullable dc;
+    void * _Nullable devMode;
+} STWindowsPrintDialogResult;
+
+/// Windows's print dialog, for the printer, paper and copies, starting on the printer and paper last
+/// printed on and turned to `orientation`, which is what will print. The choice is remembered in
+/// `defaults`. With STWindowsPrintDialogPrint, free the result with STWindowsFreePrintDialogResult.
+FOUNDATION_EXPORT STWindowsPrintDialogResult STWindowsRunPrintDialog(NSInteger windowNumber, STPrintOrientation orientation,
+                                                                     NSUserDefaults *defaults);
+FOUNDATION_EXPORT void STWindowsFreePrintDialogResult(STWindowsPrintDialogResult result);
+FOUNDATION_EXPORT void STWindowsDeleteDC(void *dc);
 #endif
 
 NS_ASSUME_NONNULL_END

@@ -1,6 +1,6 @@
 #import "STPrintPanelController.h"
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
 
 #import "STPrintPage.h"
 

@@ -3,11 +3,26 @@
 #if defined(_WIN32)
 
 #import "STPrintPage.h"
+#import "ScreenshotCanvasView.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <winspool.h>
+#if !defined(interface)
+#define interface struct
+#define ST_UNDEF_INTERFACE
+#endif
+#include <commdlg.h>
+#include <cderr.h>
+#if defined(ST_UNDEF_INTERFACE)
+#undef interface
+#undef ST_UNDEF_INTERFACE
+#endif
 #include <math.h>
 #include <stdlib.h>
+
+NSString * const STWindowsPDFPrinterName = @"Microsoft Print to PDF";
+static NSString * const STDefaultsPrintWindowsDevModeKey = @"PrintWindowsDevMode";
+static NSString * const STDefaultsPrintWindowsDevNamesKey = @"PrintWindowsDevNames";
 
 STWindowsPrinterSheet STWindowsPrinterSheetFromDC(void *dcHandle) {
     HDC dc = (HDC)dcHandle;
@@ -233,6 +248,157 @@ BOOL STWindowsPrintPages(void *dcHandle, void *devModeHandle, STPrintLayout *lay
         return NO;
     }
     return YES;
+}
+
+BOOL STWindowsPrintCanvas(ScreenshotCanvasView *canvas, STPrintOptions *options, void *dc, void *devMode, NSString *documentName,
+                          NSString *outputPath, NSString **failure) {
+    NSImage *flattened = [canvas flattenedImage];
+    STWindowsPrinterSheet sheet = STWindowsPrinterSheetFromDC(dc);
+    if (!flattened || !sheet.valid) {
+        if (failure) {
+            *failure = flattened ? @"The printer didn't say what paper it has." : @"There's nothing to print.";
+        }
+        return NO;
+    }
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    layout.paperSize = sheet.paper;
+    layout.printerMargins = sheet.printerMargins;
+    layout.margins = STPrintMarginsMake(STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin);
+    STConfigurePrintLayout(layout, options, flattened, [canvas selectionImageRect]);
+
+    // As Linux's: the scale comes from this layout; only the bitmap and its pixel counts change after it.
+    NSUInteger scale = [layout flattenScaleForImagePixelSize:STPrintImagePixelSize(flattened)];
+    NSRect keep = options.selectionOnly ? layout.sourceRect : NSZeroRect;
+    NSImage *printed = [canvas flattenedImageForPrintAtScale:scale withinRect:keep];
+    if (!printed) {
+        scale = 1;
+        printed = options.selectionOnly ? [canvas flattenedImageForSelection] : flattened;
+    }
+    if (!printed) {
+        if (failure) {
+            *failure = @"The image couldn't be prepared for printing.";
+        }
+        return NO;
+    }
+    NSSize pixels = STPrintImagePixelSize(printed);
+    layout.sourceRect = NSMakeRect(0.0, 0.0, pixels.width, pixels.height);
+    layout.pixelsPerInch = layout.pixelsPerInch * scale;
+    return STWindowsPrintPages(dc, devMode, layout, printed, documentName, outputPath, failure);
+}
+
+static HGLOBAL STGlobalWithData(NSData *data) {
+    if (data.length == 0) {
+        return NULL;
+    }
+    HGLOBAL handle = GlobalAlloc(GMEM_MOVEABLE, data.length);
+    void *bytes = handle ? GlobalLock(handle) : NULL;
+    if (bytes) {
+        memcpy(bytes, data.bytes, data.length);
+        GlobalUnlock(handle);
+    }
+    return handle;
+}
+
+static NSData *STDataFromGlobal(HGLOBAL handle) {
+    void *bytes = handle ? GlobalLock(handle) : NULL;
+    NSData *data = bytes ? [NSData dataWithBytes:bytes length:GlobalSize(handle)] : nil;
+    if (bytes) {
+        GlobalUnlock(handle);
+    }
+    return data;
+}
+
+static void STTurnDevMode(HGLOBAL handle, STPrintOrientation orientation) {
+    DEVMODEW *mode = handle ? (DEVMODEW *)GlobalLock(handle) : NULL;
+    if (mode) {
+        mode->dmFields |= DM_ORIENTATION;
+        mode->dmOrientation = orientation == STPrintOrientationLandscape ? DMORIENT_LANDSCAPE : DMORIENT_PORTRAIT;
+        GlobalUnlock(handle);
+    }
+}
+
+STWindowsPrintDialogResult STWindowsRunPrintDialog(NSInteger windowNumber, STPrintOrientation orientation, NSUserDefaults *defaults) {
+    STWindowsPrintDialogResult result = { STWindowsPrintDialogFailed, NULL, NULL };
+    PRINTDLGEXW dialog;
+    memset(&dialog, 0, sizeof(dialog));
+    dialog.lStructSize = sizeof(dialog);
+    dialog.hwndOwner = (HWND)(intptr_t)windowNumber;
+    dialog.nMaxPageRanges = 0;
+    dialog.nStartPage = START_PAGE_GENERAL;
+    dialog.nCopies = 1;
+    // Page ranges and the selection are our panel's; copies are the driver's.
+    dialog.Flags = PD_RETURNDC | PD_NOPAGENUMS | PD_NOSELECTION | PD_NOCURRENTPAGE | PD_USEDEVMODECOPIESANDCOLLATE;
+    NSData *savedMode = [defaults dataForKey:STDefaultsPrintWindowsDevModeKey];
+    NSData *savedNames = [defaults dataForKey:STDefaultsPrintWindowsDevNamesKey];
+    dialog.hDevMode = STGlobalWithData(savedMode);
+    dialog.hDevNames = STGlobalWithData(savedNames);
+    if (!dialog.hDevMode) {
+        // The default printer's settings, so the dialog can start turned.
+        PRINTDLGEXW defaultsOnly = dialog;
+        defaultsOnly.hDC = NULL;
+        defaultsOnly.Flags = PD_RETURNDEFAULT | PD_NOPAGENUMS | PD_NOSELECTION | PD_NOCURRENTPAGE;
+        HRESULT got = PrintDlgExW(&defaultsOnly);
+        if (SUCCEEDED(got)) {
+            dialog.hDevMode = defaultsOnly.hDevMode;
+            dialog.hDevNames = defaultsOnly.hDevNames;
+        } else if (CommDlgExtendedError() == PDERR_NODEFAULTPRN) {
+            result.outcome = STWindowsPrintDialogNoPrinter;
+            return result;
+        }
+    }
+    STTurnDevMode(dialog.hDevMode, orientation);
+    HRESULT answer = PrintDlgExW(&dialog);
+    if (FAILED(answer) && dialog.hDevMode && savedMode) {
+        // The printer saved last time may be gone: ask afresh.
+        GlobalFree(dialog.hDevMode);
+        if (dialog.hDevNames) {
+            GlobalFree(dialog.hDevNames);
+        }
+        dialog.hDevMode = NULL;
+        dialog.hDevNames = NULL;
+        [defaults removeObjectForKey:STDefaultsPrintWindowsDevModeKey];
+        [defaults removeObjectForKey:STDefaultsPrintWindowsDevNamesKey];
+        answer = PrintDlgExW(&dialog);
+    }
+    if (FAILED(answer)) {
+        result.outcome = CommDlgExtendedError() == PDERR_NODEFAULTPRN ? STWindowsPrintDialogNoPrinter : STWindowsPrintDialogFailed;
+    } else if (dialog.dwResultAction == PD_RESULT_PRINT && dialog.hDC) {
+        result.outcome = STWindowsPrintDialogPrint;
+        result.dc = dialog.hDC;
+        NSData *mode = STDataFromGlobal(dialog.hDevMode);
+        NSData *names = STDataFromGlobal(dialog.hDevNames);
+        if (mode.length > 0 && names.length > 0) {
+            [defaults setObject:mode forKey:STDefaultsPrintWindowsDevModeKey];
+            [defaults setObject:names forKey:STDefaultsPrintWindowsDevNamesKey];
+            result.devMode = malloc(mode.length);
+            if (result.devMode) {
+                memcpy(result.devMode, mode.bytes, mode.length);
+            }
+        }
+    } else {
+        result.outcome = STWindowsPrintDialogCancelled;
+        if (dialog.hDC) {
+            DeleteDC(dialog.hDC);
+        }
+    }
+    if (dialog.hDevMode) {
+        GlobalFree(dialog.hDevMode);
+    }
+    if (dialog.hDevNames) {
+        GlobalFree(dialog.hDevNames);
+    }
+    return result;
+}
+
+void STWindowsFreePrintDialogResult(STWindowsPrintDialogResult result) {
+    if (result.dc) {
+        DeleteDC((HDC)result.dc);
+    }
+    free(result.devMode);
+}
+
+void STWindowsDeleteDC(void *dc) {
+    DeleteDC((HDC)dc);
 }
 
 #endif

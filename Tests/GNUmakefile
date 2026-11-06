@@ -116,6 +116,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	TakeScreenshotProbe_test.m \
 	PrintLayoutProbe_test.m \
 	WindowsPrintProbe_test.m \
+	WindowsPrintRedactionProbe_test.m \
 	PrintPageProbe_test.m \
 	PrintPDFProbe_test.m \
 	PrintOptionsProbe_test.m \

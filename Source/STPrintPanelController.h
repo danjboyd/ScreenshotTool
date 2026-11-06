@@ -4,9 +4,9 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
-#if defined(__linux__)
-/// Linux's Print panel (#355): our options with a live preview and page count, shown before the
-/// desktop's own print dialog, which has no room for them. The options here don't depend on a printer;
+#if defined(__linux__) || defined(_WIN32)
+/// The Print panel on Linux and Windows (#355): our options with a live preview and page count, shown
+/// before the desktop's own print dialog, which has no room for them. The options here don't depend on a printer;
 /// the dialog then picks the printer and paper, and the print path re-lays out for the paper it got.
 @interface STPrintPanelController : NSObject
 

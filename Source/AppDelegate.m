@@ -12,9 +12,15 @@
 #import "STSegmentToolTips.h"
 #import "STSplitButton.h"
 #import "STEmptyStateView.h"
+#if defined(__linux__) || defined(_WIN32)
+#import "STPrintPanelController.h"
+#endif
+#if defined(_WIN32)
+#import "STPrintPage.h"
+#import "STWindowsPrint.h"
+#endif
 #if defined(__linux__)
 #import "STPrintPDF.h"
-#import "STPrintPanelController.h"
 #import "STPrintPortal.h"
 #endif
 #import "STCustomActions.h"
@@ -2745,6 +2751,14 @@ static AppDelegate *STFrontDocument(void) {
     if (action == @selector(cropImage:)) {
         return [self.canvasView hasSelection];
     }
+#if defined(_WIN32)
+    if (action == @selector(printDocument:)) {
+        return [self.canvasView hasImage];
+    }
+    if (action == @selector(printSelection:)) {
+        return [self.canvasView hasSelection];
+    }
+#endif
 #if defined(__linux__)
     if (action == @selector(printDocument:)) {
         return [self.canvasView hasImage] && ![STPrintPortal isPrinting];
@@ -2993,7 +3007,7 @@ static id STInfoValueForKey(NSString *key) {
         }
     }
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(_WIN32)
     NSMenuItem *printItem = [[NSMenuItem alloc] initWithTitle:@"Print…"
                                                        action:@selector(printDocument:)
                                                 keyEquivalent:@"p"];
@@ -7344,6 +7358,99 @@ NSRect STVisibleFrameForWindow(NSWindow *window) {
     (void)sender;
     [self saveImageWithPanel];
 }
+
+#if defined(_WIN32)
+- (void)printDocument:(id)sender {
+    (void)sender;
+    [self printWithSelectionOnly:NO];
+}
+
+- (void)printSelection:(id)sender {
+    (void)sender;
+    [self printWithSelectionOnly:YES];
+}
+
+/// Our Print panel, then Windows's print dialog, then the pages on the printer it chose (#355).
+- (void)printWithSelectionOnly:(BOOL)selectionOnly {
+    NSImage *flattened = [self.canvasView flattenedImage];
+    if (!flattened) {
+        return;
+    }
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    STPrintPanelController *panel = [[STPrintPanelController alloc] initWithFlattenedImage:flattened
+                                                                                 selection:[self.canvasView selectionImageRect]
+                                                                             selectionOnly:selectionOnly
+                                                                                  defaults:defaults];
+    if (![panel runModal]) {
+        return;
+    }
+    STPrintOptions *options = [panel.options copy];
+    NSString *title = self.window.title.length > 0 ? self.window.title : @"Screenshot";
+    STWindowsPrintDialogResult answer = STWindowsRunPrintDialog(self.window.windowNumber, [panel currentLayout].resolvedOrientation, defaults);
+    if (answer.outcome == STWindowsPrintDialogCancelled) {
+        return;
+    }
+    NSString *failure = nil;
+    if (answer.outcome == STWindowsPrintDialogNoPrinter) {
+        [self printAsPDFAfterNoPrinterWithOptions:options title:title];
+        return;
+    }
+    if (answer.outcome == STWindowsPrintDialogPrint) {
+        STPrintSavePaperSize(defaults, STWindowsPrinterSheetFromDC(answer.dc).paper);
+        [self showStatusMessage:@"Printing\u2026" duration:0.0];
+        [self.window displayIfNeeded];
+        STWindowsPrintCanvas(self.canvasView, options, answer.dc, answer.devMode, title, nil, &failure);
+        STWindowsFreePrintDialogResult(answer);
+        [self clearStatusMessage];
+    } else {
+        failure = @"Windows couldn't show its print dialog.";
+    }
+    if (failure) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Unable to Print";
+        alert.informativeText = failure;
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+    }
+}
+
+/// With no printer to choose: Windows's own PDF printer, if it's there, makes the same pages in a file.
+- (void)printAsPDFAfterNoPrinterWithOptions:(STPrintOptions *)options title:(NSString *)title {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Unable to Print";
+    BOOL canSave = STWindowsPrinterExists(STWindowsPDFPrinterName);
+    alert.informativeText = canSave ? @"No printer is set up on this computer. You can save the pages as a PDF instead."
+                                    : @"No printer is set up on this computer.";
+    [alert addButtonWithTitle:canSave ? @"Save as PDF\u2026" : @"OK"];
+    if (canSave) {
+        [alert addButtonWithTitle:@"Cancel"];
+    }
+    if ([alert runModal] != NSAlertFirstButtonReturn || !canSave) {
+        return;
+    }
+    NSSavePanel *panel = [NSSavePanel savePanel];
+    panel.allowedFileTypes = @[ @"pdf" ];
+    panel.nameFieldStringValue = [[title stringByDeletingPathExtension] stringByAppendingPathExtension:@"pdf"];
+    if ([panel runModal] != NSModalResponseOK || !panel.URL.path) {
+        return;
+    }
+    void *devMode = NULL;
+    void *dc = STWindowsCreatePrinterDC(STWindowsPDFPrinterName, &devMode);
+    NSString *failure = dc ? nil : @"The PDF printer couldn't be opened.";
+    if (dc) {
+        STWindowsPrintCanvas(self.canvasView, options, dc, devMode, title, panel.URL.path, &failure);
+        STWindowsDeleteDC(dc);
+        free(devMode);
+    }
+    if (failure) {
+        NSAlert *problem = [[NSAlert alloc] init];
+        problem.messageText = @"Unable to Save PDF";
+        problem.informativeText = failure;
+        [problem addButtonWithTitle:@"OK"];
+        [problem runModal];
+    }
+}
+#endif
 
 #if defined(__linux__)
 - (void)printDocument:(id)sender {

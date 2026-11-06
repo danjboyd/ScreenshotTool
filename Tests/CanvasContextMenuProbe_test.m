@@ -37,9 +37,9 @@
 }
 @end
 
-/// The selection's menu, with Print Selection on macOS and Linux: last before the separator (#355).
+/// The selection's menu, with Print Selection on macOS, Linux and Windows: last before the separator (#355).
 static NSArray *STWithPrintSelection(NSArray *titles) {
-#if !defined(GNUSTEP) || defined(__linux__)
+#if !defined(GNUSTEP) || defined(__linux__) || defined(_WIN32)
     NSMutableArray *withPrint = [titles mutableCopy];
     [withPrint insertObject:@"Print Selection…" atIndex:[withPrint indexOfObject:@"-"]];
     return withPrint;
