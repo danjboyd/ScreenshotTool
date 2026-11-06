@@ -36,6 +36,22 @@ static UINT STPNGClipboardFormat(void) {
 
 /// A message-only window to own the clipboard: opened without an owner, EmptyClipboard leaves it
 /// with none, and SetClipboardData then fails.
+NSRect STWindowsVisibleFrame(NSRect screenFrame, NSInteger windowNumber) {
+    HWND window = (HWND)(intptr_t)windowNumber;
+    HMONITOR monitor = IsWindow(window) ? MonitorFromWindow(window, MONITOR_DEFAULTTOPRIMARY)
+                                        : MonitorFromPoint((POINT){ 0, 0 }, MONITOR_DEFAULTTOPRIMARY);
+    MONITORINFO info = { .cbSize = sizeof(MONITORINFO) };
+    if (!GetMonitorInfoW(monitor, &info) || info.rcMonitor.right <= info.rcMonitor.left) {
+        return screenFrame;
+    }
+    // Pixels to points, with y going up from the bottom of the screen.
+    CGFloat scale = NSWidth(screenFrame) / (CGFloat)(info.rcMonitor.right - info.rcMonitor.left);
+    CGFloat left = (info.rcWork.left - info.rcMonitor.left) * scale, right = (info.rcMonitor.right - info.rcWork.right) * scale;
+    CGFloat top = (info.rcWork.top - info.rcMonitor.top) * scale, bottom = (info.rcMonitor.bottom - info.rcWork.bottom) * scale;
+    return NSMakeRect(NSMinX(screenFrame) + left, NSMinY(screenFrame) + bottom,
+                      NSWidth(screenFrame) - left - right, NSHeight(screenFrame) - top - bottom);
+}
+
 static HWND STClipboardOwnerWindow(void) {
     static HWND window = NULL;
     if (window == NULL) {

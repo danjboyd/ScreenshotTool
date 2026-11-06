@@ -9,6 +9,8 @@
 #import "ScreenshotCanvasView.h"
 #import "TestEnvironmentHelpers.h"
 
+extern NSRect STVisibleFrameForWindow(NSWindow *window);
+
 @interface AppDelegate (CanvasStageTesting)
 - (void)setupWindowAndContent;
 - (void)layoutContentSubviews;
@@ -170,6 +172,18 @@
     XCTAssertTrue(canvas.isFitToWindow);
     XCTAssertEqualWithAccuracy(canvas.zoomScale, 1.0 / canvas.screenPixelsPerPoint, 0.0001,
                                @"Sized for the image and its margin, Fit should show it at actual size");
+}
+
+/// A large image's window stays clear of the taskbar, status bar and all.
+- (void)testWindowForALargeImageFitsTheVisibleFrame {
+    XCTSkipIf(_shouldSkip, @"No window server");
+
+    NSSize size = NSMakeSize(6000.0, 4000.0);
+    [_appDelegate.canvasView loadImage:[self patternImageOfSize:size]];
+    [_appDelegate resizeWindowToImageSize:size];
+    NSRect frame = _appDelegate.window.frame;
+    NSRect visible = NSInsetRect(STVisibleFrameForWindow(_appDelegate.window), -1.0, -1.0);
+    XCTAssertTrue(NSContainsRect(visible, frame), @"%@ in %@", NSStringFromRect(frame), NSStringFromRect(visible));
 }
 
 /// The stage is display only: the export is the image's own pixels, not the backdrop's.
