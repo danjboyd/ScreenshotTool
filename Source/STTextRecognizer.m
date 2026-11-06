@@ -633,6 +633,7 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
     const CGFloat edge = 2.0;
     NSMutableArray<STRecognizedWord *> *words = [NSMutableArray array];
     NSMutableArray<NSNumber *> *lineOfWord = [NSMutableArray array];
+    NSMutableArray<NSNumber *> *tileOfWord = [NSMutableArray array];
     NSUInteger lineCount = 0;
     for (NSUInteger t = 0; t < tileLines.count; t++) {
         NSRect tile = tiles[t].rectValue;
@@ -646,6 +647,7 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
                 if (!cut) {
                     [words addObject:word];
                     [lineOfWord addObject:@(lineCount)];
+                    [tileOfWord addObject:@(t)];
                 }
             }
             lineCount++;
@@ -679,7 +681,10 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
             NSRect o = words[other.unsignedIntegerValue].bounds;
             NSRect overlap = NSIntersectionRect(b, o);
             CGFloat smaller = MIN(NSWidth(b) * NSHeight(b), NSWidth(o) * NSHeight(o));
-            if (smaller > 0 && NSWidth(overlap) * NSHeight(overlap) > 0.6 * smaller) {
+            // The same word read by another tile. Words of one tile never stand for each other: a reader
+            // that gives every word of a line the line's box (when it can't place them) would leave one.
+            if (tileOfWord[other.unsignedIntegerValue].unsignedIntegerValue != tileOfWord[index.unsignedIntegerValue].unsignedIntegerValue &&
+                smaller > 0 && NSWidth(overlap) * NSHeight(overlap) > 0.6 * smaller) {
                 same = other;
                 break;
             }
@@ -695,14 +700,15 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
         }
     }
     NSMutableDictionary<NSNumber *, NSMutableArray<STRecognizedWord *> *> *groups = [NSMutableDictionary dictionary];
-    for (NSNumber *index in kept) {
+    // In reading order, so words that share a box (or an x) keep the order they were read in.
+    for (NSNumber *index in [kept sortedArrayUsingSelector:@selector(compare:)]) {
         NSNumber *root = @(find(lineOfWord[index.unsignedIntegerValue].unsignedIntegerValue));
         NSMutableArray *group = groups[root] ?: (groups[root] = [NSMutableArray array]);
         [group addObject:words[index.unsignedIntegerValue]];
     }
     NSMutableArray<STRecognizedLine *> *lines = [NSMutableArray array];
     for (NSMutableArray<STRecognizedWord *> *group in groups.allValues) {
-        [group sortUsingComparator:^NSComparisonResult(STRecognizedWord *a, STRecognizedWord *b) {
+        [group sortWithOptions:NSSortStable usingComparator:^NSComparisonResult(STRecognizedWord *a, STRecognizedWord *b) {
             return NSMinX(a.bounds) < NSMinX(b.bounds) ? NSOrderedAscending : (NSMinX(a.bounds) > NSMinX(b.bounds) ? NSOrderedDescending : NSOrderedSame);
         }];
         [lines addObject:[[STRecognizedLine alloc] initWithWords:group]];

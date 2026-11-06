@@ -292,6 +292,21 @@ static NSArray<STRecognizedLine *> *STColumnsInRows(NSArray<NSString *> *columns
     XCTAssertEqual(STVisionRetryTiles(tiles, @[ @[ STColumnLine(@"ok", 1913.0, 40.0, 0) ], @[] ]).count, (NSUInteger)0, @"too little to tell");
 }
 
+/// A tile whose reader couldn't place the words of a line (each gets the line's box) keeps every word:
+/// words of one tile are never taken for each other, so the number on that line is still found.
+- (void)testWordsSharingALinesBoxInOneTileAreAllKept {
+    NSRect line = NSMakeRect(20, 100, 400, 20);
+    NSMutableArray<STRecognizedWord *> *words = [NSMutableArray array];
+    for (NSString *text in @[ @"Call", @"555", @"123", @"4567" ]) {
+        [words addObject:[[STRecognizedWord alloc] initWithText:text bounds:line]];
+    }
+    NSArray<NSValue *> *tiles = @[ [NSValue valueWithRect:NSMakeRect(0, 0, 700, 300)], [NSValue valueWithRect:NSMakeRect(600, 0, 800, 300)] ];
+    NSArray<STRecognizedLine *> *merged = STMergeTiledLines(@[ @[ [[STRecognizedLine alloc] initWithWords:words] ], @[] ], tiles,
+                                                            NSMakeRect(0, 0, 1400, 300));
+    XCTAssertEqualObjects(STRecognizedText(merged), @"Call 555 123 4567");
+    XCTAssertEqual(STSensitiveTextRects(merged).count, (NSUInteger)1);
+}
+
 /// Tiles merged from a two-column page come back column by column.
 - (void)testTiledColumnsMergeColumnByColumn {
     NSArray<STRecognizedLine *> *rows = STColumnsInRows(@[ @"L", @"R" ], 4, 0, 600.0);
