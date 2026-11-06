@@ -109,6 +109,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	SymbolicToolbarIconsProbe_test.m \
 	TakeScreenshotProbe_test.m \
 	TextRecognizerProbe_test.m \
+	RedactRecallProbe_test.m \
 	ClipboardScreenshotOfferProbe_test.m \
 	CanvasCursorShownRectProbe_test.m \
 	WaylandClipboardMirrorProbe_test.m \

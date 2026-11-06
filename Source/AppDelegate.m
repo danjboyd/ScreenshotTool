@@ -7750,6 +7750,7 @@ BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *en
 
 #pragma mark - Text in the image (#278)
 
+#if defined(GNUSTEP)
 /// The whole annotated image as a PNG for the recognizer: what's on screen, so text under a
 /// redaction stays unread. Boxes come back in the image's pixels.
 - (nullable NSURL *)exportImageForTextRecognition {
@@ -7765,20 +7766,13 @@ BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *en
     NSURL *url = [directory URLByAppendingPathComponent:@"text.png"];
     return [pngData writeToURL:url options:NSDataWritingAtomic error:NULL] ? url : nil;
 }
+#endif
 
 /// Reads the text in `rect` of the image (all of it for NSZeroRect), with "Reading text…" in the
 /// meantime; `completion` gets the lines, or nil after the failure has been shown.
 - (void)readTextInImageRect:(NSRect)rect completion:(void (^)(NSArray<STRecognizedLine *> *lines))completion {
-    NSURL *url = [self exportImageForTextRecognition];
-    if (!url) {
-        [self showCommandResultMessage:@"The image couldn't be read" duration:2.5];
-        return;
-    }
-    self.readingText = YES;
-    [self showStatusMessage:@"Reading text…" duration:0.0];
     __weak typeof(self) weakSelf = self;
-    [STTextRecognizer recognizeTextInImageAtURL:url rect:rect completion:^(NSArray<STRecognizedLine *> *lines, NSString *failure) {
-        [[NSFileManager defaultManager] removeItemAtURL:url.URLByDeletingLastPathComponent error:NULL];
+    STTextRecognitionCompletion done = ^(NSArray<STRecognizedLine *> *lines, NSString *failure) {
         typeof(self) strongSelf = weakSelf;
         if (!strongSelf) {
             return;
@@ -7791,7 +7785,38 @@ BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *en
             return;
         }
         completion(lines);
+    };
+#if !defined(GNUSTEP)
+    // Vision reads the flattened image in memory: no PNG to encode and read back (perf, 0.4.0).
+    NSImage *flattened = [self.canvasView flattenedImage];
+    NSBitmapImageRep *bitmap = nil;
+    for (NSImageRep *rep in flattened.representations) {
+        if ([rep isKindOfClass:[NSBitmapImageRep class]]) {
+            bitmap = (NSBitmapImageRep *)rep;
+            break;
+        }
+    }
+    CGImageRef image = bitmap.CGImage ?: [flattened CGImageForProposedRect:NULL context:nil hints:nil];
+    if (!image) {
+        [self showCommandResultMessage:@"The image couldn't be read" duration:2.5];
+        return;
+    }
+    self.readingText = YES;
+    [self showStatusMessage:@"Reading text…" duration:0.0];
+    [STTextRecognizer recognizeTextInCGImage:image rect:rect completion:done];
+#else
+    NSURL *url = [self exportImageForTextRecognition];
+    if (!url) {
+        [self showCommandResultMessage:@"The image couldn't be read" duration:2.5];
+        return;
+    }
+    self.readingText = YES;
+    [self showStatusMessage:@"Reading text…" duration:0.0];
+    [STTextRecognizer recognizeTextInImageAtURL:url rect:rect completion:^(NSArray<STRecognizedLine *> *lines, NSString *failure) {
+        [[NSFileManager defaultManager] removeItemAtURL:url.URLByDeletingLastPathComponent error:NULL];
+        done(lines, failure);
     }];
+#endif
 }
 
 /// Whether a read is still running, saying so: Copy Text and Redact Emails and Phone Numbers
