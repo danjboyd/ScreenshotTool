@@ -67,6 +67,14 @@ FOUNDATION_EXPORT NSArray<NSValue *> *STSensitiveTextRects(NSArray<STRecognizedL
 /// An engine that scales a large image down (Vision) loses small text without them.
 FOUNDATION_EXPORT NSArray<NSValue *> *STVisionTilesForRegion(NSRect region);
 
+/// Tiles to read again after `tiles` were read as `tileLines`: for a tile that read under half the
+/// characters a neighbour read where the two overlap (and the neighbour at least 40), the tile less
+/// an eighth of its width on the left, and less an eighth on the right. A reader can miss a whole
+/// column in one placement of a tile and read it fully from one shifted a little (Vision, a column
+/// across a tile seam, 2026-11-06).
+FOUNDATION_EXPORT NSArray<NSValue *> *STVisionRetryTiles(NSArray<NSValue *> *tiles,
+                                                          NSArray<NSArray<STRecognizedLine *> *> *tileLines);
+
 /// `lines`, in rows top down, in reading order for text in columns: each column top to bottom, the
 /// columns left to right, with a line across them (a heading) starting a new run. Forms and tables
 /// keep their rows; text in one column is unchanged. STMergeTiledLines orders its lines with it.

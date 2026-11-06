@@ -462,10 +462,6 @@ NSArray<NSValue *> *STVisionTilesForRegion(NSRect region) {
     return tiles;
 }
 
-/// One reading of the tiles: a word cut by a tile's inner edge is dropped (another tile has it
-/// whole), a word read by two tiles is kept once, and words that were on one line in any tile stay
-/// on one line, so a line longer than a tile is joined up again. Lines run top to bottom, and left
-/// to right along a row.
 /// A column of text while the lines are grouped: its lines, top down, and the x-range they cover.
 @interface STTextColumn : NSObject
 @property (nonatomic) CGFloat minX;
@@ -596,6 +592,10 @@ NSArray<STRecognizedLine *> *STOrderLinesInColumns(NSArray<STRecognizedLine *> *
     return ordered;
 }
 
+/// One reading of the tiles: a word cut by a tile's inner edge is dropped (another tile has it
+/// whole), a word read by two tiles is kept once, and words that were on one line in any tile stay
+/// on one line, so a line longer than a tile is joined up again. Lines run top to bottom, and left
+/// to right along a row, or column by column (STOrderLinesInColumns).
 NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine *> *> *tileLines,
                                                NSArray<NSValue *> *tiles, NSRect region) {
     if (tiles.count == 1) {
@@ -712,6 +712,41 @@ NSArray<STRecognizedLine *> *STMergeTiledLines(NSArray<NSArray<STRecognizedLine 
     return STOrderLinesInColumns(lines);
 }
 
+/// The characters of `lines` whose words' centres fall in `area`.
+static NSUInteger STCharactersInArea(NSArray<STRecognizedLine *> *lines, NSRect area) {
+    NSUInteger count = 0;
+    for (STRecognizedLine *line in lines) {
+        for (STRecognizedWord *word in line.words) {
+            if (NSPointInRect(NSMakePoint(NSMidX(word.bounds), NSMidY(word.bounds)), area)) {
+                count += word.text.length;
+            }
+        }
+    }
+    return count;
+}
+
+NSArray<NSValue *> *STVisionRetryTiles(NSArray<NSValue *> *tiles, NSArray<NSArray<STRecognizedLine *> *> *tileLines) {
+    NSMutableArray<NSValue *> *retries = [NSMutableArray array];
+    for (NSUInteger a = 0; a < tiles.count && a < tileLines.count; a++) {
+        NSRect tile = tiles[a].rectValue;
+        BOOL thin = NO;
+        for (NSUInteger b = 0; b < tiles.count && b < tileLines.count && !thin; b++) {
+            NSRect shared = NSIntersectionRect(tile, tiles[b].rectValue);
+            if (a == b || NSIsEmptyRect(shared)) {
+                continue;
+            }
+            NSUInteger mine = STCharactersInArea(tileLines[a], shared), theirs = STCharactersInArea(tileLines[b], shared);
+            thin = theirs >= 40 && mine * 2 < theirs;
+        }
+        if (thin) {
+            CGFloat eighth = floor(NSWidth(tile) / 8.0);
+            [retries addObject:[NSValue valueWithRect:NSMakeRect(NSMinX(tile) + eighth, NSMinY(tile), NSWidth(tile) - eighth, NSHeight(tile))]];
+            [retries addObject:[NSValue valueWithRect:NSMakeRect(NSMinX(tile), NSMinY(tile), NSWidth(tile) - eighth, NSHeight(tile))]];
+        }
+    }
+    return retries;
+}
+
 #if ST_TEXT_VISION
 /// Vision's reading of `rect` of `image` (all of it for NSZeroRect), in the image's pixels. Accurate,
 /// without language correction: it "corrects" email addresses into words and doubles the time (the
@@ -722,10 +757,14 @@ static NSArray<STRecognizedLine *> *STVisionReadImage(CGImageRef image, NSRect r
     if (NSIsEmptyRect(region)) {
         return @[];
     }
-    NSArray<NSValue *> *tiles = STVisionTilesForRegion(region);
+    NSMutableArray<NSValue *> *tiles = [STVisionTilesForRegion(region) mutableCopy];
     NSMutableArray<NSArray<STRecognizedLine *> *> *tileLines = [NSMutableArray array];
     VNImageRequestHandler *handler = [[VNImageRequestHandler alloc] initWithCGImage:image options:@{}];
-    for (NSValue *tileValue in tiles) {
+    // A tile that reads much less than its neighbours where they overlap is read again, shifted
+    // (STVisionRetryTiles): Vision can miss a whole column from one tile it reads well from another.
+    BOOL retried = NO;
+    for (NSUInteger index = 0; index < tiles.count; index++) {
+        NSValue *tileValue = tiles[index];
         NSRect tile = tileValue.rectValue;
         VNRecognizeTextRequest *request = [[VNRecognizeTextRequest alloc] init];
         request.recognitionLevel = VNRequestTextRecognitionLevelAccurate;
@@ -746,6 +785,10 @@ static NSArray<STRecognizedLine *> *STVisionReadImage(CGImageRef image, NSRect r
             return nil;
         }
         [tileLines addObject:STLinesFromVisionObservations(request.results ?: @[], tile)];
+        if (index + 1 == tiles.count && !retried && tiles.count > 1) {
+            retried = YES;
+            [tiles addObjectsFromArray:STVisionRetryTiles(tiles, tileLines)];
+        }
     }
     return STMergeTiledLines(tileLines, tiles, region);
 }

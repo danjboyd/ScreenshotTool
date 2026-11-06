@@ -247,6 +247,21 @@ static NSArray<STRecognizedLine *> *STColumnsInRows(NSArray<NSString *> *columns
     XCTAssertEqualObjects(merged.firstObject.text, @"all 3 regions report healthy");
 }
 
+/// A tile that read under half of what a neighbour read where they overlap is read again, shifted an
+/// eighth of its width each way; tiles that agree aren't.
+- (void)testAThinTileIsReadAgainShifted {
+    NSArray<NSValue *> *tiles = @[ [NSValue valueWithRect:NSMakeRect(0, 0, 2560, 720)], [NSValue valueWithRect:NSMakeRect(1280, 0, 2560, 720)] ];
+    NSMutableArray<STRecognizedLine *> *column = [NSMutableArray array];
+    for (NSInteger row = 0; row < 6; row++) {
+        [column addObject:STColumnLine(@"Meeting moved to room 4B bring the printed agenda", 1913.0, 600.0, row)];
+    }
+    NSArray<NSValue *> *retries = STVisionRetryTiles(tiles, @[ column, @[] ]);
+    NSArray<NSValue *> *expected = @[ [NSValue valueWithRect:NSMakeRect(1600, 0, 2240, 720)], [NSValue valueWithRect:NSMakeRect(1280, 0, 2240, 720)] ];
+    XCTAssertEqualObjects(retries, expected);
+    XCTAssertEqual(STVisionRetryTiles(tiles, @[ column, column ]).count, (NSUInteger)0, @"tiles that agree");
+    XCTAssertEqual(STVisionRetryTiles(tiles, @[ @[ STColumnLine(@"ok", 1913.0, 40.0, 0) ], @[] ]).count, (NSUInteger)0, @"too little to tell");
+}
+
 /// Tiles merged from a two-column page come back column by column.
 - (void)testTiledColumnsMergeColumnByColumn {
     NSArray<STRecognizedLine *> *rows = STColumnsInRows(@[ @"L", @"R" ], 4, 0, 600.0);
