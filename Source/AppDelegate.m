@@ -1616,6 +1616,8 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 @property (nonatomic, strong) STHudView *hudView;
 @property (nonatomic, strong) NSTimer *hudDismissTimer;
 @property (nonatomic, strong) NSTimer *hudFadeTimer;
+@property (nonatomic, strong) NSTimer *hudHideFallbackTimer;
+@property (nonatomic, assign) NSUInteger hudGeneration;
 @property (nonatomic, copy) void (^hudFadeCompletion)(void);
 @property (nonatomic, assign) NSTimeInterval hudFadeStartTime;
 @property (nonatomic, assign) NSTimeInterval hudFadeDuration;
@@ -2216,6 +2218,7 @@ static AppDelegate *STFrontDocument(void) {
         [self.statusClearTimer invalidate];
         [self.hudDismissTimer invalidate];
         [self.hudFadeTimer invalidate];
+        [self.hudHideFallbackTimer invalidate];
         [self.canvasView clearSelection];
         // After the close finishes, which still needs this controller.
         [application performSelector:@selector(removeDocumentWindow:) withObject:self afterDelay:0.0];
@@ -6085,6 +6088,11 @@ NSRect STHUDFrameAvoidingRects(NSRect centerIn, NSRect area, NSSize size, NSArra
     [self.hudFadeTimer invalidate];
     self.hudFadeTimer = nil;
     self.hudFadeCompletion = nil;
+#if !defined(GNUSTEP)
+    [self.hudHideFallbackTimer invalidate];
+    self.hudHideFallbackTimer = nil;
+    self.hudGeneration += 1;
+#endif
 
     [self ensureHUDWindow];
     [self updateHUDAppearance];
@@ -6181,12 +6189,34 @@ NSRect STHUDFrameAvoidingRects(NSRect centerIn, NSRect area, NSSize size, NSArra
         ScreenshotToolAppendLog(@"hideHUDMessage skipped (no hudWindow)");
         return;
     }
+    NSUInteger generation = self.hudGeneration;
     __weak typeof(self) weakSelf = self;
     [self startHudFadeToAlpha:0.0f duration:STHudFadeOutDuration completion:^{
-        if (weakSelf.hudWindow) {
+        if (weakSelf.hudWindow && weakSelf.hudGeneration == generation) {
             [weakSelf.hudWindow orderOut:nil];
+            [weakSelf.hudHideFallbackTimer invalidate];
+            weakSelf.hudHideFallbackTimer = nil;
         }
     }];
+    // AppKit can leave a child window visible when an in-flight fade's completion does not run.
+    // The fallback still orders it out, but a newer notice's generation keeps that notice visible.
+    [self.hudHideFallbackTimer invalidate];
+    self.hudHideFallbackTimer = [NSTimer scheduledTimerWithTimeInterval:STHudFadeOutDuration + 0.05
+                                                               target:self
+                                                             selector:@selector(hideHUDWindowAfterFade:)
+                                                             userInfo:@(generation)
+                                                              repeats:NO];
+#endif
+}
+
+- (void)hideHUDWindowAfterFade:(NSTimer *)timer {
+#if !defined(GNUSTEP)
+    if ([timer.userInfo unsignedIntegerValue] != self.hudGeneration) return;
+    self.hudHideFallbackTimer = nil;
+    self.hudWindow.alphaValue = 0.0f;
+    [self.hudWindow orderOut:nil];
+#else
+    (void)timer;
 #endif
 }
 

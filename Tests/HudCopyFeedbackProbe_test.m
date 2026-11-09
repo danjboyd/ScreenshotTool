@@ -86,6 +86,18 @@
 #endif
 }
 
+/// A dismissed notice's late fade must not hide a replacement notice.
+- (void)testReplacementHudSurvivesPreviousFadeOut {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    [_appDelegate preferencesController:nil didToggleStatusBar:NO];
+    [_appDelegate showCommandResultMessage:@"First result" duration:2.0];
+    [_appDelegate hideHUDMessage];
+    [_appDelegate showCommandResultMessage:@"Second result" duration:2.0];
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.35]];
+    XCTAssertTrue([self hudIsShowing], @"The replacement notice stays visible");
+    [_appDelegate hideHUDMessage];
+}
+
 - (BOOL)hudIsShowing {
 #if defined(GNUSTEP)
     return _appDelegate.hudView && !_appDelegate.hudView.isHidden && _appDelegate.hudView.superview;
