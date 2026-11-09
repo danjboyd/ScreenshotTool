@@ -54,6 +54,11 @@ FOUNDATION_EXPORT NSString *STRecognizedText(NSArray<STRecognizedLine *> *lines)
 /// block, paragraph and line. Words with no text are left out.
 FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STLinesFromTesseractTSV(NSString *tsv);
 
+/// How many times to enlarge an image of this many pixels before tesseract reads it: 2, which finds much
+/// more small text, unless its long side would then be over 8000 pixels; otherwise 1.
+FOUNDATION_EXPORT NSUInteger STTesseractUpscaleFactor(NSSize imagePixels);
+/// `lines` read from an image enlarged `factor` times, with their boxes back in the original's pixels.
+FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STLinesScaledDownBy(NSArray<STRecognizedLine *> *lines, NSUInteger factor);
 /// The lines' words whose middle is in `rect` (image pixels), as lines; all of them for an empty
 /// rect. For an engine that reads the whole image, or as a check after one that crops.
 FOUNDATION_EXPORT NSArray<STRecognizedLine *> *STLinesInsideRect(NSArray<STRecognizedLine *> *lines, NSRect rect);

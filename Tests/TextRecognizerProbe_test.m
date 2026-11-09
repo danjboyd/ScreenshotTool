@@ -47,6 +47,32 @@
     return [[STRecognizedLine alloc] initWithWords:words];
 }
 
+/// Enlarged only while the long side stays within 8000 pixels.
+- (void)testTheUpscaleFactorStopsAtTheCap {
+    XCTAssertEqual(STTesseractUpscaleFactor(NSMakeSize(1920, 1080)), (NSUInteger)2);
+    XCTAssertEqual(STTesseractUpscaleFactor(NSMakeSize(3840, 2160)), (NSUInteger)2);
+    XCTAssertEqual(STTesseractUpscaleFactor(NSMakeSize(4000, 2160)), (NSUInteger)2);
+    XCTAssertEqual(STTesseractUpscaleFactor(NSMakeSize(4001, 2160)), (NSUInteger)1);
+    XCTAssertEqual(STTesseractUpscaleFactor(NSMakeSize(2160, 7680)), (NSUInteger)1);
+}
+
+/// A word read at twice the size has its box back in the original's pixels, so a redaction lands on it.
+- (void)testBoxesFromAnEnlargedImageMapBack {
+    NSString *tsv = @"level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
+                    @"5\t1\t1\t1\t1\t1\t200\t100\t400\t40\t96\talex@example.com\n"
+                    @"5\t1\t1\t1\t1\t2\t620\t101\t90\t39\t96\tnow\n";
+    NSArray<STRecognizedLine *> *lines = STLinesFromTesseractTSV(tsv);
+    NSArray<STRecognizedLine *> *back = STLinesScaledDownBy(lines, 2);
+    XCTAssertEqual(back.count, (NSUInteger)1);
+    XCTAssertEqualObjects(back.firstObject.text, @"alex@example.com now");
+    XCTAssertTrue(NSEqualRects(back.firstObject.words[0].bounds, NSMakeRect(100, 50, 200, 20)));
+    XCTAssertTrue(NSEqualRects(back.firstObject.words[1].bounds, NSMakeRect(310, 50.5, 45, 19.5)));
+    XCTAssertEqual(STLinesScaledDownBy(lines, 1), lines, @"not enlarged: as read");
+    NSRect redaction = STSensitiveTextRects(back).firstObject.rectValue;
+    XCTAssertTrue(NSContainsRect(redaction, NSMakeRect(100, 50, 200, 20)), @"%@", NSStringFromRect(redaction));
+    XCTAssertLessThan(NSMaxX(redaction), 310.0, @"not over the next word");
+}
+
 - (void)testTesseractTSVGroupsWordsIntoLines {
     NSString *tsv = @"level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n"
                     @"1\t1\t0\t0\t0\t0\t0\t0\t860\t520\t-1\t\n"
