@@ -27,8 +27,16 @@ typedef void (^STTextRecognitionCompletion)(NSArray<STRecognizedLine *> * _Nulla
 /// installed.
 @interface STTextRecognizer : NSObject
 
-/// Whether this platform has an engine. The text commands are hidden when it doesn't.
+/// Whether the engine is there to use now. tesseract is looked for each time, so installing it
+/// works without a restart.
 + (BOOL)isAvailable;
+
+/// Whether to show the text commands: yes where the engine can be installed, so a command can say
+/// how; otherwise only where the engine is there.
++ (BOOL)isOffered;
+
+/// Whether the engine is one the user can install and it isn't there now: tesseract, and missing.
++ (BOOL)needsInstalling;
 
 /// Reads `rect` of the image file (the whole image when it's NSZeroRect), off the main thread.
 /// The completion is called once, on the main thread. Boxes are in the whole image's pixels. No

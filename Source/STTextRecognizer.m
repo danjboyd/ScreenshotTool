@@ -940,6 +940,22 @@ NSArray<STRecognizedLine *> *STMergeReadings(NSArray<STRecognizedLine *> *first,
 #endif
 }
 
++ (BOOL)isOffered {
+#if ST_TEXT_TESSERACT
+    return YES;
+#else
+    return [self isAvailable];
+#endif
+}
+
++ (BOOL)needsInstalling {
+#if ST_TEXT_TESSERACT
+    return [self tesseractPath] == nil;
+#else
+    return NO;
+#endif
+}
+
 #if ST_TEXT_VISION
 + (void)recognizeTextInCGImage:(CGImageRef)image
                           rect:(NSRect)rect

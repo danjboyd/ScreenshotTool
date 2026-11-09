@@ -210,7 +210,7 @@
 /// Copy Text follows Copy where the platform can read text (#278): tesseract on Linux. Select
 /// Text (#330) follows it.
 - (NSArray *)expectingCopyTextAfterIndex:(NSUInteger)index in:(NSArray *)titles {
-    if (![STTextRecognizer isAvailable]) {
+    if (![STTextRecognizer isOffered]) {
         return titles;
     }
     NSMutableArray *withCopyText = [titles mutableCopy];

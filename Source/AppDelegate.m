@@ -2996,8 +2996,8 @@ static id STInfoValueForKey(NSString *key) {
                                                           keyEquivalent:@""];
     [redactSelectionItem setTarget:self];
     [editMenu addItem:redactSelectionItem];
-    // Read on this computer, where the platform has an engine (#278); otherwise not offered.
-    if ([STTextRecognizer isAvailable]) {
+    // Read on this computer (#278), where the platform has an engine or can install one.
+    if ([STTextRecognizer isOffered]) {
         NSMenuItem *copyTextItem = [[NSMenuItem alloc] initWithTitle:@"Copy Text"
                                                               action:@selector(copyText:)
                                                        keyEquivalent:@"C"];
@@ -7750,6 +7750,15 @@ BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *en
 
 #pragma mark - Text in the image (#278)
 
+NSString *STTesseractMissingAlertText(void) {
+    return @"ScreenshotTool reads text with tesseract, which isn't installed. Install it with your package "
+           @"manager, then try again. There's no need to restart.\n\n"
+           @"Debian or Ubuntu: sudo apt install tesseract-ocr\n"
+           @"Fedora: sudo dnf install tesseract\n"
+           @"Arch: sudo pacman -S tesseract tesseract-data-eng\n"
+           @"openSUSE: sudo zypper install tesseract-ocr";
+}
+
 #if defined(GNUSTEP)
 /// The whole annotated image as a PNG for the recognizer: what's on screen, so text under a
 /// redaction stays unread. Boxes come back in the image's pixels.
@@ -7768,9 +7777,22 @@ BOOL STLaunchesNewWindowsThroughOpenapp(NSDictionary<NSString *, NSString *> *en
 }
 #endif
 
+/// The text commands stay in the menus without tesseract, and say how to get it.
+- (void)showTesseractMissingAlert {
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.messageText = @"Text recognition needs tesseract";
+    alert.informativeText = STTesseractMissingAlertText();
+    [alert addButtonWithTitle:@"OK"];
+    [alert runModal];
+}
+
 /// Reads the text in `rect` of the image (all of it for NSZeroRect), with "Reading text…" in the
 /// meantime; `completion` gets the lines, or nil after the failure has been shown.
 - (void)readTextInImageRect:(NSRect)rect completion:(void (^)(NSArray<STRecognizedLine *> *lines))completion {
+    if ([STTextRecognizer needsInstalling]) {
+        [self showTesseractMissingAlert];
+        return;
+    }
     __weak typeof(self) weakSelf = self;
     STTextRecognitionCompletion done = ^(NSArray<STRecognizedLine *> *lines, NSString *failure) {
         typeof(self) strongSelf = weakSelf;
@@ -8921,7 +8943,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
     NSMenu *menu = STCanvasContextMenu(kind, [self.canvasView hasSingleTextSelection], STCanShareImages(),
                                        self.canvasView, self, actionItems);
     // Copy Text after Copy, for the selection or the image, where text can be read (#278).
-    if ((kind == STCanvasContextKindSelection || kind == STCanvasContextKindImage) && [STTextRecognizer isAvailable]) {
+    if ((kind == STCanvasContextKindSelection || kind == STCanvasContextKindImage) && [STTextRecognizer isOffered]) {
         NSInteger copyIndex = [menu indexOfItemWithTarget:self andAction:@selector(copy:)];
         NSMenuItem *copyText = [[NSMenuItem alloc] initWithTitle:@"Copy Text" action:@selector(copyText:) keyEquivalent:@"C"];
         [copyText setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
