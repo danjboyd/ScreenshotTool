@@ -17,6 +17,7 @@
 
 @interface AppDelegate (TextLabelZoomTesting)
 - (void)setupWindowAndContent;
+- (void)layoutContentSubviews;
 - (NSWindow *)window;
 - (ScreenshotCanvasView *)canvasView;
 @end
@@ -179,6 +180,7 @@ static NSEvent *STMouse(NSEventType type, NSPoint viewPoint, ScreenshotCanvasVie
     NSFont *font = [NSFont fontWithName:@"DejaVuSans" size:36.0] ?: [NSFont systemFontOfSize:36.0];
     for (NSNumber *zoom in @[ @0.947, @0.75, @0.5, @1.5, @2.0 ]) {
         [canvas loadImage:image];
+        [app layoutContentSubviews];
         canvas.fitToWindow = NO;
         canvas.activeTool = ScreenshotCanvasToolSelect;
         MarkupText *label = [[MarkupText alloc] initWithText:@"when in the course of human events" font:font color:[NSColor yellowColor]
