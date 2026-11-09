@@ -1,9 +1,9 @@
 # #330: selecting text in the image (0.4.0), design note
 
-Status: reviewed by the lead, with its answers to the open questions folded in. No code yet; it merges as the first 0.4.0 PR. The split comes from the lead's plan.
-- **Linux** builds `STTextSelection`, a model that uses only Foundation.
-- **macOS** builds the canvas mode on top of it (this note).
-- **Windows** builds Redact Selection.
+Status (2026-11-09): the implementation has merged through #351 (`STTextSelection`), #357 (canvas mode), and #362 (Redact Selected Text). This note records the design and the checks that shaped those PRs; follow-up behavior is tracked in the code and later issues.
+- **Linux** built `STTextSelection`, a model that uses only Foundation.
+- **macOS** built the canvas mode on top of it (this note).
+- **Windows** built Redact Selected Text.
 
 ## What's already there
 
@@ -90,6 +90,6 @@ The probe should load an image whose `size` differs from its pixel size, and che
 2. **Selection rect:** always read the whole image once; a selection on entry preselects the words inside it.
 3. **Cache:** yes, keyed by the annotation fingerprint and invalidated by any edit; undo and redo re-read lazily instead of leaving the mode.
 
-## Still to confirm
+## 0.4.0 release check
 
-- **The shortcut ⇧⌘E:** the Linux and Windows agents each check it against their platform's own bindings (GNUstep's key-equivalent mapping, GNOME's, and Windows' system and WinUITheme shortcuts) as part of their #330 pieces. If either clashes, it's picked again before merge.
+- **The shortcut ⇧⌘E / Ctrl+Shift+E:** the command is implemented. Recheck it against GNUstep, GNOME, Windows, and WinUITheme bindings during the 0.4.0 smoke tests; resolve any clash before release.
