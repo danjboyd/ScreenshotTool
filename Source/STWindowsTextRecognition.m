@@ -22,6 +22,7 @@
 #include <windows.foundation.h>
 #include <windows.graphics.imaging.h>
 #include <windows.security.cryptography.h>
+#include <wincodec.h>
 #if defined(ST_UNDEF_INTERFACE)
 #undef interface
 #undef ST_UNDEF_INTERFACE
@@ -187,6 +188,33 @@ static NSData *STBGRAPixels(NSBitmapImageRep *rep, NSRect crop, NSUInteger facto
     return pixels;
 }
 
+/// How the second reading enlarges the image: of the scalers tried, Cubic finds the most on small text
+/// (87% of items on 13 text-dense 4K captures, Fant 84%; #278, 2026-11-06).
+static const WICBitmapInterpolationMode STOcrUpscaleMode = WICBitmapInterpolationModeCubic;
+
+/// `pixels` (premultiplied BGRA) enlarged twice over, or nil.
+static NSData *STBGRAPixelsDoubled(NSData *pixels, NSUInteger width, NSUInteger height) {
+    IWICImagingFactory *factory = NULL;
+    IWICBitmap *source = NULL;
+    IWICBitmapScaler *scaler = NULL;
+    NSMutableData *doubled = nil;
+    UINT outWidth = (UINT)width * 2, outHeight = (UINT)height * 2;
+    if (SUCCEEDED(CoCreateInstance(&CLSID_WICImagingFactory, NULL, CLSCTX_INPROC_SERVER, &IID_IWICImagingFactory, (void **)&factory))
+        && SUCCEEDED(IWICImagingFactory_CreateBitmapFromMemory(factory, (UINT)width, (UINT)height, &GUID_WICPixelFormat32bppPBGRA,
+                                                               (UINT)width * 4, (UINT)pixels.length, (BYTE *)pixels.bytes, &source))
+        && SUCCEEDED(IWICImagingFactory_CreateBitmapScaler(factory, &scaler))
+        && SUCCEEDED(IWICBitmapScaler_Initialize(scaler, (IWICBitmapSource *)source, outWidth, outHeight, STOcrUpscaleMode))) {
+        doubled = [NSMutableData dataWithLength:(NSUInteger)outWidth * outHeight * 4];
+        if (FAILED(IWICBitmapScaler_CopyPixels(scaler, NULL, outWidth * 4, (UINT)doubled.length, doubled.mutableBytes))) {
+            doubled = nil;
+        }
+    }
+    STRelease(scaler);
+    STRelease(source);
+    STRelease(factory);
+    return doubled;
+}
+
 static STSoftwareBitmap *STCreateSoftwareBitmap(NSData *pixels, NSUInteger width, NSUInteger height) {
     STCryptographicBufferStatics *buffers = NULL;
     STSoftwareBitmapStatics *bitmaps = NULL;
@@ -282,6 +310,36 @@ static NSArray<STRecognizedLine *> *STLinesFromOcrResult(STWinRTObject *result, 
 /// The image read around a part, in pixels each side.
 static const CGFloat STOcrMargin = 64.0;
 
+/// One reading of `crop`, doubled in size first or not. The boxes are in the whole image; nil when
+/// Windows couldn't read it. Windows reads images up to `maxDimension` on a side: larger ones are
+/// shrunk by a whole factor, and the boxes grown back.
+static NSArray<STRecognizedLine *> *STOcrRead(STWinRTObject *engine, NSBitmapImageRep *rep, NSRect crop, BOOL doubled, UINT32 maxDimension) {
+    CGFloat longest = MAX(NSWidth(crop), NSHeight(crop));
+    NSUInteger factor = maxDimension > 0 && longest > maxDimension ? (NSUInteger)ceil(longest / maxDimension) : 1;
+    NSUInteger width = 0, height = 0;
+    NSData *pixels = STBGRAPixels(rep, crop, factor, &width, &height);
+    CGFloat scale = (CGFloat)factor;
+    if (doubled) {
+        pixels = STBGRAPixelsDoubled(pixels, width, height);
+        width *= 2;
+        height *= 2;
+        scale /= 2.0;
+    }
+    STSoftwareBitmap *bitmap = pixels ? STCreateSoftwareBitmap(pixels, width, height) : NULL;
+    STWinRTObject *operation = NULL, *result = NULL;
+    if (bitmap) {
+        ST_SLOT(engine, 6, STRecognizeAsync)(engine, bitmap, (void **)&operation);
+    }
+    if (operation) {
+        result = STAwaitOperation(operation, 60.0);
+    }
+    NSArray<STRecognizedLine *> *lines = result ? STLinesFromOcrResult(result, crop.origin, scale) : nil;
+    STRelease(result);
+    STRelease(operation);
+    STRelease(bitmap);
+    return lines;
+}
+
 NSArray<STRecognizedLine *> *STWindowsRecognizeText(NSURL *url, NSRect rect, NSString **failure) {
     NSString *problem = nil;
     NSArray<STRecognizedLine *> *lines = nil;
@@ -303,31 +361,38 @@ NSArray<STRecognizedLine *> *STWindowsRecognizeText(NSURL *url, NSRect rect, NSS
             if (NSIsEmptyRect(wanted)) {
                 lines = @[];
             } else {
-                // Windows reads images up to MaxImageDimension (10000) on a side: larger ones are
-                // shrunk by a whole factor, and the boxes grown back.
-                CGFloat longest = MAX(NSWidth(crop), NSHeight(crop));
-                NSUInteger factor = maxDimension > 0 && longest > maxDimension ? (NSUInteger)ceil(longest / maxDimension) : 1;
-                NSUInteger width = 0, height = 0;
-                NSData *pixels = STBGRAPixels(rep, crop, factor, &width, &height);
-                STSoftwareBitmap *bitmap = STCreateSoftwareBitmap(pixels, width, height);
-                STWinRTObject *operation = NULL, *result = NULL;
-                if (bitmap) {
-                    ST_SLOT(engine, 6, STRecognizeAsync)(engine, bitmap, (void **)&operation);
+                // A large image read whole can lose most of its text, unpredictably, so it's read in
+                // tiles. Each is read at its size and at twice it: small text one reading misses or
+                // misreads, the other often gets (#278, 2026-11-06).
+                NSMutableArray<NSArray<STRecognizedLine *> *> *readings = [NSMutableArray array];
+                NSMutableArray<NSValue *> *readingTiles = [NSMutableArray array];
+                NSArray<NSValue *> *tiles = STVisionTilesForRegion(crop);
+                for (NSValue *tile in tiles) {
+                    NSRect tileRect = tile.rectValue;
+                    BOOL fitsDoubled = maxDimension == 0 || MAX(NSWidth(tileRect), NSHeight(tileRect)) * 2.0 <= maxDimension;
+                    for (int pass = 0; pass < (fitsDoubled ? 2 : 1) && !problem; pass++) {
+                        NSArray<STRecognizedLine *> *reading = STOcrRead(engine, rep, tileRect, pass == 1, maxDimension);
+                        if (reading) {
+                            [readings addObject:reading];
+                            [readingTiles addObject:tile];
+                        } else if (pass == 0) {
+                            problem = @"Windows couldn't read the text in the image.";
+                        }
+                    }
+                    if (problem) {
+                        break;
+                    }
                 }
-                if (operation) {
-                    result = STAwaitOperation(operation, 60.0);
-                }
-                if (result) {
-                    lines = STLinesFromOcrResult(result, crop.origin, (CGFloat)factor);
+                if (!problem) {
+                    if (tiles.count == 1) {
+                        lines = readings.count > 1 ? STMergeReadings(readings[0], readings[1], crop) : readings[0];
+                    } else {
+                        lines = STMergeTiledLines(readings, readingTiles, crop);
+                    }
                     if (!NSEqualRects(wanted, whole)) {
                         lines = STLinesInsideRect(lines, wanted);
                     }
-                } else {
-                    problem = @"Windows couldn't read the text in the image.";
                 }
-                STRelease(result);
-                STRelease(operation);
-                STRelease(bitmap);
             }
         }
         STRelease(engine);
