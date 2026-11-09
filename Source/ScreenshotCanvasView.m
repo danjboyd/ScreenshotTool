@@ -3120,7 +3120,7 @@ static NSImage *STZoomedPartForDrawing(NSBitmapImageRep *rgba, NSRect part, CGFl
 
 - (NSRect)boundsOfAnnotation:(id)annotation {
     if ([annotation isKindOfClass:[MarkupText class]]) {
-        return [(MarkupText *)annotation decoratedBounds];
+        return [(MarkupText *)annotation decoratedBoundsOnCanvas];
     }
     if ([annotation isKindOfClass:[MarkupStroke class]]) {
         return [(MarkupStroke *)annotation bounds];
