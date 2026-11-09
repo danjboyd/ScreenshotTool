@@ -132,6 +132,7 @@ FOUNDATION_EXPORT NSBitmapImageRep * _Nullable STOpaqueBitmapOnWhite(NSImage *im
 /// fading outline on the canvas, only on screen, gone by itself. Not an annotation or part of undo.
 @property (nonatomic, copy, readonly) NSArray<NSValue *> *redactionHighlightRects;
 - (void)endRedactionHighlight;
+- (NSRect)viewRectForImageRect:(NSRect)imageRect;
 - (NSUInteger)addRedactionsInImageRects:(NSArray<NSValue *> *)rects actionName:(NSString *)actionName;
 /// The same, leaving out rects an existing redaction already covers; `alreadyRedacted`, if
 /// given, gets how many were left out.

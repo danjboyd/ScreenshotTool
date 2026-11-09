@@ -6030,6 +6030,50 @@ static NSTimeInterval STHUDDurationForFeedback(NSTimeInterval duration) {
     [self showHUDMessage:message duration:STHUDDurationForFeedback(duration)];
 }
 
+/// Where the notice goes, in the coordinates of `area` and `avoid`: centred in `centerIn`, unless
+/// that covers something in `avoid` (what a redaction highlight is showing, which at low zoom can
+/// all sit behind it). Then the bottom or top of `area`, whichever is clear, or the centre if neither is.
+NSRect STHUDFrameAvoidingRects(NSRect centerIn, NSRect area, NSSize size, NSArray<NSValue *> *avoid) {
+    static const CGFloat margin = 16.0f;
+    NSRect center = NSMakeRect(NSMidX(centerIn) - (size.width / 2.0f), NSMidY(centerIn) - (size.height / 2.0f), size.width, size.height);
+    NSRect bottom = NSMakeRect(NSMidX(area) - (size.width / 2.0f), NSMinY(area) + margin, size.width, size.height);
+    NSRect top = NSMakeRect(NSMidX(area) - (size.width / 2.0f), NSMaxY(area) - margin - size.height, size.width, size.height);
+    BOOL (^clear)(NSRect) = ^BOOL(NSRect candidate) {
+        for (NSValue *rect in avoid) {
+            if (NSIntersectsRect(candidate, rect.rectValue)) {
+                return NO;
+            }
+        }
+        return YES;
+    };
+    if (clear(center)) {
+        return center;
+    }
+    if (size.height + margin * 2.0f <= NSHeight(area)) {
+        if (clear(bottom)) {
+            return bottom;
+        }
+        if (clear(top)) {
+            return top;
+        }
+    }
+    return center;
+}
+
+/// The parts of the redaction highlight the scroll view shows, in the window's coordinates.
+- (NSArray<NSValue *> *)hudRectsToAvoid {
+    NSMutableArray<NSValue *> *rects = [[NSMutableArray alloc] init];
+    ScreenshotCanvasView *canvas = self.canvasView;
+    NSRect viewport = [self.scrollView convertRect:self.scrollView.bounds toView:nil];
+    for (NSValue *value in canvas.redactionHighlightRects) {
+        NSRect visible = NSIntersectionRect([canvas convertRect:[canvas viewRectForImageRect:value.rectValue] toView:nil], viewport);
+        if (!NSIsEmptyRect(visible)) {
+            [rects addObject:[NSValue valueWithRect:visible]];
+        }
+    }
+    return rects;
+}
+
 - (void)showHUDMessage:(NSString *)message duration:(NSTimeInterval)duration {
     // Not for a window that isn't on screen: attaching the notice would order it in.
     if (message.length == 0 || !self.window || !self.window.isVisible) {
@@ -6062,10 +6106,11 @@ static NSTimeInterval STHUDDurationForFeedback(NSTimeInterval duration) {
         return;
     }
     NSRect contentBounds = contentView.bounds;
-    NSRect hudRect = NSMakeRect(NSMidX(contentBounds) - (width / 2.0f),
-                                NSMidY(contentBounds) - (height / 2.0f),
-                                width,
-                                height);
+    NSRect hudRect = [contentView convertRect:STHUDFrameAvoidingRects([contentView convertRect:contentBounds toView:nil],
+                                                                      [self.scrollView convertRect:self.scrollView.bounds toView:nil],
+                                                                      NSMakeSize(width, height),
+                                                                      [self hudRectsToAvoid])
+                                     fromView:nil];
     self.hudView.frame = hudRect;
     if (self.hudView.superview) {
         [self.hudView removeFromSuperview];
@@ -6083,10 +6128,12 @@ static NSTimeInterval STHUDDurationForFeedback(NSTimeInterval duration) {
     self.hudView.frame = NSMakeRect(0.0f, 0.0f, width, height);
 
     NSRect windowFrame = self.window.frame;
-    NSRect hudFrame = NSMakeRect(NSMidX(windowFrame) - (width / 2.0f),
-                                 NSMidY(windowFrame) - (height / 2.0f),
-                                 width,
-                                 height);
+    NSRect hudFrame = NSOffsetRect(STHUDFrameAvoidingRects(NSMakeRect(0.0, 0.0, NSWidth(windowFrame), NSHeight(windowFrame)),
+                                                           [self.scrollView convertRect:self.scrollView.bounds toView:nil],
+                                                           NSMakeSize(width, height),
+                                                           [self hudRectsToAvoid]),
+                                   NSMinX(windowFrame),
+                                   NSMinY(windowFrame));
     [self.hudWindow setFrame:hudFrame display:NO];
     ScreenshotToolAppendLog([NSString stringWithFormat:@"showHUDMessage message=\"%@\" windowFrame=%@ hudFrame=%@",
                                                        message,
