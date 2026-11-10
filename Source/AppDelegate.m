@@ -9103,12 +9103,65 @@ static NSString * const STPrintSharingTitle = @"Print…";
     if (items.count > 0) {
         [services insertObject:[self printSharingService] atIndex:0];
     }
+#elif defined(_WIN32) && defined(ST_HAVE_LIBS_SHARING)
+    (void)items;
+    [services addObjectsFromArray:[self printSharingServices]];
 #else
     (void)items;
 #endif
     [services addObjectsFromArray:[self customActionSharingServices]];
     return services;
 }
+
+#if defined(_WIN32) && defined(ST_HAVE_LIBS_SHARING)
+static char STPrintSharingServiceKey;
+
+/// Whether `service` is the sheet's Print… or Print Selection…, which say nothing when they're
+/// chosen: the Print panel and Windows's print dialog that follow are what a share there shows.
+static BOOL STIsPrintSharingService(NSSharingService *service) {
+    return objc_getAssociatedObject(service, &STPrintSharingServiceKey) != nil;
+}
+
+/// Print in the share sheet (#355): Print… for the image and, with a selection, Print Selection…,
+/// each the File menu's own Print, its panel and then Windows's print dialog.
+- (NSArray<NSSharingService *> *)printSharingServices {
+    NSMutableArray<NSSharingService *> *services = [[NSMutableArray alloc] init];
+    if (![self.canvasView hasImage]) {
+        return services;
+    }
+    __weak AppDelegate *weakSelf = self;
+    [services addObject:[[NSSharingService alloc] initWithTitle:@"Print…"
+                                                          image:nil
+                                                 alternateImage:nil
+                                                        handler:^{
+        [weakSelf printFromShareSheetSelectionOnly:NO];
+    }]];
+    objc_setAssociatedObject(services.lastObject, &STPrintSharingServiceKey, @NO, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if ([self.canvasView hasSelection]) {
+        [services addObject:[[NSSharingService alloc] initWithTitle:@"Print Selection…"
+                                                              image:nil
+                                                     alternateImage:nil
+                                                            handler:^{
+            [weakSelf printFromShareSheetSelectionOnly:YES];
+        }]];
+        objc_setAssociatedObject(services.lastObject, &STPrintSharingServiceKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    return services;
+}
+
+/// The sheet's Print, inside its click as libs-sharing's Save a Copy runs its panel: the sheet is
+/// gone by then. What's printed is what's there now, as File > Print's validation would allow.
+- (void)printFromShareSheetSelectionOnly:(BOOL)selectionOnly {
+    if (selectionOnly ? ![self.canvasView hasSelection] : ![self.canvasView hasImage]) {
+        return;
+    }
+    if (selectionOnly) {
+        [self printSelection:nil];
+    } else {
+        [self printDocument:nil];
+    }
+}
+#endif
 
 static char STCustomActionSharingServiceKey;
 
@@ -9215,6 +9268,11 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 - (nullable id<NSSharingServiceDelegate>)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker
                                     delegateForSharingService:(NSSharingService *)sharingService {
     (void)sharingServicePicker;
+#if defined(_WIN32) && defined(ST_HAVE_LIBS_SHARING)
+    if (STIsPrintSharingService(sharingService)) {
+        return nil;
+    }
+#endif
     return STIsImmediateSharingService(sharingService) ? nil : self;
 }
 
