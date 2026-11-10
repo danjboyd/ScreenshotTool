@@ -14,6 +14,7 @@
 
 @interface AppDelegate (HudAvoidsHighlightTesting)
 - (void)setupWindowAndContent;
+- (void)layoutContentSubviews;
 - (NSWindow *)window;
 - (NSView *)hudView;
 - (ScreenshotCanvasView *)canvasView;
@@ -93,6 +94,7 @@ extern NSRect STHUDFrameAvoidingRects(NSRect centerIn, NSRect area, NSSize size,
     XCTSkipIf(_shouldSkip, @"No window server");
     ScreenshotCanvasView *canvas = _appDelegate.canvasView;
     [canvas loadImage:[self whiteImageOfSize:NSMakeSize(4000.0, 3000.0)]];
+    [_appDelegate layoutContentSubviews];
     canvas.fitToWindow = NO;
     canvas.zoomScale = 0.05;
     [_appDelegate.window displayIfNeeded];
@@ -102,9 +104,16 @@ extern NSRect STHUDFrameAvoidingRects(NSRect centerIn, NSRect area, NSSize size,
     [_appDelegate showCommandResultMessage:@"Redacted 1 item" duration:1.0];
 
     NSView *hud = _appDelegate.hudView;
-    NSRect hudInWindow = [hud.superview convertRect:hud.frame toView:nil];
-    NSRect itemInWindow = [canvas convertRect:[canvas viewRectForImageRect:item] toView:nil];
-    XCTAssertFalse(NSIntersectsRect(hudInWindow, itemInWindow), @"notice %@ item %@", NSStringFromRect(hudInWindow), NSStringFromRect(itemInWindow));
+    XCTAssertFalse(canvas.isHiddenOrHasHiddenAncestor, @"The highlighted canvas must be visible");
+    XCTAssertTrue(hud.window.isVisible, @"The HUD must be visible for the overlap check");
+    NSRect hudRect = [hud.superview convertRect:hud.frame toView:nil];
+    NSRect itemRect = [canvas convertRect:[canvas viewRectForImageRect:item] toView:nil];
+#if !defined(GNUSTEP)
+    // The Cocoa HUD is a child window, so compare both rectangles in screen coordinates.
+    hudRect = [hud.window convertRectToScreen:hudRect];
+    itemRect = [canvas.window convertRectToScreen:itemRect];
+#endif
+    XCTAssertFalse(NSIntersectsRect(hudRect, itemRect), @"notice %@ item %@", NSStringFromRect(hudRect), NSStringFromRect(itemRect));
 }
 
 /// Nothing highlighted, the notice stays in the middle of the window.
