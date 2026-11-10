@@ -406,4 +406,68 @@ static const CGFloat STAccuracy = 0.000001;
     XCTAssertEqual([layout flattenScaleForImagePixelSize:NSMakeSize(5000, 2000)], (NSUInteger)1);
 }
 
+/// At a printer's resolution (Windows, #355): 0.75 points a pixel at real size is 6.25 at 600 dpi, so 6;
+/// 12.5 at 1200, so 13. Kept between 300 and 1200 dpi, and 300 for a printer that says nothing.
+- (void)testTheFlattenScaleFollowsThePrintersResolution {
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    layout.sourceRect = NSMakeRect(0, 0, 400, 200);
+    layout.paperSize = NSMakeSize(612, 792);
+    layout.fit = STPrintFitActualSize;
+    NSSize pixels = NSMakeSize(400, 200);
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:pixels dotsPerInch:600.0], (NSUInteger)6);
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:pixels dotsPerInch:300.0], [layout flattenScaleForImagePixelSize:pixels],
+                   @"300 dpi is what every printer had");
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:pixels dotsPerInch:1200.0], (NSUInteger)13);
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:pixels dotsPerInch:2400.0], (NSUInteger)13, @"no finer than 1200");
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:pixels dotsPerInch:150.0], (NSUInteger)3, @"no coarser than 300");
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:pixels dotsPerInch:0.0], (NSUInteger)3);
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:pixels dotsPerInch:-600.0], (NSUInteger)3);
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:pixels dotsPerInch:(CGFloat)NAN], (NSUInteger)3);
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:pixels dotsPerInch:(CGFloat)INFINITY], (NSUInteger)3);
+    layout.sourceRect = NSZeroRect;
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:pixels dotsPerInch:600.0], (NSUInteger)1, @"no pages");
+}
+
+/// A printer's resolution never enlarges an image past 8192 pixels a side or 8192 × 4608 in all (about
+/// 150 MB of RGBA), whatever its shape. It's at least 1, never below the image's own pixels, so an image
+/// already past the bound prints as it is: the bound limits enlarging, not the image.
+- (void)testTheFlattenScaleAtAPrintersResolutionKeepsMemoryBounded {
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    layout.paperSize = NSMakeSize(612, 792);
+    layout.fit = STPrintFitActualSize;
+    layout.sourceRect = NSMakeRect(0, 0, 4000, 4000);
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:NSMakeSize(4000, 4000)], (NSUInteger)2, @"the side cap alone allows 2");
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:NSMakeSize(4000, 4000) dotsPerInch:1200.0], (NSUInteger)1,
+                   @"8000 × 8000 is past the area bound");
+    layout.fit = STPrintFitCustomScale;
+    layout.customScale = 4.0;
+    const CGFloat cap = 8192.0 * 4608.0;
+    NSSize sizes[] = { { 100, 100 }, { 1000, 1000 }, { 400, 200 }, { 3000, 10 }, { 10, 3000 }, { 1920, 1080 }, { 2900, 1600 } };
+    for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+        layout.sourceRect = NSMakeRect(0, 0, sizes[i].width, sizes[i].height);
+        NSUInteger scale = [layout flattenScaleForImagePixelSize:sizes[i] dotsPerInch:1200.0];
+        XCTAssertGreaterThanOrEqual(scale, (NSUInteger)1);
+        if (scale > 1) {
+            XCTAssertLessThanOrEqual(sizes[i].width * scale, 8192.0, @"%@", NSStringFromSize(sizes[i]));
+            XCTAssertLessThanOrEqual(sizes[i].height * scale, 8192.0, @"%@", NSStringFromSize(sizes[i]));
+            XCTAssertLessThanOrEqual(sizes[i].width * scale * sizes[i].height * scale, cap, @"%@", NSStringFromSize(sizes[i]));
+        }
+    }
+    layout.sourceRect = NSMakeRect(0, 0, 1000, 1000);
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:NSMakeSize(1000, 1000) dotsPerInch:1200.0], (NSUInteger)6,
+                   @"50 wanted; 8 by the side; 6 by the area");
+
+    // Already past the area bound: not enlarged, and not shrunk.
+    NSSize oversized[] = { { 8192, 8192 }, { 8192, 4609 }, { 12000, 4000 }, { 7000, 7000 } };
+    layout.fit = STPrintFitActualSize;
+    for (size_t i = 0; i < sizeof(oversized) / sizeof(oversized[0]); i++) {
+        layout.sourceRect = NSMakeRect(0, 0, oversized[i].width, oversized[i].height);
+        XCTAssertGreaterThan(oversized[i].width * oversized[i].height, cap);
+        XCTAssertEqual([layout flattenScaleForImagePixelSize:oversized[i] dotsPerInch:1200.0], (NSUInteger)1,
+                       @"%@ prints at its own pixels", NSStringFromSize(oversized[i]));
+    }
+    layout.sourceRect = NSMakeRect(0, 0, 8192, 4608);
+    XCTAssertEqual([layout flattenScaleForImagePixelSize:NSMakeSize(8192, 4608) dotsPerInch:1200.0], (NSUInteger)1, @"exactly the bound");
+}
+
 @end

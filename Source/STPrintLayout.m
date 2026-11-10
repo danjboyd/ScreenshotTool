@@ -6,6 +6,10 @@ const CGFloat STPrintDefaultPixelsPerInch = 96.0;
 static const CGFloat STPointsPerInch = 72.0;
 static const CGFloat STPrintFlattenDotsPerInch = 300.0;
 static const CGFloat STPrintFlattenMaximumPixels = 8192.0;
+/// At a printer's resolution: no finer than this, and no enlargement past as many pixels in all as an
+/// 8K 16:9 image. An image already larger isn't enlarged, and isn't shrunk either (scale 1).
+static const CGFloat STPrintFlattenMaximumDotsPerInch = 1200.0;
+static const CGFloat STPrintFlattenMaximumArea = 8192.0 * 4608.0;
 /// Rounding in the sums must not add a page: 720.0000001 points on 720 is one page.
 static const CGFloat STPageTolerance = 1e-6;
 
@@ -160,6 +164,20 @@ static NSUInteger STPagesFor(CGFloat content, CGFloat page) {
     }
     CGFloat wanted = round(pointsPerPixel * STPrintFlattenDotsPerInch / STPointsPerInch);
     CGFloat allowed = floor(STPrintFlattenMaximumPixels / longSide);
+    return (NSUInteger)MAX(MIN(wanted, allowed), 1.0);
+}
+
+- (NSUInteger)flattenScaleForImagePixelSize:(NSSize)imagePixels dotsPerInch:(CGFloat)dotsPerInch {
+    CGFloat longSide = MAX(imagePixels.width, imagePixels.height);
+    CGFloat area = imagePixels.width * imagePixels.height;
+    CGFloat pointsPerPixel = self.pointsPerPixel;
+    if (!(longSide > 0.0) || !(area > 0.0) || !(pointsPerPixel > 0.0)) {
+        return 1;
+    }
+    CGFloat dpi = (isfinite(dotsPerInch) && dotsPerInch > 0.0) ? dotsPerInch : STPrintFlattenDotsPerInch;
+    dpi = MIN(MAX(dpi, STPrintFlattenDotsPerInch), STPrintFlattenMaximumDotsPerInch);
+    CGFloat wanted = round(pointsPerPixel * dpi / STPointsPerInch);
+    CGFloat allowed = MIN(floor(STPrintFlattenMaximumPixels / longSide), floor(sqrt(STPrintFlattenMaximumArea / area)));
     return (NSUInteger)MAX(MIN(wanted, allowed), 1.0);
 }
 

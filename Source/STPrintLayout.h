@@ -96,6 +96,12 @@ extern const CGFloat STPrintDefaultPixelsPerInch;
 /// How many times to enlarge a flattened image of this many pixels so annotations print sharp: pixels
 /// to 300 dpi on the paper, rounded, at least 1, and no more than keeps it within 8192 pixels a side.
 - (NSUInteger)flattenScaleForImagePixelSize:(NSSize)imagePixels;
+/// The same at the printer's own resolution: pixels to `dotsPerInch` on the paper (a printer's, kept
+/// between 300 and 1200; 300 when it says nothing). It enlarges only while the result stays within 8192
+/// pixels a side and 8192 × 4608 pixels in all (about 150 MB of RGBA). It's never below 1, so an image
+/// already past those prints at its own pixels: then the bound is the image itself, which the canvas
+/// already holds (an 8192 × 8192 capture is about 268 MB).
+- (NSUInteger)flattenScaleForImagePixelSize:(NSSize)imagePixels dotsPerInch:(CGFloat)dotsPerInch;
 
 /// The part of the image on a page. Pages run left to right, then top to bottom, from 0: that's the
 /// only order, with no option for another. Together

@@ -16,6 +16,8 @@ typedef struct {
     NSSize paper;
     STPrintMargins printerMargins;
     BOOL valid;
+    /// The printer's resolution, the finer of its two (LOGPIXELSX/Y); 0 if not valid.
+    CGFloat dotsPerInch;
 } STWindowsPrinterSheet;
 
 /// Reads a printer device context (an HDC). Not valid if it reports no size.

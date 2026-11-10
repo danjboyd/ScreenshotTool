@@ -26,7 +26,7 @@ static NSString * const STDefaultsPrintWindowsDevNamesKey = @"PrintWindowsDevNam
 
 STWindowsPrinterSheet STWindowsPrinterSheetFromDC(void *dcHandle) {
     HDC dc = (HDC)dcHandle;
-    STWindowsPrinterSheet sheet = { NSZeroSize, STPrintMarginsMake(0.0, 0.0, 0.0, 0.0), NO };
+    STWindowsPrinterSheet sheet = { NSZeroSize, STPrintMarginsMake(0.0, 0.0, 0.0, 0.0), NO, 0.0 };
     int dpiX = GetDeviceCaps(dc, LOGPIXELSX), dpiY = GetDeviceCaps(dc, LOGPIXELSY);
     int width = GetDeviceCaps(dc, PHYSICALWIDTH), height = GetDeviceCaps(dc, PHYSICALHEIGHT);
     if (dpiX <= 0 || dpiY <= 0 || width <= 0 || height <= 0) {
@@ -45,6 +45,7 @@ STWindowsPrinterSheet STWindowsPrinterSheetFromDC(void *dcHandle) {
     sheet.paper = paper;
     sheet.printerMargins = margins;
     sheet.valid = YES;
+    sheet.dotsPerInch = MAX(dpiX, dpiY);
     return sheet;
 }
 
@@ -326,7 +327,8 @@ BOOL STWindowsPrintCanvas(ScreenshotCanvasView *canvas, STPrintOptions *options,
     STConfigurePrintLayout(layout, options, flattened, [canvas selectionImageRect]);
 
     // As Linux's: the scale comes from this layout; only the bitmap and its pixel counts change after it.
-    NSUInteger scale = [layout flattenScaleForImagePixelSize:STPrintImagePixelSize(flattened)];
+    // Its resolution is the printer's own (#355), so annotations print as fine as it does, within bounds.
+    NSUInteger scale = [layout flattenScaleForImagePixelSize:STPrintImagePixelSize(flattened) dotsPerInch:sheet.dotsPerInch];
     NSRect keep = options.selectionOnly ? layout.sourceRect : NSZeroRect;
     NSImage *printed = [canvas flattenedImageForPrintAtScale:scale withinRect:keep];
     if (!printed) {

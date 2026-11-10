@@ -217,6 +217,34 @@ static const unsigned char STSecretOther[3] = { 0, 255, 0 };
     return options;
 }
 
+/// The image is drawn at the printer's own resolution (#355): "Microsoft Print to PDF" says 600 dpi, so
+/// the 400 × 200 image at real size (0.75 points a pixel) goes into the file 6 times larger, not 300 dpi's 3.
+- (void)testTheImageIsDrawnAtThePrintersResolution {
+    if (![self canPrint]) {
+        return;
+    }
+    void *dc = STWindowsCreatePrinterDC(STWindowsPDFPrinterName, NULL);
+    XCTAssertTrue(dc != NULL);
+    STWindowsPrinterSheet sheet = STWindowsPrinterSheetFromDC(dc);
+    STWindowsDeleteDC(dc);
+    XCTAssertEqualWithAccuracy(sheet.dotsPerInch, 600.0, 0.001, @"the PDF printer's resolution");
+    [self renderPDF:[self printWithOptions:[self actualSize]]];
+    NSMutableArray<NSString *> *sizes = [NSMutableArray array];
+    for (NSString *name in [[[NSFileManager defaultManager] contentsOfDirectoryAtPath:_directory error:NULL] sortedArrayUsingSelector:@selector(compare:)]) {
+        if (![name hasPrefix:@"image"]) {
+            continue;
+        }
+        NSData *data = [NSData dataWithContentsOfFile:[_directory stringByAppendingPathComponent:name]];
+        NSString *header = [[NSString alloc] initWithData:[data subdataWithRange:NSMakeRange(0, MIN(data.length, (NSUInteger)32))]
+                                                 encoding:NSISOLatin1StringEncoding];
+        int width = 0, height = 0;
+        if (sscanf(header.UTF8String, "P%*d %d %d", &width, &height) == 2) {
+            [sizes addObject:[NSString stringWithFormat:@"%dx%d", width, height]];
+        }
+    }
+    XCTAssertEqualObjects(sizes, (@[ @"2400x1200" ]), @"one image, 400 × 200 enlarged 6 times");
+}
+
 /// Shows the checks see the secret, so that the others' zeroes mean something.
 - (void)testWithoutARedactionTheSecretIsFound {
     if (![self canPrint]) {
