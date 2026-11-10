@@ -59,6 +59,18 @@
     "windows": {
       "launch": {
         "entryRelativePath": "app/ScreenshotTool.app/ScreenshotTool.exe"
+      },
+      "validation": {
+        "packageContract": {
+          "requiredPaths": [
+            "app/ScreenshotTool.app/gp-update-helper.exe"
+          ]
+        },
+        "installedResult": {
+          "requiredPaths": [
+            "app/ScreenshotTool.app/gp-update-helper.exe"
+          ]
+        }
       }
     },
     "linux": {
@@ -75,7 +87,15 @@
             "libaspell.so*",
             "libMagick*"
           ],
-          "maxPayloadBytes": 145000000
+          "maxPayloadBytes": 145000000,
+          "requiredPaths": [
+            "usr/app/ScreenshotTool.app/gp-update-helper"
+          ]
+        },
+        "installedResult": {
+          "requiredPaths": [
+            "usr/app/ScreenshotTool.app/gp-update-helper"
+          ]
         }
       },
       "compliance": {

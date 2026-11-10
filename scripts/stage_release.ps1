@@ -257,14 +257,18 @@ function Stage-UpdaterHelper {
 
   $source = Resolve-UpdaterHelperSourcePath -RepoRoot $RepoRoot -BundleRoot $BundleRoot
   if ([string]::IsNullOrWhiteSpace($source)) {
-    Write-Warning "gp-update-helper was not found in the build output or vendored updater tree."
-    return
+    throw "Required updater helper was not found in the build output or vendored updater tree."
   }
 
   $helperPath = Join-Path $BundleRoot "gp-update-helper"
   [void](Copy-FileIfPresent -Source $source -Destination $helperPath)
   if ($IsWindows -or $source.EndsWith(".exe", [System.StringComparison]::OrdinalIgnoreCase)) {
     [void](Copy-FileIfPresent -Source $source -Destination (Join-Path $BundleRoot "gp-update-helper.exe"))
+  }
+
+  $nativeHelperPath = if ($IsWindows) { Join-Path $BundleRoot "gp-update-helper.exe" } else { $helperPath }
+  if (-not (Test-Path -LiteralPath $nativeHelperPath -PathType Leaf)) {
+    throw "Required updater helper was not staged: $nativeHelperPath"
   }
 
   if ($IsLinux) {
