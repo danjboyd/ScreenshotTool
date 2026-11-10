@@ -82,6 +82,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	LargeImageDrawingProbe_test.m \
 	CursorRectProbe_test.m \
 	HudCopyFeedbackProbe_test.m \
+	HudAvoidsHighlightProbe_test.m \
 	OpenImageToolbarRefreshProbe_test.m \
 	ToolbarFitsWindowProbe_test.m \
 	ObjectSelectionProbe_test.m \
