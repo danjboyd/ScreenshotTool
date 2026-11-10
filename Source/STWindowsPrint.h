@@ -34,19 +34,19 @@ FOUNDATION_EXPORT BOOL STWindowsPrinterExists(NSString *printerName);
 FOUNDATION_EXPORT void STWindowsPrintPageRects(STPrintLayout *layout, NSUInteger page, NSSize imagePixels, NSSize dpi, NSPoint offset,
                                                NSRect *source, NSRect *target);
 
-/// The most source rows one StretchDIBits call sends. Microsoft Print to PDF drops a row from any source
-/// of 3584 rows or more; 3583 or fewer keep every row, so a taller page goes in bands, kept apart so the
-/// driver doesn't join them back into one image.
-FOUNDATION_EXPORT const NSUInteger STWindowsPrintMaxBandRows;
+/// The most source pixels, across or down, one StretchDIBits call sends. Microsoft Print to PDF drops a
+/// row from any source 3584 rows high or more, and a column from one 3584 wide or more; 3583 keeps every
+/// pixel. A larger page goes in pieces, kept apart so the driver doesn't join them back into one image.
+FOUNDATION_EXPORT const NSUInteger STWindowsPrintMaxPieceSide;
 
-/// How many bands a page of `sourceRows` rows goes in, each at most `maxRows`.
-FOUNDATION_EXPORT NSUInteger STWindowsPrintBandCount(NSUInteger sourceRows, NSUInteger maxRows);
+/// How many pieces `pixels` goes in along one side, each at most `maxSide`.
+FOUNDATION_EXPORT NSUInteger STWindowsPrintPieceCount(NSUInteger pixels, NSUInteger maxSide);
 
-/// Band `band` of `count` of a page from STWindowsPrintPageRects: even bands of whole source rows, and
-/// their place on the sheet, rounded edge by edge from one mapping, so the bands neither gap nor overlap
-/// and together cover exactly `source` and `target`.
-FOUNDATION_EXPORT void STWindowsPrintBandRects(NSRect source, NSRect target, NSUInteger band, NSUInteger count,
-                                               NSRect *bandSource, NSRect *bandTarget);
+/// The piece at `column` of `columns` and `row` of `rows` of a page from STWindowsPrintPageRects: even
+/// pieces of whole source pixels, and their place on the sheet, rounded edge by edge from one mapping, so
+/// the pieces neither gap nor overlap and together cover exactly `source` and `target`.
+FOUNDATION_EXPORT void STWindowsPrintPieceRects(NSRect source, NSRect target, NSUInteger column, NSUInteger columns,
+                                                NSUInteger row, NSUInteger rows, NSRect *pieceSource, NSRect *pieceTarget);
 
 /// Prints every page of `layout` on `dc`, one sheet per page (#355). `image` is what's printed, already
 /// flattened with its annotations: its pixels go straight to the printer, at their place on the sheet,

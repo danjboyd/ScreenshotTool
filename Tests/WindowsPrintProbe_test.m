@@ -330,50 +330,59 @@ static const STPrintProbeRGB STPrintQuadrants[8] = {
     XCTAssertEqual(coveredHeight, 777.0);
 }
 
-/// A page's bands: each at most the limit, within a row of each other, and together exactly the page's
-/// rows and sheet rect, with no gap or overlap on either side.
-- (void)testBandsCoverThePageExactly {
-    XCTAssertEqual(STWindowsPrintBandCount(0, 3583), (NSUInteger)0);
-    XCTAssertEqual(STWindowsPrintBandCount(3583, 3583), (NSUInteger)1);
-    XCTAssertEqual(STWindowsPrintBandCount(3584, 3583), (NSUInteger)2);
-    XCTAssertEqual(STWindowsPrintBandCount(10749, 3583), (NSUInteger)3);
-    XCTAssertEqual(STWindowsPrintBandCount(10750, 3583), (NSUInteger)4);
-    const NSUInteger rowsCases[] = { 1, 3583, 3584, 7167, 8000, 10751 };
-    const CGFloat targetHeights[] = { 1.0, 6600.0, 7001.0, 2999.0 };
-    for (size_t i = 0; i < sizeof(rowsCases) / sizeof(rowsCases[0]); i++) {
-        for (size_t j = 0; j < sizeof(targetHeights) / sizeof(targetHeights[0]); j++) {
-            NSRect source = NSMakeRect(17, 40, 300, rowsCases[i]);
-            NSRect target = NSMakeRect(150, 213, 4800, targetHeights[j]);
-            NSUInteger count = STWindowsPrintBandCount(rowsCases[i], STWindowsPrintMaxBandRows);
-            CGFloat sourceEdge = NSMinY(source), targetEdge = NSMinY(target);
-            CGFloat smallest = CGFLOAT_MAX, largest = 0.0;
-            for (NSUInteger band = 0; band < count; band++) {
-                NSRect from, to;
-                STWindowsPrintBandRects(source, target, band, count, &from, &to);
-                XCTAssertEqual(NSMinY(from), sourceEdge, @"rows %lu band %lu", (unsigned long)rowsCases[i], (unsigned long)band);
-                XCTAssertEqual(NSMinY(to), targetEdge, @"rows %lu band %lu", (unsigned long)rowsCases[i], (unsigned long)band);
-                XCTAssertEqual(NSMinX(from), NSMinX(source));
-                XCTAssertEqual(NSWidth(from), NSWidth(source));
-                XCTAssertEqual(NSMinX(to), NSMinX(target));
-                XCTAssertEqual(NSWidth(to), NSWidth(target));
-                XCTAssertEqual(NSHeight(from), floor(NSHeight(from)), @"whole rows");
-                XCTAssertEqual(NSHeight(to), floor(NSHeight(to)), @"whole device rows");
-                XCTAssertLessThanOrEqual(NSHeight(from), (CGFloat)STWindowsPrintMaxBandRows);
-                XCTAssertGreaterThanOrEqual(NSHeight(to), 0.0);
-                smallest = MIN(smallest, NSHeight(from));
-                largest = MAX(largest, NSHeight(from));
-                sourceEdge = NSMaxY(from);
-                targetEdge = NSMaxY(to);
-            }
-            XCTAssertEqual(sourceEdge, NSMaxY(source), @"rows %lu", (unsigned long)rowsCases[i]);
-            XCTAssertEqual(targetEdge, NSMaxY(target), @"rows %lu", (unsigned long)rowsCases[i]);
-            XCTAssertLessThanOrEqual(largest - smallest, 1.0, @"even bands");
+/// One side of a page's pieces, from STWindowsPrintPieceRects: each at most the limit, within a pixel of
+/// each other, and together exactly the page's pixels and sheet span, with no gap or overlap on either side.
+- (void)assertPiecesOfLength:(NSUInteger)length targetLength:(CGFloat)targetLength across:(BOOL)across {
+    NSRect source = across ? NSMakeRect(17, 40, length, 300) : NSMakeRect(17, 40, 300, length);
+    NSRect target = across ? NSMakeRect(150, 213, targetLength, 4800) : NSMakeRect(150, 213, 4800, targetLength);
+    NSUInteger count = STWindowsPrintPieceCount(length, STWindowsPrintMaxPieceSide);
+    NSUInteger columns = across ? count : 1, rows = across ? 1 : count;
+    CGFloat sourceEdge = across ? NSMinX(source) : NSMinY(source), targetEdge = across ? NSMinX(target) : NSMinY(target);
+    CGFloat smallest = CGFLOAT_MAX, largest = 0.0;
+    for (NSUInteger i = 0; i < count; i++) {
+        NSRect from, to;
+        STWindowsPrintPieceRects(source, target, across ? i : 0, columns, across ? 0 : i, rows, &from, &to);
+        CGFloat fromStart = across ? NSMinX(from) : NSMinY(from), fromLength = across ? NSWidth(from) : NSHeight(from);
+        CGFloat toStart = across ? NSMinX(to) : NSMinY(to), toLength = across ? NSWidth(to) : NSHeight(to);
+        XCTAssertEqual(fromStart, sourceEdge, @"length %lu piece %lu", (unsigned long)length, (unsigned long)i);
+        XCTAssertEqual(toStart, targetEdge, @"length %lu piece %lu", (unsigned long)length, (unsigned long)i);
+        // The other side is the page's own.
+        XCTAssertEqual(across ? NSMinY(from) : NSMinX(from), across ? NSMinY(source) : NSMinX(source));
+        XCTAssertEqual(across ? NSHeight(from) : NSWidth(from), across ? NSHeight(source) : NSWidth(source));
+        XCTAssertEqual(across ? NSMinY(to) : NSMinX(to), across ? NSMinY(target) : NSMinX(target));
+        XCTAssertEqual(across ? NSHeight(to) : NSWidth(to), across ? NSHeight(target) : NSWidth(target));
+        XCTAssertEqual(fromLength, floor(fromLength), @"whole pixels");
+        XCTAssertEqual(toLength, floor(toLength), @"whole device pixels");
+        XCTAssertLessThanOrEqual(fromLength, (CGFloat)STWindowsPrintMaxPieceSide);
+        XCTAssertGreaterThanOrEqual(toLength, 0.0);
+        smallest = MIN(smallest, fromLength);
+        largest = MAX(largest, fromLength);
+        sourceEdge = fromStart + fromLength;
+        targetEdge = toStart + toLength;
+    }
+    XCTAssertEqual(sourceEdge, across ? NSMaxX(source) : NSMaxY(source), @"length %lu", (unsigned long)length);
+    XCTAssertEqual(targetEdge, across ? NSMaxX(target) : NSMaxY(target), @"length %lu", (unsigned long)length);
+    XCTAssertLessThanOrEqual(largest - smallest, 1.0, @"even pieces");
+}
+
+- (void)testPiecesCoverThePageExactly {
+    XCTAssertEqual(STWindowsPrintPieceCount(0, 3583), (NSUInteger)0);
+    XCTAssertEqual(STWindowsPrintPieceCount(3583, 3583), (NSUInteger)1);
+    XCTAssertEqual(STWindowsPrintPieceCount(3584, 3583), (NSUInteger)2);
+    XCTAssertEqual(STWindowsPrintPieceCount(10749, 3583), (NSUInteger)3);
+    XCTAssertEqual(STWindowsPrintPieceCount(10750, 3583), (NSUInteger)4);
+    const NSUInteger lengths[] = { 1, 3583, 3584, 3840, 7167, 8000, 10751 };
+    const CGFloat targetLengths[] = { 1.0, 6600.0, 7001.0, 2999.0 };
+    for (size_t i = 0; i < sizeof(lengths) / sizeof(lengths[0]); i++) {
+        for (size_t j = 0; j < sizeof(targetLengths) / sizeof(targetLengths[0]); j++) {
+            [self assertPiecesOfLength:lengths[i] targetLength:targetLengths[j] across:NO];
+            [self assertPiecesOfLength:lengths[i] targetLength:targetLengths[j] across:YES];
         }
     }
 }
 
-/// The embedded images' heights in a PDF, from pdfimages -list next to pdftoppm; nil without it.
-- (NSArray<NSNumber *> *)imageHeightsInPDF:(NSString *)pdf {
+/// The embedded images' sizes in a PDF, from pdfimages -list next to pdftoppm; nil without it.
+- (NSArray<NSValue *> *)imageSizesInPDF:(NSString *)pdf {
     NSString *tool = [[_pdftoppm stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"pdfimages.exe"];
     if (![[NSFileManager defaultManager] fileExistsAtPath:tool]) {
         return nil;
@@ -387,32 +396,29 @@ static const STPrintProbeRGB STPrintQuadrants[8] = {
     NSData *output = [[pipe fileHandleForReading] readDataToEndOfFile];
     [task waitUntilExit];
     NSString *text = [[NSString alloc] initWithData:output encoding:NSUTF8StringEncoding];
-    NSMutableArray<NSNumber *> *heights = [NSMutableArray array];
+    NSMutableArray<NSValue *> *sizes = [NSMutableArray array];
     // Columns: page num type width height ...; only "image" rows, not soft masks, and not the two header lines.
     for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
         NSArray<NSString *> *fields = [[line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]
             componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
         fields = [fields filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
         if (fields.count > 4 && [fields[2] isEqualToString:@"image"] && [fields[0] integerValue] > 0) {
-            [heights addObject:@([fields[4] integerValue])];
+            [sizes addObject:[NSValue valueWithSize:NSMakeSize([fields[3] integerValue], [fields[4] integerValue])]];
         }
     }
-    return heights;
+    return sizes;
 }
 
-/// A page taller than Microsoft Print to PDF keeps in one piece goes in bands, and every row arrives.
-- (void)testATallPageKeepsEveryRow {
-    if (![self canPrint]) {
-        return;
-    }
-    const NSInteger width = 120, height = 8000;
+/// Prints a `width` × `height` image of alternating lines, fitted to one sheet, and checks every pixel
+/// reached the PDF: in pieces no larger than the driver keeps whole, as many as planned, adding up to the image.
+- (void)assertPrintingKeepsEveryPixelWidth:(NSInteger)width height:(NSInteger)height {
     NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:width pixelsHigh:height bitsPerSample:8
                                                                samplesPerPixel:4 hasAlpha:YES isPlanar:NO
                                                                 colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
     for (NSInteger y = 0; y < height; y++) {
         unsigned char *p = rep.bitmapData + y * rep.bytesPerRow;
         for (NSInteger x = 0; x < width; x++, p += 4) {
-            p[0] = p[1] = p[2] = (y % 2) ? 0 : 255;
+            p[0] = p[1] = p[2] = ((x + y) % 2) ? 0 : 255;
             p[3] = 255;
         }
     }
@@ -427,9 +433,8 @@ static const STPrintProbeRGB STPrintQuadrants[8] = {
     STPrintLayout *layout = [self layoutOnPrinterDC:dc pixelsPerInch:72.0];
     layout.sourceRect = NSMakeRect(0, 0, width, height);
     layout.fit = STPrintFitToPage;
-    layout.orientation = STPrintOrientationPortrait;
     XCTAssertEqual(layout.pageCount, (NSUInteger)1);
-    NSString *pdf = [_directory stringByAppendingPathComponent:@"tall.pdf"];
+    NSString *pdf = [_directory stringByAppendingPathComponent:[NSString stringWithFormat:@"%ldx%ld.pdf", (long)width, (long)height]];
     NSString *failure = nil;
     BOOL printed = STWindowsPrintPages(dc, devMode, layout, image, @"WindowsPrintProbe", pdf, &failure);
     DeleteDC((HDC)dc);
@@ -439,18 +444,54 @@ static const STPrintProbeRGB STPrintQuadrants[8] = {
         XCTFail(@"No PDF at %@", pdf);
         return;
     }
-    NSArray<NSNumber *> *heights = [self imageHeightsInPDF:pdf];
-    if (!heights) {
-        NSLog(@"WindowsPrintProbe: SKIPPED row count: no pdfimages here");
+    NSArray<NSValue *> *sizes = [self imageSizesInPDF:pdf];
+    if (!sizes) {
+        NSLog(@"WindowsPrintProbe: SKIPPED pixel count: no pdfimages here");
         return;
     }
-    NSInteger total = 0;
-    for (NSNumber *h in heights) {
-        XCTAssertLessThanOrEqual(h.integerValue, (NSInteger)STWindowsPrintMaxBandRows);
-        total += h.integerValue;
+    NSUInteger columns = STWindowsPrintPieceCount(width, STWindowsPrintMaxPieceSide);
+    NSUInteger rows = STWindowsPrintPieceCount(height, STWindowsPrintMaxPieceSide);
+    XCTAssertEqual(sizes.count, columns * rows, @"%@", sizes);
+    double area = 0.0, firstRowWidth = 0.0, firstColumnHeight = 0.0;
+    for (NSUInteger i = 0; i < sizes.count; i++) {
+        NSSize size = sizes[i].sizeValue;
+        XCTAssertLessThanOrEqual(size.width, (CGFloat)STWindowsPrintMaxPieceSide);
+        XCTAssertLessThanOrEqual(size.height, (CGFloat)STWindowsPrintMaxPieceSide);
+        area += size.width * size.height;
+        if (i < columns) {
+            firstRowWidth += size.width;
+        }
+        if (i % columns == 0) {
+            firstColumnHeight += size.height;
+        }
     }
-    XCTAssertEqual(heights.count, STWindowsPrintBandCount(height, STWindowsPrintMaxBandRows), @"%@", heights);
-    XCTAssertEqual(total, height, @"Every source row in the PDF: %@", heights);
+    XCTAssertEqual(firstRowWidth, (double)width, @"Every column in the PDF: %@", sizes);
+    XCTAssertEqual(firstColumnHeight, (double)height, @"Every row in the PDF: %@", sizes);
+    XCTAssertEqual(area, (double)width * height, @"Every pixel in the PDF: %@", sizes);
+}
+
+/// Taller than the driver keeps whole: one column of pieces, kept apart, and every row arrives.
+- (void)testATallPageKeepsEveryRow {
+    if (![self canPrint]) {
+        return;
+    }
+    [self assertPrintingKeepsEveryPixelWidth:120 height:8000];
+}
+
+/// A 4K capture is 3840 wide, wider than the driver keeps whole: every column arrives.
+- (void)testAWidePageKeepsEveryColumn {
+    if (![self canPrint]) {
+        return;
+    }
+    [self assertPrintingKeepsEveryPixelWidth:3840 height:400];
+}
+
+/// Larger both ways: a grid of pieces, every pixel arrives.
+- (void)testALargePageKeepsEveryPixel {
+    if (![self canPrint]) {
+        return;
+    }
+    [self assertPrintingKeepsEveryPixelWidth:7680 height:4320];
 }
 
 @end

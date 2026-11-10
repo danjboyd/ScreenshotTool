@@ -104,31 +104,44 @@ void STWindowsPrintPageRects(STPrintLayout *layout, NSUInteger page, NSSize imag
     *target = NSMakeRect(x0, y0, x1 - x0, y1 - y0);
 }
 
-const NSUInteger STWindowsPrintMaxBandRows = 3583;
+const NSUInteger STWindowsPrintMaxPieceSide = 3583;
 
-NSUInteger STWindowsPrintBandCount(NSUInteger sourceRows, NSUInteger maxRows) {
-    if (sourceRows == 0) {
+NSUInteger STWindowsPrintPieceCount(NSUInteger pixels, NSUInteger maxSide) {
+    if (pixels == 0) {
         return 0;
     }
-    maxRows = MAX(maxRows, (NSUInteger)1);
-    return (sourceRows + maxRows - 1) / maxRows;
+    maxSide = MAX(maxSide, (NSUInteger)1);
+    return (pixels + maxSide - 1) / maxSide;
 }
 
-void STWindowsPrintBandRects(NSRect source, NSRect target, NSUInteger band, NSUInteger count,
-                             NSRect *bandSource, NSRect *bandTarget) {
-    NSUInteger rows = (NSUInteger)NSHeight(source);
+/// Piece `index` of `count` along one side: even pieces of whole pixels, `length` long from `origin`, and
+/// its span on the sheet, from `targetOrigin` over `targetLength`, rounded from the same pixels, so a shared
+/// edge lands on the same device pixel.
+static void STWindowsPrintSplit(CGFloat origin, NSUInteger length, CGFloat targetOrigin, CGFloat targetLength,
+                                NSUInteger index, NSUInteger count, CGFloat *from, CGFloat *fromLength,
+                                CGFloat *to, CGFloat *toLength) {
     count = MAX(count, (NSUInteger)1);
-    band = MIN(band, count - 1);
-    // Even bands: band b covers rows b*rows/count up to (b+1)*rows/count, so no two differ by more than a row.
-    NSUInteger r0 = band * rows / count, r1 = (band + 1) * rows / count;
-    *bandSource = NSMakeRect(NSMinX(source), NSMinY(source) + r0, NSWidth(source), (CGFloat)(r1 - r0));
-    // The sheet's edges from the same rows, so a shared edge rounds to the same device row.
-    CGFloat scale = rows > 0 ? NSHeight(target) / (CGFloat)rows : 0.0;
-    CGFloat t0 = NSMinY(target) + round(r0 * scale), t1 = NSMinY(target) + round(r1 * scale);
-    if (band == count - 1) {
-        t1 = NSMaxY(target);
-    }
-    *bandTarget = NSMakeRect(NSMinX(target), t0, NSWidth(target), t1 - t0);
+    index = MIN(index, count - 1);
+    // Piece i covers i*length/count up to (i+1)*length/count, so no two differ by more than a pixel.
+    NSUInteger p0 = index * length / count, p1 = (index + 1) * length / count;
+    CGFloat scale = length > 0 ? targetLength / (CGFloat)length : 0.0;
+    CGFloat t0 = targetOrigin + round(p0 * scale);
+    CGFloat t1 = index == count - 1 ? targetOrigin + targetLength : targetOrigin + round(p1 * scale);
+    *from = origin + p0;
+    *fromLength = (CGFloat)(p1 - p0);
+    *to = t0;
+    *toLength = t1 - t0;
+}
+
+void STWindowsPrintPieceRects(NSRect source, NSRect target, NSUInteger column, NSUInteger columns, NSUInteger row,
+                              NSUInteger rows, NSRect *pieceSource, NSRect *pieceTarget) {
+    CGFloat x, w, tx, tw, y, h, ty, th;
+    STWindowsPrintSplit(NSMinX(source), (NSUInteger)NSWidth(source), NSMinX(target), NSWidth(target), column, columns,
+                        &x, &w, &tx, &tw);
+    STWindowsPrintSplit(NSMinY(source), (NSUInteger)NSHeight(source), NSMinY(target), NSHeight(target), row, rows,
+                        &y, &h, &ty, &th);
+    *pieceSource = NSMakeRect(x, y, w, h);
+    *pieceTarget = NSMakeRect(tx, ty, tw, th);
 }
 
 /// `source`'s pixels as a top-down 32-bit DIB's, on white: all a page needs of the image.
@@ -245,17 +258,18 @@ BOOL STWindowsPrintPages(void *dcHandle, void *devModeHandle, STPrintLayout *lay
             if (NSWidth(source) > 0.0 && NSHeight(source) > 0.0 && NSWidth(target) > 0.0 && NSHeight(target) > 0.0) {
                 SetStretchBltMode(dc, HALFTONE);
                 SetBrushOrgEx(dc, 0, 0, NULL);
-                // In bands of at most STWindowsPrintMaxBandRows source rows: Microsoft Print to PDF drops a row
-                // from a taller source.
-                NSUInteger bands = STWindowsPrintBandCount((NSUInteger)NSHeight(source), STWindowsPrintMaxBandRows);
-                for (NSUInteger band = 0; band < bands && !problem; band++) {
+                // In pieces at most STWindowsPrintMaxPieceSide pixels on a side: Microsoft Print to PDF drops a
+                // row or column from a larger source.
+                NSUInteger columns = STWindowsPrintPieceCount((NSUInteger)NSWidth(source), STWindowsPrintMaxPieceSide);
+                NSUInteger rows = STWindowsPrintPieceCount((NSUInteger)NSHeight(source), STWindowsPrintMaxPieceSide);
+                for (NSUInteger piece = 0; piece < columns * rows && !problem; piece++) {
                     @autoreleasepool {
                         NSRect from, to;
-                        STWindowsPrintBandRects(source, target, band, bands, &from, &to);
-                        if (NSHeight(from) <= 0.0 || NSHeight(to) <= 0.0) {
+                        STWindowsPrintPieceRects(source, target, piece % columns, columns, piece / columns, rows, &from, &to);
+                        if (NSWidth(from) <= 0.0 || NSHeight(from) <= 0.0 || NSWidth(to) <= 0.0 || NSHeight(to) <= 0.0) {
                             continue;
                         }
-                        if (band > 0) {
+                        if (piece > 0) {
                             // Microsoft Print to PDF joins images that meet into one, and drops the row again;
                             // any GDI call between them keeps them apart. This one changes nothing: the
                             // raster op is D, the destination as it is.
