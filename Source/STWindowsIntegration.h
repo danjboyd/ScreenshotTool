@@ -21,6 +21,10 @@ BOOL STWindowsClipboardHasImage(void);
 /// bitmap, for the rest.
 BOOL STWindowsClipboardWritePNGData(NSData *pngData);
 
+/// The part of the screen with frame `screenFrame` that windows have, without the taskbar, on the
+/// monitor showing the window numbered `windowNumber`. GNUstep's -visibleFrame is the whole screen.
+NSRect STWindowsVisibleFrame(NSRect screenFrame, NSInteger windowNumber);
+
 /// Puts `text` on the clipboard as Unicode text (a custom action's output, #221).
 BOOL STWindowsClipboardWriteText(NSString *text);
 

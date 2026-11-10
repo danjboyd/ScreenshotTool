@@ -7046,6 +7046,19 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
 #pragma clang diagnostic pop
 #endif
 
+/// The part of the window's screen it may use.
+NSRect STVisibleFrameForWindow(NSWindow *window) {
+    NSScreen *screen = window.screen ?: [NSScreen mainScreen];
+    if (!screen) {
+        return NSMakeRect(0.0f, 0.0f, 1600.0f, 1000.0f);
+    }
+#if defined(_WIN32)
+    return STWindowsVisibleFrame(screen.frame, window.windowNumber);
+#else
+    return screen.visibleFrame;
+#endif
+}
+
 - (void)resizeWindowToImageSize:(NSSize)imageSize {
     if (imageSize.width <= 0.0f || imageSize.height <= 0.0f || !self.window) {
         return;
@@ -7060,12 +7073,16 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
     imageSize.width += 2.0f * (STCanvasStageMargin + themeBorder);
     imageSize.height += 2.0f * (STCanvasStageMargin + themeBorder);
 
-    NSScreen *screen = self.window.screen ?: [NSScreen mainScreen];
-    NSRect visibleFrame = screen ? screen.visibleFrame : NSMakeRect(0.0f, 0.0f, 1600.0f, 1000.0f);
+    NSRect visibleFrame = STVisibleFrameForWindow(self.window);
     CGFloat maxWidth = visibleFrame.size.width * 0.95f;
     CGFloat maxHeight = visibleFrame.size.height * 0.95f;
     CGFloat barHeight = [self statusBarHeight];
     CGFloat maxContentHeight = MAX(100.0f, maxHeight - barHeight);
+#if defined(GNUSTEP)
+    // The title bar and toolbar need room too: a large image's status bar opened under the taskbar.
+    CGFloat chrome = MAX(0.0f, NSHeight(self.window.frame) - NSHeight([self.window.contentView frame]));
+    maxContentHeight = MAX(100.0f, maxContentHeight - chrome);
+#endif
 
     CGFloat scale = 1.0f;
     if (imageSize.width > maxWidth || imageSize.height > maxContentHeight) {
@@ -7128,6 +7145,16 @@ static BOOL STToolbarThemeHonoursVisibilityPriority(void) {
         [self.canvasView updateForEnclosingBoundsChange];
     }
     [self.window center];
+#if defined(GNUSTEP)
+    // GNUstep centres on the whole screen: keep it clear of the taskbar or a panel.
+    NSRect frame = self.window.frame;
+    NSPoint origin = frame.origin;
+    origin.y = MIN(origin.y, NSMaxY(visibleFrame) - NSHeight(frame));
+    origin.y = MAX(origin.y, NSMinY(visibleFrame));
+    if (origin.y != frame.origin.y) {
+        [self.window setFrameOrigin:origin];
+    }
+#endif
 }
 
 #pragma mark - Actions
