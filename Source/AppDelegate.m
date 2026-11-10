@@ -7371,10 +7371,12 @@ NSRect STVisibleFrameForWindow(NSWindow *window) {
 }
 
 /// Our Print panel, then Windows's print dialog, then the pages on the printer it chose (#355).
-- (void)printWithSelectionOnly:(BOOL)selectionOnly {
+/// NO when the user cancelled our panel or Windows's dialog; YES otherwise, printed or not (a
+/// failure says so itself), so the share sheet's Print can bring the sheet back on a cancel.
+- (BOOL)printWithSelectionOnly:(BOOL)selectionOnly {
     NSImage *flattened = [self.canvasView flattenedImage];
     if (!flattened) {
-        return;
+        return YES;
     }
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     STPrintPanelController *panel = [[STPrintPanelController alloc] initWithFlattenedImage:flattened
@@ -7382,7 +7384,7 @@ NSRect STVisibleFrameForWindow(NSWindow *window) {
                                                                              selectionOnly:selectionOnly
                                                                                   defaults:defaults];
     if (![panel runModal]) {
-        return;
+        return NO;
     }
     STPrintOptions *options = [panel.options copy];
     NSString *title = self.window.title.length > 0 ? self.window.title : @"Screenshot";
@@ -7390,12 +7392,12 @@ NSRect STVisibleFrameForWindow(NSWindow *window) {
     ScreenshotToolAppendLog([NSString stringWithFormat:@"Print dialog: outcome=%ld hresult=0x%lx action=%lu error=0x%lx", (long)answer.outcome,
                              (unsigned long)answer.hresult, answer.action, answer.extendedError]);
     if (answer.outcome == STWindowsPrintDialogCancelled) {
-        return;
+        return NO;
     }
     NSString *failure = nil;
     if (answer.outcome == STWindowsPrintDialogNoPrinter) {
         [self printAsPDFAfterNoPrinterWithOptions:options title:title];
-        return;
+        return YES;
     }
     if (answer.outcome == STWindowsPrintDialogPrint) {
         STPrintSavePaperSize(defaults, STWindowsPrinterSheetFromDC(answer.dc).paper);
@@ -7414,6 +7416,7 @@ NSRect STVisibleFrameForWindow(NSWindow *window) {
         [alert addButtonWithTitle:@"OK"];
         [alert runModal];
     }
+    return YES;
 }
 
 /// With no printer to choose: Windows's own PDF printer, if it's there, makes the same pages in a file.
@@ -9129,36 +9132,38 @@ static BOOL STIsPrintSharingService(NSSharingService *service) {
     if (![self.canvasView hasImage]) {
         return services;
     }
-    __weak AppDelegate *weakSelf = self;
-    [services addObject:[[NSSharingService alloc] initWithTitle:@"Print…"
-                                                          image:nil
-                                                 alternateImage:nil
-                                                        handler:^{
-        [weakSelf printFromShareSheetSelectionOnly:NO];
-    }]];
-    objc_setAssociatedObject(services.lastObject, &STPrintSharingServiceKey, @NO, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [services addObject:[self printSharingServiceTitled:@"Print…" selectionOnly:NO]];
     if ([self.canvasView hasSelection]) {
-        [services addObject:[[NSSharingService alloc] initWithTitle:@"Print Selection…"
-                                                              image:nil
-                                                     alternateImage:nil
-                                                            handler:^{
-            [weakSelf printFromShareSheetSelectionOnly:YES];
-        }]];
-        objc_setAssociatedObject(services.lastObject, &STPrintSharingServiceKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [services addObject:[self printSharingServiceTitled:@"Print Selection…" selectionOnly:YES]];
     }
     return services;
 }
 
+/// One of the sheet's Print services; its handler knows its service, to report a cancel with.
+- (NSSharingService *)printSharingServiceTitled:(NSString *)title selectionOnly:(BOOL)selectionOnly {
+    __weak AppDelegate *weakSelf = self;
+    __block __weak NSSharingService *weakService = nil;
+    NSSharingService *service = [[NSSharingService alloc] initWithTitle:title
+                                                                  image:nil
+                                                         alternateImage:nil
+                                                                handler:^{
+        [weakSelf printFromSharingService:weakService selectionOnly:selectionOnly];
+    }];
+    weakService = service;
+    objc_setAssociatedObject(service, &STPrintSharingServiceKey, @(selectionOnly), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return service;
+}
+
 /// The sheet's Print, inside its click as libs-sharing's Save a Copy runs its panel: the sheet is
-/// gone by then. What's printed is what's there now, as File > Print's validation would allow.
-- (void)printFromShareSheetSelectionOnly:(BOOL)selectionOnly {
+/// gone by then. What's printed is what's there now, as File > Print's validation would allow. The
+/// File menu's Print path; a cancel of our panel or Windows's dialog brings the sheet back, as a
+/// cancelled Save a Copy does, where libs-sharing has -reportCancelled.
+- (void)printFromSharingService:(nullable NSSharingService *)service selectionOnly:(BOOL)selectionOnly {
     if (selectionOnly ? ![self.canvasView hasSelection] : ![self.canvasView hasImage]) {
         return;
     }
-    if (selectionOnly) {
-        [self printSelection:nil];
-    } else {
-        [self printDocument:nil];
+    if (![self printWithSelectionOnly:selectionOnly] && [service respondsToSelector:@selector(reportCancelled)]) {
+        [service reportCancelled];
     }
 }
 #endif

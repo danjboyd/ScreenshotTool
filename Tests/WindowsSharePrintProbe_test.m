@@ -4,9 +4,10 @@
  *
  * Print in the share sheet on Windows (#355): libs-sharing's sheet lists Print… for the image and, with a
  * selection, Print Selection…, after its own services and before the custom actions; choosing one is the
- * File menu's Print or Print Selection, so the same Print panel and Windows print dialog follow. Offscreen:
- * the sheet's list is read from libs-sharing's panel without showing it, and the print commands are
- * recorded instead of opening the panel.
+ * File menu's Print or Print Selection, so the same Print panel and Windows print dialog follow, and a
+ * cancel of either brings the sheet back (libs-sharing's -reportCancelled). Offscreen: the sheet's list is
+ * read from libs-sharing's panel without showing it, and the print is recorded instead of opening the panel.
+ * The app's main window is made (setupWindowAndContent) but never ordered front.
  */
 
 #import <XCTest/XCTest.h>
@@ -19,13 +20,13 @@
 #import "TestEnvironmentHelpers.h"
 #import "GSSharing.h"
 #import "GSSharingPickerPanel.h"
+#import "GSSharingPrivate.h"
 
 @interface AppDelegate (WindowsSharePrintProbe) <NSSharingServicePickerDelegate>
 - (void)setupWindowAndContent;
 - (ScreenshotCanvasView *)canvasView;
 - (NSArray *)shareItemProviders;
-- (void)printDocument:(id)sender;
-- (void)printSelection:(id)sender;
+- (BOOL)printWithSelectionOnly:(BOOL)selectionOnly;
 @end
 
 @interface ScreenshotCanvasView (WindowsSharePrintProbe)
@@ -33,26 +34,23 @@
 @property (nonatomic, assign) NSRect selectionRect;
 @end
 
-/// Records the print commands instead of opening the Print panel.
+/// Records the prints instead of opening the Print panel; `cancels` stands for the user cancelling it.
 @interface STSharePrintRecordingAppDelegate : AppDelegate
 @property (nonatomic, strong) NSMutableArray<NSString *> *prints;
+@property (nonatomic) BOOL cancels;
 @end
 
 @implementation STSharePrintRecordingAppDelegate
-- (void)printDocument:(id)sender {
-    (void)sender;
-    [self.prints addObject:@"document"];
-}
-
-- (void)printSelection:(id)sender {
-    (void)sender;
-    [self.prints addObject:@"selection"];
+- (BOOL)printWithSelectionOnly:(BOOL)selectionOnly {
+    [self.prints addObject:selectionOnly ? @"selection" : @"document"];
+    return !self.cancels;
 }
 @end
 
 @interface WindowsSharePrintProbeTests : XCTestCase {
     STSharePrintRecordingAppDelegate *_app;
     NSString *_actionsDirectory;
+    NSMutableArray *_observers;
 }
 @end
 
@@ -64,6 +62,7 @@
 
 - (void)setUp {
     [super setUp];
+    _observers = [NSMutableArray array];
     // No custom actions but the test's own, so the sheet's list is known.
     _actionsDirectory = [NSTemporaryDirectory() stringByAppendingPathComponent:[[NSUUID UUID] UUIDString]];
     [[NSFileManager defaultManager] createDirectoryAtPath:_actionsDirectory withIntermediateDirectories:YES attributes:nil error:NULL];
@@ -80,6 +79,10 @@
 }
 
 - (void)tearDown {
+    for (id observer in _observers) {
+        [[NSNotificationCenter defaultCenter] removeObserver:observer];
+    }
+    _observers = nil;
     _app = nil;
     [[NSFileManager defaultManager] removeItemAtPath:_actionsDirectory error:NULL];
     [super tearDown];
@@ -202,6 +205,51 @@
     XCTAssertEqualObjects(_app.prints, (@[@"document"]));
     [[self service:@"Print Selection…" in:services] performWithItems:items];
     XCTAssertEqualObjects(_app.prints, (@[@"document", @"selection"]));
+}
+
+/// The ends libs-sharing's sheet watches for (GSSharingServiceDidFinishNotification), with their errors.
+- (NSMutableArray<NSError *> *)watchEndsOf:(NSSharingService *)service {
+    NSMutableArray<NSError *> *ends = [NSMutableArray array];
+    id observer = [[NSNotificationCenter defaultCenter] addObserverForName:GSSharingServiceDidFinishNotification
+                                                                   object:service
+                                                                    queue:nil
+                                                               usingBlock:^(NSNotification *note) {
+        [ends addObject:note.userInfo[@"error"] ?: (NSError *)[NSNull null]];
+    }];
+    [_observers addObject:observer];
+    return ends;
+}
+
+/// Cancelling our Print panel or Windows's dialog, chosen from the sheet, reports a cancel: the sheet
+/// watching for the service's end (as for Save a Copy's panel) comes back.
+- (void)testACancelledPrintBringsTheSheetBack {
+    XCTSkipIf(_app == nil, @"No window server");
+    [self loadImage];
+    [self selectPart];
+    NSArray<NSSharingService *> *services = [self sheetServices];
+    _app.cancels = YES;
+    for (NSString *title in @[ @"Print…", @"Print Selection…" ]) {
+        NSSharingService *service = [self service:title in:services];
+        NSMutableArray<NSError *> *ends = [self watchEndsOf:service];
+        [service performWithItems:[_app shareItemProviders]];
+        XCTAssertEqual(ends.count, (NSUInteger)1, @"%@: one end", title);
+        NSError *error = ends.firstObject;
+        XCTAssertTrue([error isKindOfClass:[NSError class]], @"%@: %@", title, error);
+        XCTAssertEqualObjects(error.domain, NSCocoaErrorDomain, @"%@", title);
+        XCTAssertEqual(error.code, (NSInteger)NSUserCancelledError, @"%@", title);
+    }
+    XCTAssertEqualObjects(_app.prints, (@[@"document", @"selection"]));
+}
+
+/// A print that goes ahead (or fails, saying so itself) reports no end: the sheet stays closed.
+- (void)testAPrintThatGoesAheadLeavesTheSheetClosed {
+    XCTSkipIf(_app == nil, @"No window server");
+    [self loadImage];
+    NSSharingService *print = [self service:@"Print…" in:[self sheetServices]];
+    NSMutableArray<NSError *> *ends = [self watchEndsOf:print];
+    [print performWithItems:[_app shareItemProviders]];
+    XCTAssertEqualObjects(_app.prints, (@[@"document"]));
+    XCTAssertEqual(ends.count, (NSUInteger)0);
 }
 
 /// What's printed is what's there when it's chosen: a selection gone by then prints nothing, as
