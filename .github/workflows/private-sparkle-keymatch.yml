@@ -1,0 +1,74 @@
+name: private-macos-sparkle-keymatch
+
+# Local proposal only. This checks the Actions secret against the app's public key using
+# fixed dummy bytes. It does not sign or verify a release artifact.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  keymatch:
+    if: github.repository == 'danjboyd/ScreenshotTool' && github.ref == 'refs/heads/main'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Prepare pinned public inputs and signer
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_commit=01c1ad58677b46774e7bc56ea5f908aaffb637df
+          expected_signer=43c249771bafc3aa581228abae00731a012d324691b8292860896635050be76b
+          expected_key='fXqmzuRxV6TkC42/QrZAZSyYsvieYCnbDf7qO3/afs8='
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          git cat-file -e "${source_commit}^{commit}"
+          git diff --quiet "${source_commit}" HEAD -- \
+            Resources/Info-cocoa.plist scripts/fetch_sparkle.sh
+          test "$(plutil -extract SUPublicEDKey raw -o - Resources/Info-cocoa.plist)" = \
+            "${expected_key}"
+          proof_dir="$(mktemp -d "${RUNNER_TEMP}/st-sparkle-keymatch.XXXXXX")"
+          printf 'PROOF_DIR=%s\n' "${proof_dir}" >> "${GITHUB_ENV}"
+          printf 'ScreenshotTool Sparkle key-match proof v1\nsource=%s\n' \
+            "${source_commit}" > "${proof_dir}/dummy.txt"
+          signer="$(scripts/fetch_sparkle.sh)/bin/sign_update"
+          test "$(shasum -a 256 "${signer}" | awk '{print $1}')" = \
+            "${expected_signer}"
+          printf 'SIGN_UPDATE=%s\n' "${signer}" >> "${GITHUB_ENV}"
+
+      - name: Sign only deterministic dummy bytes
+        shell: bash
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          set +x
+          test -n "${SPARKLE_ED_PRIVATE_KEY:-}"
+          if ! printf '%s' "${SPARKLE_ED_PRIVATE_KEY}" | \
+            "${SIGN_UPDATE}" --ed-key-file - "${PROOF_DIR}/dummy.txt" \
+            > "${PROOF_DIR}/attributes.txt" 2> "${PROOF_DIR}/sign.err"; then
+            echo 'Private signer failed; no key-match proof.' >&2
+            exit 1
+          fi
+
+      - name: Verify against bundled public key
+        shell: bash
+        run: |
+          set -euo pipefail
+          swift -module-cache-path "${PROOF_DIR}/ModuleCache" \
+            Tools/verify_private_sparkle_keymatch.swift \
+            "${PROOF_DIR}/dummy.txt" "${PROOF_DIR}/attributes.txt" \
+            Resources/Info-cocoa.plist | tee "${GITHUB_STEP_SUMMARY}"
+
+      - name: Remove only this job's private files
+        if: always()
+        shell: bash
+        run: |
+          if [[ "${PROOF_DIR:-}" == "${RUNNER_TEMP}"/st-sparkle-keymatch.* ]]; then
+            rm -rf -- "${PROOF_DIR}"
+          fi
