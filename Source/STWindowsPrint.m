@@ -104,6 +104,33 @@ void STWindowsPrintPageRects(STPrintLayout *layout, NSUInteger page, NSSize imag
     *target = NSMakeRect(x0, y0, x1 - x0, y1 - y0);
 }
 
+const NSUInteger STWindowsPrintMaxBandRows = 3583;
+
+NSUInteger STWindowsPrintBandCount(NSUInteger sourceRows, NSUInteger maxRows) {
+    if (sourceRows == 0) {
+        return 0;
+    }
+    maxRows = MAX(maxRows, (NSUInteger)1);
+    return (sourceRows + maxRows - 1) / maxRows;
+}
+
+void STWindowsPrintBandRects(NSRect source, NSRect target, NSUInteger band, NSUInteger count,
+                             NSRect *bandSource, NSRect *bandTarget) {
+    NSUInteger rows = (NSUInteger)NSHeight(source);
+    count = MAX(count, (NSUInteger)1);
+    band = MIN(band, count - 1);
+    // Even bands: band b covers rows b*rows/count up to (b+1)*rows/count, so no two differ by more than a row.
+    NSUInteger r0 = band * rows / count, r1 = (band + 1) * rows / count;
+    *bandSource = NSMakeRect(NSMinX(source), NSMinY(source) + r0, NSWidth(source), (CGFloat)(r1 - r0));
+    // The sheet's edges from the same rows, so a shared edge rounds to the same device row.
+    CGFloat scale = rows > 0 ? NSHeight(target) / (CGFloat)rows : 0.0;
+    CGFloat t0 = NSMinY(target) + round(r0 * scale), t1 = NSMinY(target) + round(r1 * scale);
+    if (band == count - 1) {
+        t1 = NSMaxY(target);
+    }
+    *bandTarget = NSMakeRect(NSMinX(target), t0, NSWidth(target), t1 - t0);
+}
+
 /// `source`'s pixels as a top-down 32-bit DIB's, on white: all a page needs of the image.
 static NSData *STPrintDIBPixels(NSBitmapImageRep *rep, NSRect source) {
     NSInteger x0 = (NSInteger)NSMinX(source), y0 = (NSInteger)NSMinY(source);
@@ -216,17 +243,35 @@ BOOL STWindowsPrintPages(void *dcHandle, void *devModeHandle, STPrintLayout *lay
             NSRect source, target;
             STWindowsPrintPageRects(layout, page, imagePixels, dpi, offset, &source, &target);
             if (NSWidth(source) > 0.0 && NSHeight(source) > 0.0 && NSWidth(target) > 0.0 && NSHeight(target) > 0.0) {
-                NSData *pixels = STPrintDIBPixels(rep, source);
-                BITMAPINFOHEADER header = { .biSize = sizeof(BITMAPINFOHEADER), .biWidth = (LONG)NSWidth(source),
-                                            .biHeight = -(LONG)NSHeight(source), .biPlanes = 1, .biBitCount = 32,
-                                            .biCompression = BI_RGB };
                 SetStretchBltMode(dc, HALFTONE);
                 SetBrushOrgEx(dc, 0, 0, NULL);
-                int drawn = StretchDIBits(dc, (int)NSMinX(target), (int)NSMinY(target), (int)NSWidth(target), (int)NSHeight(target),
-                                          0, 0, (int)NSWidth(source), (int)NSHeight(source), pixels.bytes,
-                                          (const BITMAPINFO *)&header, DIB_RGB_COLORS, SRCCOPY);
-                if (drawn == 0 || drawn == GDI_ERROR) {
-                    problem = @"The page couldn't be drawn.";
+                // In bands of at most STWindowsPrintMaxBandRows source rows: Microsoft Print to PDF drops a row
+                // from a taller source.
+                NSUInteger bands = STWindowsPrintBandCount((NSUInteger)NSHeight(source), STWindowsPrintMaxBandRows);
+                for (NSUInteger band = 0; band < bands && !problem; band++) {
+                    @autoreleasepool {
+                        NSRect from, to;
+                        STWindowsPrintBandRects(source, target, band, bands, &from, &to);
+                        if (NSHeight(from) <= 0.0 || NSHeight(to) <= 0.0) {
+                            continue;
+                        }
+                        if (band > 0) {
+                            // Microsoft Print to PDF joins images that meet into one, and drops the row again;
+                            // any GDI call between them keeps them apart. This one changes nothing: the
+                            // raster op is D, the destination as it is.
+                            PatBlt(dc, (int)NSMinX(to), (int)NSMinY(to), 1, 1, 0x00AA0029);
+                        }
+                        NSData *pixels = STPrintDIBPixels(rep, from);
+                        BITMAPINFOHEADER header = { .biSize = sizeof(BITMAPINFOHEADER), .biWidth = (LONG)NSWidth(from),
+                                                    .biHeight = -(LONG)NSHeight(from), .biPlanes = 1, .biBitCount = 32,
+                                                    .biCompression = BI_RGB };
+                        int drawn = StretchDIBits(dc, (int)NSMinX(to), (int)NSMinY(to), (int)NSWidth(to), (int)NSHeight(to),
+                                                  0, 0, (int)NSWidth(from), (int)NSHeight(from), pixels.bytes,
+                                                  (const BITMAPINFO *)&header, DIB_RGB_COLORS, SRCCOPY);
+                        if (drawn == 0 || drawn == GDI_ERROR) {
+                            problem = @"The page couldn't be drawn.";
+                        }
+                    }
                 }
             }
             if (EndPage(dc) <= 0 && !problem) {

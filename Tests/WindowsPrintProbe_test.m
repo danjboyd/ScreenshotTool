@@ -330,6 +330,129 @@ static const STPrintProbeRGB STPrintQuadrants[8] = {
     XCTAssertEqual(coveredHeight, 777.0);
 }
 
+/// A page's bands: each at most the limit, within a row of each other, and together exactly the page's
+/// rows and sheet rect, with no gap or overlap on either side.
+- (void)testBandsCoverThePageExactly {
+    XCTAssertEqual(STWindowsPrintBandCount(0, 3583), (NSUInteger)0);
+    XCTAssertEqual(STWindowsPrintBandCount(3583, 3583), (NSUInteger)1);
+    XCTAssertEqual(STWindowsPrintBandCount(3584, 3583), (NSUInteger)2);
+    XCTAssertEqual(STWindowsPrintBandCount(10749, 3583), (NSUInteger)3);
+    XCTAssertEqual(STWindowsPrintBandCount(10750, 3583), (NSUInteger)4);
+    const NSUInteger rowsCases[] = { 1, 3583, 3584, 7167, 8000, 10751 };
+    const CGFloat targetHeights[] = { 1.0, 6600.0, 7001.0, 2999.0 };
+    for (size_t i = 0; i < sizeof(rowsCases) / sizeof(rowsCases[0]); i++) {
+        for (size_t j = 0; j < sizeof(targetHeights) / sizeof(targetHeights[0]); j++) {
+            NSRect source = NSMakeRect(17, 40, 300, rowsCases[i]);
+            NSRect target = NSMakeRect(150, 213, 4800, targetHeights[j]);
+            NSUInteger count = STWindowsPrintBandCount(rowsCases[i], STWindowsPrintMaxBandRows);
+            CGFloat sourceEdge = NSMinY(source), targetEdge = NSMinY(target);
+            CGFloat smallest = CGFLOAT_MAX, largest = 0.0;
+            for (NSUInteger band = 0; band < count; band++) {
+                NSRect from, to;
+                STWindowsPrintBandRects(source, target, band, count, &from, &to);
+                XCTAssertEqual(NSMinY(from), sourceEdge, @"rows %lu band %lu", (unsigned long)rowsCases[i], (unsigned long)band);
+                XCTAssertEqual(NSMinY(to), targetEdge, @"rows %lu band %lu", (unsigned long)rowsCases[i], (unsigned long)band);
+                XCTAssertEqual(NSMinX(from), NSMinX(source));
+                XCTAssertEqual(NSWidth(from), NSWidth(source));
+                XCTAssertEqual(NSMinX(to), NSMinX(target));
+                XCTAssertEqual(NSWidth(to), NSWidth(target));
+                XCTAssertEqual(NSHeight(from), floor(NSHeight(from)), @"whole rows");
+                XCTAssertEqual(NSHeight(to), floor(NSHeight(to)), @"whole device rows");
+                XCTAssertLessThanOrEqual(NSHeight(from), (CGFloat)STWindowsPrintMaxBandRows);
+                XCTAssertGreaterThanOrEqual(NSHeight(to), 0.0);
+                smallest = MIN(smallest, NSHeight(from));
+                largest = MAX(largest, NSHeight(from));
+                sourceEdge = NSMaxY(from);
+                targetEdge = NSMaxY(to);
+            }
+            XCTAssertEqual(sourceEdge, NSMaxY(source), @"rows %lu", (unsigned long)rowsCases[i]);
+            XCTAssertEqual(targetEdge, NSMaxY(target), @"rows %lu", (unsigned long)rowsCases[i]);
+            XCTAssertLessThanOrEqual(largest - smallest, 1.0, @"even bands");
+        }
+    }
+}
+
+/// The embedded images' heights in a PDF, from pdfimages -list next to pdftoppm; nil without it.
+- (NSArray<NSNumber *> *)imageHeightsInPDF:(NSString *)pdf {
+    NSString *tool = [[_pdftoppm stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"pdfimages.exe"];
+    if (![[NSFileManager defaultManager] fileExistsAtPath:tool]) {
+        return nil;
+    }
+    NSTask *task = [[NSTask alloc] init];
+    task.launchPath = tool;
+    task.arguments = @[ @"-list", pdf ];
+    NSPipe *pipe = [NSPipe pipe];
+    task.standardOutput = pipe;
+    [task launch];
+    NSData *output = [[pipe fileHandleForReading] readDataToEndOfFile];
+    [task waitUntilExit];
+    NSString *text = [[NSString alloc] initWithData:output encoding:NSUTF8StringEncoding];
+    NSMutableArray<NSNumber *> *heights = [NSMutableArray array];
+    // Columns: page num type width height ...; only "image" rows, not soft masks, and not the two header lines.
+    for (NSString *line in [text componentsSeparatedByString:@"\n"]) {
+        NSArray<NSString *> *fields = [[line stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]]
+            componentsSeparatedByCharactersInSet:[NSCharacterSet whitespaceCharacterSet]];
+        fields = [fields filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
+        if (fields.count > 4 && [fields[2] isEqualToString:@"image"] && [fields[0] integerValue] > 0) {
+            [heights addObject:@([fields[4] integerValue])];
+        }
+    }
+    return heights;
+}
+
+/// A page taller than Microsoft Print to PDF keeps in one piece goes in bands, and every row arrives.
+- (void)testATallPageKeepsEveryRow {
+    if (![self canPrint]) {
+        return;
+    }
+    const NSInteger width = 120, height = 8000;
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:width pixelsHigh:height bitsPerSample:8
+                                                               samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+                                                                colorSpaceName:NSDeviceRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+    for (NSInteger y = 0; y < height; y++) {
+        unsigned char *p = rep.bitmapData + y * rep.bytesPerRow;
+        for (NSInteger x = 0; x < width; x++, p += 4) {
+            p[0] = p[1] = p[2] = (y % 2) ? 0 : 255;
+            p[3] = 255;
+        }
+    }
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(width, height)];
+    [image addRepresentation:rep];
+    void *devMode = NULL;
+    void *dc = STWindowsCreatePrinterDC(STPDFPrinter, &devMode);
+    XCTAssertTrue(dc != NULL);
+    if (!dc) {
+        return;
+    }
+    STPrintLayout *layout = [self layoutOnPrinterDC:dc pixelsPerInch:72.0];
+    layout.sourceRect = NSMakeRect(0, 0, width, height);
+    layout.fit = STPrintFitToPage;
+    layout.orientation = STPrintOrientationPortrait;
+    XCTAssertEqual(layout.pageCount, (NSUInteger)1);
+    NSString *pdf = [_directory stringByAppendingPathComponent:@"tall.pdf"];
+    NSString *failure = nil;
+    BOOL printed = STWindowsPrintPages(dc, devMode, layout, image, @"WindowsPrintProbe", pdf, &failure);
+    DeleteDC((HDC)dc);
+    free(devMode);
+    XCTAssertTrue(printed, @"%@", failure);
+    if (!printed || ![self waitForFile:pdf]) {
+        XCTFail(@"No PDF at %@", pdf);
+        return;
+    }
+    NSArray<NSNumber *> *heights = [self imageHeightsInPDF:pdf];
+    if (!heights) {
+        NSLog(@"WindowsPrintProbe: SKIPPED row count: no pdfimages here");
+        return;
+    }
+    NSInteger total = 0;
+    for (NSNumber *h in heights) {
+        XCTAssertLessThanOrEqual(h.integerValue, (NSInteger)STWindowsPrintMaxBandRows);
+        total += h.integerValue;
+    }
+    XCTAssertEqual(heights.count, STWindowsPrintBandCount(height, STWindowsPrintMaxBandRows), @"%@", heights);
+    XCTAssertEqual(total, height, @"Every source row in the PDF: %@", heights);
+}
+
 @end
 
 #endif
