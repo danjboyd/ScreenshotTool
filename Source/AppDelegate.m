@@ -12,6 +12,11 @@
 #import "STSegmentToolTips.h"
 #import "STSplitButton.h"
 #import "STEmptyStateView.h"
+#if defined(__linux__)
+#import "STPrintPDF.h"
+#import "STPrintPanelController.h"
+#import "STPrintPortal.h"
+#endif
 #import "STCustomActions.h"
 #import <objc/runtime.h>
 #import "STScreenshotCapture.h"
@@ -21,6 +26,13 @@
 #import "STHudView.h"
 #import "STTextOptionsBar.h"
 #import "STSelectionActionBar.h"
+#if !defined(GNUSTEP)
+#import "STPrintAccessoryController.h"
+#import "STPrintLayout.h"
+#import "STPrintOptions.h"
+#import "STPrintPage.h"
+#import "STPrintView.h"
+#endif
 #if defined(GNUSTEP) && defined(ST_HAVE_LIBS_SHARING)
 // Apple's sharing API as libs-sharing implements it (libs-gui declares only part of it).
 #import "GSSharing.h"
@@ -1666,6 +1678,7 @@ static void STApplyAccessibilityLabel(id object, NSString *label) {
 #if !defined(GNUSTEP)
 /// Where the open share picker points, when it was opened from a click inside the canvas.
 @property (nonatomic, strong, nullable) NSView *shareAnchorView;
+@property (nonatomic, assign) BOOL printOperationInProgress;
 /// The service a share started, until it reports how it went: its window (AirDrop's, say) is up,
 /// and a second Share would open another over it (#335).
 @property (nonatomic, strong, nullable) NSSharingService *sharingServiceInProgress;
@@ -2133,7 +2146,7 @@ static AppDelegate *STFrontDocument(void) {
                                                  @"cropImage:", @"zoomFitToWindow:", @"zoomPreset25:",
                                                  @"zoomPreset50:", @"zoomPreset100:", @"zoomPreset200:",
                                                  @"zoomIn:", @"zoomOut:", @"runCustomAction:",
-                                                 @"redactSelection:", @"duplicateAnnotations:",
+                                                 @"printDocument:", @"redactSelection:", @"duplicateAnnotations:",
                                                  @"bringAnnotationsToFront:", @"sendAnnotationsToBack:"]];
     }
     for (NSMenuItem *item in menu.itemArray) {
@@ -2326,6 +2339,14 @@ static AppDelegate *STFrontDocument(void) {
         none.enabled = NO;
         return;
     }
+#if !defined(GNUSTEP)
+    // Use our print operation, not a service that prints the shared PNG without our options.
+    AppDelegate *printTarget = STFrontDocument() ?: self;
+    SEL printAction = [printTarget.canvasView hasSelection] ? @selector(printSelection:) : @selector(printDocument:);
+    NSMenuItem *print = [menu addItemWithTitle:@"Print…" action:printAction keyEquivalent:@""];
+    print.target = printTarget;
+    [menu addItem:[NSMenuItem separatorItem]];
+#endif
     for (NSSharingService *service in [NSSharingService sharingServicesForItems:@[url]]) {
         NSMenuItem *item = [menu addItemWithTitle:service.menuItemTitle
                                            action:@selector(shareFromMenuItem:)
@@ -2709,6 +2730,14 @@ static AppDelegate *STFrontDocument(void) {
 
 - (BOOL)validateMenuItemUnguarded:(NSMenuItem *)menuItem {
     SEL action = menuItem.action;
+#if !defined(GNUSTEP)
+    if (action == @selector(printDocument:)) {
+        return [self.canvasView hasImage] && !self.printOperationInProgress;
+    }
+    if (action == @selector(printSelection:)) {
+        return [self.canvasView hasSelection] && !self.printOperationInProgress;
+    }
+#endif
     if (action == @selector(saveDocumentAs:) || action == @selector(saveProject:) || action == @selector(copy:) ||
         action == @selector(zoomIn:) || action == @selector(zoomOut:)) {
         return [self.canvasView hasImage];
@@ -2716,6 +2745,14 @@ static AppDelegate *STFrontDocument(void) {
     if (action == @selector(cropImage:)) {
         return [self.canvasView hasSelection];
     }
+#if defined(__linux__)
+    if (action == @selector(printDocument:)) {
+        return [self.canvasView hasImage] && ![STPrintPortal isPrinting];
+    }
+    if (action == @selector(printSelection:)) {
+        return [self.canvasView hasSelection] && ![STPrintPortal isPrinting];
+    }
+#endif
     if (action == @selector(shareImage:) || action == @selector(shareFromFileMenu:)) {
         return STCanShareImages() && [self.canvasView hasImage];
     }
@@ -2936,6 +2973,17 @@ static id STInfoValueForKey(NSString *key) {
     [saveProjectItem setKeyEquivalentModifierMask:(NSEventModifierFlagCommand | NSEventModifierFlagShift)];
     [fileMenu addItem:saveProjectItem];
 
+#if !defined(GNUSTEP)
+    // The annotated image on paper, laid out as on every platform (#355).
+    [fileMenu addItem:[NSMenuItem separatorItem]];
+    NSMenuItem *printItem = [[NSMenuItem alloc] initWithTitle:@"Print…"
+                                                       action:@selector(printDocument:)
+                                                keyEquivalent:@"p"];
+    [printItem setTarget:self];
+    [printItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
+    [fileMenu addItem:printItem];
+#endif
+
     // The user's custom actions, each sending the annotated image to a command of theirs (#221).
     NSArray<STCustomAction *> *customActions = [self loadedCustomActions];
     if (customActions.count > 0) {
@@ -2944,6 +2992,15 @@ static id STInfoValueForKey(NSString *key) {
             [fileMenu addItem:[self menuItemForCustomAction:customAction]];
         }
     }
+
+#if defined(__linux__)
+    NSMenuItem *printItem = [[NSMenuItem alloc] initWithTitle:@"Print…"
+                                                       action:@selector(printDocument:)
+                                                keyEquivalent:@"p"];
+    [printItem setTarget:self];
+    [printItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand];
+    [fileMenu addItem:printItem];
+#endif
 
 #if !defined(GNUSTEP)
     [fileMenu addItem:[NSMenuItem separatorItem]];
@@ -7288,6 +7345,99 @@ NSRect STVisibleFrameForWindow(NSWindow *window) {
     [self saveImageWithPanel];
 }
 
+#if defined(__linux__)
+- (void)printDocument:(id)sender {
+    (void)sender;
+    [self printWithSelectionOnly:NO];
+}
+
+- (void)printSelection:(id)sender {
+    (void)sender;
+    [self printWithSelectionOnly:YES];
+}
+
+/// Our Print panel, then the desktop's print dialog, then the PDF for the paper it chose (#355).
+- (void)printWithSelectionOnly:(BOOL)selectionOnly {
+    if ([STPrintPortal isPrinting]) {
+        return;
+    }
+    NSImage *flattened = [self.canvasView flattenedImage];
+    if (!flattened) {
+        return;
+    }
+    NSRect selection = [self.canvasView selectionImageRect];
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    STPrintPanelController *panel = [[STPrintPanelController alloc] initWithFlattenedImage:flattened
+                                                                                 selection:selection
+                                                                             selectionOnly:selectionOnly
+                                                                                  defaults:defaults];
+    if (![panel runModal]) {
+        return;
+    }
+    STPrintOptions *options = [panel.options copy];
+    NSString *title = [self printDocumentName];
+    ScreenshotCanvasView *canvas = self.canvasView;
+    __block NSSize printedPaper = NSZeroSize;
+    __block NSDictionary<NSString *, id> *printedPageSetup = nil;
+    [STPrintPortal printForWindow:self.window
+                            title:title
+                        pageSetup:STPrintLastPageSetup(defaults)
+                           writer:^BOOL(STPrintPortalPageSetup setup, NSDictionary<NSString *, id> *pageSetup, NSString *path) {
+        BOOL wrote = STWriteCanvasPrintPDF(canvas, options, setup.paper, setup.printerMargins, path);
+        if (wrote) {
+            printedPaper = setup.paper;
+            printedPageSetup = [pageSetup copy];
+        }
+        return wrote;
+    }
+                       completion:^(BOOL printed, BOOL unavailable, NSString *failure) {
+        // Remember the paper only when the desktop accepted the print, not after a
+        // cancelled dialog, a failed PDF write, or a failed printer submission.
+        if (printed && printedPageSetup) {
+            STPrintSavePaperSize(defaults, printedPaper);
+            STPrintSavePageSetup(defaults, printedPageSetup);
+        }
+        if (!failure) {
+            return;
+        }
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Unable to Print";
+        alert.informativeText = failure;
+        [alert addButtonWithTitle:unavailable ? @"Save as PDF…" : @"OK"];
+        if (unavailable) {
+            [alert addButtonWithTitle:@"Cancel"];
+        }
+        if ([alert runModal] == NSAlertFirstButtonReturn && unavailable) {
+            [self savePrintAsPDFWithOptions:options];
+        }
+    }];
+}
+
+/// The file's name, for a print job and a saved PDF: the window's title also has its folder.
+- (NSString *)printDocumentName {
+    NSString *name = (self.currentProjectURL ?: self.currentImageURL).lastPathComponent;
+    return name.length > 0 ? name : @"Screenshot";
+}
+
+/// With no print service: the same pages in a file, to print elsewhere. On the paper last printed on.
+- (void)savePrintAsPDFWithOptions:(STPrintOptions *)options {
+    NSSavePanel *panel = [NSSavePanel savePanel];
+    panel.allowedFileTypes = @[ @"pdf" ];
+    panel.nameFieldStringValue = [[[self printDocumentName] stringByDeletingPathExtension] stringByAppendingPathExtension:@"pdf"];
+    if ([panel runModal] != NSModalResponseOK || !panel.URL.path) {
+        return;
+    }
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    if (!STWriteCanvasPrintPDF(self.canvasView, options, STPrintLastPaperSize(defaults), STPrintMarginsMake(0, 0, 0, 0), panel.URL.path)) {
+        NSAlert *alert = [[NSAlert alloc] init];
+        alert.messageText = @"Unable to Save PDF";
+        alert.informativeText = panel.URL.path;
+        [alert addButtonWithTitle:@"OK"];
+        [alert runModal];
+    }
+}
+#endif
+
 - (BOOL)saveImageWithPanel {
     if (![self.canvasView hasImage]) {
         return NO;
@@ -8801,14 +8951,45 @@ NSString *STRedactDetectedFeedback(BOOL foundText, NSUInteger redacted, NSUInteg
 #if !defined(GNUSTEP) || defined(ST_HAVE_LIBS_SHARING)
 // Plain NSSharingService API, shared with GNUstep's picker where libs-sharing is built in.
 
-/// Every share picker (the toolbar's, the right-click menu's and the selection bar's) lists the
-/// custom actions after the system's services: one per choice, or one for an action without.
+#if !defined(GNUSTEP)
+static char STPrintSharingServiceKey;
+static NSString * const STPrintSharingTitle = @"Print…";
+
+/// The picker has no guaranteed system Print service. This one opens our native print accessory.
+- (NSSharingService *)printSharingService {
+    NSImage *image = [NSImage imageWithSystemSymbolName:@"printer" accessibilityDescription:@"Print"];
+    if (!image) image = [[NSImage alloc] initWithSize:NSMakeSize(16.0, 16.0)];
+    __weak AppDelegate *weakSelf = self;
+    NSSharingService *service = [[NSSharingService alloc] initWithTitle:STPrintSharingTitle
+                                                               image:image
+                                                      alternateImage:nil
+                                                             handler:^{
+        // Let the share picker close before opening the print sheet.
+        dispatch_async(dispatch_get_main_queue(), ^{
+            AppDelegate *document = weakSelf;
+            if ([document.canvasView hasSelection]) [document printSelection:nil];
+            else [document printDocument:nil];
+        });
+    }];
+    objc_setAssociatedObject(service, &STPrintSharingServiceKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return service;
+}
+#endif
+
+/// Every share picker offers our Print route before the system's services, then custom actions:
+/// one per choice, or one for an action without.
 - (NSArray<NSSharingService *> *)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker
                               sharingServicesForItems:(NSArray *)items
                               proposedSharingServices:(NSArray<NSSharingService *> *)proposedServices {
     (void)sharingServicePicker;
-    (void)items;
     NSMutableArray<NSSharingService *> *services = [proposedServices mutableCopy];
+#if !defined(GNUSTEP)
+    if (items.count > 0) {
+        [services insertObject:[self printSharingService] atIndex:0];
+    }
+#else
+    (void)items;
+#endif
     [services addObjectsFromArray:[self customActionSharingServices]];
     return services;
 }
@@ -8825,10 +9006,14 @@ static NSMutableSet<NSString *> *STCustomActionSharingTitles(void) {
     return titles;
 }
 
-/// Whether `service` is one of the custom actions, which say how they went themselves. A custom
-/// action with a system service's title ("Mail") would silence that service too.
-static BOOL STIsCustomActionSharingService(NSSharingService *service) {
+/// Immediate services manage their own result, including our Print route. A custom action with a
+/// system service's title ("Mail") would silence that service too.
+static BOOL STIsImmediateSharingService(NSSharingService *service) {
     return objc_getAssociatedObject(service, &STCustomActionSharingServiceKey) != nil ||
+#if !defined(GNUSTEP)
+           objc_getAssociatedObject(service, &STPrintSharingServiceKey) != nil ||
+           [service.title isEqualToString:STPrintSharingTitle] ||
+#endif
            (service.title.length > 0 && [STCustomActionSharingTitles() containsObject:service.title]);
 }
 
@@ -8910,21 +9095,21 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 }
 #endif
 
-/// The system's services report back here; a custom action says how it went itself.
+/// The system's services report back here; immediate services say how they went themselves.
 - (nullable id<NSSharingServiceDelegate>)sharingServicePicker:(NSSharingServicePicker *)sharingServicePicker
                                     delegateForSharingService:(NSSharingService *)sharingService {
     (void)sharingServicePicker;
-    return STIsCustomActionSharingService(sharingService) ? nil : self;
+    return STIsImmediateSharingService(sharingService) ? nil : self;
 }
 
 #if !defined(GNUSTEP)
-/// A share is starting with `service`, unless another one hasn't ended yet. A custom action
-/// isn't waited for: it opens no window of its own and never reports back.
+/// A share is starting with `service`, unless another one hasn't ended yet. An immediate service
+/// isn't waited for: its action manages any window it opens.
 - (BOOL)beginSharingService:(NSSharingService *)service {
     if (self.sharingServiceInProgress) {
         return NO;
     }
-    if (!STIsCustomActionSharingService(service)) {
+    if (!STIsImmediateSharingService(service)) {
         self.sharingServiceInProgress = service;
         [self updateShareToolbarItem];
     }
@@ -8960,8 +9145,8 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 #if !defined(GNUSTEP)
     [self endSharingService:sharingService];
 #endif
-    // macOS 26 reports a custom action here as it starts, though its delegate is nil (#280).
-    if (STIsCustomActionSharingService(sharingService)) {
+    // macOS 26 reports an immediate service here as it starts, though its delegate is nil (#280).
+    if (STIsImmediateSharingService(sharingService)) {
         return;
     }
 #if defined(GNUSTEP)
@@ -9006,7 +9191,7 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 #if !defined(GNUSTEP)
     [self endSharingService:sharingService];
 #endif
-    if (STIsCustomActionSharingService(sharingService)) {
+    if (STIsImmediateSharingService(sharingService)) {
         return;
     }
     if ([error.domain isEqualToString:NSCocoaErrorDomain] && error.code == NSUserCancelledError) {
@@ -9702,6 +9887,110 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 }
 
 #pragma mark - Projects (#32)
+
+#if !defined(GNUSTEP)
+#pragma mark - Print (#355)
+
+/// File ▸ Print… starts with the whole image; Share ▸ Print… follows the shared selection.
+- (void)printDocument:(id)sender {
+    (void)sender;
+    [self printWithSelectionOnly:NO];
+}
+
+/// The selection's context menu starts with the selection already chosen in the print accessory.
+- (void)printSelection:(id)sender {
+    (void)sender;
+    [self printWithSelectionOnly:YES];
+}
+
+/// The annotated image, or the selection, through STPrintLayout and the native print panel.
+/// Options are remembered only after a print or a saved PDF.
+- (void)printWithSelectionOnly:(BOOL)selectionOnly {
+    if (self.printOperationInProgress) return;
+    NSImage *image = [self.canvasView flattenedImage];
+    NSSize pixels = image ? STPrintImagePixelSize(image) : NSZeroSize;
+    if (!image || !(pixels.width > 0.0) || !(image.size.width > 0.0)) {
+        NSBeep();
+        return;
+    }
+    NSRect selection = [self.canvasView hasSelection] ? [self.canvasView selectionImageRect] : NSZeroRect;
+    BOOL hasSelection = !NSIsEmptyRect(selection);
+    if (selectionOnly && !hasSelection) {
+        NSBeep();
+        return;
+    }
+    STPrintVectorScene *vectorScene = [self.canvasView vectorSceneForPrint];
+    // Printed at the printed size, up to 300 dpi, and only what's printed (#355). The last one is kept:
+    // the panel asks again for every change, and most changes don't change the scale.
+    __weak ScreenshotCanvasView *weakCanvas = self.canvasView;
+    __block NSImage *lastFlatten = nil;
+    __block NSUInteger lastScale = 0;
+    __block NSRect lastClip = NSZeroRect;
+    STPrintFlattener flattener = ^NSImage *(NSUInteger scale, NSRect clip) {
+        if (!lastFlatten || scale != lastScale || !NSEqualRects(clip, lastClip)) {
+            lastFlatten = [weakCanvas flattenedImageForPrintAtScale:scale withinRect:clip];
+            lastScale = scale;
+            lastClip = clip;
+        }
+        return lastFlatten;
+    };
+
+    STPrintOptions *options = [STPrintOptions optionsFromDefaults:[NSUserDefaults standardUserDefaults]];
+    options.selectionOnly = selectionOnly;
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    layout.margins = STPrintMarginsMake(STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin,
+                                        STPrintDefaultMargin);
+
+    NSPrintInfo *info = [[NSPrintInfo sharedPrintInfo] copy];
+    layout.paperSize = info.paperSize;
+    layout.printerMargins = STPrinterMarginsForPrintInfo(info);
+    STPrintView *view = [[STPrintView alloc] initWithLayout:layout image:image];
+    STPrintViewTakeOptions(view, options, image, selection, flattener);
+    if (!options.selectionOnly && layout.pageCount == 1) view.vectorScene = vectorScene;
+    // Turned now that the layout knows the image.
+    STPreparePrintInfo(info, layout);
+    [view setFrameSize:layout.orientedPaperSize];
+    STPrintAccessoryController *accessory = [[STPrintAccessoryController alloc] initWithOptions:options
+                                                                                   hasSelection:hasSelection];
+    accessory.printView = view;
+    __weak STPrintAccessoryController *weakAccessory = accessory;
+    view.printInfoChoseOrientation = ^(STPrintOrientation orientation) {
+        [weakAccessory printViewChoseOrientation:orientation];
+    };
+    __weak STPrintView *weakView = view;
+    accessory.optionsDidChange = ^(STPrintOptions *chosen) {
+        STPrintView *strongView = weakView;
+        if (strongView) {
+            STPrintViewTakeOptions(strongView, chosen, image, selection, flattener);
+            if (!chosen.selectionOnly && strongView.layout.pageCount == 1) strongView.vectorScene = vectorScene;
+        }
+    };
+
+    NSPrintOperation *operation = [NSPrintOperation printOperationWithView:view printInfo:info];
+    operation.jobTitle = self.window.title.length > 0 ? self.window.title : @"Screenshot";
+    NSPrintPanel *panel = operation.printPanel;
+    panel.options |= NSPrintPanelShowsCopies | NSPrintPanelShowsPageRange | NSPrintPanelShowsPaperSize |
+                     NSPrintPanelShowsOrientation | NSPrintPanelShowsPreview;
+    [panel addAccessoryController:accessory];
+    self.printOperationInProgress = YES;
+    [operation runOperationModalForWindow:self.window
+                                 delegate:self
+                           didRunSelector:@selector(printOperationDidRun:success:contextInfo:)
+                              contextInfo:(__bridge_retained void *)accessory];
+}
+
+- (void)printOperationDidRun:(NSPrintOperation *)operation success:(BOOL)success contextInfo:(void *)contextInfo {
+    self.printOperationInProgress = NO;
+    STPrintAccessoryController *accessory = (__bridge_transfer STPrintAccessoryController *)contextInfo;
+    if (success) {
+        [accessory saveToDefaults:[NSUserDefaults standardUserDefaults]];
+        // The paper and printer for next time; the layout sets the margins and orientation itself.
+        [NSPrintInfo setSharedPrintInfo:operation.printInfo];
+    }
+    ScreenshotToolAppendLog([NSString stringWithFormat:@"Print: %@, %lu page(s)", success ? @"done" : @"cancelled",
+                             (unsigned long)accessory.printView.layout.pageCount]);
+}
+#endif
 
 - (void)saveProject:(id)sender {
     (void)sender;

@@ -24,6 +24,10 @@
 #import "MarkupText.h"
 #import "STThemeUtilities.h"
 #import "STTextSelection.h"
+#if !defined(GNUSTEP)
+#import "STPrintVectorScene.h"
+#import "STPrintPage.h"
+#endif
 #import <AppKit/NSBitmapImageRep.h>
 #import <AppKit/NSGraphicsContext.h>
 #import <AppKit/NSColorSpace.h>
@@ -921,23 +925,26 @@ static void STRasterizeStrokeOntoBitmap(MarkupStroke *stroke,
 // it does into a locked NSImage. Annotations whose look depends on AppKit drawing (text, arrows)
 // are drawn there with the canvas's own code, read back, and composited, so export matches the
 // screen. `draw` receives the unflipped height to map canvas coordinates into that image.
-static void STRasterizeDrawingOntoBitmap(NSRect canvasArea,
-                                         STBitmapBuffer *buffer,
-                                         NSSize canvasSize,
-                                         void (^draw)(CGFloat unflippedHeight)) {
+/// `scale` is the buffer's pixels per canvas point: above 1, the drawing is drawn at that size, so a
+/// print is sharp. `canvasArea` and `canvasSize` stay in canvas points.
+static void STRasterizeDrawingOntoBitmapAtScale(NSRect canvasArea,
+                                                STBitmapBuffer *buffer,
+                                                NSSize canvasSize,
+                                                NSInteger scale,
+                                                void (^draw)(CGFloat unflippedHeight)) {
     if (!buffer || !buffer->data || !draw) {
         return;
     }
 
     NSRect area = NSIntersectionRect(NSIntegralRect(canvasArea),
                                      NSMakeRect(0.0, 0.0, canvasSize.width, canvasSize.height));
-    NSInteger width = (NSInteger)NSWidth(area);
-    NSInteger height = (NSInteger)NSHeight(area);
+    NSInteger width = (NSInteger)NSWidth(area) * scale;
+    NSInteger height = (NSInteger)NSHeight(area) * scale;
     if (width <= 0 || height <= 0) {
         return;
     }
 
-    NSImage *image = [[NSImage alloc] initWithSize:area.size];
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(width, height)];
     NSBitmapImageRep *rep = nil;
     [image lockFocus];
     @try {
@@ -947,9 +954,10 @@ static void STRasterizeDrawingOntoBitmap(NSRect canvasArea,
         // mapping, so a top-down canvas y of area.origin.y lands on the image's top row.
         [NSGraphicsContext saveGraphicsState];
         NSAffineTransform *shift = [NSAffineTransform transform];
+        [shift scaleBy:scale];
         [shift translateXBy:-NSMinX(area) yBy:0.0];
         [shift concat];
-        draw(height + NSMinY(area));
+        draw(NSHeight(area) + NSMinY(area));
         [NSGraphicsContext restoreGraphicsState];
         rep = [[NSBitmapImageRep alloc] initWithFocusedViewRect:NSMakeRect(0.0, 0.0, width, height)];
     } @finally {
@@ -975,13 +983,13 @@ static void STRasterizeDrawingOntoBitmap(NSRect canvasArea,
     NSInteger columns = MIN(width, rep.pixelsWide);
     for (NSInteger row = 0; row < rows; row++) {
         // Bitmap rows run top-down; the export buffer counts rows from the bottom.
-        NSInteger destY = (NSInteger)canvasSize.height - 1 - ((NSInteger)NSMinY(area) + row);
+        NSInteger destY = (NSInteger)canvasSize.height * scale - 1 - ((NSInteger)NSMinY(area) * scale + row);
         if (destY < 0 || destY >= buffer->height) {
             continue;
         }
         unsigned char *srcRow = data + row * bytesPerRow;
         for (NSInteger col = 0; col < columns; col++) {
-            NSInteger destX = (NSInteger)NSMinX(area) + col;
+            NSInteger destX = (NSInteger)NSMinX(area) * scale + col;
             if (destX < 0 || destX >= buffer->width) {
                 continue;
             }
@@ -1001,6 +1009,13 @@ static void STRasterizeDrawingOntoBitmap(NSRect canvasArea,
             STBlendPixel(buffer, destX, destY, sr, sg, sb, alpha);
         }
     }
+}
+
+static void STRasterizeDrawingOntoBitmap(NSRect canvasArea,
+                                         STBitmapBuffer *buffer,
+                                         NSSize canvasSize,
+                                         void (^draw)(CGFloat unflippedHeight)) {
+    STRasterizeDrawingOntoBitmapAtScale(canvasArea, buffer, canvasSize, 1, draw);
 }
 
 static void STRasterizeTextOntoBitmap(MarkupText *text,
@@ -1082,7 +1097,7 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
     unsigned char *srcData = source.bitmapData;
     unsigned char *dstData = dest.bitmapData;
     if (!srcData || !dstData) {
-        return dest;
+        return nil;
     }
 
     NSInteger bytesPerPixel = source.bitsPerPixel / 8;
@@ -1106,6 +1121,8 @@ static NSBitmapImageRep *STBitmapImageRepCrop(NSBitmapImageRep *source, NSRect c
 NSNotificationName const ScreenshotCanvasViewTextSelectionDidChangeNotification = @"ScreenshotCanvasViewTextSelectionDidChangeNotification";
 
 @interface ScreenshotCanvasView () <NSTextViewDelegate>
+- (nullable NSBitmapImageRep *)cropFlattenedBitmap:(NSBitmapImageRep *)bitmap
+                                        withinRect:(NSRect)rect canvasSize:(NSSize)size;
 @property (nonatomic, copy, readwrite) NSArray<NSValue *> *redactionHighlightRects;
 @property (nonatomic, strong, nullable) NSDate *redactionHighlightStart;
 @property (nonatomic, strong, nullable) NSTimer *redactionHighlightTimer;
@@ -1526,6 +1543,19 @@ static void STPixelateBuffer(STBitmapBuffer *buffer, NSRect rect) {
         }
     }
 }
+
+#if !defined(GNUSTEP)
+/// Internal print seam: returns NO before drawing when raw bitmap bytes cannot be redacted.
+BOOL STPixelatePrintRedactions(NSBitmapImageRep *base, NSArray<MarkupStroke *> *redactions) {
+    if (redactions.count == 0) return YES;
+    STBitmapBuffer buffer;
+    if (!STPrepareBitmapBuffer(base, &buffer)) return NO;
+    for (MarkupStroke *redaction in redactions) {
+        STPixelateBuffer(&buffer, [redaction shapeRect]);
+    }
+    return YES;
+}
+#endif
 
 /// `rect` of the image in `buffer` (from `source`) as a mosaic: one pixel a cell, to draw scaled
 /// up without smoothing. In `source`'s colour space, so drawing it back over the image converts
@@ -5239,6 +5269,11 @@ static NSError *STProjectError(NSString *message) {
     return end;
 }
 
+- (nullable NSBitmapImageRep *)cropFlattenedBitmap:(NSBitmapImageRep *)bitmap
+                                        withinRect:(NSRect)rect canvasSize:(NSSize)size {
+    return STBitmapImageRepCrop(bitmap, rect, size);
+}
+
 - (NSImage *)flattenedImageWithinRect:(NSRect)clipRect {
     if (!self.image) {
         return nil;
@@ -5255,7 +5290,7 @@ static NSError *STProjectError(NSString *message) {
     if (!NSIsEmptyRect(effectiveClip)) {
         effectiveClip = [self clampedImageRect:effectiveClip];
         if (effectiveClip.size.width < 1.0f || effectiveClip.size.height < 1.0f) {
-            effectiveClip = NSZeroRect;
+            return nil;
         }
     }
 
@@ -5427,18 +5462,17 @@ static NSError *STProjectError(NSString *message) {
     [output addRepresentation:bitmap];
 
     if (!NSIsEmptyRect(effectiveClip)) {
-        NSBitmapImageRep *cropped = STBitmapImageRepCrop(bitmap, effectiveClip, size);
+        NSBitmapImageRep *cropped = [self cropFlattenedBitmap:bitmap withinRect:effectiveClip canvasSize:size];
 #if !defined(GNUSTEP)
         // The crop takes only the space's name, which would make it Generic RGB (#229).
         if (cropped && bitmap.colorSpace.colorSpaceModel == NSColorSpaceModelRGB) {
             cropped = [cropped bitmapImageRepByRetaggingWithColorSpace:bitmap.colorSpace] ?: cropped;
         }
 #endif
-        if (cropped) {
-            NSImage *croppedImage = [[NSImage alloc] initWithSize:cropped.size];
-            [croppedImage addRepresentation:cropped];
-            return croppedImage;
-        }
+        if (!cropped) return nil; // Never return the whole image for a failed selection crop.
+        NSImage *croppedImage = [[NSImage alloc] initWithSize:cropped.size];
+        [croppedImage addRepresentation:cropped];
+        return croppedImage;
     }
     return output;
 }
@@ -5447,13 +5481,293 @@ static NSError *STProjectError(NSString *message) {
     return [self flattenedImageWithinRect:NSZeroRect];
 }
 
+#if defined(GNUSTEP)
+/// A copy with its points and width `scale` times as large. Only for strokes rasterized as a path of
+/// points, whose look follows those linearly; a shape's outlines have fixed sizes, so it's drawn scaled.
+static MarkupStroke *STPathStrokeScaledBy(MarkupStroke *stroke, NSInteger scale) {
+    MarkupStroke *copy = [[MarkupStroke alloc] initWithType:stroke.type color:stroke.color lineWidth:stroke.lineWidth * scale];
+    copy.number = stroke.number;
+    for (NSValue *value in [stroke points]) {
+        NSPoint point = value.pointValue;
+        [copy addPoint:NSMakePoint(point.x * scale, point.y * scale)];
+    }
+    return copy;
+}
+
+- (NSImage *)flattenedImageForPrintAtScale:(NSUInteger)printScale withinRect:(NSRect)clipRect {
+    if (!self.image || printScale < 1) {
+        return nil;
+    }
+    [self commitActiveTextIfNeeded];
+    NSSize size = self.image.size;
+    NSInteger scale = (NSInteger)printScale;
+    NSInteger width = (NSInteger)lrint(size.width);
+    NSInteger height = (NSInteger)lrint(size.height);
+    NSBitmapImageRep *source = STRGBABitmapFromRep(STBitmapImageRepFromImage(self.image, size));
+    STBitmapBuffer base;
+    if (width <= 0 || height <= 0 || !source || !STPrepareBitmapBuffer(source, &base)) {
+        return nil;
+    }
+
+    // Redactions first, on the capture's own pixels, exactly as every other flatten has them: what
+    // they hide is gone before anything is enlarged.
+    for (MarkupStroke *redaction in [self redactionStrokes]) {
+        STPixelateBuffer(&base, [redaction shapeRect]);
+    }
+
+    NSBitmapImageRep *output = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                                       pixelsWide:width * scale
+                                                                       pixelsHigh:height * scale
+                                                                    bitsPerSample:8
+                                                                  samplesPerPixel:4
+                                                                         hasAlpha:YES
+                                                                         isPlanar:NO
+                                                                   colorSpaceName:NSDeviceRGBColorSpace
+                                                                      bytesPerRow:0
+                                                                     bitsPerPixel:0];
+    STBitmapBuffer buffer;
+    if (!output || !STPrepareBitmapBuffer(output, &buffer)) {
+        return nil;
+    }
+    // Each capture pixel becomes a square block: nothing new in the capture, no blur from resampling.
+    for (NSInteger y = 0; y < height * scale; y++) {
+        const unsigned char *fromRow = base.data + base.bytesPerRow * (y / scale);
+        unsigned char *toRow = buffer.data + buffer.bytesPerRow * y;
+        for (NSInteger x = 0; x < width * scale; x++) {
+            const unsigned char *from = fromRow + base.bytesPerPixel * (x / scale);
+            unsigned char *to = toRow + buffer.bytesPerPixel * x;
+            to[buffer.rIndex] = from[base.rIndex];
+            to[buffer.gIndex] = from[base.gIndex];
+            to[buffer.bIndex] = from[base.bIndex];
+            to[buffer.aIndex] = base.hasAlpha ? from[base.aIndex] : 255;
+        }
+    }
+
+    NSSize outputSize = NSMakeSize(width * scale, height * scale);
+    NSSize canvasSize = NSMakeSize(width, height);
+    NSMutableArray<MarkupStroke *> *strokes = [self.strokes mutableCopy];
+    if (self.currentStroke) {
+        [strokes addObject:self.currentStroke];
+    }
+    for (MarkupStroke *stroke in strokes) {
+        if (stroke.type == MarkupStrokeTypeRedact) {
+            continue;
+        }
+        if ([stroke isShape] || stroke.type == MarkupStrokeTypeStep) {
+            STRasterizeDrawingOntoBitmapAtScale([stroke bounds], &buffer, canvasSize, scale, ^(CGFloat unflippedHeight) {
+                [stroke drawShapeWithUnflippedHeight:unflippedHeight];
+            });
+        } else {
+            STRasterizeStrokeOntoBitmap(STPathStrokeScaledBy(stroke, scale), &buffer, outputSize);
+        }
+    }
+    for (MarkupText *text in self.texts) {
+        if (text.text.length > 0) {
+            STRasterizeDrawingOntoBitmapAtScale([text decoratedBounds], &buffer, canvasSize, scale, ^(CGFloat unflippedHeight) {
+                [text drawAtScale:1.0 unflippedHeight:unflippedHeight decorationsOnly:NO];
+            });
+        }
+    }
+
+    NSBitmapImageRep *result = output;
+    NSSize resultPoints = canvasSize;
+    NSRect clip = NSIsEmptyRect(clipRect) ? NSZeroRect : [self clampedImageRect:clipRect];
+    if (!NSIsEmptyRect(clipRect) && NSIsEmptyRect(clip)) return nil;
+    if (!NSIsEmptyRect(clip)) {
+        // Only what's printed goes in the PDF: a clip would leave the whole image in the file.
+        result = STBitmapImageRepCrop(output,
+                                      NSMakeRect(NSMinX(clip) * scale, NSMinY(clip) * scale,
+                                                 NSWidth(clip) * scale, NSHeight(clip) * scale),
+                                      outputSize);
+        resultPoints = clip.size;
+    }
+    if (!result) {
+        return nil;
+    }
+    [result setSize:resultPoints];
+    NSImage *image = [[NSImage alloc] initWithSize:resultPoints];
+    [image addRepresentation:result];
+    return image;
+}
+#else
+/// This is the same redaction-first copy used by the raster print flattener. The source image's
+/// bitmap is never handed to a PDF context, and ordinary markup has not been drawn into this copy.
+- (NSBitmapImageRep *)redactedPrintBaseBitmap {
+    NSSize size = self.image.size;
+    NSBitmapImageRep *base = STBitmapImageRepFromImage(self.image, size);
+    NSGraphicsContext *baseContext = base ? [NSGraphicsContext graphicsContextWithBitmapImageRep:base] : nil;
+    if (!baseContext) {
+        base = base ? STPremultipliedRGBABitmapFromRep(base, size) : nil;
+        baseContext = base ? [NSGraphicsContext graphicsContextWithBitmapImageRep:base] : nil;
+    }
+    if (!baseContext) return nil;
+    NSArray<MarkupStroke *> *redactions = [self redactionStrokes];
+    // A drawn mosaic could leave original pixels embedded under it in a PDF image object.
+    if (!STPixelatePrintRedactions(base, redactions)) return nil;
+    return base;
+}
+
+- (STPrintVectorScene *)vectorSceneForPrint {
+    if (!self.image) return nil;
+    [self commitActiveTextIfNeeded];
+    NSSize canvasSize = self.image.size;
+    // The proof renderer uses canvas points as bitmap pixels. Keep Retina captures on the proven
+    // raster path until a pixel-to-point vector mapping has its own object-level PDF tests.
+    NSSize imagePixels = STPrintImagePixelSize(self.image);
+    if (canvasSize.width <= 0 || canvasSize.height <= 0 ||
+        !NSEqualSizes(canvasSize, imagePixels) ||
+        canvasSize.width != floor(canvasSize.width) || canvasSize.height != floor(canvasSize.height)) return nil;
+    NSBitmapImageRep *base = [self redactedPrintBaseBitmap];
+    if (!base || base.pixelsWide != (NSInteger)canvasSize.width ||
+        base.pixelsHigh != (NSInteger)canvasSize.height) return nil;
+    NSRect canvasRect = NSMakeRect(0, 0, canvasSize.width, canvasSize.height);
+    NSMutableArray<MarkupStroke *> *strokes = [NSMutableArray array];
+    for (MarkupStroke *stroke in self.strokes) {
+        if (stroke.type == MarkupStrokeTypeRedact) continue;
+        if (!NSContainsRect(canvasRect, [stroke bounds])) return nil;
+        [strokes addObject:[stroke copy]];
+    }
+    if (self.currentStroke && self.currentStroke.type != MarkupStrokeTypeRedact) {
+        if (!NSContainsRect(canvasRect, [self.currentStroke bounds])) return nil;
+        [strokes addObject:[self.currentStroke copy]];
+    }
+    NSMutableArray<MarkupText *> *texts = [NSMutableArray array];
+    for (MarkupText *text in self.texts) {
+        if (text.text.length == 0) continue;
+        if (!NSContainsRect(canvasRect, [text decoratedBoundsOnCanvas]) ||
+            !NSContainsRect(canvasRect, [text decoratedBounds])) return nil;
+        [texts addObject:[text copy]];
+    }
+    if (self.currentTextEntry && ![self.texts containsObject:self.currentTextEntry] &&
+        self.currentTextEntry.text.length > 0) {
+        if (!NSContainsRect(canvasRect, [self.currentTextEntry decoratedBoundsOnCanvas]) ||
+            !NSContainsRect(canvasRect, [self.currentTextEntry decoratedBounds])) return nil;
+        [texts addObject:[self.currentTextEntry copy]];
+    }
+    [base setSize:canvasSize];
+    NSImage *redacted = [[NSImage alloc] initWithSize:canvasSize];
+    [redacted addRepresentation:base];
+    return [[STPrintVectorScene alloc] initWithRedactedBase:redacted canvasSize:canvasSize
+                                                   strokes:strokes texts:texts];
+}
+
+- (NSImage *)flattenedImageForPrintAtScale:(NSUInteger)printScale withinRect:(NSRect)clipRect {
+    if (!self.image || printScale < 1) {
+        return nil;
+    }
+    [self commitActiveTextIfNeeded];
+    NSSize size = self.image.size;
+    NSInteger scale = (NSInteger)printScale;
+    NSInteger width = (NSInteger)lrint(size.width);
+    NSInteger height = (NSInteger)lrint(size.height);
+    // STPrintLayout's flattenScaleForImagePixelSize: keeps the result within 8192 pixels a side
+    // (STPrintFlattenMaximumPixels); a bigger request is refused, not allocated (a 4K capture at x4
+    // would be some 650 MB).
+    if (width <= 0 || height <= 0 || width * scale > 8192 || height * scale > 8192) {
+        return nil;
+    }
+
+    // Redactions first, on the capture's own pixels, exactly as every other flatten has them: what
+    // they hide is gone before anything is enlarged, and a mosaic cell stays a cell of the capture.
+    NSBitmapImageRep *base = [self redactedPrintBaseBitmap];
+    if (!base) return nil;
+
+    NSBitmapImageRep *output = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                                       pixelsWide:width * scale
+                                                                       pixelsHigh:height * scale
+                                                                    bitsPerSample:8
+                                                                  samplesPerPixel:4
+                                                                         hasAlpha:YES
+                                                                         isPlanar:NO
+                                                                   colorSpaceName:NSDeviceRGBColorSpace
+                                                                      bytesPerRow:0
+                                                                     bitsPerPixel:0];
+    NSGraphicsContext *context = output ? [NSGraphicsContext graphicsContextWithBitmapImageRep:output] : nil;
+    if (!context) {
+        return nil;
+    }
+    [NSGraphicsContext saveGraphicsState];
+    [NSGraphicsContext setCurrentContext:context];
+    [[NSColor clearColor] setFill];
+    NSRectFill(NSMakeRect(0.0, 0.0, width * scale, height * scale));
+    // Each capture pixel becomes a square block: nothing new in the capture, no blur from resampling.
+    context.imageInterpolation = NSImageInterpolationNone;
+    CGContextSetInterpolationQuality(context.CGContext, kCGInterpolationNone);
+    NSColorSpace *sourceSpace = base.colorSpace;
+    @autoreleasepool {
+        CGImageRef baseImage = base.CGImage;
+        if (baseImage) {
+            CGContextDrawImage(context.CGContext, CGRectMake(0.0, 0.0, width * scale, height * scale), baseImage);
+        }
+        // The capture's copy isn't needed once it's enlarged: free it before the annotations and
+        // the crop, which lowers the peak.
+        base = nil;
+    }
+    // The other annotations, drawn at the printed size in the canvas's own coordinates, so they're sharp.
+    NSAffineTransform *enlarge = [NSAffineTransform transform];
+    [enlarge scaleBy:(CGFloat)scale];
+    [enlarge concat];
+    context.imageInterpolation = NSImageInterpolationHigh;
+    NSSize canvasSize = NSMakeSize(width, height);
+    for (MarkupStroke *stroke in self.strokes) {
+        if (stroke.type != MarkupStrokeTypeRedact) {
+            [stroke renderInContext:context canvasSize:canvasSize];
+        }
+    }
+    if (self.currentStroke && self.currentStroke.type != MarkupStrokeTypeRedact) {
+        [self.currentStroke renderInContext:context canvasSize:canvasSize];
+    }
+    BOOL isEditingExistingText = (self.activeTextView && self.currentTextEntry && [self.texts containsObject:self.currentTextEntry]);
+    for (MarkupText *text in self.texts) {
+        if (isEditingExistingText && text == self.currentTextEntry) {
+            continue;
+        }
+        [text renderInContext:context canvasSize:canvasSize];
+    }
+    if (self.currentTextEntry && !isEditingExistingText) {
+        [self.currentTextEntry renderInContext:context canvasSize:canvasSize];
+    }
+    [context flushGraphics];
+    [NSGraphicsContext restoreGraphicsState];
+
+    // Tagged with the image's own colour space, which its pixels are still in (#229).
+    if (sourceSpace.colorSpaceModel == NSColorSpaceModelRGB && ![output.colorSpace isEqual:sourceSpace]) {
+        output = [output bitmapImageRepByRetaggingWithColorSpace:sourceSpace] ?: output;
+    }
+
+    NSSize outputSize = NSMakeSize(width * scale, height * scale);
+    NSBitmapImageRep *result = output;
+    NSSize resultPoints = canvasSize;
+    NSRect clip = NSIsEmptyRect(clipRect) ? NSZeroRect : [self clampedImageRect:clipRect];
+    if (!NSIsEmptyRect(clipRect) && NSIsEmptyRect(clip)) return nil;
+    if (!NSIsEmptyRect(clip)) {
+        // Only what's printed goes in the PDF: a clip would leave the whole image in the file.
+        result = STBitmapImageRepCrop(output,
+                                      NSMakeRect(NSMinX(clip) * scale, NSMinY(clip) * scale,
+                                                 NSWidth(clip) * scale, NSHeight(clip) * scale),
+                                      outputSize);
+        if (result && output.colorSpace.colorSpaceModel == NSColorSpaceModelRGB) {
+            result = [result bitmapImageRepByRetaggingWithColorSpace:output.colorSpace] ?: result;
+        }
+        resultPoints = clip.size;
+    }
+    if (!result) {
+        return nil;
+    }
+    [result setSize:resultPoints];
+    NSImage *image = [[NSImage alloc] initWithSize:resultPoints];
+    [image addRepresentation:result];
+    return image;
+}
+#endif
+
 - (NSImage *)flattenedImageForSelection {
     if (!self.hasSelectionRect) {
         return [self flattenedImage];
     }
     NSRect integral = [self integralSelectionRect];
     if (NSIsEmptyRect(integral)) {
-        return [self flattenedImage];
+        return nil;
     }
     return [self flattenedImageWithinRect:integral];
 }

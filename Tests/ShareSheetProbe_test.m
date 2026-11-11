@@ -71,7 +71,11 @@
 @interface AppDelegate (ShareInProgressTesting) <NSSharingServicePickerDelegate, NSSharingServiceDelegate>
 - (nullable NSSharingService *)sharingServiceInProgress;
 - (nullable NSSharingServicePicker *)openSharePicker;
+- (NSArray<NSSharingService *> *)sharingServicePicker:(NSSharingServicePicker *)picker
+                        sharingServicesForItems:(NSArray *)items
+                        proposedSharingServices:(NSArray<NSSharingService *> *)proposed;
 - (void)shareFromMenuItem:(NSMenuItem *)sender;
+- (void)menuNeedsUpdate:(NSMenu *)menu;
 - (void)setupToolbar;
 - (nullable NSToolbarItem *)toolbarItemForIdentifier:(NSToolbarItemIdentifier)identifier;
 - (BOOL)validateToolbarItem:(NSToolbarItem *)toolbarItem;
@@ -87,6 +91,23 @@
 - (void)performWithItems:(NSArray *)items {
     (void)items;
     self.performCount += 1;
+}
+@end
+
+/// Records a share command without opening a native print sheet in an offscreen test.
+@interface STPrintRouteRecordingAppDelegate : AppDelegate
+@property (nonatomic, assign) NSUInteger printRequests;
+@property (nonatomic, assign) NSUInteger selectionPrintRequests;
+@end
+
+@implementation STPrintRouteRecordingAppDelegate
+- (void)printDocument:(id)sender {
+    (void)sender;
+    self.printRequests += 1;
+}
+- (void)printSelection:(id)sender {
+    (void)sender;
+    self.selectionPrintRequests += 1;
 }
 @end
 #endif
@@ -372,6 +393,71 @@
 #endif
 
 #if !defined(GNUSTEP)
+- (void)testShareAlwaysOffersTheAppPrintRoute {
+    STPrintRouteRecordingAppDelegate *app = [[STPrintRouteRecordingAppDelegate alloc] init];
+    NSSharingServicePicker *picker = [[NSSharingServicePicker alloc] initWithItems:@[]];
+    NSArray<NSSharingService *> *services = [app sharingServicePicker:picker
+                                             sharingServicesForItems:@[@"image"]
+                                             proposedSharingServices:@[]];
+    NSSharingService *print = services.firstObject;
+    XCTAssertEqualObjects(print.title, @"Print…");
+    XCTAssertNil([app sharingServicePicker:picker delegateForSharingService:print], @"Our print route owns its sheet");
+    [print performWithItems:@[]];
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
+    XCTAssertEqual(app.printRequests, (NSUInteger)1, @"Share uses ScreenshotTool's print operation");
+
+    NSArray<NSSharingService *> *withoutImage = [app sharingServicePicker:picker
+                                                  sharingServicesForItems:@[]
+                                                  proposedSharingServices:@[]];
+    XCTAssertFalse([[withoutImage valueForKey:@"title"] containsObject:@"Print…"]);
+}
+
+- (void)testFileSharePrintTargetsTheAppOperation {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(24, 24)];
+    [image lockFocus];
+    [[NSColor whiteColor] setFill];
+    NSRectFill(NSMakeRect(0, 0, 24, 24));
+    [image unlockFocus];
+    [_appDelegate.canvasView loadImage:image];
+
+    NSMenu *share = [[NSMenu alloc] initWithTitle:@"Share"];
+    [_appDelegate menuNeedsUpdate:share];
+    NSMenuItem *print = [share itemWithTitle:@"Print…"];
+    XCTAssertNotNil(print);
+    XCTAssertEqual(print.action, @selector(printDocument:));
+    XCTAssertTrue([print.target respondsToSelector:@selector(printDocument:)]);
+
+    _appDelegate.canvasView.hasSelectionRect = YES;
+    _appDelegate.canvasView.selectionRect = NSMakeRect(2, 2, 10, 10);
+    NSMenu *selectionShare = [[NSMenu alloc] initWithTitle:@"Share"];
+    [_appDelegate menuNeedsUpdate:selectionShare];
+    XCTAssertEqual([selectionShare itemWithTitle:@"Print…"].action, @selector(printSelection:),
+                   @"Sharing a selection starts the native print accessory on that selection");
+}
+
+- (void)testSharePrintStartsWithTheSelection {
+    XCTSkipIf(_shouldSkip, @"No window server");
+    STPrintRouteRecordingAppDelegate *app = [[STPrintRouteRecordingAppDelegate alloc] init];
+    [app setupWindowAndContent];
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(24, 24)];
+    [image lockFocus];
+    [[NSColor whiteColor] setFill];
+    NSRectFill(NSMakeRect(0, 0, 24, 24));
+    [image unlockFocus];
+    [app.canvasView loadImage:image];
+    app.canvasView.hasSelectionRect = YES;
+    app.canvasView.selectionRect = NSMakeRect(2, 2, 10, 10);
+
+    NSSharingServicePicker *picker = [[NSSharingServicePicker alloc] initWithItems:@[]];
+    NSSharingService *print = [app sharingServicePicker:picker sharingServicesForItems:@[@"image"]
+                                           proposedSharingServices:@[]].firstObject;
+    [print performWithItems:@[]];
+    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
+    XCTAssertEqual(app.selectionPrintRequests, (NSUInteger)1);
+    XCTAssertEqual(app.printRequests, (NSUInteger)0);
+}
+
 - (STCountingSharingService *)countingService {
     return [[STCountingSharingService alloc] initWithTitle:@"AirDrop" image:[[NSImage alloc] init]
                                             alternateImage:nil handler:^{}];

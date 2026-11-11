@@ -15,6 +15,11 @@ typedef NS_ENUM(NSInteger, STScreenshotCaptureResult) {
 typedef void (^STScreenshotCaptureCompletion)(STScreenshotCaptureResult result, NSURL * _Nullable url,
                                               NSString * _Nullable failure);
 
+#if defined(GNUSTEP) && !defined(_WIN32)
+/// How the desktop portal names `window` as a dialog's parent, or @"" without one.
+FOUNDATION_EXPORT NSString *STPortalParentWindow(NSWindow * _Nullable window);
+#endif
+
 /// Takes a screenshot with the system's own tool, which lets the user choose an area, a window or
 /// the screen: GNOME's (and other desktops') through the desktop portal's Screenshot interface,
 /// Windows' through the Snipping Tool, whose snip goes to the clipboard, and macOS's through
