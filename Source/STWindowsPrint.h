@@ -60,6 +60,18 @@ FOUNDATION_EXPORT BOOL STWindowsPrintPages(void *dc, void * _Nullable devMode, S
                                            NSString *documentName, NSString * _Nullable outputPath,
                                            NSString * _Nullable * _Nullable failure);
 
+/// The canvas-free part of STWindowsPrintCanvas, for a sheet already known: lays `flattened` out for
+/// `options`, gets the printed image from `flatten` (falling back to `selectionImage` for a selection),
+/// and hands the pages to `printPages`, which starts the job. A selection print whose selection has
+/// nothing of the image in it fails with "There's nothing to print." before `flatten` or `printPages`
+/// is called, so nothing reaches the printer (#355).
+FOUNDATION_EXPORT BOOL STWindowsPrintFlattened(NSImage *flattened, NSRect selection, STPrintOptions *options,
+                                               STWindowsPrinterSheet sheet,
+                                               NSImage * _Nullable (^flatten)(NSUInteger scale, NSRect clip),
+                                               NSImage * _Nullable (^selectionImage)(void),
+                                               BOOL (^printPages)(STPrintLayout *layout, NSImage *image),
+                                               NSString * _Nullable * _Nullable failure);
+
 /// `canvas`'s image as Windows prints it, for these options: flattened at the size it's printed, up to
 /// 300 dpi, with its redactions and annotations, and only the selection when that's what's printed.
 FOUNDATION_EXPORT BOOL STWindowsPrintCanvas(ScreenshotCanvasView *canvas, STPrintOptions *options, void *dc, void * _Nullable devMode,

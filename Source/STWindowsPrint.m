@@ -310,30 +310,31 @@ BOOL STWindowsPrintPages(void *dcHandle, void *devModeHandle, STPrintLayout *lay
     return YES;
 }
 
-BOOL STWindowsPrintCanvas(ScreenshotCanvasView *canvas, STPrintOptions *options, void *dc, void *devMode, NSString *documentName,
-                          NSString *outputPath, NSString **failure) {
-    NSImage *flattened = [canvas flattenedImage];
-    STWindowsPrinterSheet sheet = STWindowsPrinterSheetFromDC(dc);
-    if (!flattened || !sheet.valid) {
-        if (failure) {
-            *failure = flattened ? @"The printer didn't say what paper it has." : @"There's nothing to print.";
-        }
-        return NO;
-    }
+BOOL STWindowsPrintFlattened(NSImage *flattened, NSRect selection, STPrintOptions *options, STWindowsPrinterSheet sheet,
+                             NSImage *(^flatten)(NSUInteger scale, NSRect clip), NSImage *(^selectionImage)(void),
+                             BOOL (^printPages)(STPrintLayout *layout, NSImage *image), NSString **failure) {
     STPrintLayout *layout = [[STPrintLayout alloc] init];
     layout.paperSize = sheet.paper;
     layout.printerMargins = sheet.printerMargins;
     layout.margins = STPrintMarginsMake(STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin, STPrintDefaultMargin);
-    STConfigurePrintLayout(layout, options, flattened, [canvas selectionImageRect]);
+    STConfigurePrintLayout(layout, options, flattened, selection);
+    // A selection with nothing of the image in it leaves no source. An empty clip below would mean
+    // the whole image, so it stops here and nothing outside the selection is printed (#355).
+    if (options.selectionOnly && NSIsEmptyRect(layout.sourceRect)) {
+        if (failure) {
+            *failure = @"There's nothing to print.";
+        }
+        return NO;
+    }
 
     // As Linux's: the scale comes from this layout; only the bitmap and its pixel counts change after it.
     // Its resolution is the printer's own (#355), so annotations print as fine as it does, within bounds.
     NSUInteger scale = [layout flattenScaleForImagePixelSize:STPrintImagePixelSize(flattened) dotsPerInch:sheet.dotsPerInch];
     NSRect keep = options.selectionOnly ? layout.sourceRect : NSZeroRect;
-    NSImage *printed = [canvas flattenedImageForPrintAtScale:scale withinRect:keep];
+    NSImage *printed = flatten(scale, keep);
     if (!printed) {
         scale = 1;
-        printed = options.selectionOnly ? [canvas flattenedImageForSelection] : flattened;
+        printed = options.selectionOnly ? selectionImage() : flattened;
     }
     if (!printed) {
         if (failure) {
@@ -344,7 +345,30 @@ BOOL STWindowsPrintCanvas(ScreenshotCanvasView *canvas, STPrintOptions *options,
     NSSize pixels = STPrintImagePixelSize(printed);
     layout.sourceRect = NSMakeRect(0.0, 0.0, pixels.width, pixels.height);
     layout.pixelsPerInch = layout.pixelsPerInch * scale;
-    return STWindowsPrintPages(dc, devMode, layout, printed, documentName, outputPath, failure);
+    return printPages(layout, printed);
+}
+
+BOOL STWindowsPrintCanvas(ScreenshotCanvasView *canvas, STPrintOptions *options, void *dc, void *devMode, NSString *documentName,
+                          NSString *outputPath, NSString **failure) {
+    NSImage *flattened = [canvas flattenedImage];
+    STWindowsPrinterSheet sheet = STWindowsPrinterSheetFromDC(dc);
+    if (!flattened || !sheet.valid) {
+        if (failure) {
+            *failure = flattened ? @"The printer didn't say what paper it has." : @"There's nothing to print.";
+        }
+        return NO;
+    }
+    return STWindowsPrintFlattened(flattened, [canvas selectionImageRect], options, sheet,
+        ^NSImage *(NSUInteger scale, NSRect clip) {
+            return [canvas flattenedImageForPrintAtScale:scale withinRect:clip];
+        },
+        ^NSImage *(void) {
+            return [canvas flattenedImageForSelection];
+        },
+        ^BOOL(STPrintLayout *layout, NSImage *image) {
+            return STWindowsPrintPages(dc, devMode, layout, image, documentName, outputPath, failure);
+        },
+        failure);
 }
 
 static HGLOBAL STGlobalWithData(NSData *data) {
