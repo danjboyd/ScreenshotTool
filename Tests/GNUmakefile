@@ -60,6 +60,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	PopoverFocusProbe_test.m \
 	FitViewportRoundingProbe_test.m \
 	TitleBarToolbarProbe_test.m \
+	ToolbarHitGeometryProbe_test.m \
 	LowBitDepthImageProbe_test.m \
 	ProjectFileProbe_test.m \
 	ClipboardHighlighterOpacityProbe_test.m \

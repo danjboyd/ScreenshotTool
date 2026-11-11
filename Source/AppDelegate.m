@@ -971,6 +971,13 @@ static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin)
 }
 
 - (void)mouseDown:(NSEvent *)event {
+#if !defined(GNUSTEP)
+    // AppKit can draw segment boundaries at different positions from widthForSegment:.
+    // Let its cell track the click so the selected tool matches the segment under the pointer.
+    self.clickedSegment = -1;
+    self.lastClickCount = event ? event.clickCount : 0;
+    [super mouseDown:event];
+#else
     NSPoint location = event ? [self convertPoint:event.locationInWindow fromView:nil] : NSZeroPoint;
     NSInteger segmentCount = [self segmentCount];
     CGFloat originX = 0.0f;
@@ -997,6 +1004,7 @@ static NSPoint STCenteredToolbarViewOrigin(NSView *view, NSPoint proposedOrigin)
     if (self.target && self.action) {
         [NSApp sendAction:self.action to:self.target from:self];
     }
+#endif
 }
 
 @end
