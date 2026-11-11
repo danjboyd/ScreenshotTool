@@ -263,6 +263,7 @@ ScreenshotTool_OBJC_FILES = Source/main.m \
 	Source/STCanvasContextMenu.m \
 	Source/STSelectionActionBar.m \
 	Source/STScreenshotCapture.m \
+	Source/STPrintLayout.m \
 	Source/STTextRecognizer.m \
 	Source/STTextSelection.m \
 	Source/STWindowsIntegration.m \

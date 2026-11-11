@@ -111,6 +111,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	SplitButtonProbe_test.m \
 	SymbolicToolbarIconsProbe_test.m \
 	TakeScreenshotProbe_test.m \
+	PrintLayoutProbe_test.m \
 	TextRecognizerProbe_test.m \
 	RedactRecallProbe_test.m \
 	ClipboardScreenshotOfferProbe_test.m \
@@ -148,6 +149,7 @@ ScreenshotToolTests_OBJC_FILES += \
 	../Source/STCanvasContextMenu.m \
 	../Source/STSelectionActionBar.m \
 	../Source/STScreenshotCapture.m \
+	../Source/STPrintLayout.m \
 	../Source/STTextRecognizer.m \
 	../Source/STTextSelection.m \
 	../Source/STWindowsIntegration.m \
