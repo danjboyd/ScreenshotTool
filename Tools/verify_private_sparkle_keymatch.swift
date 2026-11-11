@@ -29,7 +29,8 @@ func attribute(_ name: String) -> String? {
     return String(attributes[range])
 }
 
-require(attribute("length") == String(payload.count), "wrong signed length")
+require(attribute("sparkle:length") == String(payload.count),
+        "sparkle:length missing or differs from \(payload.count) payload bytes")
 guard let encodedSignature = attribute("sparkle:edSignature"),
       let signature = Data(base64Encoded: encodedSignature), signature.count == 64,
       let keyText, let key = Data(base64Encoded: keyText), key.count == 32 else {
