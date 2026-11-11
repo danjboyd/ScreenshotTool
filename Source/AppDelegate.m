@@ -8960,6 +8960,7 @@ static NSString * const STPrintSharingTitle = @"Print…";
     NSImage *image = [NSImage imageWithSystemSymbolName:@"printer" accessibilityDescription:@"Print"];
     if (!image) image = [[NSImage alloc] initWithSize:NSMakeSize(16.0, 16.0)];
     __weak AppDelegate *weakSelf = self;
+    BOOL printSelection = [self.canvasView hasSelection];
     NSSharingService *service = [[NSSharingService alloc] initWithTitle:STPrintSharingTitle
                                                                image:image
                                                       alternateImage:nil
@@ -8967,7 +8968,8 @@ static NSString * const STPrintSharingTitle = @"Print…";
         // Let the share picker close before opening the print sheet.
         dispatch_async(dispatch_get_main_queue(), ^{
             AppDelegate *document = weakSelf;
-            if ([document.canvasView hasSelection]) [document printSelection:nil];
+            // Keep the picker's original selection intent; printSelection: rejects a stale selection.
+            if (printSelection) [document printSelection:nil];
             else [document printDocument:nil];
         });
     }];

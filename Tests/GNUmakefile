@@ -75,6 +75,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	RedactToolProbe_test.m \
 	CanvasStageProbe_test.m \
 	ShareSheetProbe_test.m \
+	SharePrintSelectionProbe_test.m \
 	DragOutProbe_test.m \
 	CanvasContextMenuProbe_test.m \
 	ExportColourProbe_test.m \
