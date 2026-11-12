@@ -217,6 +217,48 @@
     XCTAssertEqualWithAccuracy(layout.pixelsPerInch, STPrintDefaultPixelsPerInch, 1e-6);
 }
 
+- (void)testTwoTimesBitmapSelectionUsesCanvasPoints {
+    NSImage *image = [self imageWithWidth:400 height:200];
+    image.size = NSMakeSize(200, 100);
+    [image.representations.firstObject setSize:image.size];
+    STPrintOptions *options = [[STPrintOptions alloc] init];
+    options.selectionOnly = YES;
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    layout.paperSize = NSMakeSize(612, 792);
+
+    NSRect selection = NSMakeRect(50, 20, 100, 40);
+    STConfigurePrintLayout(layout, options, image, selection);
+    XCTAssertTrue(NSEqualRects(layout.sourceRect, NSMakeRect(100, 40, 200, 80)));
+    XCTAssertTrue(NSEqualRects(STPrintPointRectForPixelRect(image, layout.sourceRect), selection),
+                  @"the PDF flattener's clip must be back in canvas points");
+
+    STConfigurePrintLayout(layout, options, image, NSMakeRect(190.25, 90.25, 20, 20));
+    XCTAssertTrue(NSEqualRects(layout.sourceRect, NSMakeRect(380, 180, 20, 20)),
+                  @"round outward and clip to the bitmap edge");
+
+    STConfigurePrintLayout(layout, options, image, NSMakeRect(250, 20, 20, 20));
+    XCTAssertTrue(NSIsEmptyRect(layout.sourceRect), @"inside pixel bounds but outside canvas points");
+    XCTAssertEqual(layout.pageCount, (NSUInteger)0);
+}
+
+- (void)testTwoTimesBitmapPanelRequiresSelectionInsideCanvasPoints {
+    NSImage *image = [self imageWithWidth:400 height:200];
+    image.size = NSMakeSize(200, 100);
+    [image.representations.firstObject setSize:image.size];
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+    STPrintPanelController *outside = [[STPrintPanelController alloc] initWithFlattenedImage:image
+                                                                                 selection:NSMakeRect(250, 20, 20, 20)
+                                                                             selectionOnly:YES
+                                                                                  defaults:defaults];
+    XCTAssertNil(outside, @"inside bitmap pixels but outside canvas points must not open a panel");
+    STPrintPanelController *inside = [[STPrintPanelController alloc] initWithFlattenedImage:image
+                                                                                selection:NSMakeRect(50, 20, 100, 40)
+                                                                            selectionOnly:YES
+                                                                                 defaults:defaults];
+    XCTAssertNotNil(inside);
+    XCTAssertTrue(NSEqualRects([inside currentLayout].sourceRect, NSMakeRect(100, 40, 200, 80)));
+}
+
 @end
 
 #endif

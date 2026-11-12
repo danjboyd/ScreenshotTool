@@ -11,7 +11,7 @@ NS_ASSUME_NONNULL_BEGIN
 @interface STPrintPanelController : NSObject
 
 /// `flattenedImage` is what's printed, with its annotations: redactions are annotations, so nothing
-/// here can print without them. `selection` is the selection in pixels from the image's top left, or
+/// here can print without them. `selection` is the selection in canvas points from the image's top left, or
 /// NSZeroRect. `selectionOnly` is what the panel starts on: YES for Print Selection. A selection-only
 /// request without a selection that intersects the image returns nil before constructing a panel.
 - (nullable instancetype)initWithFlattenedImage:(NSImage *)flattenedImage

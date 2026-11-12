@@ -111,8 +111,8 @@ void STPrintSavePaperSize(NSUserDefaults *defaults, NSSize paper) {
                               defaults:(NSUserDefaults *)defaults {
     self = [super init];
     if (self) {
-        NSSize pixels = STPrintImagePixelSize(flattenedImage);
-        NSRect clippedSelection = NSIntersectionRect(selection, NSMakeRect(0, 0, pixels.width, pixels.height));
+        NSSize points = flattenedImage.size;
+        NSRect clippedSelection = NSIntersectionRect(selection, NSMakeRect(0, 0, points.width, points.height));
         if (selectionOnly && NSIsEmptyRect(clippedSelection)) {
             return nil;
         }
