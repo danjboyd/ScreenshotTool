@@ -14,6 +14,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// Writes to a temporary sibling and replaces `path` only after every page succeeds. Returns NO,
 /// preserving any existing target, if the layout has no pages or writing/replacement fails. No
 /// temporary sibling is left behind.
+/// Existing targets keep their permission bits; new PDFs honor the process umask (0644 if procfs
+/// cannot report it). Existing symlinks are followed; dangling or unresolvable links are preserved
+/// and refused.
 ///
 /// GNUstep's own PDF operation prints one page in a fixed orientation, so this depends on two of its
 /// internals, both pinned with the libraries and covered by PrintPDFProbe_test.m: an override of the

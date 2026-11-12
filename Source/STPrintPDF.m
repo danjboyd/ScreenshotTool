@@ -2,9 +2,12 @@
 
 #if defined(__linux__)
 
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #import <GNUstepGUI/GSPDFPrintOperation.h>
 #import "STPrintPage.h"
@@ -64,8 +67,47 @@
 
 @end
 
+/// Read Linux's umask without changing process-global state while other threads may create files.
+static mode_t STPrintNewPDFMode(void) {
+    mode_t mode = 0644; // Conventional PDF permissions if procfs does not expose the mask.
+    FILE *status = fopen("/proc/self/status", "r");
+    if (status) {
+        char line[256];
+        unsigned int mask = 0;
+        while (fgets(line, sizeof(line), status)) {
+            if (sscanf(line, "Umask: %o", &mask) == 1 && mask <= 0777) {
+                mode = 0666 & ~mask;
+                break;
+            }
+        }
+        fclose(status);
+    }
+    return mode;
+}
+
 BOOL STWritePrintPDF(STPrintLayout *layout, NSImage *image, NSString *path) {
     if (layout.pageCount == 0) {
+        return NO;
+    }
+    NSFileManager *files = [NSFileManager defaultManager];
+    NSString *destination = path;
+    struct stat target;
+    if (lstat(path.fileSystemRepresentation, &target) == 0) {
+        char *resolved = realpath(path.fileSystemRepresentation, NULL);
+        // Preserve a dangling or otherwise unresolvable link instead of replacing the link itself.
+        if (!resolved) return NO;
+        destination = [files stringWithFileSystemRepresentation:resolved length:strlen(resolved)];
+        free(resolved);
+        if (!destination) return NO;
+    } else if (errno != ENOENT) {
+        return NO;
+    }
+    mode_t mode;
+    if (stat(destination.fileSystemRepresentation, &target) == 0) {
+        mode = target.st_mode & 0777;
+    } else if (errno == ENOENT) {
+        mode = STPrintNewPDFMode();
+    } else {
         return NO;
     }
     NSSize sheet = layout.orientedPaperSize;
@@ -88,7 +130,7 @@ BOOL STWritePrintPDF(STPrintLayout *layout, NSImage *image, NSString *path) {
 
     // Keep an existing PDF intact until every page has been written. A sibling is on the same
     // filesystem, so rename replaces the target atomically only after a successful operation.
-    NSString *directory = path.stringByDeletingLastPathComponent;
+    NSString *directory = destination.stringByDeletingLastPathComponent;
     if (directory.length == 0) directory = @".";
     NSString *template = [directory stringByAppendingPathComponent:@".ScreenshotTool-print-XXXXXX"];
     char *temporaryPath = strdup(template.fileSystemRepresentation);
@@ -99,7 +141,6 @@ BOOL STWritePrintPDF(STPrintLayout *layout, NSImage *image, NSString *path) {
         return NO;
     }
     close(fd);
-    NSFileManager *files = [NSFileManager defaultManager];
     NSString *temporary = [files stringWithFileSystemRepresentation:temporaryPath length:strlen(temporaryPath)];
     free(temporaryPath);
     @try {
@@ -110,10 +151,15 @@ BOOL STWritePrintPDF(STPrintLayout *layout, NSImage *image, NSString *path) {
         [operation setShowsPrintPanel:NO];
         [operation setShowsProgressPanel:NO];
         BOOL ran = [operation runOperation];
+        if (!ran || !view.drewEveryPage) return NO;
         // mkstemp already created an empty file; its existence alone is not successful output.
-        unsigned long long length = [[files attributesOfItemAtPath:temporary error:NULL][NSFileSize] unsignedLongLongValue];
-        return ran && view.drewEveryPage && length > 0 &&
-               rename(temporary.fileSystemRepresentation, path.fileSystemRepresentation) == 0;
+        int output = open(temporary.fileSystemRepresentation, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+        if (output < 0) return NO;
+        struct stat written;
+        BOOL complete = fstat(output, &written) == 0 && S_ISREG(written.st_mode) && written.st_size > 0 &&
+                        fchmod(output, mode) == 0;
+        close(output);
+        return complete && rename(temporary.fileSystemRepresentation, destination.fileSystemRepresentation) == 0;
     } @finally {
         // After rename the sibling no longer exists; on any failure only this sibling is removed.
         [files removeItemAtPath:temporary error:NULL];

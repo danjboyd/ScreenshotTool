@@ -12,6 +12,7 @@
 
 #if defined(__linux__)
 
+#include <sys/stat.h>
 #import "STPrintLayout.h"
 #import "STPrintPDF.h"
 #import "STPrintPage.h"
@@ -303,6 +304,56 @@ static const CGFloat STRenderDPI = 144.0;
     XCTAssertTrue([[NSFileManager defaultManager] fileExistsAtPath:target isDirectory:&isDirectory]);
     XCTAssertTrue(isDirectory);
     XCTAssertEqualObjects([[NSFileManager defaultManager] contentsOfDirectoryAtPath:_directory error:NULL], (@[@"keep-directory"]));
+}
+
+- (void)testNewPDFHonorsTheUmask {
+    NSString *pdf = [_directory stringByAppendingPathComponent:@"new.pdf"];
+    mode_t previous = umask(0027);
+    @try {
+        XCTAssertTrue(STWritePrintPDF([self tiledLayout], [self quadrantImageWithPointScale:1.0], pdf));
+    } @finally {
+        umask(previous);
+    }
+    struct stat attributes;
+    XCTAssertEqual(stat(pdf.fileSystemRepresentation, &attributes), 0);
+    XCTAssertEqual(attributes.st_mode & 0777, (mode_t)0640);
+}
+
+- (void)testReplacingPDFPreservesItsMode {
+    NSString *pdf = [_directory stringByAppendingPathComponent:@"existing.pdf"];
+    XCTAssertTrue([[@"old" dataUsingEncoding:NSUTF8StringEncoding] writeToFile:pdf atomically:YES]);
+    XCTAssertEqual(chmod(pdf.fileSystemRepresentation, 0640), 0);
+    XCTAssertTrue(STWritePrintPDF([self tiledLayout], [self quadrantImageWithPointScale:1.0], pdf));
+    struct stat attributes;
+    XCTAssertEqual(stat(pdf.fileSystemRepresentation, &attributes), 0);
+    XCTAssertEqual(attributes.st_mode & 0777, (mode_t)0640);
+}
+
+- (void)testSavingThroughASymlinkKeepsTheLinkAndReplacesItsTarget {
+    NSFileManager *files = [NSFileManager defaultManager];
+    NSString *directory = [_directory stringByAppendingPathComponent:@"real-directory"];
+    XCTAssertTrue([files createDirectoryAtPath:directory withIntermediateDirectories:NO attributes:nil error:NULL]);
+    NSString *target = [directory stringByAppendingPathComponent:@"target.pdf"];
+    NSData *previous = [@"old" dataUsingEncoding:NSUTF8StringEncoding];
+    XCTAssertTrue([previous writeToFile:target atomically:YES]);
+    NSString *link = [_directory stringByAppendingPathComponent:@"linked.pdf"];
+    XCTAssertTrue([files createSymbolicLinkAtPath:link withDestinationPath:@"real-directory/target.pdf" error:NULL]);
+    XCTAssertTrue(STWritePrintPDF([self tiledLayout], [self quadrantImageWithPointScale:1.0], link));
+    XCTAssertEqualObjects([files pathContentOfSymbolicLinkAtPath:link], @"real-directory/target.pdf");
+    NSData *written = [NSData dataWithContentsOfFile:target];
+    XCTAssertFalse([written isEqualToData:previous]);
+    XCTAssertEqualObjects([NSData dataWithContentsOfFile:link], written);
+    XCTAssertEqualObjects([files contentsOfDirectoryAtPath:directory error:NULL], (@[@"target.pdf"]));
+    XCTAssertEqual([files contentsOfDirectoryAtPath:_directory error:NULL].count, (NSUInteger)2);
+}
+
+- (void)testDanglingSymlinkIsPreservedOnFailure {
+    NSFileManager *files = [NSFileManager defaultManager];
+    NSString *link = [_directory stringByAppendingPathComponent:@"linked.pdf"];
+    XCTAssertTrue([files createSymbolicLinkAtPath:link withDestinationPath:@"missing.pdf" error:NULL]);
+    XCTAssertFalse(STWritePrintPDF([self tiledLayout], [self quadrantImageWithPointScale:1.0], link));
+    XCTAssertEqualObjects([files pathContentOfSymbolicLinkAtPath:link], @"missing.pdf");
+    XCTAssertEqualObjects([files contentsOfDirectoryAtPath:_directory error:NULL], (@[@"linked.pdf"]));
 }
 
 @end
