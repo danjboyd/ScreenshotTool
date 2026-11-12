@@ -54,6 +54,27 @@ static NSArray<NSColor *> *STPrintViewQuadrantColors(void) {
     return image;
 }
 
+/// A 40×20-point Retina image whose 80×40 pixels have distinct 20×10 colour tiles.
+- (NSImage *)retinaSelectionTiles {
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:80 pixelsHigh:40
+                                                                 bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES
+                                                                      isPlanar:NO colorSpaceName:NSCalibratedRGBColorSpace
+                                                                   bytesPerRow:0 bitsPerPixel:0];
+    for (NSInteger y = 0; y < 40; y++) {
+        for (NSInteger x = 0; x < 80; x++) {
+            NSInteger tileX = x / 20, tileY = y / 10;
+            NSColor *color = [NSColor colorWithCalibratedRed:(CGFloat)tileX / 3.0
+                                                       green:(CGFloat)tileY / 3.0
+                                                        blue:(CGFloat)(tileX * 4 + tileY) / 15.0 alpha:1];
+            [rep setColor:color atX:x y:y];
+        }
+    }
+    rep.size = NSMakeSize(40, 20);
+    NSImage *image = [[NSImage alloc] initWithSize:rep.size];
+    [image addRepresentation:rep];
+    return image;
+}
+
 /// 2 × 2 pages: the image at 72 ppi on a 70 × 120 sheet turned landscape, with uneven margins that
 /// leave a quadrant's 100 × 50 points at (6, 4).
 - (STPrintLayout *)tiledLayout {
@@ -366,6 +387,77 @@ static void STCollectPDFImages(CGPDFDictionaryRef resources, NSMutableArray<NSVa
     STPrintViewTakeOptions(view, options, whole, NSZeroRect, nil);
     XCTAssertTrue(NSIsEmptyRect(view.layout.sourceRect));
     XCTAssertEqual(view.layout.pageCount, (NSUInteger)0);
+}
+
+/// Canvas selection coordinates are points; a Retina bitmap's printable source is in pixels.
+- (void)testRetinaSelectionConfiguresTheMatchingPixelRect {
+    NSImage *whole = [self retinaSelectionTiles];
+    STPrintOptions *options = [[STPrintOptions alloc] init];
+    options.selectionOnly = YES;
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    STConfigurePrintLayout(layout, options, whole, NSMakeRect(10, 5, 10, 5));
+    XCTAssertTrue(NSEqualRects(layout.sourceRect, NSMakeRect(20, 10, 20, 10)), @"source=%@", NSStringFromRect(layout.sourceRect));
+}
+
+/// A failed print flattener must crop the selected pixels, never the neighboring tile.
+- (void)testRetinaSelectionFlattenerFallbackKeepsTheSelectedPixels {
+    NSImage *whole = [self retinaSelectionTiles];
+    STPrintOptions *options = [[STPrintOptions alloc] init];
+    options.selectionOnly = YES;
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    STPrintView *view = [[STPrintView alloc] initWithLayout:layout image:whole];
+    __block NSRect sourceDuringFlatten = NSZeroRect, clipAsked = NSZeroRect;
+    STPrintViewTakeOptions(view, options, whole, NSMakeRect(10, 5, 10, 5), ^NSImage *(NSUInteger scale, NSRect clip) {
+        (void)scale;
+        sourceDuringFlatten = layout.sourceRect;
+        clipAsked = clip;
+        return nil;
+    });
+    XCTAssertTrue(NSEqualRects(sourceDuringFlatten, NSMakeRect(20, 10, 20, 10)), @"source=%@", NSStringFromRect(sourceDuringFlatten));
+    XCTAssertTrue(NSEqualRects(clipAsked, NSMakeRect(10, 5, 10, 5)), @"clip=%@", NSStringFromRect(clipAsked));
+    XCTAssertTrue(NSEqualSizes(STPrintImagePixelSize(view.image), NSMakeSize(20, 10)), @"pixels=%@", NSStringFromSize(STPrintImagePixelSize(view.image)));
+    NSBitmapImageRep *cropped = (NSBitmapImageRep *)view.image.representations.firstObject;
+    NSColor *sample = [[cropped colorAtX:5 y:5] colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
+    NSColor *expected = [[NSColor colorWithCalibratedRed:1.0 / 3.0 green:1.0 / 3.0 blue:1.0 / 3.0 alpha:1]
+                         colorUsingColorSpace:[NSColorSpace deviceRGBColorSpace]];
+    XCTAssertEqualWithAccuracy(sample.redComponent, expected.redComponent, 0.03);
+    XCTAssertEqualWithAccuracy(sample.greenComponent, expected.greenComponent, 0.03);
+    XCTAssertEqualWithAccuracy(sample.blueComponent, expected.blueComponent, 0.03);
+}
+
+- (void)testOneXSelectionKeepsItsPixelRect {
+    NSImage *whole = [self checkerboardImageWithSize:NSMakeSize(40, 20)];
+    STPrintOptions *options = [[STPrintOptions alloc] init];
+    options.selectionOnly = YES;
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    STConfigurePrintLayout(layout, options, whole, NSMakeRect(10, 5, 10, 5));
+    XCTAssertTrue(NSEqualRects(layout.sourceRect, NSMakeRect(10, 5, 10, 5)));
+}
+
+- (void)testRetinaSelectionRoundsOutwardAndClipsToImage {
+    NSImage *whole = [self retinaSelectionTiles];
+    STPrintOptions *options = [[STPrintOptions alloc] init];
+    options.selectionOnly = YES;
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    STConfigurePrintLayout(layout, options, whole, NSMakeRect(38.25, 18.25, 10, 10));
+    XCTAssertTrue(NSEqualRects(layout.sourceRect, NSMakeRect(76, 36, 4, 4)), @"source=%@", NSStringFromRect(layout.sourceRect));
+}
+
+- (void)testRetinaFlattenerReceivesPointClipAndKeepsPrintedResolution {
+    NSImage *whole = [self retinaSelectionTiles];
+    STPrintOptions *options = [[STPrintOptions alloc] init];
+    options.selectionOnly = YES;
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    STPrintView *view = [[STPrintView alloc] initWithLayout:layout image:whole];
+    __block NSRect clipAsked = NSZeroRect;
+    STPrintViewTakeOptions(view, options, whole, NSMakeRect(10, 5, 10, 5), ^NSImage *(NSUInteger scale, NSRect clip) {
+        (void)scale;
+        clipAsked = clip;
+        return STPrintImageCrop(whole, NSMakeRect(20, 10, 20, 10));
+    });
+    XCTAssertTrue(NSEqualRects(clipAsked, NSMakeRect(10, 5, 10, 5)));
+    XCTAssertTrue(NSEqualSizes(STPrintImagePixelSize(view.image), NSMakeSize(20, 10)));
+    XCTAssertEqualWithAccuracy(layout.pixelsPerInch, 144.0, 0.001);
 }
 
 /// The flattener is asked for the layout's scale and the selection's rect, and the layout counts the

@@ -11,12 +11,35 @@ NSSize STPrintImagePixelSize(NSImage *image) {
     return pixels.width > 0.0 ? pixels : image.size;
 }
 
+NSRect STPrintPixelRectForPointRect(NSImage *image, NSRect rect) {
+    NSSize points = image.size;
+    NSSize pixels = STPrintImagePixelSize(image);
+    if (!(points.width > 0.0) || !(points.height > 0.0) || !(pixels.width > 0.0) || !(pixels.height > 0.0) ||
+        NSIsEmptyRect(rect)) return NSZeroRect;
+    NSRect clipped = NSIntersectionRect(rect, NSMakeRect(0, 0, points.width, points.height));
+    if (NSIsEmptyRect(clipped)) return NSZeroRect;
+    CGFloat sx = pixels.width / points.width;
+    CGFloat sy = pixels.height / points.height;
+    NSRect scaled = NSMakeRect(NSMinX(clipped) * sx, NSMinY(clipped) * sy,
+                               NSWidth(clipped) * sx, NSHeight(clipped) * sy);
+    return NSIntersectionRect(NSIntegralRect(scaled), NSMakeRect(0, 0, pixels.width, pixels.height));
+}
+
+NSRect STPrintPointRectForPixelRect(NSImage *image, NSRect rect) {
+    NSSize points = image.size;
+    NSSize pixels = STPrintImagePixelSize(image);
+    if (!(points.width > 0.0) || !(points.height > 0.0) || !(pixels.width > 0.0) || !(pixels.height > 0.0) ||
+        NSIsEmptyRect(rect)) return NSZeroRect;
+    return NSMakeRect(NSMinX(rect) * points.width / pixels.width, NSMinY(rect) * points.height / pixels.height,
+                      NSWidth(rect) * points.width / pixels.width, NSHeight(rect) * points.height / pixels.height);
+}
+
 const CGFloat STPrintDefaultMargin = 36.0;
 
 void STConfigurePrintLayout(STPrintLayout *layout, STPrintOptions *options, NSImage *image, NSRect selection) {
     NSSize pixels = STPrintImagePixelSize(image);
     NSRect whole = NSMakeRect(0.0, 0.0, pixels.width, pixels.height);
-    NSRect source = options.selectionOnly ? NSIntersectionRect(selection, whole) : whole;
+    NSRect source = options.selectionOnly ? STPrintPixelRectForPointRect(image, selection) : whole;
     // Selection-only intent must never become a whole-image print if the selection disappears.
     // Empty and out-of-bounds selections leave an empty layout, with no printable pages.
     layout.sourceRect = source;

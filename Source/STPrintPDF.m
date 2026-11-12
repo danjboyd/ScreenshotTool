@@ -182,7 +182,8 @@ BOOL STWriteCanvasPrintPDF(ScreenshotCanvasView *canvas, STPrintOptions *options
     // The scale comes from this layout; only the bitmap and its pixel counts change after it.
     NSUInteger scale = [layout flattenScaleForImagePixelSize:STPrintImagePixelSize(flattened)];
     NSRect keep = options.selectionOnly ? layout.sourceRect : NSZeroRect;
-    NSImage *printed = [canvas flattenedImageForPrintAtScale:scale withinRect:keep];
+    NSImage *printed = [canvas flattenedImageForPrintAtScale:scale
+                                                  withinRect:STPrintPointRectForPixelRect(flattened, keep)];
     if (!printed) {
         scale = 1;
         printed = options.selectionOnly ? [canvas flattenedImageForSelection] : flattened;

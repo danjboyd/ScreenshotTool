@@ -67,7 +67,7 @@ void STPrintViewTakeOptions(STPrintView *view, STPrintOptions *options, NSImage 
     }
 
     NSUInteger scale = [layout flattenScaleForImagePixelSize:STPrintImagePixelSize(wholeImage)];
-    NSImage *printed = flattener ? flattener(scale, keep) : nil;
+    NSImage *printed = flattener ? flattener(scale, STPrintPointRectForPixelRect(wholeImage, keep)) : nil;
     if (!printed) {
         scale = 1;
         printed = NSIsEmptyRect(keep) ? wholeImage : STPrintImageCrop(wholeImage, keep);
@@ -80,7 +80,7 @@ void STPrintViewTakeOptions(STPrintView *view, STPrintOptions *options, NSImage 
     NSSize pixels = STPrintImagePixelSize(printed);
     view.image = printed;
     layout.sourceRect = NSMakeRect(0, 0, pixels.width, pixels.height);
-    layout.pixelsPerInch = layout.pixelsPerInch * scale;
+    layout.pixelsPerInch = printed.size.width > 0.0 ? 72.0 * pixels.width / printed.size.width : layout.pixelsPerInch * scale;
 }
 
 @interface STPrintView ()

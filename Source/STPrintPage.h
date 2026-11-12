@@ -8,6 +8,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// Retina capture is twice its point size. STPrintLayout's rects are in these pixels.
 FOUNDATION_EXPORT NSSize STPrintImagePixelSize(NSImage *image);
 
+/// Convert a canvas selection in image points to bitmap pixels, rounding outward and clipping to
+/// the image. Print layouts and bitmap crops use pixels; canvas flatteners use points.
+FOUNDATION_EXPORT NSRect STPrintPixelRectForPointRect(NSImage *image, NSRect rect);
+FOUNDATION_EXPORT NSRect STPrintPointRectForPixelRect(NSImage *image, NSRect rect);
+
 /// Draws one printed page (#355) in the current graphics context: the part of `image` on page `page`
 /// of `layout` (`sourceRectForPage:`, in its pixels) into that page's rect on the sheet
 /// (`pageRectForPage:`, in points), clipped to it. Nothing else on the sheet is drawn.
@@ -26,8 +31,9 @@ FOUNDATION_EXPORT BOOL STDrawPrintPage(STPrintLayout *layout, NSUInteger page, N
 /// The print margins we ask for, on every side, in points.
 extern const CGFloat STPrintDefaultMargin;
 
-/// Sets a layout's content for an image: `options`' source (all of it or `selection`, in pixels from the
-/// image's top left), the image's resolution, and the fit options. Paper and margins are the caller's.
+/// Sets a layout's content for an image: `options`' source (all of it or `selection`, in canvas
+/// points from the image's top left), the image's resolution, and the fit options. Paper and margins
+/// are the caller's. The resulting layout source is in image pixels.
 /// Selection-only with an empty or wholly out-of-bounds selection produces zero printable pages.
 /// The resolution comes from its pixels against its size: on macOS a point is 1/72 inch, so a Retina
 /// capture is 144; on GNUstep a size equal to its pixels means the file gave none, so it's the default.

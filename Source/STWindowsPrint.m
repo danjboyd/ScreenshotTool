@@ -331,7 +331,7 @@ BOOL STWindowsPrintFlattened(NSImage *flattened, NSRect selection, STPrintOption
     // Its resolution is the printer's own (#355), so annotations print as fine as it does, within bounds.
     NSUInteger scale = [layout flattenScaleForImagePixelSize:STPrintImagePixelSize(flattened) dotsPerInch:sheet.dotsPerInch];
     NSRect keep = options.selectionOnly ? layout.sourceRect : NSZeroRect;
-    NSImage *printed = flatten(scale, keep);
+    NSImage *printed = flatten(scale, STPrintPointRectForPixelRect(flattened, keep));
     if (!printed) {
         scale = 1;
         printed = options.selectionOnly ? selectionImage() : flattened;
