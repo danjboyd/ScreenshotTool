@@ -10079,6 +10079,15 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 #if !defined(GNUSTEP)
 #pragma mark - Print (#355)
 
+- (void)beepForUnavailablePrintSelection {
+    NSBeep();
+}
+
+- (void)showUnavailablePrintSelectionFeedback {
+    [self beepForUnavailablePrintSelection];
+    [self showTransientFeedbackMessage:@"Nothing selected to print" duration:2.0];
+}
+
 /// File ▸ Print… starts with the whole image; Share ▸ Print… follows the shared selection.
 - (void)printDocument:(id)sender {
     (void)sender;
@@ -10095,16 +10104,22 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
 /// Options are remembered only after a print or a saved PDF.
 - (void)printWithSelectionOnly:(BOOL)selectionOnly {
     if (self.printOperationInProgress) return;
+    if (selectionOnly && ![self.canvasView hasSelection]) {
+        [self showUnavailablePrintSelectionFeedback];
+        return;
+    }
     NSImage *image = [self.canvasView flattenedImage];
     NSSize pixels = image ? STPrintImagePixelSize(image) : NSZeroSize;
     if (!image || !(pixels.width > 0.0) || !(image.size.width > 0.0)) {
-        NSBeep();
+        if (selectionOnly) [self showUnavailablePrintSelectionFeedback];
+        else NSBeep();
         return;
     }
     NSRect selection = [self.canvasView hasSelection] ? [self.canvasView selectionImageRect] : NSZeroRect;
-    BOOL hasSelection = !NSIsEmptyRect(selection);
+    NSRect imageBounds = NSMakeRect(0.0, 0.0, pixels.width, pixels.height);
+    BOOL hasSelection = !NSIsEmptyRect(NSIntersectionRect(selection, imageBounds));
     if (selectionOnly && !hasSelection) {
-        NSBeep();
+        [self showUnavailablePrintSelectionFeedback];
         return;
     }
     STPrintVectorScene *vectorScene = [self.canvasView vectorSceneForPrint];
