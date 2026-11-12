@@ -102,6 +102,17 @@
     XCTAssertEqual(app.wholeRequests, (NSUInteger)0);
 }
 
+- (NSImage *)imageWithPointSize:(NSSize)points pixelSize:(NSSize)pixels {
+    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL
+                                                                   pixelsWide:(NSInteger)pixels.width
+                                                                   pixelsHigh:(NSInteger)pixels.height
+                                                                bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
+                                                              colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
+    NSImage *image = [[NSImage alloc] initWithSize:points];
+    [image addRepresentation:rep];
+    return image;
+}
+
 - (void)testDirectPrintSelectionWithNoSelectionShowsFeedbackBeforeFlattening {
     STUnavailablePrintRecorder *app = [self unavailableRecorder];
     [app printSelection:nil];
@@ -113,12 +124,17 @@
     STUnavailablePrintRecorder *app = [self unavailableRecorder];
     app.flagCanvas.selected = YES;
     app.flagCanvas.selectionRect = NSMakeRect(100, 100, 10, 10);
-    NSBitmapImageRep *rep = [[NSBitmapImageRep alloc] initWithBitmapDataPlanes:NULL pixelsWide:40 pixelsHigh:20
-                                                                  bitsPerSample:8 samplesPerPixel:4 hasAlpha:YES isPlanar:NO
-                                                                colorSpaceName:NSCalibratedRGBColorSpace bytesPerRow:0 bitsPerPixel:0];
-    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(40, 20)];
-    [image addRepresentation:rep];
-    app.flagCanvas.image = image;
+    app.flagCanvas.image = [self imageWithPointSize:NSMakeSize(40, 20) pixelSize:NSMakeSize(40, 20)];
+    [app printSelection:nil];
+    [self assertUnavailableFeedback:app];
+    XCTAssertEqual(app.flagCanvas.flattenCount, (NSUInteger)1);
+}
+
+- (void)testRetinaPointSelectionOutsideImageShowsFeedback {
+    STUnavailablePrintRecorder *app = [self unavailableRecorder];
+    app.flagCanvas.selected = YES;
+    app.flagCanvas.selectionRect = NSMakeRect(50, 10, 5, 5);
+    app.flagCanvas.image = [self imageWithPointSize:NSMakeSize(40, 20) pixelSize:NSMakeSize(80, 40)];
     [app printSelection:nil];
     [self assertUnavailableFeedback:app];
     XCTAssertEqual(app.flagCanvas.flattenCount, (NSUInteger)1);

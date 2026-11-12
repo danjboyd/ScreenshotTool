@@ -10116,7 +10116,8 @@ static NSString *STRcloneRemoteOfService(NSSharingService *service) {
         return;
     }
     NSRect selection = [self.canvasView hasSelection] ? [self.canvasView selectionImageRect] : NSZeroRect;
-    NSRect imageBounds = NSMakeRect(0.0, 0.0, pixels.width, pixels.height);
+    // selectionImageRect is in canvas points, even when the image has a 2x bitmap representation.
+    NSRect imageBounds = NSMakeRect(0.0, 0.0, image.size.width, image.size.height);
     BOOL hasSelection = !NSIsEmptyRect(NSIntersectionRect(selection, imageBounds));
     if (selectionOnly && !hasSelection) {
         [self showUnavailablePrintSelectionFeedback];
