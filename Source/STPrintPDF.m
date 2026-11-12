@@ -2,6 +2,10 @@
 
 #if defined(__linux__)
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #import <GNUstepGUI/GSPDFPrintOperation.h>
 #import "STPrintPage.h"
 #import "STPrintPanelController.h"
@@ -82,19 +86,38 @@ BOOL STWritePrintPDF(STPrintLayout *layout, NSImage *image, NSString *path) {
     [info setLeftMargin:0.0];
     [info setRightMargin:0.0];
 
-    STPrintPDFOperation *operation = [[STPrintPDFOperation alloc] initWithView:view
-                                                                    insideRect:bounds
-                                                                        toPath:path
-                                                                     printInfo:info];
-    [operation setShowsPrintPanel:NO];
-    [operation setShowsProgressPanel:NO];
-    BOOL ran = [operation runOperation];
-    NSFileManager *files = [NSFileManager defaultManager];
-    if (!ran || !view.drewEveryPage) {
-        [files removeItemAtPath:path error:NULL];
+    // Keep an existing PDF intact until every page has been written. A sibling is on the same
+    // filesystem, so rename replaces the target atomically only after a successful operation.
+    NSString *directory = path.stringByDeletingLastPathComponent;
+    if (directory.length == 0) directory = @".";
+    NSString *template = [directory stringByAppendingPathComponent:@".ScreenshotTool-print-XXXXXX"];
+    char *temporaryPath = strdup(template.fileSystemRepresentation);
+    if (!temporaryPath) return NO;
+    int fd = mkstemp(temporaryPath);
+    if (fd < 0) {
+        free(temporaryPath);
         return NO;
     }
-    return [files fileExistsAtPath:path];
+    close(fd);
+    NSFileManager *files = [NSFileManager defaultManager];
+    NSString *temporary = [files stringWithFileSystemRepresentation:temporaryPath length:strlen(temporaryPath)];
+    free(temporaryPath);
+    @try {
+        STPrintPDFOperation *operation = [[STPrintPDFOperation alloc] initWithView:view
+                                                                        insideRect:bounds
+                                                                            toPath:temporary
+                                                                         printInfo:info];
+        [operation setShowsPrintPanel:NO];
+        [operation setShowsProgressPanel:NO];
+        BOOL ran = [operation runOperation];
+        // mkstemp already created an empty file; its existence alone is not successful output.
+        unsigned long long length = [[files attributesOfItemAtPath:temporary error:NULL][NSFileSize] unsignedLongLongValue];
+        return ran && view.drewEveryPage && length > 0 &&
+               rename(temporary.fileSystemRepresentation, path.fileSystemRepresentation) == 0;
+    } @finally {
+        // After rename the sibling no longer exists; on any failure only this sibling is removed.
+        [files removeItemAtPath:temporary error:NULL];
+    }
 }
 
 BOOL STWriteCanvasPrintPDF(ScreenshotCanvasView *canvas, STPrintOptions *options, NSSize paper,

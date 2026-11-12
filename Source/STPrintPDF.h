@@ -11,7 +11,9 @@ NS_ASSUME_NONNULL_BEGIN
 /// oriented paper (#355). This is what Linux sends to the printer. `image` is what's printed, already
 /// flattened with its annotations.
 ///
-/// Returns NO, leaving no file, if the layout has no pages or the file wasn't written.
+/// Writes to a temporary sibling and replaces `path` only after every page succeeds. Returns NO,
+/// preserving any existing target, if the layout has no pages or writing/replacement fails. No
+/// temporary sibling is left behind.
 ///
 /// GNUstep's own PDF operation prints one page in a fixed orientation, so this depends on two of its
 /// internals, both pinned with the libraries and covered by PrintPDFProbe_test.m: an override of the

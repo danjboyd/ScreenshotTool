@@ -272,6 +272,39 @@ static const CGFloat STRenderDPI = 144.0;
     XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:pdf]);
 }
 
+- (void)testFailedWritePreservesAnExistingPDFAndLeavesNoTemporaryFile {
+    NSString *pdf = [_directory stringByAppendingPathComponent:@"existing.pdf"];
+    NSData *previous = [@"previous PDF contents" dataUsingEncoding:NSUTF8StringEncoding];
+    XCTAssertTrue([previous writeToFile:pdf atomically:YES]);
+    XCTAssertFalse(STWritePrintPDF([self tiledLayout], [[NSImage alloc] initWithSize:NSZeroSize], pdf));
+    XCTAssertEqualObjects([NSData dataWithContentsOfFile:pdf], previous);
+    XCTAssertEqualObjects([[NSFileManager defaultManager] contentsOfDirectoryAtPath:_directory error:NULL], (@[@"existing.pdf"]));
+}
+
+- (void)testSuccessfulWriteReplacesAnExistingPDFAndLeavesNoTemporaryFile {
+    NSString *pdf = [_directory stringByAppendingPathComponent:@"existing.pdf"];
+    NSData *previous = [@"previous PDF contents" dataUsingEncoding:NSUTF8StringEncoding];
+    XCTAssertTrue([previous writeToFile:pdf atomically:YES]);
+    XCTAssertTrue(STWritePrintPDF([self tiledLayout], [self quadrantImageWithPointScale:1.0], pdf));
+    NSData *written = [NSData dataWithContentsOfFile:pdf];
+    XCTAssertFalse([written isEqualToData:previous]);
+    XCTAssertGreaterThan(written.length, (NSUInteger)5);
+    if (written.length >= 5) {
+        XCTAssertEqualObjects([written subdataWithRange:NSMakeRange(0, 5)], [@"%PDF-" dataUsingEncoding:NSASCIIStringEncoding]);
+    }
+    XCTAssertEqualObjects([[NSFileManager defaultManager] contentsOfDirectoryAtPath:_directory error:NULL], (@[@"existing.pdf"]));
+}
+
+- (void)testFailedReplacementLeavesTheTargetAndNoTemporaryFile {
+    NSString *target = [_directory stringByAppendingPathComponent:@"keep-directory"];
+    XCTAssertTrue([[NSFileManager defaultManager] createDirectoryAtPath:target withIntermediateDirectories:NO attributes:nil error:NULL]);
+    XCTAssertFalse(STWritePrintPDF([self tiledLayout], [self quadrantImageWithPointScale:1.0], target));
+    BOOL isDirectory = NO;
+    XCTAssertTrue([[NSFileManager defaultManager] fileExistsAtPath:target isDirectory:&isDirectory]);
+    XCTAssertTrue(isDirectory);
+    XCTAssertEqualObjects([[NSFileManager defaultManager] contentsOfDirectoryAtPath:_directory error:NULL], (@[@"keep-directory"]));
+}
+
 @end
 
 #endif
