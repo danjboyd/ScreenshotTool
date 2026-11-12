@@ -7363,6 +7363,8 @@ NSRect STVisibleFrameForWindow(NSWindow *window) {
     }
     NSRect selection = [self.canvasView selectionImageRect];
     if (selectionOnly && NSIsEmptyRect(selection)) {
+        NSBeep();
+        [self showStatusMessage:@"Nothing selected to print" duration:2.0];
         return;
     }
     NSImage *flattened = [self.canvasView flattenedImage];

@@ -21,6 +21,7 @@
 - (void)printDocument:(id)sender;
 - (void)printSelection:(id)sender;
 - (void)savePrintAsPDFWithOptions:(STPrintOptions *)options;
+- (void)showStatusMessage:(NSString *)message duration:(NSTimeInterval)duration;
 - (BOOL)validateMenuItem:(NSMenuItem *)item;
 @end
 
@@ -32,12 +33,20 @@
 @interface STUnavailablePrintApp : AppDelegate
 @property (nonatomic) NSUInteger fallbackCount;
 @property (nonatomic, strong) STPrintOptions *fallbackOptions;
+@property (nonatomic, copy) NSString *printFeedback;
+@property (nonatomic) NSTimeInterval printFeedbackDuration;
+@property (nonatomic) NSUInteger printFeedbackCount;
 @end
 @implementation STUnavailablePrintApp
 - (void)savePrintAsPDFWithOptions:(STPrintOptions *)options {
     self.fallbackCount++;
     self.fallbackOptions = [options copy];
     [super savePrintAsPDFWithOptions:options];
+}
+- (void)showStatusMessage:(NSString *)message duration:(NSTimeInterval)duration {
+    self.printFeedback = message;
+    self.printFeedbackDuration = duration;
+    self.printFeedbackCount++;
 }
 @end
 
@@ -202,12 +211,14 @@ static id STUnavailableSavePanelInstance(id cls, SEL command) {
     [_app setValue:[NSURL fileURLWithPath:@"/tmp/print-probe/annotated.screenshottool"] forKey:@"currentProjectURL"];
     _app.canvasView.hasSelectionRect = YES;
     _app.canvasView.selectionRect = NSMakeRect(20, 10, 60, 40);
+    _app.printFeedbackCount = 0;
     [_app printSelection:nil];
     [self assertNoPortalOffer];
     XCTAssertEqual(_app.fallbackCount, (NSUInteger)1);
     XCTAssertTrue(_app.fallbackOptions.selectionOnly);
     XCTAssertEqualObjects(STUnavailablePanel.nameFieldStringValue, @"annotated.pdf");
     XCTAssertTrue([[NSFileManager defaultManager] fileExistsAtPath:STUnavailablePanel.URL.path]);
+    XCTAssertEqual(_app.printFeedbackCount, (NSUInteger)0);
 }
 
 - (void)usePortalScenario:(void (^)(STPrintPortalWriter, STPrintPortalCompletion))scenario {
@@ -261,6 +272,7 @@ static id STUnavailableSavePanelInstance(id cls, SEL command) {
         requestedPortal = YES;
     }];
     STPrintProbeFlattenCount = 0;
+    _app.printFeedbackCount = 0;
     STPrintProbeRealFlatten = method_setImplementation(class_getInstanceMethod([ScreenshotCanvasView class], @selector(flattenedImage)), (IMP)STPrintProbeCountFlatten);
     // A stale context-menu action can run after the selection has been cleared.
     _app.canvasView.hasSelectionRect = NO;
@@ -275,6 +287,9 @@ static id STUnavailableSavePanelInstance(id cls, SEL command) {
     XCTAssertFalse(requestedPortal);
     XCTAssertEqual(_app.fallbackCount, (NSUInteger)0);
     XCTAssertNil(STUnavailableAlert);
+    XCTAssertEqual(_app.printFeedbackCount, (NSUInteger)3, @"each stale action needs feedback");
+    XCTAssertEqualObjects(_app.printFeedback, @"Nothing selected to print");
+    XCTAssertEqualWithAccuracy(_app.printFeedbackDuration, 2.0, 1e-9);
 }
 
 - (void)testSelectionClearedBeforePDFWriterDoesNotWriteTheWholeImage {
