@@ -357,16 +357,15 @@ static void STCollectPDFImages(CGPDFDictionaryRef resources, NSMutableArray<NSVa
     XCTAssertTrue(sawWhole, @"embedded: %@", sizes);
 }
 
-/// Without a selection, "the selection" prints the whole image.
-- (void)testNoSelectionPrintsTheWholeImage {
+/// A selection-only request whose selection disappeared must have no printable pages.
+- (void)testNoSelectionPrintsNothing {
     NSImage *whole = [self checkerboardImageWithSize:NSMakeSize(400, 200)];
     STPrintOptions *options = [[STPrintOptions alloc] init];
     options.selectionOnly = YES;
     STPrintView *view = [[STPrintView alloc] initWithLayout:[[STPrintLayout alloc] init] image:whole];
     STPrintViewTakeOptions(view, options, whole, NSZeroRect, nil);
-    XCTAssertEqual(view.image, whole);
-    XCTAssertTrue(NSEqualRects(view.layout.sourceRect, NSMakeRect(0, 0, 400, 200)));
-    XCTAssertEqualWithAccuracy(view.layout.pixelsPerInch, 72.0, 0.001, @"a 1x image on macOS is 72 ppi");
+    XCTAssertTrue(NSIsEmptyRect(view.layout.sourceRect));
+    XCTAssertEqual(view.layout.pageCount, (NSUInteger)0);
 }
 
 /// The flattener is asked for the layout's scale and the selection's rect, and the layout counts the

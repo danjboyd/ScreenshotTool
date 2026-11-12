@@ -17,9 +17,9 @@ void STConfigurePrintLayout(STPrintLayout *layout, STPrintOptions *options, NSIm
     NSSize pixels = STPrintImagePixelSize(image);
     NSRect whole = NSMakeRect(0.0, 0.0, pixels.width, pixels.height);
     NSRect source = options.selectionOnly ? NSIntersectionRect(selection, whole) : whole;
-    // An absent selection retains the existing whole-image behavior. An invalid, nonempty
-    // selection must not turn into the whole image.
-    layout.sourceRect = options.selectionOnly && !NSIsEmptyRect(selection) ? source : whole;
+    // Selection-only intent must never become a whole-image print if the selection disappears.
+    // Empty and out-of-bounds selections leave an empty layout, with no printable pages.
+    layout.sourceRect = source;
 #if defined(GNUSTEP)
     layout.pixelsPerInch = image.size.width > 0.0 && fabs(image.size.width - pixels.width) > 0.5
                                ? 72.0 * pixels.width / image.size.width

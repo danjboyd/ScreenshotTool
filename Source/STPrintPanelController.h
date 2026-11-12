@@ -12,9 +12,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// `flattenedImage` is what's printed, with its annotations: redactions are annotations, so nothing
 /// here can print without them. `selection` is the selection in pixels from the image's top left, or
-/// NSZeroRect. `selectionOnly` is what the panel starts on: YES for Print Selection. It's ignored
-/// without a selection.
-- (instancetype)initWithFlattenedImage:(NSImage *)flattenedImage
+/// NSZeroRect. `selectionOnly` is what the panel starts on: YES for Print Selection. A selection-only
+/// request without a selection that intersects the image returns nil before constructing a panel.
+- (nullable instancetype)initWithFlattenedImage:(NSImage *)flattenedImage
                              selection:(NSRect)selection
                          selectionOnly:(BOOL)selectionOnly
                               defaults:(NSUserDefaults *)defaults;

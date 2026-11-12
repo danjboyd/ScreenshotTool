@@ -7361,17 +7361,20 @@ NSRect STVisibleFrameForWindow(NSWindow *window) {
     if ([STPrintPortal isPrinting]) {
         return;
     }
+    NSRect selection = [self.canvasView selectionImageRect];
+    if (selectionOnly && NSIsEmptyRect(selection)) {
+        return;
+    }
     NSImage *flattened = [self.canvasView flattenedImage];
     if (!flattened) {
         return;
     }
-    NSRect selection = [self.canvasView selectionImageRect];
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     STPrintPanelController *panel = [[STPrintPanelController alloc] initWithFlattenedImage:flattened
                                                                                  selection:selection
                                                                              selectionOnly:selectionOnly
                                                                                   defaults:defaults];
-    if (![panel runModal]) {
+    if (!panel || ![panel runModal]) {
         return;
     }
     STPrintOptions *options = [panel.options copy];

@@ -97,8 +97,8 @@
 
 - (void)testSelectionNeedsASelection {
     STPrintPanelController *none = [self panelWithSelection:NSZeroRect selectionOnly:YES];
-    XCTAssertFalse(none.contentPopUp.isEnabled);
-    XCTAssertFalse(none.options.selectionOnly);
+    XCTAssertNil(none, @"Print Selection must not become a whole-image panel");
+    XCTAssertNil([self panelWithSelection:NSMakeRect(4000, 50, 300, 200) selectionOnly:YES]);
 
     NSRect selection = NSMakeRect(100, 50, 300, 200);
     STPrintPanelController *some = [self panelWithSelection:selection selectionOnly:YES];
@@ -107,6 +107,31 @@
     XCTAssertTrue(NSEqualRects([some currentLayout].sourceRect, selection));
     [self choose:0 in:some.contentPopUp];
     XCTAssertTrue(NSEqualRects([some currentLayout].sourceRect, NSMakeRect(0, 0, 3000, 2000)));
+}
+
+- (void)testPartlyOutsideSelectionIsClipped {
+    STPrintPanelController *panel = [self panelWithSelection:NSMakeRect(-50, 20, 100, 80) selectionOnly:YES];
+    XCTAssertNotNil(panel);
+    XCTAssertTrue(panel.options.selectionOnly);
+    XCTAssertTrue(NSEqualRects([panel currentLayout].sourceRect, NSMakeRect(0, 20, 50, 80)));
+}
+
+- (void)testSelectionOnlyLayoutNeverFallsBackToTheWholeImage {
+    NSImage *image = [self imageWithWidth:3000 height:2000];
+    STPrintOptions *options = [[STPrintOptions alloc] init];
+    options.selectionOnly = YES;
+    STPrintLayout *layout = [[STPrintLayout alloc] init];
+    layout.paperSize = NSMakeSize(612, 792);
+    for (NSValue *value in @[ [NSValue valueWithRect:NSZeroRect],
+                              [NSValue valueWithRect:NSMakeRect(4000, 50, 300, 200)] ]) {
+        STConfigurePrintLayout(layout, options, image, value.rectValue);
+        XCTAssertTrue(NSIsEmptyRect(layout.sourceRect));
+        XCTAssertEqual(layout.pageCount, (NSUInteger)0);
+    }
+    options.selectionOnly = NO;
+    STConfigurePrintLayout(layout, options, image, NSZeroRect);
+    XCTAssertTrue(NSEqualRects(layout.sourceRect, NSMakeRect(0, 0, 3000, 2000)));
+    XCTAssertEqual(layout.pageCount, (NSUInteger)1);
 }
 
 - (void)testActualSizeTilesAndThePagerWalksThePages {

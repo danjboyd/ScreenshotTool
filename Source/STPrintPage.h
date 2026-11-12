@@ -28,6 +28,7 @@ extern const CGFloat STPrintDefaultMargin;
 
 /// Sets a layout's content for an image: `options`' source (all of it or `selection`, in pixels from the
 /// image's top left), the image's resolution, and the fit options. Paper and margins are the caller's.
+/// Selection-only with an empty or wholly out-of-bounds selection produces zero printable pages.
 /// The resolution comes from its pixels against its size: on macOS a point is 1/72 inch, so a Retina
 /// capture is 144; on GNUstep a size equal to its pixels means the file gave none, so it's the default.
 FOUNDATION_EXPORT void STConfigurePrintLayout(STPrintLayout *layout, STPrintOptions *options, NSImage *image, NSRect selection);

@@ -254,6 +254,45 @@ static id STUnavailableSavePanelInstance(id cls, SEL command) {
     XCTAssertEqual(STPrintProbeFlattenCount, (NSUInteger)0);
 }
 
+- (void)testPrintSelectionWithoutASelectionStopsBeforeFlatteningOrPortal {
+    __block BOOL requestedPortal = NO;
+    [self usePortalScenario:^(STPrintPortalWriter writer, STPrintPortalCompletion completion) {
+        (void)writer; (void)completion;
+        requestedPortal = YES;
+    }];
+    STPrintProbeFlattenCount = 0;
+    STPrintProbeRealFlatten = method_setImplementation(class_getInstanceMethod([ScreenshotCanvasView class], @selector(flattenedImage)), (IMP)STPrintProbeCountFlatten);
+    // A stale context-menu action can run after the selection has been cleared.
+    _app.canvasView.hasSelectionRect = NO;
+    [_app printSelection:nil];
+    _app.canvasView.hasSelectionRect = YES;
+    for (NSValue *value in @[ [NSValue valueWithRect:NSZeroRect],
+                              [NSValue valueWithRect:NSMakeRect(300, 10, 60, 40)] ]) {
+        _app.canvasView.selectionRect = value.rectValue;
+        [_app printSelection:nil];
+    }
+    XCTAssertEqual(STPrintProbeFlattenCount, (NSUInteger)0);
+    XCTAssertFalse(requestedPortal);
+    XCTAssertEqual(_app.fallbackCount, (NSUInteger)0);
+    XCTAssertNil(STUnavailableAlert);
+}
+
+- (void)testSelectionClearedBeforePDFWriterDoesNotWriteTheWholeImage {
+    _app.canvasView.hasSelectionRect = YES;
+    _app.canvasView.selectionRect = NSMakeRect(20, 10, 60, 40);
+    __block BOOL requestedWriter = NO;
+    [self usePortalScenario:^(STPrintPortalWriter writer, STPrintPortalCompletion completion) {
+        requestedWriter = YES;
+        _app.canvasView.hasSelectionRect = NO;
+        XCTAssertFalse(writer([self chosenPaper], [self chosenPageSetup], STUnavailablePanel.URL.path));
+        XCTAssertFalse([[NSFileManager defaultManager] fileExistsAtPath:STUnavailablePanel.URL.path]);
+        completion(NO, NO, nil);
+    }];
+    [_app printSelection:nil];
+    XCTAssertTrue(requestedWriter, @"a valid selection must reach the writer before it disappears");
+    XCTAssertEqual(_app.fallbackCount, (NSUInteger)0);
+}
+
 - (void)testPDFWriteFailureDoesNotReplaceTheLastPrintedPaper {
     [self rememberOriginalPageSetup];
     [self usePortalScenario:^(STPrintPortalWriter writer, STPrintPortalCompletion completion) {
