@@ -489,4 +489,12 @@ void STWindowsDeleteDC(void *dc) {
     DeleteDC((HDC)dc);
 }
 
+NSString *STWindowsPrintSelectionProblem(NSSize imagePixels, NSRect selection, BOOL selectionOnly) {
+    if (!selectionOnly) {
+        return nil;
+    }
+    NSRect inImage = NSIntersectionRect(selection, NSMakeRect(0, 0, imagePixels.width, imagePixels.height));
+    return NSIsEmptyRect(inImage) ? @"Nothing selected to print" : nil;
+}
+
 #endif

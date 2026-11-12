@@ -7378,9 +7378,18 @@ NSRect STVisibleFrameForWindow(NSWindow *window) {
     if (!flattened) {
         return YES;
     }
+    // A stale or missing selection says so, rather than doing nothing (#355); the share sheet still
+    // comes back, as from a cancel.
+    NSRect selection = [self.canvasView selectionImageRect];
+    NSString *problem = STWindowsPrintSelectionProblem(STPrintImagePixelSize(flattened), selection, selectionOnly);
+    if (problem) {
+        NSBeep();
+        [self showStatusMessage:problem duration:2.0];
+        return NO;
+    }
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
     STPrintPanelController *panel = [[STPrintPanelController alloc] initWithFlattenedImage:flattened
-                                                                                 selection:[self.canvasView selectionImageRect]
+                                                                                 selection:selection
                                                                              selectionOnly:selectionOnly
                                                                                   defaults:defaults];
     if (![panel runModal]) {

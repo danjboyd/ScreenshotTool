@@ -142,6 +142,18 @@
     XCTAssertEqual(self.printPagesCalls, 1U);
 }
 
+/// What Print Selection says before any panel opens: a selection with none of the image in it, or
+/// none at all, is named; a selection with some of the image, or a whole-image print, says nothing.
+- (void)testSelectionProblemIsNamedOnlyWhenNothingOfTheImageIsSelected {
+    NSSize pixels = NSMakeSize(200, 100);
+    XCTAssertEqualObjects(STWindowsPrintSelectionProblem(pixels, NSZeroRect, YES), @"Nothing selected to print");
+    XCTAssertEqualObjects(STWindowsPrintSelectionProblem(pixels, NSMakeRect(300, 20, 40, 40), YES), @"Nothing selected to print");
+    XCTAssertEqualObjects(STWindowsPrintSelectionProblem(pixels, NSMakeRect(200, 0, 40, 40), YES), @"Nothing selected to print");
+    XCTAssertNil(STWindowsPrintSelectionProblem(pixels, NSMakeRect(180, 80, 40, 40), YES));
+    XCTAssertNil(STWindowsPrintSelectionProblem(pixels, NSZeroRect, NO));
+    XCTAssertNil(STWindowsPrintSelectionProblem(pixels, NSMakeRect(300, 20, 40, 40), NO));
+}
+
 @end
 
 #endif

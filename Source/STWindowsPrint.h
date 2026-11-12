@@ -102,6 +102,12 @@ FOUNDATION_EXPORT STWindowsPrintDialogResult STWindowsRunPrintDialog(NSInteger w
                                                                      NSUserDefaults *defaults);
 FOUNDATION_EXPORT void STWindowsFreePrintDialogResult(STWindowsPrintDialogResult result);
 FOUNDATION_EXPORT void STWindowsDeleteDC(void *dc);
+
+/// Why Print Selection can't start, said to the user; nil when it can. A selection-only print needs a
+/// selection with some of the image in it: a stale one (the image changed under it) or none at all
+/// prints nothing, as STPrintPanelController and STWindowsPrintFlattened already refuse it (#355).
+FOUNDATION_EXPORT NSString * _Nullable STWindowsPrintSelectionProblem(NSSize imagePixels, NSRect selection,
+                                                                       BOOL selectionOnly);
 #endif
 
 NS_ASSUME_NONNULL_END
