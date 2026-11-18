@@ -1,0 +1,126 @@
+name: macos-real-dmg-proof
+
+# Review draft for .github/workflows/macos-real-dmg-proof.yml.
+# Dispatch only. This never creates a release, deploys Pages, or publishes a feed.
+on:
+  workflow_dispatch:
+    inputs:
+      expected_commit:
+        description: Exact main commit to build (40 lowercase hex characters)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  real-dmg-proof:
+    if: github.repository == 'danjboyd/ScreenshotTool' && github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Pin source, version and bundled public key
+        shell: bash
+        env:
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+        run: |
+          set -euo pipefail
+          [[ "${EXPECTED_COMMIT}" =~ ^[0-9a-f]{40}$ ]]
+          test "${GITHUB_REPOSITORY}" = danjboyd/ScreenshotTool
+          test "${GITHUB_REF}" = refs/heads/main
+          test "${GITHUB_SHA}" = "${EXPECTED_COMMIT}"
+          test "$(git rev-parse HEAD)" = "${EXPECTED_COMMIT}"
+          test -z "$(git status --porcelain)"
+          test "$(plutil -extract SUPublicEDKey raw -o - Resources/Info-cocoa.plist)" = \
+            'fXqmzuRxV6TkC42/QrZAZSyYsvieYCnbDf7qO3/afs8='
+          build_number="$(git rev-list --count HEAD)"
+          [[ "${build_number}" =~ ^[1-9][0-9]*$ ]]
+          echo "BUILD_NUMBER=${build_number}" >> "${GITHUB_ENV}"
+          echo "Expected commit: ${EXPECTED_COMMIT}; version: 0.4.0; build: ${build_number}"
+
+      - name: Build and smoke test the native app
+        shell: bash
+        env:
+          VERSION: '0.4.0'
+        run: |
+          set -euo pipefail
+          scripts/build_cocoa.sh
+          scripts/smoke_macos_app.sh build/cocoa/ScreenshotTool.app
+          info=build/cocoa/ScreenshotTool.app/Contents/Info.plist
+          test "$(plutil -extract CFBundleShortVersionString raw -o - "${info}")" = "${VERSION}"
+          test "$(plutil -extract CFBundleVersion raw -o - "${info}")" = "${BUILD_NUMBER}"
+          test "$(plutil -extract SUPublicEDKey raw -o - "${info}")" = \
+            'fXqmzuRxV6TkC42/QrZAZSyYsvieYCnbDf7qO3/afs8='
+
+      - name: Package the exact DMG to be signed
+        shell: bash
+        env:
+          VERSION: '0.4.0'
+        run: |
+          set -euo pipefail
+          scripts/package_macos_dmg.sh build/cocoa/ScreenshotTool.app
+          test -s Staging/ScreenshotTool-0.4.0-macOS.dmg
+
+      - name: Pin the Sparkle signer before exposing the secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          signer="$(scripts/fetch_sparkle.sh)/bin/sign_update"
+          test "$(shasum -a 256 "${signer}" | awk '{print $1}')" = \
+            43c249771bafc3aa581228abae00731a012d324691b8292860896635050be76b
+
+      - name: Sign the exact DMG and create an unpublished appcast
+        shell: bash
+        env:
+          VERSION: '0.4.0'
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          set +x
+          if [[ -z "${SPARKLE_ED_PRIVATE_KEY:-}" ]]; then
+            echo 'SPARKLE_ED_PRIVATE_KEY is empty; stopping without keychain fallback.' >&2
+            exit 1
+          fi
+          # The fetch step above ran without the secret. Confirm those exact tool bytes remain.
+          test "$(shasum -a 256 build/third_party/Sparkle-2.10.0/bin/sign_update | awk '{print $1}')" = \
+            43c249771bafc3aa581228abae00731a012d324691b8292860896635050be76b
+          scripts/make_macos_appcast.sh \
+            build/cocoa/ScreenshotTool.app \
+            Staging/ScreenshotTool-0.4.0-macOS.dmg \
+            https://github.com/danjboyd/ScreenshotTool/releases/download/v0.4.0/ScreenshotTool-0.4.0-macOS.dmg \
+            https://github.com/danjboyd/ScreenshotTool/releases/tag/v0.4.0 \
+            Staging/ScreenshotTool-0.4.0-macOS.appcast.xml
+          test -s Staging/ScreenshotTool-0.4.0-macOS.appcast.xml
+
+      - name: Verify exact signed bytes and write hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          dmg=Staging/ScreenshotTool-0.4.0-macOS.dmg
+          appcast=Staging/ScreenshotTool-0.4.0-macOS.appcast.xml
+          (cd Staging && shasum -a 256 \
+            ScreenshotTool-0.4.0-macOS.dmg \
+            ScreenshotTool-0.4.0-macOS.appcast.xml > SHA256SUMS)
+          dmg_hash="$(shasum -a 256 "${dmg}" | awk '{print $1}')"
+          swift -module-cache-path "${RUNNER_TEMP}/st-real-dmg-swift-cache" \
+            Tools/verify_macos_real_dmg_appcast.swift \
+            "${dmg}" "${appcast}" 0.4.0 "${BUILD_NUMBER}" "${dmg_hash}" \
+            | tee Staging/verification.txt
+          cat Staging/verification.txt >> "${GITHUB_STEP_SUMMARY}"
+          (cd Staging && shasum -a 256 -c SHA256SUMS)
+
+      - name: Upload proof record without the DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshottool-macos-040-real-dmg-record-${{ github.sha }}
+          path: |
+            Staging/ScreenshotTool-0.4.0-macOS.appcast.xml
+            Staging/SHA256SUMS
+            Staging/verification.txt
+          if-no-files-found: error
+          retention-days: 1
