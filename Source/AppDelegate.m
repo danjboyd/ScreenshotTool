@@ -2690,7 +2690,24 @@ static AppDelegate *STFrontDocument(void) {
     return YES;
 }
 
+/// Never lets an exception out (#354). GNUstep validates a whole menu inside one exception handler
+/// (-[NSMenu update]), so a validation that raised (a pasteboard server that didn't answer, say)
+/// stopped the pass there: every later item kept whatever state it had, and some showed disabled
+/// while their checks would have enabled them. An item whose check raised is disabled for this
+/// pass, and the rest are still checked. NO is the safe answer here: an always-available item
+/// takes the final `return YES` and has no check that can raise, so only an item whose check
+/// failed lands here, and it can't be shown as working. The next pass checks it again.
 - (BOOL)validateMenuItem:(NSMenuItem *)menuItem {
+    @try {
+        return [self validateMenuItemUnguarded:menuItem];
+    } @catch (NSException *exception) {
+        ScreenshotToolAppendLog([NSString stringWithFormat:@"validateMenuItem: %@ raised %@: %@",
+                                 NSStringFromSelector(menuItem.action), exception.name, exception.reason]);
+        return NO;
+    }
+}
+
+- (BOOL)validateMenuItemUnguarded:(NSMenuItem *)menuItem {
     SEL action = menuItem.action;
     if (action == @selector(saveDocumentAs:) || action == @selector(saveProject:) || action == @selector(copy:) ||
         action == @selector(zoomIn:) || action == @selector(zoomOut:)) {
