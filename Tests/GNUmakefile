@@ -57,6 +57,7 @@ ScreenshotToolTests_OBJC_FILES = \
 	TesseractMissingProbe_test.m \
 	MultiWindowProbe_test.m \
 	PasteAvailabilityProbe_test.m \
+	MenuValidationExceptionProbe_test.m \
 	PopoverFocusProbe_test.m \
 	FitViewportRoundingProbe_test.m \
 	TitleBarToolbarProbe_test.m \
