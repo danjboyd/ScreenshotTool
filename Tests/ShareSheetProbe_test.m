@@ -394,7 +394,17 @@
 
 #if !defined(GNUSTEP)
 - (void)testShareAlwaysOffersTheAppPrintRoute {
+    XCTSkipIf(_shouldSkip, @"No window server");
     STPrintRouteRecordingAppDelegate *app = [[STPrintRouteRecordingAppDelegate alloc] init];
+    [app setupWindowAndContent];
+    NSImage *image = [[NSImage alloc] initWithSize:NSMakeSize(24, 24)];
+    [image lockFocus];
+    [[NSColor whiteColor] setFill];
+    NSRectFill(NSMakeRect(0, 0, 24, 24));
+    [image unlockFocus];
+    [app.canvasView loadImage:image];
+    XCTAssertFalse([app.canvasView hasSelection]);
+
     NSSharingServicePicker *picker = [[NSSharingServicePicker alloc] initWithItems:@[]];
     NSArray<NSSharingService *> *services = [app sharingServicePicker:picker
                                              sharingServicesForItems:@[@"image"]
@@ -403,7 +413,10 @@
     XCTAssertEqualObjects(print.title, @"Print…");
     XCTAssertNil([app sharingServicePicker:picker delegateForSharingService:print], @"Our print route owns its sheet");
     [print performWithItems:@[@"image"]];
-    [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
+    NSDate *deadline = [NSDate dateWithTimeIntervalSinceNow:5.0];
+    while (app.printRequests == 0 && [deadline timeIntervalSinceNow] > 0.0) {
+        [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.05]];
+    }
     XCTAssertEqual(app.printRequests, (NSUInteger)1, @"Share uses ScreenshotTool's print operation");
 
     NSArray<NSSharingService *> *withoutImage = [app sharingServicePicker:picker
