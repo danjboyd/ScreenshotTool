@@ -402,7 +402,7 @@
     NSSharingService *print = services.firstObject;
     XCTAssertEqualObjects(print.title, @"Print…");
     XCTAssertNil([app sharingServicePicker:picker delegateForSharingService:print], @"Our print route owns its sheet");
-    [print performWithItems:@[]];
+    [print performWithItems:@[@"image"]];
     [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.2]];
     XCTAssertEqual(app.printRequests, (NSUInteger)1, @"Share uses ScreenshotTool's print operation");
 
